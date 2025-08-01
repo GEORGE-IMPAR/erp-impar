@@ -5,43 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Solicitação de Materiais - ERP Ímpar</title>
   <link rel="stylesheet" href="assets/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
   <script>
     (function(){
       emailjs.init("WddODLBw11FUrjP-q");
     })();
   </script>
-  <style>
-    .popup {
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #28a745;
-      color: white;
-      font-size: 1.2rem;
-      padding: 15px 25px;
-      border-radius: 8px;
-      box-shadow: 0 6px 15px rgba(0,0,0,0.3);
-      display: none;
-      z-index: 2000;
-      animation: bounceIn 0.5s ease;
-    }
-    .popup.error { background: #dc3545; }
-    @keyframes bounceIn {
-      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
-      60% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
-      100% { transform: translate(-50%, -50%) scale(1); }
-    }
-    .btn-remover { color: red; cursor: pointer; font-weight: bold; }
-    .materiais-lista table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-    .materiais-lista th, .materiais-lista td {
-      border: 1px solid #ddd;
-      padding: 8px;
-      text-align: center;
-    }
-    .materiais-lista th { background: #f8f9fa; font-weight: bold; }
-  </style>
 </head>
 <body>
   <div class="solicitacao-container">
@@ -94,117 +64,6 @@
     </form>
   </div>
 
-  <div id="popup" class="popup"></div>
-
-  <script>
-    function mostrarPopup(msg, isError=false) {
-      const popup = document.getElementById('popup');
-      popup.textContent = msg;
-      popup.className = 'popup ' + (isError ? 'error' : 'success');
-      popup.style.display = 'block';
-      setTimeout(() => popup.style.display = 'none', 4000);
-    }
-
-    document.addEventListener('DOMContentLoaded', async () => {
-      const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
-      if (!usuarioLogado || !usuarioLogado.obras) {
-        mostrarPopup("Erro: Nenhum usuário logado ou sem obra associada.", true);
-        setTimeout(() => window.location.href = 'login.html', 3000);
-        return;
-      }
-
-      const obraSelect = document.getElementById('obra');
-      const centroCustoInput = document.getElementById('centroCusto');
-      const materialSelect = document.getElementById('material');
-      const listaMateriaisBody = document.getElementById('listaMateriaisBody');
-      let materiaisSelecionados = [];
-
-      usuarioLogado.obras.forEach(o => {
-        const option = document.createElement('option');
-        option.value = o.Obra;
-        option.textContent = `${o.Obra} (${o['Centro de Custo']})`;
-        obraSelect.appendChild(option);
-      });
-
-      obraSelect.addEventListener('change', e => {
-        const obraSelecionada = usuarioLogado.obras.find(o => o.Obra === e.target.value);
-        centroCustoInput.value = obraSelecionada ? obraSelecionada['Centro de Custo'] : '';
-      });
-
-      try {
-        const materiaisResponse = await fetch('materiais.json');
-        const materiais = await materiaisResponse.json();
-        materiais.sort((a, b) => a.Material.localeCompare(b.Material));
-        materiais.forEach(m => {
-          const option = document.createElement('option');
-          option.value = JSON.stringify(m);
-          option.textContent = `${m.Material} (${m.UND})`;
-          materialSelect.appendChild(option);
-        });
-
-        document.getElementById('adicionarBtn').addEventListener('click', () => {
-          const materialObj = JSON.parse(materialSelect.value || '{}');
-          const quantidade = document.getElementById('quantidade').value;
-
-          if (!materialObj.Material || !quantidade) {
-            mostrarPopup("Selecione material e informe a quantidade!", true);
-            return;
-          }
-
-          materiaisSelecionados.push({
-            Material: materialObj.Material,
-            UND: materialObj.UND,
-            Quantidade: quantidade
-          });
-
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td>${materialObj.Material}</td>
-            <td>${materialObj.UND}</td>
-            <td>${quantidade}</td>
-            <td><span class="btn-remover">❌</span></td>
-          `;
-          row.querySelector('.btn-remover').addEventListener('click', () => {
-            row.remove();
-            materiaisSelecionados = materiaisSelecionados.filter(m => m.Material !== materialObj.Material);
-          });
-          listaMateriaisBody.appendChild(row);
-          mostrarPopup("Material adicionado com sucesso!");
-        });
-
-        document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-
-          if (materiaisSelecionados.length === 0) {
-            mostrarPopup("Adicione pelo menos um material!", true);
-            return;
-          }
-
-          const templateParams = {
-            usuario: usuarioLogado.Nome,
-            from_email: usuarioLogado.Email,
-            obra: obraSelect.value,
-            centroCusto: centroCustoInput.value,
-            localEntrega: document.getElementById('localEntrega').value,
-            data: document.getElementById('data').value,
-            materiais: JSON.stringify(materiaisSelecionados, null, 2)
-          };
-
-          emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams)
-            .then(() => {
-              mostrarPopup("E-mail com o relatório de compras enviado com sucesso!");
-              document.getElementById('solicitacaoForm').reset();
-              listaMateriaisBody.innerHTML = "";
-              materiaisSelecionados = [];
-            }, (error) => {
-              mostrarPopup("Erro ao enviar solicitação. Verifique os dados.", true);
-            });
-        });
-
-      } catch (error) {
-        mostrarPopup("Falha ao carregar materiais.", true);
-      }
-    });
-  </script>
+  <script src="assets/js/script.js"></script>
 </body>
 </html>

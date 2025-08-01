@@ -1,60 +1,110 @@
 document.addEventListener('DOMContentLoaded', async () => {
-  const usuarioSelect = document.getElementById('usuario');
+  const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+  if (!usuarioLogado || !usuarioLogado.obras) {
+    Swal.fire('Erro', 'Nenhum usuário logado ou sem obra associada.', 'error')
+      .then(() => location.href = 'login.html');
+    return;
+  }
+
+  const obraSelect = document.getElementById('obra');
+  const centroCustoInput = document.getElementById('centroCusto');
+  const materialSelect = document.getElementById('material');
+  const listaMateriaisBody = document.getElementById('listaMateriaisBody');
+  let materiaisSelecionados = [];
+
+  usuarioLogado.obras.forEach(o => {
+    const option = document.createElement('option');
+    option.value = o.Obra;
+    option.textContent = `${o.Obra} (${o['Centro de Custo']})`;
+    obraSelect.appendChild(option);
+  });
+
+  obraSelect.addEventListener('change', e => {
+    const obraSelecionada = usuarioLogado.obras.find(o => o.Obra === e.target.value);
+    centroCustoInput.value = obraSelecionada ? obraSelecionada['Centro de Custo'] : '';
+  });
 
   try {
-    console.debug("🔄 Iniciando carregamento do usuarios.json...");
-
-    // Agora busca do MESMO DOMÍNIO
-    const response = await fetch('usuarios.json');
-    console.debug("📡 Resposta recebida:", response);
-
-    if (!response.ok) throw new Error('Erro HTTP: ' + response.status);
-
-    const usuarios = await response.json();
-    console.debug("✅ Usuários carregados:", usuarios);
-
-    usuarios.forEach(user => {
+    const materiaisResponse = await fetch('materiais.json');
+    const materiais = await materiaisResponse.json();
+    materiais.sort((a, b) => a.Material.localeCompare(b.Material));
+    materiais.forEach(m => {
       const option = document.createElement('option');
-      option.value = user.Email.trim().toLowerCase();
-      option.textContent = user.Email;
-      usuarioSelect.appendChild(option);
+      option.value = JSON.stringify(m);
+      option.textContent = `${m.Material} (${m.UND})`;
+      materialSelect.appendChild(option);
     });
 
-    console.debug("📋 Combo preenchido com usuários");
+    document.getElementById('adicionarBtn').addEventListener('click', () => {
+      const materialObj = JSON.parse(materialSelect.value || '{}');
+      const quantidade = document.getElementById('quantidade').value;
 
-    document.getElementById('loginForm').addEventListener('submit', (e) => {
-      e.preventDefault();
-      console.debug("➡️ Tentando login...");
-
-      const email = usuarioSelect.value;
-      const senha = document.getElementById('senha').value;
-
-      console.debug("📧 Email digitado:", email);
-      console.debug("🔑 Senha digitada:", senha);
-
-      const usuarioValido = usuarios.find(u =>
-        u.Email.trim().toLowerCase() === email &&
-        u.Senha.trim() === senha
-      );
-
-      if (usuarioValido) {
-        console.debug("✅ Login bem-sucedido:", usuarioValido);
-        localStorage.setItem('usuarioLogado', JSON.stringify(usuarioValido));
-        window.location.href = 'solicitacao.html';
-      } else {
-        console.warn("❌ Falha no login: usuário ou senha incorretos");
-        alert('Usuário ou senha inválidos.');
+      if (!materialObj.Material || !quantidade) {
+        Swal.fire('Erro', 'Selecione material e informe a quantidade!', 'error');
+        return;
       }
-    });
-  } catch (error) {
-    console.error("🚨 Erro ao carregar usuários:", error);
-    alert('Falha ao carregar a lista de usuários.');
-  }
-});
 
-// Toggle da senha
-document.getElementById('toggleSenha').addEventListener('click', () => {
-  const senhaInput = document.getElementById('senha');
-  senhaInput.type = senhaInput.type === 'password' ? 'text' : 'password';
-  console.debug("👁️ Toggle senha:", senhaInput.type);
+      materiaisSelecionados.push({
+        Material: materialObj.Material,
+        UND: materialObj.UND,
+        Quantidade: quantidade
+      });
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${materialObj.Material}</td>
+        <td>${materialObj.UND}</td>
+        <td>${quantidade}</td>
+        <td><span class="btn-remover">❌</span></td>
+      `;
+      row.querySelector('.btn-remover').addEventListener('click', () => {
+        row.remove();
+        materiaisSelecionados = materiaisSelecionados.filter(m => m.Material !== materialObj.Material);
+      });
+      listaMateriaisBody.appendChild(row);
+    });
+
+    document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      if (materiaisSelecionados.length === 0) {
+        Swal.fire('Erro', 'Adicione pelo menos um material!', 'error');
+        return;
+      }
+
+      const templateParams = {
+        usuario: usuarioLogado.Nome,
+        from_email: usuarioLogado.Email,
+        obra: obraSelect.value,
+        centroCusto: centroCustoInput.value,
+        localEntrega: document.getElementById('localEntrega').value,
+        data: document.getElementById('data').value,
+        materiais: JSON.stringify(materiaisSelecionados, null, 2)
+      };
+
+      emailjs.send("SEU_SERVICE_ID", "SEU_TEMPLATE_ID", templateParams)
+        .then(() => {
+          Swal.fire('Sucesso', 'E-mail com o relatório de compras enviado com sucesso!', 'success');
+          document.getElementById('solicitacaoForm').reset();
+          listaMateriaisBody.innerHTML = "";
+          materiaisSelecionados = [];
+        }, (error) => {
+          Swal.fire('Erro', 'Falha ao enviar solicitação.', 'error');
+          console.error('Erro EmailJS:', error);
+          fetch('logs_envio.json', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              data: new Date().toISOString(),
+              usuario: usuarioLogado.Email,
+              erro: error
+            })
+          });
+        });
+    });
+
+  } catch (error) {
+    Swal.fire('Erro', 'Falha ao carregar materiais.', 'error');
+    console.error('Erro carregando materiais:', error);
+  }
 });
