@@ -8,7 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
   <script>
     (function(){
-      emailjs.init("WddODLBw11FUrjP-q"); // sua Public Key
+      emailjs.init("WddODLBw11FUrjP-q"); // Public Key do EmailJS
     })();
   </script>
 </head>
@@ -16,6 +16,7 @@
   <div class="solicitacao-container">
     <h2>Solicitação de Materiais</h2>
     <form id="solicitacaoForm">
+      
       <label for="obra">Obra:</label>
       <select id="obra" required>
         <option value="">Selecione a obra...</option>
@@ -27,9 +28,9 @@
       </select>
 
       <label for="quantidade">Quantidade:</label>
-      <input type="number" id="quantidade" min="1" required>
+      <input type="number" id="quantidade" min="1" inputmode="numeric" required>
 
-      <label for="data">Data limite de entrega:</label>
+      <label for="data">Prazo limite de entrega:</label>
       <input type="date" id="data" required>
 
       <button type="submit">Enviar Solicitação</button>
@@ -42,10 +43,11 @@
       const materialSelect = document.getElementById('material');
 
       try {
-        // Carrega obras.json
-        const obrasResponse = await fetch('https://george-impar.github.io/erp-impar/obras.json');
-        if (!obrasResponse.ok) throw new Error('Erro ao carregar obras');
+        console.debug("🔄 Carregando obras.json...");
+        const obrasResponse = await fetch('obras.json');
+        if (!obrasResponse.ok) throw new Error('Erro HTTP obras: ' + obrasResponse.status);
         const obras = await obrasResponse.json();
+        console.debug("✅ Obras carregadas:", obras);
 
         obras.forEach(o => {
           const option = document.createElement('option');
@@ -54,48 +56,58 @@
           obraSelect.appendChild(option);
         });
 
-        // Carrega materiais.json
-        const materiaisResponse = await fetch('https://george-impar.github.io/erp-impar/materiais.json');
-        if (!materiaisResponse.ok) throw new Error('Erro ao carregar materiais');
+        console.debug("📋 Combo de obras preenchido.");
+
+        console.debug("🔄 Carregando materiais.json...");
+        const materiaisResponse = await fetch('materiais.json');
+        if (!materiaisResponse.ok) throw new Error('Erro HTTP materiais: ' + materiaisResponse.status);
         const materiais = await materiaisResponse.json();
+        console.debug("✅ Materiais carregados:", materiais);
 
-        materiais.forEach(m => {
-          const option = document.createElement('option');
-          option.value = m.nome;
-          option.textContent = m.nome;
-          materialSelect.appendChild(option);
-        });
+        materiais
+          .sort((a, b) => a.Material.localeCompare(b.Material))
+          .forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.Material;
+            option.textContent = `${m.Material} (${m.UND})`;
+            materialSelect.appendChild(option);
+          });
 
+        console.debug("📋 Combo de materiais preenchido.");
       } catch (error) {
-        console.error('Erro ao carregar dados:', error);
+        console.error("🚨 Erro ao carregar dados:", error);
         alert('Falha ao carregar dados de obras ou materiais.');
       }
 
-      // Envio do formulário com EmailJS
       document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
         e.preventDefault();
+        console.debug("➡️ Enviando solicitação...");
 
         const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
         if (!usuarioLogado) {
+          console.error("🚨 Nenhum usuário logado encontrado no localStorage.");
           alert('Erro: Nenhum usuário logado.');
           return;
         }
 
         const templateParams = {
           usuario: usuarioLogado.Nome,
-          email: usuarioLogado.Email,
+          from_email: usuarioLogado.Email,
           obra: obraSelect.value,
           material: materialSelect.value,
           quantidade: document.getElementById('quantidade').value,
           data: document.getElementById('data').value
         };
 
-        emailjs.send("default_service", "template_solicitacao", templateParams, "y9uEI707W6r53cp0ufRoG")
+        console.debug("📦 Dados enviados ao EmailJS:", templateParams);
+
+        emailjs.send("default_service", "template_solicitacao", templateParams)
           .then(() => {
-            alert('Solicitação enviada com sucesso!');
+            console.debug("✅ Solicitação enviada via EmailJS!");
+            alert('E-mail com o relatório de compras enviado com sucesso!');
             document.getElementById('solicitacaoForm').reset();
           }, (error) => {
-            console.error('Erro ao enviar email:', error);
+            console.error("🚨 Erro ao enviar EmailJS:", error);
             alert('Erro ao enviar solicitação. Tente novamente.');
           });
       });
