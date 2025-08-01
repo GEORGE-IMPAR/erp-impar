@@ -8,9 +8,50 @@
   <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
   <script>
     (function(){
-      emailjs.init("WddODLBw11FUrjP-q"); // Public Key do EmailJS
+      emailjs.init("WddODLBw11FUrjP-q"); // Sua public key
     })();
   </script>
+  <style>
+    /* Estilo extra para popups e lista */
+    .popup {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #28a745;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      display: none;
+      z-index: 1000;
+      animation: fadeIn 0.4s ease;
+    }
+    .popup.error {
+      background: #dc3545;
+    }
+    .materiais-lista {
+      margin-top: 20px;
+      text-align: left;
+    }
+    .materiais-lista table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .materiais-lista th, .materiais-lista td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: center;
+    }
+    .materiais-lista th {
+      background: #f8f9fa;
+      font-weight: bold;
+    }
+    .btn-remover {
+      color: red;
+      cursor: pointer;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
   <div class="solicitacao-container">
@@ -20,6 +61,13 @@
       <label for="obra">Obra:</label>
       <select id="obra" required>
         <option value="">Selecione a obra...</option>
+      </select>
+
+      <label for="localEntrega">Local de Entrega:</label>
+      <select id="localEntrega" required>
+        <option value="">Selecione...</option>
+        <option value="Impar">Impar</option>
+        <option value="Cliente">Cliente</option>
       </select>
 
       <label for="material">Material:</label>
@@ -33,84 +81,137 @@
       <label for="data">Prazo limite de entrega:</label>
       <input type="date" id="data" required>
 
+      <button type="button" id="adicionarBtn">Adicionar Material</button>
+
+      <div class="materiais-lista" id="materiaisLista">
+        <h3>Materiais Adicionados</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>UND</th>
+              <th>Quantidade</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="listaMateriaisBody"></tbody>
+        </table>
+      </div>
+
       <button type="submit">Enviar Solicitação</button>
     </form>
   </div>
+
+  <div id="popup" class="popup"></div>
 
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const obraSelect = document.getElementById('obra');
       const materialSelect = document.getElementById('material');
+      const listaMateriaisBody = document.getElementById('listaMateriaisBody');
+      const popup = document.getElementById('popup');
+      let materiaisSelecionados = [];
+
+      function mostrarPopup(msg, isError=false) {
+        popup.textContent = msg;
+        popup.className = 'popup' + (isError ? ' error' : '');
+        popup.style.display = 'block';
+        setTimeout(() => popup.style.display = 'none', 4000);
+      }
 
       try {
         console.debug("🔄 Carregando obras.json...");
         const obrasResponse = await fetch('obras.json');
-        if (!obrasResponse.ok) throw new Error('Erro HTTP obras: ' + obrasResponse.status);
         const obras = await obrasResponse.json();
-        console.debug("✅ Obras carregadas:", obras);
-
         obras.forEach(o => {
           const option = document.createElement('option');
-          option.value = `${o.Obra} (${o['Centro de Custo']})`;
+          option.value = o.Obra;
           option.textContent = `${o.Obra} (${o['Centro de Custo']})`;
           obraSelect.appendChild(option);
         });
 
-        console.debug("📋 Combo de obras preenchido.");
-
         console.debug("🔄 Carregando materiais.json...");
         const materiaisResponse = await fetch('materiais.json');
-        if (!materiaisResponse.ok) throw new Error('Erro HTTP materiais: ' + materiaisResponse.status);
         const materiais = await materiaisResponse.json();
-        console.debug("✅ Materiais carregados:", materiais);
+        materiais.sort((a, b) => a.Material.localeCompare(b.Material));
+        materiais.forEach(m => {
+          const option = document.createElement('option');
+          option.value = JSON.stringify(m);
+          option.textContent = `${m.Material} (${m.UND})`;
+          materialSelect.appendChild(option);
+        });
 
-        materiais
-          .sort((a, b) => a.Material.localeCompare(b.Material))
-          .forEach(m => {
-            const option = document.createElement('option');
-            option.value = m.Material;
-            option.textContent = `${m.Material} (${m.UND})`;
-            materialSelect.appendChild(option);
+        document.getElementById('adicionarBtn').addEventListener('click', () => {
+          const materialObj = JSON.parse(materialSelect.value || '{}');
+          const quantidade = document.getElementById('quantidade').value;
+
+          if (!materialObj.Material || !quantidade) {
+            mostrarPopup("Selecione material e informe a quantidade!", true);
+            return;
+          }
+
+          materiaisSelecionados.push({
+            Material: materialObj.Material,
+            UND: materialObj.UND,
+            Quantidade: quantidade
           });
 
-        console.debug("📋 Combo de materiais preenchido.");
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${materialObj.Material}</td>
+            <td>${materialObj.UND}</td>
+            <td>${quantidade}</td>
+            <td><span class="btn-remover">❌</span></td>
+          `;
+          row.querySelector('.btn-remover').addEventListener('click', () => {
+            row.remove();
+            materiaisSelecionados = materiaisSelecionados.filter(m => m.Material !== materialObj.Material);
+          });
+          listaMateriaisBody.appendChild(row);
+          mostrarPopup("Material adicionado com sucesso!");
+        });
+
+        document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
+          e.preventDefault();
+
+          const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+          if (!usuarioLogado) {
+            mostrarPopup("Erro: Nenhum usuário logado.", true);
+            return;
+          }
+
+          if (materiaisSelecionados.length === 0) {
+            mostrarPopup("Adicione pelo menos um material!", true);
+            return;
+          }
+
+          const templateParams = {
+            usuario: usuarioLogado.Nome,
+            from_email: usuarioLogado.Email,
+            obra: obraSelect.value,
+            localEntrega: document.getElementById('localEntrega').value,
+            data: document.getElementById('data').value,
+            materiais: JSON.stringify(materiaisSelecionados, null, 2)
+          };
+
+          console.debug("📦 Dados enviados ao EmailJS:", templateParams);
+
+          emailjs.send("service_SEU_ID", "template_SEU_ID", templateParams)
+            .then(() => {
+              mostrarPopup("E-mail com o relatório de compras enviado com sucesso!");
+              document.getElementById('solicitacaoForm').reset();
+              listaMateriaisBody.innerHTML = "";
+              materiaisSelecionados = [];
+            }, (error) => {
+              console.error("🚨 Erro ao enviar EmailJS:", error);
+              mostrarPopup("Erro ao enviar solicitação. Verifique os dados.", true);
+            });
+        });
+
       } catch (error) {
         console.error("🚨 Erro ao carregar dados:", error);
-        alert('Falha ao carregar dados de obras ou materiais.');
+        mostrarPopup("Falha ao carregar dados de obras ou materiais.", true);
       }
-
-      document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        console.debug("➡️ Enviando solicitação...");
-
-        const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
-        if (!usuarioLogado) {
-          console.error("🚨 Nenhum usuário logado encontrado no localStorage.");
-          alert('Erro: Nenhum usuário logado.');
-          return;
-        }
-
-        const templateParams = {
-          usuario: usuarioLogado.Nome,
-          from_email: usuarioLogado.Email,
-          obra: obraSelect.value,
-          material: materialSelect.value,
-          quantidade: document.getElementById('quantidade').value,
-          data: document.getElementById('data').value
-        };
-
-        console.debug("📦 Dados enviados ao EmailJS:", templateParams);
-
-        emailjs.send("default_service", "template_solicitacao", templateParams)
-          .then(() => {
-            console.debug("✅ Solicitação enviada via EmailJS!");
-            alert('E-mail com o relatório de compras enviado com sucesso!');
-            document.getElementById('solicitacaoForm').reset();
-          }, (error) => {
-            console.error("🚨 Erro ao enviar EmailJS:", error);
-            alert('Erro ao enviar solicitação. Tente novamente.');
-          });
-      });
     });
   </script>
 </body>
