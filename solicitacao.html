@@ -3,42 +3,103 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Solicitação - ERP Ímpar</title>
-  <link href="assets/css/style.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
+  <title>Solicitação de Materiais - ERP Ímpar</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
+  <script>
+    (function(){
+      emailjs.init("WddODLBw11FUrjP-q"); // sua Public Key
+    })();
+  </script>
 </head>
 <body>
-  <div class="solicitacao-card">
-    <header>
-      <h2>Solicitação de Materiais</h2>
-      <p><b id="nomeUsuario"></b> - <span id="emailUsuario"></span></p>
-    </header>
-    <form>
+  <div class="solicitacao-container">
+    <h2>Solicitação de Materiais</h2>
+    <form id="solicitacaoForm">
       <label for="obra">Obra:</label>
-      <select id="obra"></select>
-      <label for="centroCusto">Centro de Custo:</label>
-      <input type="text" id="centroCusto" readonly style="background:#eee;">
-      <label for="localEntrega">Local de Entrega:</label>
-      <select id="localEntrega">
-        <option value="Impar">Ímpar</option>
-        <option value="Cliente">Cliente</option>
+      <select id="obra" required>
+        <option value="">Selecione a obra...</option>
       </select>
-      <label for="prazoEntrega">Prazo Limite de Entrega:</label>
-      <input type="date" id="prazoEntrega">
+
       <label for="material">Material:</label>
-      <select id="material"></select>
+      <select id="material" required>
+        <option value="">Selecione o material...</option>
+      </select>
+
       <label for="quantidade">Quantidade:</label>
-      <input type="number" id="quantidade" inputmode="numeric">
-      <button type="button" id="btnAdicionar">Adicionar Material</button>
+      <input type="number" id="quantidade" min="1" required>
+
+      <label for="data">Data limite de entrega:</label>
+      <input type="date" id="data" required>
+
+      <button type="submit">Enviar Solicitação</button>
     </form>
-    <table id="tabelaMateriais">
-      <thead><tr><th>Material</th><th>UND</th><th>Qtd</th><th>Ação</th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <button id="btnExportar">Baixar Relatório e Enviar por E-mail</button>
   </div>
-  <script src="assets/js/script.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const obraSelect = document.getElementById('obra');
+      const materialSelect = document.getElementById('material');
+
+      try {
+        // Carrega obras.json
+        const obrasResponse = await fetch('https://george-impar.github.io/erp-impar/obras.json');
+        if (!obrasResponse.ok) throw new Error('Erro ao carregar obras');
+        const obras = await obrasResponse.json();
+
+        obras.forEach(o => {
+          const option = document.createElement('option');
+          option.value = `${o.Obra} (${o['Centro de Custo']})`;
+          option.textContent = `${o.Obra} (${o['Centro de Custo']})`;
+          obraSelect.appendChild(option);
+        });
+
+        // Carrega materiais.json
+        const materiaisResponse = await fetch('https://george-impar.github.io/erp-impar/materiais.json');
+        if (!materiaisResponse.ok) throw new Error('Erro ao carregar materiais');
+        const materiais = await materiaisResponse.json();
+
+        materiais.forEach(m => {
+          const option = document.createElement('option');
+          option.value = m.nome;
+          option.textContent = m.nome;
+          materialSelect.appendChild(option);
+        });
+
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        alert('Falha ao carregar dados de obras ou materiais.');
+      }
+
+      // Envio do formulário com EmailJS
+      document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+        if (!usuarioLogado) {
+          alert('Erro: Nenhum usuário logado.');
+          return;
+        }
+
+        const templateParams = {
+          usuario: usuarioLogado.Nome,
+          email: usuarioLogado.Email,
+          obra: obraSelect.value,
+          material: materialSelect.value,
+          quantidade: document.getElementById('quantidade').value,
+          data: document.getElementById('data').value
+        };
+
+        emailjs.send("default_service", "template_solicitacao", templateParams, "y9uEI707W6r53cp0ufRoG")
+          .then(() => {
+            alert('Solicitação enviada com sucesso!');
+            document.getElementById('solicitacaoForm').reset();
+          }, (error) => {
+            console.error('Erro ao enviar email:', error);
+            alert('Erro ao enviar solicitação. Tente novamente.');
+          });
+      });
+    });
+  </script>
 </body>
 </html>
