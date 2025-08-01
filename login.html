@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login - ERP Ímpar</title>
   <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    .popup {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #28a745;
+      color: white;
+      font-size: 1.2rem;
+      padding: 15px 25px;
+      border-radius: 8px;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+      display: none;
+      z-index: 2000;
+      animation: bounceIn 0.5s ease;
+    }
+    .popup.error { background: #dc3545; }
+    @keyframes bounceIn {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      60% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+  </style>
 </head>
 <body>
   <div class="login-container">
@@ -25,6 +48,81 @@
     </form>
   </div>
 
-  <script src="assets/js/script.js"></script>
+  <div id="popup" class="popup"></div>
+
+  <script>
+    function mostrarPopup(msg, isError=false) {
+      const popup = document.getElementById('popup');
+      popup.textContent = msg;
+      popup.className = 'popup ' + (isError ? 'error' : 'success');
+      popup.style.display = 'block';
+      setTimeout(() => popup.style.display = 'none', 4000);
+    }
+
+    const toggleSenha = document.getElementById('toggleSenha');
+    toggleSenha.addEventListener('click', () => {
+      const senhaInput = document.getElementById('senha');
+      if (senhaInput.type === 'password') {
+        senhaInput.type = 'text';
+        toggleSenha.textContent = '🙈';
+      } else {
+        senhaInput.type = 'password';
+        toggleSenha.textContent = '👁️';
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const usuarioSelect = document.getElementById('usuario');
+      try {
+        const response = await fetch('usuarios.json');
+        const usuarios = await response.json();
+
+        usuarios.forEach(user => {
+          const option = document.createElement('option');
+          option.value = user.Email;
+          option.textContent = user.Email;
+          usuarioSelect.appendChild(option);
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const email = usuarioSelect.value;
+          const senha = document.getElementById('senha').value;
+          const usuarioValido = usuarios.find(u =>
+            u.Email.trim().toLowerCase() === email.trim().toLowerCase() &&
+            u.Senha.trim() === senha.trim()
+          );
+
+          if (usuarioValido) {
+            try {
+              const obrasResponse = await fetch('obras.json');
+              const obras = await obrasResponse.json();
+              const obrasUsuario = obras.filter(o =>
+                o.Email.trim().toLowerCase() === usuarioValido.Email.trim().toLowerCase()
+              );
+
+              if (obrasUsuario.length === 0) {
+                mostrarPopup("Usuário sem obra associada! Contate o administrador.", true);
+                setTimeout(() => window.location.reload(), 3000);
+                return;
+              }
+
+              usuarioValido.obras = obrasUsuario;
+              localStorage.setItem('usuarioLogado', JSON.stringify(usuarioValido));
+              mostrarPopup("Login realizado com sucesso!");
+              setTimeout(() => window.location.href = 'solicitacao.html', 2000);
+
+            } catch (error) {
+              mostrarPopup("Erro ao verificar obras. Tente novamente.", true);
+            }
+          } else {
+            mostrarPopup("Usuário ou senha inválidos!", true);
+          }
+        });
+      } catch (error) {
+        mostrarPopup("Falha ao carregar usuários.", true);
+      }
+    });
+  </script>
 </body>
 </html>

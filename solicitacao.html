@@ -8,67 +8,56 @@
   <script src="https://cdn.jsdelivr.net/npm/emailjs-com@2/dist/email.min.js"></script>
   <script>
     (function(){
-      emailjs.init("WddODLBw11FUrjP-q"); // Sua public key
+      emailjs.init("WddODLBw11FUrjP-q");
     })();
   </script>
   <style>
-    /* Estilo extra para popups e lista */
     .popup {
       position: fixed;
       top: 20px;
-      right: 20px;
+      left: 50%;
+      transform: translateX(-50%);
       background: #28a745;
       color: white;
-      padding: 12px 20px;
+      font-size: 1.2rem;
+      padding: 15px 25px;
       border-radius: 8px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      box-shadow: 0 6px 15px rgba(0,0,0,0.3);
       display: none;
-      z-index: 1000;
-      animation: fadeIn 0.4s ease;
+      z-index: 2000;
+      animation: bounceIn 0.5s ease;
     }
-    .popup.error {
-      background: #dc3545;
+    .popup.error { background: #dc3545; }
+    @keyframes bounceIn {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+      60% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); }
     }
-    .materiais-lista {
-      margin-top: 20px;
-      text-align: left;
-    }
-    .materiais-lista table {
-      width: 100%;
-      border-collapse: collapse;
-    }
+    .btn-remover { color: red; cursor: pointer; font-weight: bold; }
+    .materiais-lista table { width: 100%; border-collapse: collapse; margin-top: 15px; }
     .materiais-lista th, .materiais-lista td {
       border: 1px solid #ddd;
       padding: 8px;
       text-align: center;
     }
-    .materiais-lista th {
-      background: #f8f9fa;
-      font-weight: bold;
-    }
-    .btn-remover {
-      color: red;
-      cursor: pointer;
-      font-weight: bold;
-    }
+    .materiais-lista th { background: #f8f9fa; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="solicitacao-container">
     <h2>Solicitação de Materiais</h2>
     <form id="solicitacaoForm">
-      
+
       <label for="obra">Obra:</label>
       <select id="obra" required>
         <option value="">Selecione a obra...</option>
       </select>
 
-      <label for="localEntrega">Local de Entrega:</label>
-      <select id="localEntrega" required>
-        <option value="">Selecione...</option>
-        <option value="Impar">Impar</option>
-        <option value="Cliente">Cliente</option>
-      </select>
+      <label for="centroCusto">Centro de Custo:</label>
+      <input type="text" id="centroCusto" disabled style="background:#eee;">
+
+      <label for="data">Prazo limite de entrega:</label>
+      <input type="date" id="data" required>
 
       <label for="material">Material:</label>
       <select id="material" required>
@@ -78,13 +67,9 @@
       <label for="quantidade">Quantidade:</label>
       <input type="number" id="quantidade" min="1" inputmode="numeric" required>
 
-      <label for="data">Prazo limite de entrega:</label>
-      <input type="date" id="data" required>
-
       <button type="button" id="adicionarBtn">Adicionar Material</button>
 
       <div class="materiais-lista" id="materiaisLista">
-        <h3>Materiais Adicionados</h3>
         <table>
           <thead>
             <tr>
@@ -98,6 +83,13 @@
         </table>
       </div>
 
+      <label for="localEntrega">Local de Entrega:</label>
+      <select id="localEntrega" required>
+        <option value="">Selecione...</option>
+        <option value="Impar">Impar</option>
+        <option value="Cliente">Cliente</option>
+      </select>
+
       <button type="submit">Enviar Solicitação</button>
     </form>
   </div>
@@ -105,32 +97,41 @@
   <div id="popup" class="popup"></div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-      const obraSelect = document.getElementById('obra');
-      const materialSelect = document.getElementById('material');
-      const listaMateriaisBody = document.getElementById('listaMateriaisBody');
+    function mostrarPopup(msg, isError=false) {
       const popup = document.getElementById('popup');
-      let materiaisSelecionados = [];
+      popup.textContent = msg;
+      popup.className = 'popup ' + (isError ? 'error' : 'success');
+      popup.style.display = 'block';
+      setTimeout(() => popup.style.display = 'none', 4000);
+    }
 
-      function mostrarPopup(msg, isError=false) {
-        popup.textContent = msg;
-        popup.className = 'popup' + (isError ? ' error' : '');
-        popup.style.display = 'block';
-        setTimeout(() => popup.style.display = 'none', 4000);
+    document.addEventListener('DOMContentLoaded', async () => {
+      const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
+      if (!usuarioLogado || !usuarioLogado.obras) {
+        mostrarPopup("Erro: Nenhum usuário logado ou sem obra associada.", true);
+        setTimeout(() => window.location.href = 'login.html', 3000);
+        return;
       }
 
-      try {
-        console.debug("🔄 Carregando obras.json...");
-        const obrasResponse = await fetch('obras.json');
-        const obras = await obrasResponse.json();
-        obras.forEach(o => {
-          const option = document.createElement('option');
-          option.value = o.Obra;
-          option.textContent = `${o.Obra} (${o['Centro de Custo']})`;
-          obraSelect.appendChild(option);
-        });
+      const obraSelect = document.getElementById('obra');
+      const centroCustoInput = document.getElementById('centroCusto');
+      const materialSelect = document.getElementById('material');
+      const listaMateriaisBody = document.getElementById('listaMateriaisBody');
+      let materiaisSelecionados = [];
 
-        console.debug("🔄 Carregando materiais.json...");
+      usuarioLogado.obras.forEach(o => {
+        const option = document.createElement('option');
+        option.value = o.Obra;
+        option.textContent = `${o.Obra} (${o['Centro de Custo']})`;
+        obraSelect.appendChild(option);
+      });
+
+      obraSelect.addEventListener('change', e => {
+        const obraSelecionada = usuarioLogado.obras.find(o => o.Obra === e.target.value);
+        centroCustoInput.value = obraSelecionada ? obraSelecionada['Centro de Custo'] : '';
+      });
+
+      try {
         const materiaisResponse = await fetch('materiais.json');
         const materiais = await materiaisResponse.json();
         materiais.sort((a, b) => a.Material.localeCompare(b.Material));
@@ -174,12 +175,6 @@
         document.getElementById('solicitacaoForm').addEventListener('submit', function(e) {
           e.preventDefault();
 
-          const usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado'));
-          if (!usuarioLogado) {
-            mostrarPopup("Erro: Nenhum usuário logado.", true);
-            return;
-          }
-
           if (materiaisSelecionados.length === 0) {
             mostrarPopup("Adicione pelo menos um material!", true);
             return;
@@ -189,28 +184,25 @@
             usuario: usuarioLogado.Nome,
             from_email: usuarioLogado.Email,
             obra: obraSelect.value,
+            centroCusto: centroCustoInput.value,
             localEntrega: document.getElementById('localEntrega').value,
             data: document.getElementById('data').value,
             materiais: JSON.stringify(materiaisSelecionados, null, 2)
           };
 
-          console.debug("📦 Dados enviados ao EmailJS:", templateParams);
-
-          emailjs.send("service_SEU_ID", "template_SEU_ID", templateParams)
+          emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams)
             .then(() => {
               mostrarPopup("E-mail com o relatório de compras enviado com sucesso!");
               document.getElementById('solicitacaoForm').reset();
               listaMateriaisBody.innerHTML = "";
               materiaisSelecionados = [];
             }, (error) => {
-              console.error("🚨 Erro ao enviar EmailJS:", error);
               mostrarPopup("Erro ao enviar solicitação. Verifique os dados.", true);
             });
         });
 
       } catch (error) {
-        console.error("🚨 Erro ao carregar dados:", error);
-        mostrarPopup("Falha ao carregar dados de obras ou materiais.", true);
+        mostrarPopup("Falha ao carregar materiais.", true);
       }
     });
   </script>
