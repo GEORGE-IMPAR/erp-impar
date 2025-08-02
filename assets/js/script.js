@@ -1,198 +1,134 @@
-document.addEventListener("DOMContentLoaded", async () => {
-  const loginForm = document.getElementById("loginForm");
-  const solicitacaoForm = document.getElementById("solicitacaoForm");
+// ✅ Logs iniciais para confirmar carregamento
+console.log("🚀 script.js carregado com sucesso");
 
-  // === LOGIN ===
-  if (loginForm) {
-    const toggleSenha = document.getElementById("toggleSenha");
-    const senhaInput = document.getElementById("senha");
+// Função utilitária para exibir alertas bonitos
+function showAlert(title, text, icon = "info") {
+  Swal.fire({
+    title: title,
+    text: text,
+    icon: icon,
+    confirmButtonText: "OK",
+    backdrop: true
+  });
+}
 
-    if (toggleSenha && senhaInput) {
-      toggleSenha.addEventListener("click", () => {
-        senhaInput.type = senhaInput.type === "password" ? "text" : "password";
-        toggleSenha.textContent = senhaInput.type === "password" ? "👁️" : "🙈";
+document.addEventListener("DOMContentLoaded", () => {
+  // Carregar usuários no login
+  const selectUsuario = document.getElementById("usuario");
+  if (selectUsuario) {
+    console.log("🔍 Carregando usuarios.json...");
+    fetch("usuarios.json")
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(usuarios => {
+        console.log("✅ Usuários carregados:", usuarios);
+        usuarios.forEach(u => {
+          const option = document.createElement("option");
+          option.value = u.Email;
+          option.textContent = u.Nome;
+          selectUsuario.appendChild(option);
+        });
+      })
+      .catch(err => {
+        console.error("❌ Erro ao carregar usuarios.json:", err);
+        showAlert("Erro", "Falha ao carregar a lista de usuários.", "error");
       });
-    }
+  }
 
-    loginForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+  // Carregar obras
+  const selectObra = document.getElementById("obra");
+  const centroCusto = document.getElementById("centroCusto");
+  if (selectObra && centroCusto) {
+    console.log("🔍 Carregando obras.json...");
+    fetch("obras.json")
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(obras => {
+        console.log("✅ Obras carregadas:", obras);
+        obras.forEach(o => {
+          const option = document.createElement("option");
+          option.value = o.Obra;
+          option.textContent = o.Obra;
+          option.dataset.centroCusto = o["Centro de Custo"];
+          option.dataset.email = o.Email;
+          selectObra.appendChild(option);
+        });
 
-      const email = document.getElementById("email").value.trim().toLowerCase();
-      const senha = senhaInput.value.trim();
+        // Atualizar centro de custo ao escolher obra
+        selectObra.addEventListener("change", () => {
+          const selected = selectObra.selectedOptions[0];
+          if (selected) {
+            centroCusto.value = selected.dataset.centroCusto || "";
+          }
+        });
+      })
+      .catch(err => {
+        console.error("❌ Erro ao carregar obras.json:", err);
+        showAlert("Erro", "Falha ao carregar a lista de obras.", "error");
+      });
+  }
 
-      try {
-        console.log("🔍 Buscando usuarios.json...");
-        const response = await fetch("https://george-impar.github.io/erp-impar/usuarios.json");
-        if (!response.ok) throw new Error(`Erro HTTP ${response.status}`);
-        const usuarios = await response.json();
-
-        console.log("📂 Usuários carregados:", usuarios);
-
-        const usuario = usuarios.find(
-          (u) =>
-            u.Email.trim().toLowerCase() === email &&
-            u.Senha.trim() === senha
-        );
-
-        if (usuario) {
-          console.log("✅ Usuário autenticado:", usuario.Email);
-          localStorage.setItem("usuarioLogado", JSON.stringify(usuario));
-          Swal.fire("Sucesso", "Login realizado com sucesso!", "success").then(
-            () => (window.location.href = "solicitacao.html")
-          );
-        } else {
-          Swal.fire("Erro", "Email ou senha inválidos.", "error");
-        }
-      } catch (error) {
-        console.error("❌ Erro ao carregar usuários:", error);
-        Swal.fire("Erro", "Falha ao validar login.", "error");
+  // Controle do olho da senha
+  const toggleSenha = document.getElementById("toggleSenha");
+  if (toggleSenha) {
+    toggleSenha.addEventListener("click", () => {
+      const senhaInput = document.getElementById("senha");
+      if (senhaInput) {
+        senhaInput.type = senhaInput.type === "password" ? "text" : "password";
       }
     });
   }
 
-  // === SOLICITAÇÃO ===
-  if (solicitacaoForm) {
-    console.log("📦 Página de solicitação carregada.");
-    const obraSelect = document.getElementById("obra");
-    const centroCustoInput = document.getElementById("centroCusto");
-    const materialSelect = document.getElementById("material");
-    const quantidadeInput = document.getElementById("quantidade");
-    const adicionarBtn = document.getElementById("adicionarMaterial");
-    const tabelaBody = document.querySelector("#tabelaMateriais tbody");
-    const localEntregaSelect = document.getElementById("localEntrega");
-    const enviarBtn = document.getElementById("enviarSolicitacao");
-
-    let usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado")) || null;
-
-    if (!usuarioLogado) {
-      Swal.fire("Erro", "Faça login novamente.", "error").then(() => {
-        window.location.href = "login.html";
-      });
-      return;
-    }
-
-    // Carregar obras
-    try {
-      console.log("🔍 Buscando obras.json...");
-      const obrasResp = await fetch("https://george-impar.github.io/erp-impar/obras.json");
-      if (!obrasResp.ok) throw new Error(`Erro HTTP ${obrasResp.status}`);
-      const obras = await obrasResp.json();
-
-      const obrasUsuario = obras.filter(
-        (o) => o.Email.trim().toLowerCase() === usuarioLogado.Email.trim().toLowerCase()
-      );
-
-      console.log("📂 Obras do usuário:", obrasUsuario);
-
-      if (obrasUsuario.length === 0) {
-        Swal.fire("Aviso", "Nenhuma obra associada ao seu usuário.", "warning").then(
-          () => (window.location.href = "login.html")
-        );
-        return;
-      }
-
-      obrasUsuario.forEach((obra) => {
-        const opt = document.createElement("option");
-        opt.value = obra.Obra;
-        opt.textContent = obra.Obra;
-        obraSelect.appendChild(opt);
-      });
-
-      obraSelect.addEventListener("change", () => {
-        const obraSel = obrasUsuario.find((o) => o.Obra === obraSelect.value);
-        centroCustoInput.value = obraSel ? obraSel["Centro de Custo"] : "";
-        centroCustoInput.setAttribute("readonly", true);
-        centroCustoInput.style.backgroundColor = "#e0e0e0";
-      });
-    } catch (err) {
-      console.error("❌ Erro ao carregar obras:", err);
-      Swal.fire("Erro", "Falha ao carregar obras.", "error");
-    }
-
-    // Carregar materiais
-    try {
-      console.log("🔍 Buscando materiais.json...");
-      const materiaisResp = await fetch("https://george-impar.github.io/erp-impar/materiais.json");
-      if (!materiaisResp.ok) throw new Error(`Erro HTTP ${materiaisResp.status}`);
-      const materiais = await materiaisResp.json();
-      materiais.sort((a, b) => a.Material.localeCompare(b.Material));
-
-      console.log("📂 Materiais carregados:", materiais);
-
-      materiais.forEach((m) => {
-        const opt = document.createElement("option");
-        opt.value = m.Material;
-        opt.textContent = `${m.Material} (${m.UND})`;
-        opt.dataset.und = m.UND;
-        materialSelect.appendChild(opt);
-      });
-    } catch (err) {
-      console.error("❌ Erro ao carregar materiais:", err);
-      Swal.fire("Erro", "Falha ao carregar materiais.", "error");
-    }
-
-    // Adicionar material
-    adicionarBtn?.addEventListener("click", () => {
-      if (!materialSelect.value || !quantidadeInput.value) {
-        Swal.fire("Erro", "Selecione um material e informe a quantidade.", "error");
-        return;
-      }
-
-      const und = materialSelect.selectedOptions[0].dataset.und;
-      const row = tabelaBody.insertRow();
-      row.insertCell(0).textContent = materialSelect.value;
-      row.insertCell(1).textContent = und;
-      row.insertCell(2).textContent = quantidadeInput.value;
-
-      const cellAcao = row.insertCell(3);
-      const btnRemover = document.createElement("span");
-      btnRemover.textContent = "❌";
-      btnRemover.classList.add("btn-remover");
-      btnRemover.addEventListener("click", () => row.remove());
-      cellAcao.appendChild(btnRemover);
-
-      materialSelect.value = "";
-      quantidadeInput.value = "";
-    });
-
-    // Enviar solicitação
-    enviarBtn?.addEventListener("click", async (e) => {
+  // Envio da solicitação
+  const formSolicitacao = document.getElementById("formSolicitacao");
+  if (formSolicitacao) {
+    formSolicitacao.addEventListener("submit", (e) => {
       e.preventDefault();
 
-      if (!obraSelect.value || !centroCustoInput.value || tabelaBody.rows.length === 0 || !localEntregaSelect.value) {
-        Swal.fire("Erro", "Preencha todos os campos antes de enviar.", "error");
+      const nome = JSON.parse(localStorage.getItem("usuarioLogado"))?.Nome;
+      const from_email = JSON.parse(localStorage.getItem("usuarioLogado"))?.Email;
+      const obra = selectObra?.value || "";
+      const centro = centroCusto?.value || "";
+      const localEntrega = document.getElementById("localEntrega")?.value || "";
+      const materiais = [];
+
+      document.querySelectorAll("#tabelaMateriais tbody tr").forEach(row => {
+        materiais.push({
+          material: row.cells[0].textContent,
+          unidade: row.cells[1].textContent,
+          quantidade: row.cells[2].textContent
+        });
+      });
+
+      if (!obra || !centro || materiais.length === 0 || !localEntrega) {
+        showAlert("Atenção", "Preencha todos os campos antes de enviar.", "warning");
         return;
       }
 
-      let materiaisLista = [];
-      for (let row of tabelaBody.rows) {
-        materiaisLista.push({
-          material: row.cells[0].textContent,
-          und: row.cells[1].textContent,
-          quantidade: row.cells[2].textContent,
-        });
-      }
-
-      const parametros = {
-        nome: usuarioLogado.Nome,
-        from_email: usuarioLogado.Email,
-        obra: obraSelect.value,
+      const params = {
+        nome,
+        from_email,
+        obra,
+        numero: centro,
         data: new Date().toLocaleDateString("pt-BR"),
-        numero: centroCustoInput.value,
-        materiais: JSON.stringify(materiaisLista, null, 2),
-        local_entrega: localEntregaSelect.value,
+        materiais: JSON.stringify(materiais),
+        local_entrega: localEntrega
       };
 
-      console.log("📧 Enviando com parâmetros:", parametros);
+      console.log("📧 Enviando com parâmetros:", params);
 
-      try {
-        const res = await emailjs.send("service_fzht86y", "template_wz0ywdo", parametros);
-        Swal.fire("Sucesso", "Solicitação enviada por e‑mail!", "success");
-        console.log("✅ EmailJS resposta:", res);
-      } catch (erro) {
-        console.error("❌ Erro EmailJS:", erro);
-        Swal.fire("Erro", "Falha ao enviar o e‑mail.", "error");
-      }
+      emailjs.send("service_fzht86y", "template_wz0ywdo", params)
+        .then(() => {
+          showAlert("Sucesso", "Solicitação enviada com sucesso!", "success");
+        })
+        .catch((err) => {
+          console.error("❌ Erro EmailJS:", err);
+          showAlert("Erro", "Falha ao enviar a solicitação. Verifique os logs.", "error");
+        });
     });
   }
 });
