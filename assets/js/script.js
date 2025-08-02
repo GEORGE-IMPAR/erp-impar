@@ -96,14 +96,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         obrasUsuario.forEach(o => {
           const opt = document.createElement("option");
           opt.value = o.Obra;
-          opt.textContent = `${o.Obra} (${o.CentroCusto})`;
+          opt.textContent = `${o.Obra} (${o["Centro de Custo"]})`;
           obraSelect.appendChild(opt);
         });
       }
 
       obraSelect.addEventListener("change", () => {
         const obraSel = obrasUsuario.find(o => o.Obra === obraSelect.value);
-        centroCustoInput.value = obraSel ? obraSel.CentroCusto : "";
+        centroCustoInput.value = obraSel ? obraSel["Centro de Custo"] : "";
       });
     } catch {
       Swal.fire("Erro", "Falha ao carregar obras.", "error");
@@ -129,7 +129,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Adicionar material
     document.getElementById("adicionarMaterial").addEventListener("click", () => {
       const materialOpt = materialSelect.options[materialSelect.selectedIndex];
-      const und = materialOpt.getAttribute("data-und");
+      const und = materialOpt ? materialOpt.getAttribute("data-und") : "";
 
       if (!materialSelect.value || !quantidadeInput.value) {
         Swal.fire("Erro", "Preencha material e quantidade.", "error");
@@ -153,8 +153,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     solicitacaoForm.addEventListener("submit", (e) => {
       e.preventDefault();
 
-      if (!obraSelect.value || !centroCustoInput.value || tabelaBody.rows.length === 0 || !localEntregaSelect.value) {
-        Swal.fire("Erro", "Preencha todos os campos antes de enviar.", "error");
+      if (!obraSelect.value || !centroCustoInput.value || !localEntregaSelect.value || !document.getElementById("dataLimite").value) {
+        Swal.fire("Erro", "Preencha todos os campos obrigatórios antes de enviar.", "error");
         return;
       }
 
@@ -169,7 +169,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const params = {
         nome: usuarioLogado.Nome,
-        from_email: usuarioLogado.Email,
+        from_email: "george@imparsistemas.com", // fixo para evitar erro 412
+        reply_to: usuarioLogado.Email,          // usuário logado para resposta
         obra: obraSelect.value,
         centro_custo: centroCustoInput.value,
         local_entrega: localEntregaSelect.value,
