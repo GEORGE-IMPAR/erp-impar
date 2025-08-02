@@ -1,4 +1,7 @@
-emailjs.init("WddODLBw11FUrjP-q");
+// Inicializa EmailJS só se disponível (na tela de solicitação)
+if (typeof emailjs !== "undefined") {
+  emailjs.init("WddODLBw11FUrjP-q");
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   const usuarioSelect = document.getElementById("usuario");
@@ -10,11 +13,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Alternar visibilidade da senha
   if (toggleSenha) {
     toggleSenha.addEventListener("click", () => {
-      senhaInput.type = senhaInput.type === "password" ? "text" : "password";
+      if (senhaInput.type === "password") {
+        senhaInput.type = "text";
+        toggleSenha.textContent = "🙈";
+      } else {
+        senhaInput.type = "password";
+        toggleSenha.textContent = "👁️";
+      }
     });
   }
 
-  // Carregar usuários
+  // Carregar usuários no login
   if (usuarioSelect) {
     try {
       const resp = await fetch("usuarios.json");
@@ -27,11 +36,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         usuarioSelect.appendChild(opt);
       });
     } catch (err) {
+      console.error("Erro ao carregar usuários:", err);
       Swal.fire("Erro", "Falha ao carregar a lista de usuários.", "error");
     }
   }
 
-  // Login
+  // Validação do login
   if (loginForm) {
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -50,7 +60,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
           Swal.fire("Erro", "Usuário ou senha inválidos.", "error");
         }
-      } catch {
+      } catch (err) {
+        console.error("Erro no login:", err);
         Swal.fire("Erro", "Falha ao validar login.", "error");
       }
     });
@@ -98,8 +109,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       Swal.fire("Erro", "Falha ao carregar obras.", "error");
     }
 
+    // Carregar materiais
+    try {
+      const respMat = await fetch("materiais.json");
+      const materiais = await respMat.json();
+      materiais.sort((a, b) => a.Material.localeCompare(b.Material));
+
+      materiais.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m.Material;
+        opt.textContent = `${m.Material} (${m.UND})`;
+        opt.setAttribute("data-und", m.UND);
+        materialSelect.appendChild(opt);
+      });
+    } catch {
+      Swal.fire("Erro", "Falha ao carregar materiais.", "error");
+    }
+
     // Adicionar material
     document.getElementById("adicionarMaterial").addEventListener("click", () => {
+      const materialOpt = materialSelect.options[materialSelect.selectedIndex];
+      const und = materialOpt.getAttribute("data-und");
+
       if (!materialSelect.value || !quantidadeInput.value) {
         Swal.fire("Erro", "Preencha material e quantidade.", "error");
         return;
@@ -107,7 +138,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const row = tabelaBody.insertRow();
       row.insertCell(0).textContent = materialSelect.value;
-      row.insertCell(1).textContent = "Un";
+      row.insertCell(1).textContent = und;
       row.insertCell(2).textContent = quantidadeInput.value;
 
       const acaoCell = row.insertCell(3);
