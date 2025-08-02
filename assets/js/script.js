@@ -1,13 +1,13 @@
-// Inicialização EmailJS
-(function() {
-  emailjs.init("WddODLBw11FUrjP-q"); // ✅ Public Key
-})();
+// Inicialização segura: só roda se emailjs estiver definido
+if (typeof emailjs !== "undefined") {
+  emailjs.init("WddODLBw11FUrjP-q"); // Public Key
+}
 
+// Função para mostrar alertas bonitos
 function showAlert(title, text, icon = "info") {
   Swal.fire({ title, text, icon, confirmButtonText: "OK" });
 }
 
-// Caminho base absoluto para JSONs no GitHub Pages
 const BASE_URL = "https://george-impar.github.io/erp-impar/";
 
 // ================== LOGIN ==================
@@ -16,32 +16,26 @@ if (loginForm) {
   loginForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
-    const email = document.getElementById("usuario").value;
-    const senha = document.getElementById("senha").value;
+    const email = document.getElementById("usuario").value.trim();
+    const senha = document.getElementById("senha").value.trim();
 
     fetch(BASE_URL + "usuarios.json")
-      .then(r => {
-        if (!r.ok) throw new Error(`Erro HTTP ${r.status}`);
-        return r.json();
-      })
+      .then(r => r.json())
       .then(usuarios => {
-        console.log("✅ Usuários carregados:", usuarios);
-
-        const usuario = usuarios.find(u => u.Email === email && u.Senha === senha);
+        const usuario = usuarios.find(
+          u => u.Email === email && u.Senha === senha
+        );
 
         if (usuario) {
           localStorage.setItem("usuarioLogado", JSON.stringify(usuario));
-          Swal.fire({
-            title: "Login realizado!",
-            text: `Bem-vindo, ${usuario.Nome}!`,
-            icon: "success"
-          }).then(() => window.location.href = "solicitacao.html");
+          Swal.fire("Login realizado!", `Bem-vindo, ${usuario.Nome}!`, "success")
+            .then(() => window.location.href = "solicitacao.html");
         } else {
-          showAlert("Erro no login", "Usuário ou senha incorretos!", "error");
+          showAlert("Erro", "Usuário ou senha incorretos.", "error");
         }
       })
       .catch(err => {
-        console.error("❌ Erro ao carregar usuarios.json:", err);
+        console.error("Erro ao carregar usuarios.json:", err);
         showAlert("Erro", "Falha ao carregar lista de usuários.", "error");
       });
   });
@@ -53,24 +47,24 @@ if (solicitacaoForm) {
   const obraSelect = document.getElementById("obra");
   const centroCustoInput = document.getElementById("centroCusto");
   const materialSelect = document.getElementById("material");
-  const tabelaMateriais = document.getElementById("tabelaMateriais").querySelector("tbody");
+  const tabelaMateriais = document
+    .getElementById("tabelaMateriais")
+    .querySelector("tbody");
   const listaMateriais = [];
 
   const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
   if (!usuarioLogado) {
     Swal.fire("Atenção", "Você precisa fazer login novamente.", "warning")
-      .then(() => window.location.href = "login.html");
+      .then(() => (window.location.href = "login.html"));
   } else {
-    // Obras filtradas pelo usuário logado
+    // Carregar obras do usuário logado
     fetch(BASE_URL + "obras.json")
       .then(r => r.json())
       .then(obras => {
-        console.log("✅ Obras carregadas:", obras);
         const obrasUsuario = obras.filter(o => o.Email === usuarioLogado.Email);
-
         if (obrasUsuario.length === 0) {
           Swal.fire("Sem obras", "Nenhuma obra associada ao seu usuário.", "info")
-            .then(() => window.location.href = "login.html");
+            .then(() => (window.location.href = "login.html"));
           return;
         }
 
@@ -88,25 +82,25 @@ if (solicitacaoForm) {
         });
       })
       .catch(err => {
-        console.error("❌ Erro ao carregar obras:", err);
+        console.error("Erro ao carregar obras:", err);
         showAlert("Erro", "Falha ao carregar obras.", "error");
       });
 
-    // Materiais
+    // Carregar materiais
     fetch(BASE_URL + "materiais.json")
       .then(r => r.json())
       .then(materiais => {
-        console.log("✅ Materiais carregados:", materiais);
-        materiais.sort((a, b) => a.Material.localeCompare(b.Material));
-        materiais.forEach(m => {
-          const opt = document.createElement("option");
-          opt.value = m.Material;
-          opt.textContent = `${m.Material} (${m.UND})`;
-          materialSelect.appendChild(opt);
-        });
+        materiais
+          .sort((a, b) => a.Material.localeCompare(b.Material))
+          .forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m.Material;
+            opt.textContent = `${m.Material} (${m.UND})`;
+            materialSelect.appendChild(opt);
+          });
       })
       .catch(err => {
-        console.error("❌ Erro ao carregar materiais:", err);
+        console.error("Erro ao carregar materiais:", err);
         showAlert("Erro", "Falha ao carregar materiais.", "error");
       });
 
@@ -162,16 +156,21 @@ if (solicitacaoForm) {
         materiais: listaMateriais.length > 0 ? listaMateriais : []
       };
 
-      console.log("📧 Enviando EmailJS com params:", templateParams);
+      console.log("📧 Tentando enviar EmailJS com:", templateParams);
 
-      emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams)
-        .then(() => {
-          Swal.fire("Sucesso!", "Solicitação enviada com sucesso!", "success");
-        })
-        .catch((error) => {
-          console.error("Erro EmailJS:", error);
-          showAlert("Erro", "Falha ao enviar solicitação. Verifique logs.", "error");
-        });
+      if (typeof emailjs !== "undefined") {
+        emailjs
+          .send("service_fzht86y", "template_wz0ywdo", templateParams)
+          .then(() => {
+            Swal.fire("Sucesso!", "Solicitação enviada com sucesso!", "success");
+          })
+          .catch(error => {
+            console.error("Erro EmailJS:", error);
+            showAlert("Erro", "Falha ao enviar solicitação. Verifique os dados.", "error");
+          });
+      } else {
+        showAlert("Erro", "EmailJS não carregado.", "error");
+      }
     });
   }
 }
