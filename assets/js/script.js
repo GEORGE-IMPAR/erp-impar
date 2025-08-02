@@ -1,155 +1,189 @@
-// Inicializar EmailJS v3
+// Inicialização do EmailJS
 (function() {
-  emailjs.init({
-    publicKey: "WddODLBw11FUrjP-q"
-  });
+  emailjs.init("WddODLBw11FUrjP-q"); // sua Public Key
 })();
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const usuarioSelect = document.getElementById("usuario");
   const senhaInput = document.getElementById("senha");
   const toggleSenha = document.getElementById("toggleSenha");
   const loginForm = document.getElementById("loginForm");
-  const solicitacaoForm = document.getElementById("solicitacaoForm");
 
-  // Login
-  if (usuarioSelect && loginForm) {
-    carregarUsuarios(usuarioSelect);
-
+  // Exibir/Ocultar senha
+  if (toggleSenha) {
     toggleSenha.addEventListener("click", () => {
       senhaInput.type = senhaInput.type === "password" ? "text" : "password";
     });
+  }
 
+  // Carregar usuários no login
+  if (usuarioSelect) {
+    try {
+      const response = await fetch("usuarios.json");
+      const usuarios = await response.json();
+
+      usuarios.forEach(user => {
+        const option = document.createElement("option");
+        option.value = user.Email;
+        option.textContent = user.Email;
+        usuarioSelect.appendChild(option);
+      });
+    } catch (error) {
+      console.error("Erro ao carregar usuários:", error);
+      Swal.fire("Erro", "Falha ao carregar a lista de usuários.", "error");
+    }
+  }
+
+  // Validação do Login
+  if (loginForm) {
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const email = usuarioSelect.value;
-      const senha = senhaInput.value;
+
+      const email = usuarioSelect.value.trim().toLowerCase();
+      const senha = senhaInput.value.trim();
 
       try {
-        const resp = await fetch("usuarios.json");
-        const usuarios = await resp.json();
+        const response = await fetch("usuarios.json");
+        const usuarios = await response.json();
 
-        const usuario = usuarios.find(
-          u => u.Email.trim().toLowerCase() === email.trim().toLowerCase() && u.Senha === senha
+        const usuario = usuarios.find(u => 
+          u.Email.trim().toLowerCase() === email && u.Senha.trim() === senha
         );
 
         if (usuario) {
           localStorage.setItem("usuarioLogado", JSON.stringify(usuario));
-          Swal.fire({ icon: "success", title: "Login realizado!", showConfirmButton: false, timer: 2000 });
-          setTimeout(() => window.location.href = "solicitacao.html", 2000);
+          Swal.fire({
+            icon: "success",
+            title: "Login realizado com sucesso!",
+            showConfirmButton: false,
+            timer: 2000
+          }).then(() => {
+            window.location.href = "solicitacao.html";
+          });
         } else {
-          Swal.fire("Erro", "Email ou senha inválidos!", "error");
+          Swal.fire("Erro", "Usuário ou senha inválidos.", "error");
         }
-      } catch (err) {
-        console.error("Erro login:", err);
-        Swal.fire("Erro", "Falha ao carregar usuários!", "error");
+      } catch (error) {
+        console.error("Erro ao validar login:", error);
+        Swal.fire("Erro", "Falha ao validar login.", "error");
       }
     });
   }
 
-  // Solicitação
-  if (solicitacaoForm) {
-    const obraSelect = document.getElementById("obra");
-    const centroCustoInput = document.getElementById("centroCusto");
-    const materialSelect = document.getElementById("material");
-    const quantidadeInput = document.getElementById("quantidade");
-    const tabelaMateriais = document.querySelector("#tabelaMateriais tbody");
-    const adicionarBtn = document.getElementById("adicionarMaterial");
-    const localEntregaSelect = document.getElementById("localEntrega");
+  // Página de Solicitação
+  const obraSelect = document.getElementById("obra");
+  const centroCustoInput = document.getElementById("centroCusto");
+  const materialSelect = document.getElementById("material");
+  const quantidadeInput = document.getElementById("quantidade");
+  const undSelect = document.getElementById("und");
+  const localEntregaSelect = document.getElementById("localEntrega");
+  const tabelaMateriais = document.querySelector("#tabelaMateriais tbody");
+  const addMaterialBtn = document.getElementById("addMaterial");
+  const enviarSolicitacaoBtn = document.getElementById("enviarSolicitacao");
 
-    let materiaisAdicionados = [];
-    let sequencial = Date.now().toString().slice(-4);
+  if (obraSelect && centroCustoInput) {
+    try {
+      const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+      const obrasResp = await fetch("obras.json");
+      const obras = await obrasResp.json();
 
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
-    if (!usuarioLogado) {
-      Swal.fire("Erro", "Faça login novamente!", "error").then(() => window.location.href = "login.html");
-      return;
-    }
-    document.getElementById("user-info").innerText =
-      `${usuarioLogado.Nome} - ${usuarioLogado.Email}`;
+      const obrasUsuario = obras.filter(o => 
+        o.Email.trim().toLowerCase() === usuarioLogado.Email.trim().toLowerCase()
+      );
 
-    // Obras filtradas
-    fetch("obras.json")
-      .then(r => r.json())
-      .then(obras => {
-        const obrasFiltradas = obras.filter(
-          o => o.Email.trim().toLowerCase() === usuarioLogado.Email.trim().toLowerCase()
-        );
-        if (obrasFiltradas.length === 0) {
-          Swal.fire("Aviso", "Você não tem obras associadas!", "warning")
-            .then(() => window.location.href = "login.html");
-        }
-        obrasFiltradas.forEach(obra => {
-          const opt = document.createElement("option");
-          opt.value = obra.Obra;
-          opt.textContent = obra.Obra;
-          obraSelect.appendChild(opt);
+      if (obrasUsuario.length === 0) {
+        Swal.fire("Atenção", "Nenhuma obra associada ao seu usuário.", "warning")
+          .then(() => {
+            localStorage.removeItem("usuarioLogado");
+            window.location.href = "login.html";
+          });
+      } else {
+        obrasUsuario.forEach(o => {
+          const option = document.createElement("option");
+          option.value = o.Obra;
+          option.textContent = o.Obra;
+          obraSelect.appendChild(option);
         });
+
         obraSelect.addEventListener("change", () => {
-          const selecionada = obrasFiltradas.find(o => o.Obra === obraSelect.value);
-          centroCustoInput.value = selecionada ? selecionada["Centro de Custo"] : "";
+          const obraSelecionada = obrasUsuario.find(o => o.Obra === obraSelect.value);
+          centroCustoInput.value = obraSelecionada ? obraSelecionada["Centro de Custo"] : "";
+          centroCustoInput.readOnly = true;
+          centroCustoInput.style.backgroundColor = "#e0e0e0";
         });
-      })
-      .catch(err => Swal.fire("Erro", "Falha ao carregar obras!", "error"));
-
-    // Materiais
-    fetch("materiais.json")
-      .then(r => r.json())
-      .then(mats => {
-        mats.sort((a, b) => a.Material.localeCompare(b.Material));
-        mats.forEach(mat => {
-          const opt = document.createElement("option");
-          opt.value = mat.Material;
-          opt.textContent = `${mat.Material} (${mat.UND})`;
-          opt.dataset.und = mat.UND;
-          materialSelect.appendChild(opt);
-        });
-      })
-      .catch(err => Swal.fire("Erro", "Falha ao carregar materiais!", "error"));
-
-    // Adicionar material
-    adicionarBtn.addEventListener("click", () => {
-      const material = materialSelect.value;
-      const und = materialSelect.selectedOptions[0]?.dataset.und || "";
-      const quantidade = quantidadeInput.value;
-      if (!material || !quantidade) return;
-      materiaisAdicionados.push({ material, und, quantidade });
-      atualizarTabela();
-      quantidadeInput.value = "";
-      materialSelect.value = "";
-    });
-
-    function atualizarTabela() {
-      tabelaMateriais.innerHTML = "";
-      materiaisAdicionados.forEach((item, index) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${item.material}</td>
-          <td>${item.und}</td>
-          <td>${item.quantidade}</td>
-          <td><span class="btn-remover" data-index="${index}">❌</span></td>
-        `;
-        tabelaMateriais.appendChild(row);
-      });
-      document.querySelectorAll(".btn-remover").forEach(btn => {
-        btn.addEventListener("click", e => {
-          materiaisAdicionados.splice(e.target.dataset.index, 1);
-          atualizarTabela();
-        });
-      });
+      }
+    } catch (error) {
+      console.error("Erro ao carregar obras:", error);
+      Swal.fire("Erro", "Falha ao carregar as obras.", "error");
     }
+  }
 
-    // Enviar solicitação
-    solicitacaoForm.addEventListener("submit", (e) => {
-      e.preventDefault();
+  // Carregar materiais
+  if (materialSelect) {
+    try {
+      const matResp = await fetch("materiais.json");
+      const materiais = await matResp.json();
+
+      materiais.sort((a, b) => a.Material.localeCompare(b.Material));
+
+      materiais.forEach(m => {
+        const option = document.createElement("option");
+        option.value = m.Material;
+        option.textContent = m.Material;
+        materialSelect.appendChild(option);
+      });
+    } catch (error) {
+      console.error("Erro ao carregar materiais:", error);
+      Swal.fire("Erro", "Falha ao carregar materiais.", "error");
+    }
+  }
+
+  // Adicionar material à tabela
+  if (addMaterialBtn && tabelaMateriais) {
+    addMaterialBtn.addEventListener("click", () => {
+      const material = materialSelect.value;
+      const quantidade = quantidadeInput.value;
+      const und = undSelect.value;
+
+      if (!material || !quantidade || !und) {
+        Swal.fire("Atenção", "Preencha todos os campos para adicionar um material.", "warning");
+        return;
+      }
+
+      const row = tabelaMateriais.insertRow();
+      row.insertCell(0).textContent = material;
+      row.insertCell(1).textContent = quantidade;
+      row.insertCell(2).textContent = und;
+
+      const cellAcao = row.insertCell(3);
+      const removerBtn = document.createElement("span");
+      removerBtn.textContent = "❌";
+      removerBtn.classList.add("btn-remover");
+      removerBtn.addEventListener("click", () => row.remove());
+      cellAcao.appendChild(removerBtn);
+
+      quantidadeInput.value = "";
+      undSelect.value = "";
+    });
+  }
+
+  // Enviar solicitação por EmailJS
+  if (enviarSolicitacaoBtn) {
+    enviarSolicitacaoBtn.addEventListener("click", async () => {
+      const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
       const obra = obraSelect.value;
       const centroCusto = centroCustoInput.value;
-      const prazo = document.getElementById("prazo").value;
       const localEntrega = localEntregaSelect.value;
+      const data = new Date().toLocaleDateString("pt-BR");
 
-      if (!obra || !centroCusto || !prazo || !localEntrega || materiaisAdicionados.length === 0) {
-        Swal.fire("Aviso", "Preencha todos os campos e adicione pelo menos um material!", "warning");
+      if (!obra || !centroCusto || !localEntrega || tabelaMateriais.rows.length === 0) {
+        Swal.fire("Erro", "Preencha todos os campos e adicione ao menos 1 material.", "error");
         return;
+      }
+
+      let materiaisLista = "";
+      for (let row of tabelaMateriais.rows) {
+        materiaisLista += `${row.cells[0].textContent} - ${row.cells[1].textContent} ${row.cells[2].textContent}\n`;
       }
 
       const params = {
@@ -157,37 +191,18 @@ document.addEventListener("DOMContentLoaded", () => {
         from_email: usuarioLogado.Email,
         obra,
         centro_custo: centroCusto,
-        data: new Date().toLocaleDateString(),
-        numero: sequencial,
-        local_entrega: localEntrega,
-        materiais: materiaisAdicionados.map(m => `${m.material} (${m.und}) - ${m.quantidade}`).join("\n")
+        data,
+        materiais: materiaisLista,
       };
 
-      emailjs.send("service_fzht86y", "template_wz0ywdo", params)
-        .then(() => {
-          Swal.fire({ icon: "success", title: "Solicitação enviada!", showConfirmButton: false, timer: 2500 });
-          materiaisAdicionados = [];
-          atualizarTabela();
-          solicitacaoForm.reset();
-        })
-        .catch(err => {
-          console.error("Erro EmailJS:", err);
-          Swal.fire("Erro", "Falha ao enviar solicitação!", "error");
-        });
+      try {
+        console.log("📧 Enviando com parâmetros:", params);
+        await emailjs.send("service_fzht86y", "template_wz0ywdo", params);
+        Swal.fire("Sucesso!", "E-mail com a solicitação enviado com sucesso!", "success");
+      } catch (error) {
+        console.error("Erro EmailJS:", error);
+        Swal.fire("Erro", "Falha ao enviar o e-mail da solicitação.", "error");
+      }
     });
   }
 });
-
-function carregarUsuarios(selectElement) {
-  fetch("usuarios.json")
-    .then(r => r.json())
-    .then(users => {
-      users.forEach(u => {
-        const opt = document.createElement("option");
-        opt.value = u.Email;
-        opt.textContent = u.Nome;
-        selectElement.appendChild(opt);
-      });
-    })
-    .catch(err => Swal.fire("Erro", "Falha ao carregar usuários!", "error"));
-}
