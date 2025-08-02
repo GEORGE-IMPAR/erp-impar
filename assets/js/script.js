@@ -1,11 +1,21 @@
-// Inicialização segura: só roda se emailjs estiver definido
-if (typeof emailjs !== "undefined") {
-  emailjs.init("WddODLBw11FUrjP-q"); // Public Key
+// Checa se emailjs existe antes de inicializar
+try {
+  if (typeof emailjs !== "undefined") {
+    emailjs.init("WddODLBw11FUrjP-q"); // sua public key
+  } else {
+    console.warn("⚠️ EmailJS não está carregado. O envio de emails pode falhar.");
+  }
+} catch (err) {
+  console.error("Erro ao inicializar EmailJS:", err);
 }
 
-// Função para mostrar alertas bonitos
+// Função para alertas padronizados
 function showAlert(title, text, icon = "info") {
-  Swal.fire({ title, text, icon, confirmButtonText: "OK" });
+  if (typeof Swal !== "undefined") {
+    Swal.fire({ title, text, icon, confirmButtonText: "OK" });
+  } else {
+    alert(`${title}\n${text}`);
+  }
 }
 
 const BASE_URL = "https://george-impar.github.io/erp-impar/";
@@ -23,12 +33,13 @@ if (loginForm) {
       .then(r => r.json())
       .then(usuarios => {
         const usuario = usuarios.find(
-          u => u.Email === email && u.Senha === senha
+          u => u.Email.trim().toLowerCase() === email.toLowerCase() &&
+               u.Senha.trim() === senha
         );
 
         if (usuario) {
           localStorage.setItem("usuarioLogado", JSON.stringify(usuario));
-          Swal.fire("Login realizado!", `Bem-vindo, ${usuario.Nome}!`, "success")
+          showAlert("Login realizado!", `Bem-vindo, ${usuario.Nome}!`, "success")
             .then(() => window.location.href = "solicitacao.html");
         } else {
           showAlert("Erro", "Usuário ou senha incorretos.", "error");
@@ -54,16 +65,17 @@ if (solicitacaoForm) {
 
   const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
   if (!usuarioLogado) {
-    Swal.fire("Atenção", "Você precisa fazer login novamente.", "warning")
+    showAlert("Atenção", "Você precisa fazer login novamente.", "warning")
       .then(() => (window.location.href = "login.html"));
   } else {
     // Carregar obras do usuário logado
     fetch(BASE_URL + "obras.json")
       .then(r => r.json())
       .then(obras => {
-        const obrasUsuario = obras.filter(o => o.Email === usuarioLogado.Email);
+        const obrasUsuario = obras.filter(o => o.Email.trim().toLowerCase() === usuarioLogado.Email.toLowerCase());
+
         if (obrasUsuario.length === 0) {
-          Swal.fire("Sem obras", "Nenhuma obra associada ao seu usuário.", "info")
+          showAlert("Sem obras", "Nenhuma obra associada ao seu usuário.", "info")
             .then(() => (window.location.href = "login.html"));
           return;
         }
@@ -162,14 +174,14 @@ if (solicitacaoForm) {
         emailjs
           .send("service_fzht86y", "template_wz0ywdo", templateParams)
           .then(() => {
-            Swal.fire("Sucesso!", "Solicitação enviada com sucesso!", "success");
+            showAlert("Sucesso!", "Solicitação enviada com sucesso!", "success");
           })
           .catch(error => {
             console.error("Erro EmailJS:", error);
             showAlert("Erro", "Falha ao enviar solicitação. Verifique os dados.", "error");
           });
       } else {
-        showAlert("Erro", "EmailJS não carregado.", "error");
+        showAlert("Erro", "EmailJS não carregado. Verifique configuração.", "error");
       }
     });
   }
