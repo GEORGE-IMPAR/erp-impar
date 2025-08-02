@@ -1,38 +1,48 @@
 document.addEventListener("DOMContentLoaded", async () => {
-  // Verifica se está na página de solicitação
-  const solicitacaoForm = document.getElementById("solicitacaoForm");
   const loginForm = document.getElementById("loginForm");
+  const solicitacaoForm = document.getElementById("solicitacaoForm");
 
   // === LOGIN ===
   if (loginForm) {
-    document.getElementById('toggleSenha').addEventListener('click', () => {
-      const senhaInput = document.getElementById('senha');
-      senhaInput.type = senhaInput.type === 'password' ? 'text' : 'password';
-    });
+    const toggleSenha = document.getElementById("toggleSenha");
+    const senhaInput = document.getElementById("senha");
+
+    if (toggleSenha && senhaInput) {
+      toggleSenha.addEventListener("click", () => {
+        senhaInput.type = senhaInput.type === "password" ? "text" : "password";
+        toggleSenha.textContent = senhaInput.type === "password" ? "👁️" : "🙈";
+      });
+    }
 
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
 
       const email = document.getElementById("email").value.trim().toLowerCase();
-      const senha = document.getElementById("senha").value.trim();
+      const senha = senhaInput.value.trim();
 
       try {
+        console.log("🔍 Carregando usuarios.json...");
         const response = await fetch("usuarios.json");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const usuarios = await response.json();
 
-        const usuario = usuarios.find(u => 
-          u.Email.trim().toLowerCase() === email && u.Senha.trim() === senha
+        const usuario = usuarios.find(
+          (u) =>
+            u.Email.trim().toLowerCase() === email &&
+            u.Senha.trim() === senha
         );
 
         if (usuario) {
+          console.log("✅ Usuário encontrado:", usuario.Email);
           localStorage.setItem("usuarioLogado", JSON.stringify(usuario));
-          Swal.fire("Sucesso", "Login realizado com sucesso!", "success")
-            .then(() => window.location.href = "solicitacao.html");
+          Swal.fire("Sucesso", "Login realizado com sucesso!", "success").then(
+            () => (window.location.href = "solicitacao.html")
+          );
         } else {
           Swal.fire("Erro", "Email ou senha inválidos.", "error");
         }
       } catch (error) {
-        console.error("Erro ao carregar usuários:", error);
+        console.error("❌ Erro ao carregar usuários:", error);
         Swal.fire("Erro", "Falha ao validar login.", "error");
       }
     });
@@ -40,6 +50,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // === SOLICITAÇÃO ===
   if (solicitacaoForm) {
+    console.log("📦 Página de solicitação carregada.");
     const obraSelect = document.getElementById("obra");
     const centroCustoInput = document.getElementById("centroCusto");
     const materialSelect = document.getElementById("material");
@@ -57,21 +68,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // Carregar obras filtradas por usuário
+    // Carregar obras
     try {
+      console.log("🔍 Carregando obras.json...");
       const obrasResp = await fetch("obras.json");
+      if (!obrasResp.ok) throw new Error(`HTTP ${obrasResp.status}`);
       const obras = await obrasResp.json();
-      const obrasUsuario = obras.filter(o =>
-        o.Email.trim().toLowerCase() === usuarioLogado.Email.trim().toLowerCase()
+      const obrasUsuario = obras.filter(
+        (o) =>
+          o.Email.trim().toLowerCase() ===
+          usuarioLogado.Email.trim().toLowerCase()
       );
 
       if (obrasUsuario.length === 0) {
-        Swal.fire("Aviso", "Nenhuma obra associada ao seu usuário.", "warning")
-          .then(() => window.location.href = "login.html");
+        Swal.fire("Aviso", "Nenhuma obra associada ao seu usuário.", "warning").then(
+          () => (window.location.href = "login.html")
+        );
         return;
       }
 
-      obrasUsuario.forEach(obra => {
+      obrasUsuario.forEach((obra) => {
         const opt = document.createElement("option");
         opt.value = obra.Obra;
         opt.textContent = obra.Obra;
@@ -79,21 +95,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       obraSelect.addEventListener("change", () => {
-        const obraSel = obrasUsuario.find(o => o.Obra === obraSelect.value);
+        const obraSel = obrasUsuario.find((o) => o.Obra === obraSelect.value);
         centroCustoInput.value = obraSel ? obraSel["Centro de Custo"] : "";
       });
-
     } catch (err) {
-      console.error("Erro ao carregar obras:", err);
+      console.error("❌ Erro ao carregar obras:", err);
       Swal.fire("Erro", "Falha ao carregar obras.", "error");
     }
 
     // Carregar materiais
     try {
+      console.log("🔍 Carregando materiais.json...");
       const materiaisResp = await fetch("materiais.json");
+      if (!materiaisResp.ok) throw new Error(`HTTP ${materiaisResp.status}`);
       const materiais = await materiaisResp.json();
       materiais.sort((a, b) => a.Material.localeCompare(b.Material));
-      materiais.forEach(m => {
+      materiais.forEach((m) => {
         const opt = document.createElement("option");
         opt.value = m.Material;
         opt.textContent = `${m.Material} (${m.UND})`;
@@ -101,12 +118,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         materialSelect.appendChild(opt);
       });
     } catch (err) {
-      console.error("Erro ao carregar materiais:", err);
+      console.error("❌ Erro ao carregar materiais:", err);
       Swal.fire("Erro", "Falha ao carregar materiais.", "error");
     }
 
-    // Adicionar material na tabela
-    adicionarBtn.addEventListener("click", () => {
+    // Adicionar material
+    adicionarBtn?.addEventListener("click", () => {
       if (!materialSelect.value || !quantidadeInput.value) {
         Swal.fire("Erro", "Selecione um material e informe a quantidade.", "error");
         return;
@@ -127,67 +144,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       materialSelect.value = "";
       quantidadeInput.value = "";
-    });
-
-    // Gerar número sequencial por dia
-    function gerarNumeroSequencial() {
-      const hoje = new Date().toLocaleDateString("pt-BR");
-      const chave = `seq_${hoje}`;
-      let numero = localStorage.getItem(chave);
-      if (!numero) numero = 1;
-      else numero = parseInt(numero) + 1;
-      localStorage.setItem(chave, numero);
-      return numero;
-    }
-
-    // Enviar solicitação via EmailJS
-    solicitacaoForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-
-      if (!obraSelect.value || !centroCustoInput.value ||
-          !localEntregaSelect.value || !document.getElementById("dataLimite").value) {
-        Swal.fire("Erro", "Preencha todos os campos obrigatórios antes de enviar.", "error");
-        return;
-      }
-
-      const materiais = [];
-      for (let row of tabelaBody.rows) {
-        materiais.push({
-          material: row.cells[0].textContent,
-          unidade: row.cells[1].textContent,
-          quantidade: row.cells[2].textContent
-        });
-      }
-
-      let tabelaHTML = "<table border='1' style='border-collapse:collapse; width:100%'>";
-      tabelaHTML += "<tr><th>Material</th><th>UND</th><th>Quantidade</th></tr>";
-      materiais.forEach(m => {
-        tabelaHTML += `<tr><td>${m.material}</td><td>${m.unidade}</td><td>${m.quantidade}</td></tr>`;
-      });
-      tabelaHTML += "</table>";
-
-      const numeroSequencial = gerarNumeroSequencial();
-      const dataPedido = new Date().toLocaleDateString("pt-BR");
-
-      const params = {
-        nome: usuarioLogado.Nome,
-        reply_to: usuarioLogado.Email,
-        obra: obraSelect.value,
-        centro_custo: centroCustoInput.value,
-        local_entrega: localEntregaSelect.value,
-        data: dataPedido,
-        materiais_tabela: tabelaHTML,
-        assunto: `SOLICITAÇÃO DE MATERIAIS - ${obraSelect.value} - ${usuarioLogado.Nome} - ${dataPedido} - ${numeroSequencial}`
-      };
-
-      emailjs.send("service_fzht86y", "template_wz0ywdo", params)
-        .then(() => {
-          Swal.fire("Sucesso", "Solicitação enviada com sucesso!", "success");
-        })
-        .catch((err) => {
-          console.error("Erro EmailJS:", err);
-          Swal.fire("Erro", "Falha ao enviar solicitação.", "error");
-        });
     });
   }
 });
