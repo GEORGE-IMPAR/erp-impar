@@ -1,16 +1,14 @@
+console.log("📌 script_email.js carregado");
+
+// Inicializar EmailJS
+(function() {
+  emailjs.init("WddODLBw11FUrjP-q"); // sua public key
+  console.log("✅ EmailJS inicializado");
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("📌 script_email.js carregado");
-
-  // Inicializar EmailJS
-  if (window.emailjs) {
-    emailjs.init("WddODLBw11FUrjP-q"); // sua public key
-    console.log("✅ EmailJS inicializado");
-  } else {
-    console.error("❌ EmailJS não carregado");
-    return;
-  }
-
   const solicitacaoForm = document.getElementById("solicitacaoForm");
+
   if (!solicitacaoForm) {
     console.warn("⚠️ Formulário de solicitação não encontrado");
     return;
@@ -19,67 +17,52 @@ document.addEventListener("DOMContentLoaded", () => {
   solicitacaoForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
-    // Recuperar usuário logado
-    let usuarioLogado = null;
-    try {
-      usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
-      console.log("👤 Usuário logado recuperado:", usuarioLogado);
-    } catch (err) {
-      console.error("❌ Erro ao ler usuário logado:", err);
-    }
-
-    if (!usuarioLogado || !usuarioLogado.Nome || !usuarioLogado.Email) {
-      Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
-        .then(() => window.location.href = "login.html");
+    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+    if (!usuarioLogado) {
+      Swal.fire("Erro", "Você precisa fazer login novamente!", "error").then(() => {
+        window.location.href = "login.html";
+      });
       return;
     }
 
-    // Coletar dados do formulário
-    const obra = document.getElementById("obra")?.value || "";
-    const centroCusto = document.getElementById("centroCusto")?.value || "";
-    const prazo = document.getElementById("prazo")?.value || new Date().toLocaleDateString();
-    const localEntrega = document.getElementById("localEntrega")?.value || "";
+    console.log("👤 Usuário logado recuperado:", usuarioLogado);
 
-    console.log("📌 Dados coletados do formulário:", { obra, centroCusto, prazo, localEntrega });
+    const obra = document.getElementById("obra").value;
+    const centroCusto = document.getElementById("centroCusto").value;
+    const prazo = document.getElementById("prazo").value;
+    const localEntrega = document.getElementById("localEntrega").value;
 
-    // Coletar materiais
     const materiais = [];
     document.querySelectorAll("#tabelaMateriais tbody tr").forEach(row => {
       const cols = row.querySelectorAll("td");
-      if (cols.length >= 3) {
-        materiais.push({
-          material: cols[0].innerText,
-          quantidade: cols[2].innerText
-        });
-      }
+      materiais.push({
+        material: cols[0].innerText,
+        quantidade: cols[2].innerText // coluna de quantidade
+      });
     });
 
     console.log("📦 Materiais coletados:", materiais);
 
-    if (!obra || !centroCusto || !prazo || !localEntrega) {
-      Swal.fire("⚠️", "Preencha todos os campos obrigatórios!", "warning");
+    if (!obra || !centroCusto || !prazo || !localEntrega || materiais.length === 0) {
+      Swal.fire("Atenção", "Preencha todos os campos e adicione pelo menos um material!", "warning");
       return;
     }
 
-    if (materiais.length === 0) {
-      Swal.fire("⚠️", "Adicione pelo menos um material!", "warning");
-      return;
-    }
-
-    const params = {
+    const templateParams = {
       nome: usuarioLogado.Nome,
       from_email: usuarioLogado.Email,
-      obra,
+      obra: obra,
       centro_custo: centroCusto,
       data: prazo,
       local_entrega: localEntrega,
-      materiais: materiais
+      materiais: materiais // array de objetos (como o template espera)
     };
 
-    console.log("📧 Enviando com parâmetros:", params);
+    console.log("📧 Enviando com parâmetros:", templateParams);
 
-    emailjs.send("service_fzht86y", "template_wz0ywdo", params)
-      .then(() => {
+    emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams)
+      .then((response) => {
+        console.log("✅ Email enviado:", response);
         Swal.fire({
           icon: "success",
           title: "Solicitação enviada com sucesso!",
@@ -89,8 +72,8 @@ document.addEventListener("DOMContentLoaded", () => {
         solicitacaoForm.reset();
         document.querySelector("#tabelaMateriais tbody").innerHTML = "";
       })
-      .catch(err => {
-        console.error("❌ Erro EmailJS:", err);
+      .catch((error) => {
+        console.error("❌ Erro ao enviar email:", error);
         Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
       });
   });
