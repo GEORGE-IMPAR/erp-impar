@@ -19,21 +19,30 @@ document.addEventListener("DOMContentLoaded", () => {
   solicitacaoForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
-    // 🔹 Recuperar usuário logado
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
-    if (!usuarioLogado) {
+    // Recuperar usuário logado
+    let usuarioLogado = null;
+    try {
+      usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+      console.log("👤 Usuário logado recuperado:", usuarioLogado);
+    } catch (err) {
+      console.error("❌ Erro ao ler usuário logado:", err);
+    }
+
+    if (!usuarioLogado || !usuarioLogado.Nome || !usuarioLogado.Email) {
       Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
         .then(() => window.location.href = "login.html");
       return;
     }
 
-    // 🔹 Coletar dados do formulário
-    const obra = document.getElementById("obra").value;
-    const centroCusto = document.getElementById("centroCusto").value;
-    const prazo = document.getElementById("prazo").value;
-    const localEntrega = document.getElementById("localEntrega").value;
+    // Coletar dados do formulário
+    const obra = document.getElementById("obra")?.value || "";
+    const centroCusto = document.getElementById("centroCusto")?.value || "";
+    const prazo = document.getElementById("prazo")?.value || new Date().toLocaleDateString();
+    const localEntrega = document.getElementById("localEntrega")?.value || "";
 
-    // 🔹 Coletar materiais da tabela
+    console.log("📌 Dados coletados do formulário:", { obra, centroCusto, prazo, localEntrega });
+
+    // Coletar materiais
     const materiais = [];
     document.querySelectorAll("#tabelaMateriais tbody tr").forEach(row => {
       const cols = row.querySelectorAll("td");
@@ -45,6 +54,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
+    console.log("📦 Materiais coletados:", materiais);
+
     if (!obra || !centroCusto || !prazo || !localEntrega) {
       Swal.fire("⚠️", "Preencha todos os campos obrigatórios!", "warning");
       return;
@@ -55,20 +66,18 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // 🔹 Montar parâmetros para EmailJS
     const params = {
       nome: usuarioLogado.Nome,
       from_email: usuarioLogado.Email,
       obra,
       centro_custo: centroCusto,
-      data: prazo || new Date().toLocaleDateString(),
+      data: prazo,
       local_entrega: localEntrega,
-      materiais
+      materiais: materiais
     };
 
     console.log("📧 Enviando com parâmetros:", params);
 
-    // 🔹 Enviar pelo EmailJS
     emailjs.send("service_fzht86y", "template_wz0ywdo", params)
       .then(() => {
         Swal.fire({
@@ -81,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelector("#tabelaMateriais tbody").innerHTML = "";
       })
       .catch(err => {
-        console.error("Erro EmailJS:", err);
+        console.error("❌ Erro EmailJS:", err);
         Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
       });
   });
