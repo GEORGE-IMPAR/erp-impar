@@ -1,64 +1,65 @@
 document.addEventListener("DOMContentLoaded", () => {
   console.log("📌 script_email.js carregado");
 
-  // Inicializa EmailJS
   if (window.emailjs) {
-    emailjs.init({ publicKey: "WddODLBw11FUrjP-q" });
-    console.log("✅ EmailJS inicializado no script_email.js");
+    emailjs.init({ publicKey: "WddODLBw11FUrjP-q" }); // 🔑 sua chave pública
+    console.log("✅ EmailJS inicializado");
   } else {
-    console.error("❌ EmailJS não carregado no script_email.js");
+    console.error("❌ EmailJS não carregado");
   }
 
-  const solicitacaoForm = document.getElementById("solicitacaoForm");
-  if (solicitacaoForm) {
-    solicitacaoForm.addEventListener("submit", (e) => {
-      e.preventDefault();
+  const form = document.getElementById("formSolicitacao");
+  if (!form) {
+    console.warn("⚠️ Formulário de solicitação não encontrado");
+    return;
+  }
 
-      const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
-      if (!usuarioLogado) {
-        Swal.fire("⚠️ Usuário não encontrado!", "", "warning");
-        return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    // Recupera dados do localStorage
+    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+    if (!usuarioLogado) {
+      alert("Nenhum usuário logado.");
+      return;
+    }
+
+    // Lista de materiais
+    const tabela = document.querySelectorAll("#tabelaMateriais tbody tr");
+    const listaMateriais = [];
+    tabela.forEach(row => {
+      const material = row.cells[0]?.innerText || "";
+      const quantidade = row.cells[1]?.innerText || "";
+      if (material && quantidade) {
+        listaMateriais.push({ material, quantidade });
       }
-
-      const obra = document.getElementById("obra").value;
-      const centroCusto = document.getElementById("centroCusto").value;
-      const data = document.getElementById("prazo").value;
-      const localEntrega = document.getElementById("localEntrega").value;
-
-      // Captura materiais da tabela
-      const listaMateriais = [];
-      document.querySelectorAll("#tabelaMateriais tbody tr").forEach((row) => {
-        listaMateriais.push({
-          material: row.cells[0].innerText,
-          quantidade: row.cells[2].innerText
-        });
-      });
-
-      if (!obra || !centroCusto || !data || !localEntrega || listaMateriais.length === 0) {
-        Swal.fire("⚠️ Preencha todos os campos e adicione materiais!", "", "warning");
-        return;
-      }
-
-      const templateParams = {
-        nome: usuarioLogado.Nome,
-        from_email: usuarioLogado.Email,
-        obra,
-        centro_custo: centroCusto,
-        data,
-        local_entrega: localEntrega,
-        materiais: JSON.stringify(listaMateriais, null, 2)
-      };
-
-      console.log("📧 Enviando com parâmetros (script_email.js):", templateParams);
-
-      emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams)
-        .then(() => {
-          Swal.fire("✅ Solicitação enviada com sucesso!", "", "success");
-        })
-        .catch((erro) => {
-          console.error("Erro EmailJS:", erro);
-          Swal.fire("❌ Falha ao enviar solicitação", erro.text || "", "error");
-        });
     });
-  }
+
+    // Parâmetros para o EmailJS
+    const templateParams = {
+      nome: usuarioLogado.nome,
+      from_email: usuarioLogado.email,
+      obra: document.getElementById("obra").value,
+      centro_custo: document.getElementById("centroCusto").value,
+      data: document.getElementById("data").value,
+      local_entrega: document.getElementById("localEntrega").value,
+      numero: Date.now().toString().slice(-4), // sequencial simples
+      materiais: listaMateriais // 👉 agora vai como array, não como string
+    };
+
+    console.log("📧 Enviando com parâmetros:", templateParams);
+
+    try {
+      const response = await emailjs.send(
+        "service_21gln5j",   // seu Service ID
+        "template_r3gec9a", // seu Template ID
+        templateParams
+      );
+      console.log("✅ Email enviado:", response);
+      Swal.fire("✅ Sucesso!", "Solicitação enviada com sucesso!", "success");
+    } catch (error) {
+      console.error("❌ Erro ao enviar EmailJS:", error);
+      Swal.fire("❌ Erro!", "Não foi possível enviar a solicitação.", "error");
+    }
+  });
 });
