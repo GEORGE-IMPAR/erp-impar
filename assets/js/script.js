@@ -166,13 +166,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Enviar solicitação
-    solicitacaoForm.addEventListener("submit", (e) => {
-      e.preventDefault();
+    //solicitacaoForm.addEventListener("submit", (e) => {
+    // e.preventDefault();
 
-      const obra = obraSelect.value;
-      const centroCusto = centroCustoInput.value;
-      const prazo = document.getElementById("prazo").value;
-      const localEntrega = localEntregaSelect.value;
+      //const obra = obraSelect.value;
+      //const centroCusto = centroCustoInput.value;
+      //const prazo = document.getElementById("prazo").value;
+      //const localEntrega = localEntregaSelect.value;
 
       if (!obra || !centroCusto || !prazo || !localEntrega) {
         Swal.fire("Atenção", "Preencha todos os campos obrigatórios!", "warning");
