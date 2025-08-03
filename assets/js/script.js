@@ -165,59 +165,8 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-// 🔒 Envio desativado aqui porque o script_email.js já cuida disso
-/*
-solicitacaoForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-
-  const obra = obraSelect.value;
-  const centroCusto = centroCustoInput.value;
-  const prazo = document.getElementById("prazo").value;
-  const localEntrega = localEntregaSelect.value;
-
-  console.log("Envio desativado neste script.js");
-});
-*/
-      if (!obra || !centroCusto || !prazo || !localEntrega) {
-        Swal.fire("Atenção", "Preencha todos os campos obrigatórios!", "warning");
-        return;
-      }
-
-      if (materiaisAdicionados.length === 0) {
-        Swal.fire("Atenção", "Adicione pelo menos um material!", "warning");
-        return;
-      }
-
-      const params = {
-        nome: usuarioLogado.Nome,
-        from_email: usuarioLogado.Email,
-        obra,
-        centro_custo: centroCusto,
-        data: new Date().toLocaleDateString(),
-        numero: sequencial,
-        local_entrega: localEntrega,
-        materiais: materiaisAdicionados.map(m => `${m.material} (${m.und}) - ${m.quantidade}`).join("\n")
-      };
-
-      console.log("📧 Enviando com parâmetros:", params);
-
-      emailjs.send("service_fzht86y", "template_wz0ywdo", params)
-        .then(() => {
-          Swal.fire({
-            icon: "success",
-            title: "Solicitação enviada com sucesso!",
-            showConfirmButton: false,
-            timer: 2500
-          });
-          materiaisAdicionados = [];
-          atualizarTabela();
-          solicitacaoForm.reset();
-        })
-        .catch(err => {
-          console.error("Erro EmailJS:", err);
-          Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
-        });
-    });
+    // Enviar solicitação
+   
   }
 });
 
