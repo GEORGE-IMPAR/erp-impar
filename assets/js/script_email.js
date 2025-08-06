@@ -60,8 +60,7 @@ document.addEventListener("DOMContentLoaded", () => {
       `<tr>
          <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.material}</td>
          <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.quantidade}</td>
-       </tr>`
-    ).join("");
+       </tr>`).join("");
 
     const templateParams = {
       nome: usuarioLogado.Nome || "Não informado",
@@ -78,14 +77,22 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
       console.log("✅ Email enviado:", resp);
+
       Swal.fire({
         icon: "success",
         title: "Solicitação enviada com sucesso!",
         showConfirmButton: false,
         timer: 2500
       });
+
+      // Limpar formulário e tabela após envio
       solicitacaoForm.reset();
       document.querySelector("#tabelaMateriais tbody").innerHTML = "";
+
+      // Resetar array de materiais explicitamente (boa prática)
+      materiais = [];
+      console.log("🧹 Lista e tabela de materiais resetadas.");
+      
     } catch (err) {
       console.error("❌ Erro EmailJS:", err);
       Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
