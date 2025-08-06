@@ -1,189 +1,120 @@
-// Inicializar EmailJS
-(function() {
-  emailjs.init("WddODLBw11FUrjP-q"); // sua public key
-})();
+console.log("📌 script.js carregado");
 
-document.addEventListener("DOMContentLoaded", () => {
-  const usuarioSelect = document.getElementById("usuario");
-  const senhaInput = document.getElementById("senha");
-  const toggleSenha = document.getElementById("toggleSenha");
-  const loginForm = document.getElementById("loginForm");
-  const solicitacaoForm = document.getElementById("solicitacaoForm");
+let materiaisAdicionados = [];
 
-  // Função para detectar se estamos no login
-  if (usuarioSelect && loginForm) {
-    carregarUsuarios(usuarioSelect);
+const obraSelect = document.getElementById("obra");
+const centroCustoInput = document.getElementById("centroCusto");
+const materialSelect = document.getElementById("material");
+const quantidadeInput = document.getElementById("quantidade");
+const tabelaMateriais = document.getElementById("tabelaMateriais").querySelector("tbody");
+const adicionarMaterialBtn = document.getElementById("adicionarMaterial");
+const solicitacaoForm = document.getElementById("solicitacaoForm");
 
-    // Mostrar/ocultar senha
-    toggleSenha.addEventListener("click", () => {
-      senhaInput.type = senhaInput.type === "password" ? "text" : "password";
-    });
+// Carregar usuário logado
+const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+if (usuarioLogado) {
+  console.log("👤 Usuário logado recuperado:", usuarioLogado);
+  document.getElementById("user-info").innerText = `Logado como: ${usuarioLogado.Nome}`;
+}
 
-    // Login
-    loginForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+// Simula obras
+const obras = [
+  { nome: "AEMFLO", centroCusto: "AC1001" },
+  { nome: "ARTISTI", centroCusto: "AC1002" },
+  { nome: "ASTEL", centroCusto: "AC1003" },
+  { nome: "AUTOMOTIVA", centroCusto: "AC1004" },
+  { nome: "BIOS FARMACEUTICA", centroCusto: "AC1005" },
+  { nome: "CLINICA CERNE", centroCusto: "AC1006" },
+  { nome: "COMBO FORQUILHINHA", centroCusto: "AC1007" }
+];
 
-      const email = usuarioSelect.value;
-      const senha = senhaInput.value;
+// Simula materiais
+const materiaisDisponiveis = [
+  "Disjuntor Bipolar 32A",
+  "Disjuntor Tripolar 50A",
+  "Cimento CP IV 32",
+  "Cabo Flexível 4mm",
+  "Fita Isolante 3M"
+];
 
-      try {
-        const resp = await fetch("usuarios.json");
-        const usuarios = await resp.json();
-
-        const usuario = usuarios.find(
-          u => u.Email.trim().toLowerCase() === email.trim().toLowerCase() && u.Senha === senha
-        );
-
-        if (usuario) {
-          localStorage.setItem("usuarioLogado", JSON.stringify(usuario));
-          Swal.fire({
-            icon: "success",
-            title: "Login realizado com sucesso!",
-            showConfirmButton: false,
-            timer: 2000
-          });
-          setTimeout(() => window.location.href = "solicitacao.html", 2000);
-        } else {
-          Swal.fire({
-            icon: "error",
-            title: "Email ou senha inválidos!",
-            confirmButtonText: "Tentar novamente"
-          });
-        }
-      } catch (err) {
-        console.error("Erro ao validar login:", err);
-        Swal.fire("Erro", "Falha ao carregar usuários!", "error");
-      }
-    });
-  }
-
-  // Se estiver na tela de solicitação
-  if (solicitacaoForm) {
-    const obraSelect = document.getElementById("obra");
-    const centroCustoInput = document.getElementById("centroCusto");
-    const materialSelect = document.getElementById("material");
-    const quantidadeInput = document.getElementById("quantidade");
-    const tabelaMateriais = document.querySelector("#tabelaMateriais tbody");
-    const adicionarBtn = document.getElementById("adicionarMaterial");
-    const localEntregaSelect = document.getElementById("localEntrega");
-
-    let materiaisAdicionados = [];
-    let sequencial = Date.now().toString().slice(-4);
-
-    // Carregar dados do usuário logado
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
-    if (!usuarioLogado) {
-      Swal.fire("Erro", "Você precisa fazer login novamente!", "error").then(() => {
-        window.location.href = "login.html";
-      });
-      return;
-    }
-    document.getElementById("user-info").innerText = 
-      `${usuarioLogado.Nome} - ${usuarioLogado.Email}`;
-
-    // Carregar obras vinculadas ao usuário
-    fetch("obras.json")
-      .then(r => r.json())
-      .then(obras => {
-        const obrasFiltradas = obras.filter(
-          o => o.Email.trim().toLowerCase() === usuarioLogado.Email.trim().toLowerCase()
-        );
-        if (obrasFiltradas.length === 0) {
-          Swal.fire("Atenção", "Você não tem obras associadas!", "warning")
-            .then(() => window.location.href = "login.html");
-        }
-        obrasFiltradas.forEach(obra => {
-          const opt = document.createElement("option");
-          opt.value = obra.Obra;
-          opt.textContent = obra.Obra;
-          obraSelect.appendChild(opt);
-        });
-
-        obraSelect.addEventListener("change", () => {
-          const selecionada = obrasFiltradas.find(o => o.Obra === obraSelect.value);
-          centroCustoInput.value = selecionada ? selecionada["Centro de Custo"] : "";
-        });
-      })
-      .catch(err => {
-        console.error("Erro ao carregar obras:", err);
-        Swal.fire("Erro", "Falha ao carregar obras!", "error");
-      });
-
-    // Carregar materiais
-    fetch("materiais.json")
-      .then(r => r.json())
-      .then(materiais => {
-        materiais.sort((a, b) => a.Material.localeCompare(b.Material));
-        materiais.forEach(mat => {
-          const opt = document.createElement("option");
-          opt.value = mat.Material;
-          opt.textContent = `${mat.Material} (${mat.UND})`;
-          opt.dataset.und = mat.UND;
-          materialSelect.appendChild(opt);
-        });
-      })
-      .catch(err => {
-        console.error("Erro ao carregar materiais:", err);
-        Swal.fire("Erro", "Falha ao carregar materiais!", "error");
-      });
-
-    // Adicionar material na lista
-    adicionarBtn.addEventListener("click", () => {
-      const material = materialSelect.value;
-      const und = materialSelect.selectedOptions[0]?.dataset.und || "";
-      const quantidade = quantidadeInput.value;
-
-      if (!material || !quantidade) {
-        return; // não mostra alerta, só ignora
-      }
-
-      materiaisAdicionados.push({ material, und, quantidade });
-      atualizarTabela();
-      quantidadeInput.value = "";
-      materialSelect.value = "";
-    });
-
-    function atualizarTabela() {
-      tabelaMateriais.innerHTML = "";
-      materiaisAdicionados.forEach((item, index) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${item.material}</td>
-          <td>${item.und}</td>
-          <td>${item.quantidade}</td>
-          <td><span class="btn-remover" data-index="${index}">❌</span></td>
-        `;
-        tabelaMateriais.appendChild(row);
-      });
-
-      document.querySelectorAll(".btn-remover").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          const idx = e.target.dataset.index;
-          materiaisAdicionados.splice(idx, 1);
-          atualizarTabela();
-        });
-      });
-    }
-
-    // Enviar solicitação
-   
-  }
+// Carrega obras no select
+obras.forEach(obra => {
+  const option = document.createElement("option");
+  option.value = obra.nome;
+  option.textContent = obra.nome;
+  obraSelect.appendChild(option);
 });
 
-// Carregar usuários
-function carregarUsuarios(selectElement) {
-  fetch("usuarios.json")
-    .then(r => r.json())
-    .then(users => {
-      users.forEach(u => {
-        const opt = document.createElement("option");
-        opt.value = u.Email;
-        opt.textContent = u.Nome;
-        selectElement.appendChild(opt);
-      });
-    })
-    .catch(err => {
-      console.error("Erro ao carregar usuários:", err);
-      Swal.fire("Erro", "Falha ao carregar a lista de usuários!", "error");
+// Atualiza centro de custo ao selecionar obra
+obraSelect.addEventListener("change", () => {
+  const obraSelecionada = obras.find(o => o.nome === obraSelect.value);
+  centroCustoInput.value = obraSelecionada ? obraSelecionada.centroCusto : "";
+});
+
+// Carrega materiais no select
+materiaisDisponiveis.forEach(mat => {
+  const option = document.createElement("option");
+  option.value = mat;
+  option.textContent = mat;
+  materialSelect.appendChild(option);
+});
+
+// Adiciona material à tabela
+adicionarMaterialBtn.addEventListener("click", () => {
+  const material = materialSelect.value;
+  const quantidade = quantidadeInput.value;
+
+  if (!material || !quantidade) {
+    Swal.fire("Atenção", "Selecione um material e informe a quantidade.", "warning");
+    return;
+  }
+
+  materiaisAdicionados.push({ material, quantidade });
+  atualizarTabela();
+
+  materialSelect.value = "";
+  quantidadeInput.value = "";
+});
+
+// Atualiza a tabela
+function atualizarTabela() {
+  tabelaMateriais.innerHTML = "";
+
+  materiaisAdicionados.forEach((item, index) => {
+    const row = document.createElement("tr");
+
+    const materialCell = document.createElement("td");
+    materialCell.textContent = item.material;
+
+    const undCell = document.createElement("td");
+    undCell.textContent = "Un";
+
+    const quantidadeCell = document.createElement("td");
+    quantidadeCell.textContent = item.quantidade;
+
+    const acaoCell = document.createElement("td");
+    const removerBtn = document.createElement("button");
+    removerBtn.textContent = "❌";
+    removerBtn.addEventListener("click", () => {
+      materiaisAdicionados.splice(index, 1);
+      atualizarTabela();
     });
+    acaoCell.appendChild(removerBtn);
+
+    row.appendChild(materialCell);
+    row.appendChild(undCell);
+    row.appendChild(quantidadeCell);
+    row.appendChild(acaoCell);
+
+    tabelaMateriais.appendChild(row);
+  });
 }
+
+// ✅ Resetar materiais após o envio do formulário
+solicitacaoForm.addEventListener("submit", (e) => {
+  setTimeout(() => {
+    materiaisAdicionados = [];
+    atualizarTabela();
+    console.log("🧹 Lista de materiais resetada após envio.");
+  }, 1000); // pequena espera para garantir que o envio finalize
+});
