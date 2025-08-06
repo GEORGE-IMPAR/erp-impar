@@ -1,8 +1,8 @@
 console.log("📌 script_email.js carregado");
 
 // Inicializar EmailJS
-(function() {
-  emailjs.init("WddODLBw11FUrjP-q"); // substitua pela sua public key
+(function () {
+  emailjs.init("WddODLBw11FUrjP-q"); // sua public key
   console.log("✅ EmailJS inicializado");
 })();
 
@@ -22,8 +22,9 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("👤 Usuário logado recuperado:", usuarioLogado);
 
     if (!usuarioLogado) {
-      Swal.fire("Erro", "Sessão expirada. Faça login novamente.", "error")
-        .then(() => (window.location.href = "login.html"));
+      Swal.fire("Erro", "Sessão expirada. Faça login novamente.", "error").then(
+        () => (window.location.href = "login.html")
+      );
       return;
     }
 
@@ -33,20 +34,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const prazo = document.getElementById("prazo")?.value || "";
     const localEntrega = document.getElementById("localEntrega")?.value || "";
 
-    console.log("📌 Dados coletados do formulário:", { obra, centroCusto, prazo, localEntrega });
+    console.log("📌 Dados coletados do formulário:", {
+      obra,
+      centroCusto,
+      prazo,
+      localEntrega,
+    });
 
     if (!obra || !centroCusto || !prazo || !localEntrega) {
       Swal.fire("Atenção", "Preencha todos os campos obrigatórios!", "warning");
       return;
     }
 
-    // 🔹 Coletar materiais da tabela
-    const materiais = [];
+    // 🔹 Coletar materiais
+    let materiais = []; // <<< sempre recria a lista
     document.querySelectorAll("#tabelaMateriais tbody tr").forEach((row) => {
       const cols = row.querySelectorAll("td");
       materiais.push({
         material: cols[0]?.innerText || "",
-        quantidade: cols[2]?.innerText || ""
+        quantidade: cols[2]?.innerText || "",
       });
     });
 
@@ -57,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     console.log("📦 Materiais coletados:", materiais);
 
-    // 🔹 Parâmetros do EmailJS
+    // 🔹 Parâmetros para EmailJS
     const params = {
       nome: usuarioLogado.Nome,
       from_email: usuarioLogado.Email,
@@ -65,13 +71,18 @@ document.addEventListener("DOMContentLoaded", () => {
       centro_custo: centroCusto,
       data: prazo,
       local_entrega: localEntrega,
-      materiais: materiais
+      materiais: JSON.stringify(materiais), // agora sempre serializado
     };
 
     console.log("📧 Enviando com parâmetros:", params);
 
-    // 🔹 Enviar via EmailJS
-    emailjs.send("service_fzht86y", "template_wz0ywdo", params)
+    // 🔹 Desabilitar botão enquanto envia
+    const botaoEnviar = solicitacaoForm.querySelector("button[type=submit]");
+    if (botaoEnviar) botaoEnviar.disabled = true;
+
+    // 🔹 Enviar email
+    emailjs
+      .send("service_fzht86y", "template_wz0ywdo", params)
       .then((response) => {
         console.log("✅ Email enviado:", response);
 
@@ -79,25 +90,22 @@ document.addEventListener("DOMContentLoaded", () => {
           icon: "success",
           title: "Solicitação enviada com sucesso!",
           showConfirmButton: false,
-          timer: 2500
+          timer: 2500,
         });
 
-        // 🧹 Resetar tabela
-        const tbody = document.querySelector("#tabelaMateriais tbody");
-        if (tbody) {
-          tbody.innerHTML = "";
-          console.log("🧹 Tabela de materiais resetada.");
-        }
+        // 🧹 Resetar tabela e materiais
+        document.querySelector("#tabelaMateriais tbody").innerHTML = "";
+        materiais = []; // <<< limpa o array
+        console.log("🧹 Lista e tabela de materiais resetadas.");
 
-        // 🔄 Resetar formulário
         solicitacaoForm.reset();
-
-        // 🧽 Limpar cache se houver
-        localStorage.removeItem("materiaisAdicionados");
       })
       .catch((err) => {
         console.error("Erro EmailJS:", err);
         Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
+      })
+      .finally(() => {
+        if (botaoEnviar) botaoEnviar.disabled = false;
       });
   });
 });
