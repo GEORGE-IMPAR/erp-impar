@@ -78,14 +78,19 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
       console.log("✅ Email enviado:", resp);
+
+      // 🧹 Resetar campos e tabela
+      solicitacaoForm.reset();
+      document.querySelector("#tabelaMateriais tbody").innerHTML = "";
+      materiais = []; // <-- RESET efetivo da lista de materiais
+      console.log("🧹 Lista e tabela de materiais resetadas.");
+
       Swal.fire({
         icon: "success",
         title: "Solicitação enviada com sucesso!",
         showConfirmButton: false,
         timer: 2500
       });
-      solicitacaoForm.reset();
-      document.querySelector("#tabelaMateriais tbody").innerHTML = "";
     } catch (err) {
       console.error("❌ Erro EmailJS:", err);
       Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
