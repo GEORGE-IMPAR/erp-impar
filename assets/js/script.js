@@ -1,49 +1,74 @@
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("📌 script.js carregado");
+console.log("📌 script.js carregado");
 
-  let materiaisAdicionados = [];
+document.addEventListener("DOMContentLoaded", () => {
+  const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+  const userInfo = document.getElementById("user-info");
+
+  if (usuarioLogado && userInfo) {
+    userInfo.textContent = `Logado como: ${usuarioLogado.Nome}`;
+  }
 
   const obraSelect = document.getElementById("obra");
   const centroCustoInput = document.getElementById("centroCusto");
   const materialSelect = document.getElementById("material");
   const quantidadeInput = document.getElementById("quantidade");
-  const tabelaMateriais = document.getElementById("tabelaMateriais").querySelector("tbody");
-  const adicionarMaterialBtn = document.getElementById("adicionarMaterial");
+  const adicionarBtn = document.getElementById("adicionarMaterial");
   const solicitacaoForm = document.getElementById("solicitacaoForm");
+  const localEntregaSelect = document.getElementById("localEntrega");
+  const tabelaElement = document.getElementById("tabelaMateriais");
+  const tabelaMateriais = tabelaElement ? tabelaElement.querySelector("tbody") : null;
 
-  // Atualizar Centro de Custo ao selecionar Obra
-  obraSelect.addEventListener("change", () => {
-    const obraSelecionada = obraSelect.value;
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+  let materiaisAdicionados = [];
 
-    if (usuarioLogado && usuarioLogado.obras) {
-      const obra = usuarioLogado.obras.find((o) => o.nome === obraSelecionada);
-      if (obra) {
-        centroCustoInput.value = obra.centroCusto;
-      }
-    }
+  // Preencher select de obras
+  if (usuarioLogado && usuarioLogado.obras) {
+    usuarioLogado.obras.forEach((obra) => {
+      const option = document.createElement("option");
+      option.value = obra.nome;
+      option.textContent = obra.nome;
+      option.dataset.centroCusto = obra.centroCusto;
+      obraSelect.appendChild(option);
+    });
+  }
+
+  // Preencher materiais
+  fetch("assets/db/materiais.json")
+    .then((res) => res.json())
+    .then((materiais) => {
+      materiais.forEach((material) => {
+        const option = document.createElement("option");
+        option.value = material.nome;
+        option.textContent = material.nome;
+        materialSelect.appendChild(option);
+      });
+    });
+
+  // Atualizar centro de custo ao selecionar obra
+  obraSelect?.addEventListener("change", () => {
+    const selectedOption = obraSelect.options[obraSelect.selectedIndex];
+    centroCustoInput.value = selectedOption.dataset.centroCusto || "";
   });
 
-  // Adicionar material à lista
-  adicionarMaterialBtn.addEventListener("click", () => {
+  // Adicionar material
+  adicionarBtn?.addEventListener("click", () => {
     const material = materialSelect.value;
     const quantidade = quantidadeInput.value;
 
     if (!material || !quantidade) {
-      Swal.fire("Atenção", "Selecione o material e informe a quantidade!", "warning");
+      Swal.fire("Atenção", "Preencha material e quantidade!", "warning");
       return;
     }
 
-    const novoMaterial = { material, quantidade };
-    materiaisAdicionados.push(novoMaterial);
+    materiaisAdicionados.push({ material, quantidade });
     atualizarTabela();
-
     materialSelect.value = "";
     quantidadeInput.value = "";
   });
 
-  // Atualizar a tabela de materiais
+  // Atualizar a tabela
   function atualizarTabela() {
+    if (!tabelaMateriais) return;
+
     tabelaMateriais.innerHTML = "";
 
     materiaisAdicionados.forEach((item, index) => {
@@ -59,7 +84,6 @@ document.addEventListener("DOMContentLoaded", () => {
       tabelaMateriais.appendChild(row);
     });
 
-    // Botões de remoção
     document.querySelectorAll(".remover-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const index = btn.getAttribute("data-index");
@@ -69,10 +93,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Expor a função para resetar lista/tabela de materiais
-  window.resetarMateriais = () => {
+  // Resetar materiais ao submeter o formulário
+  solicitacaoForm?.addEventListener("submit", () => {
     materiaisAdicionados = [];
     atualizarTabela();
-    console.log("🧹 Lista e tabela de materiais resetadas.");
-  };
+  });
 });
