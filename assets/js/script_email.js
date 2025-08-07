@@ -1,60 +1,44 @@
-solicitacaoForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+// script_email.js
 
-  const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
-  if (!usuarioLogado) {
-    Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
-      .then(() => window.location.href = "login.html");
-    return;
-  }
+console.log("📌 script_email.js carregado");
 
-  const obra = document.getElementById("obra").value;
+// Inicializar EmailJS
+emailjs.init("WddODLBw11FUrjP-q");
+console.log("✅ EmailJS inicializado");
+
+// Evento de envio do formulário
+document.querySelector("form").addEventListener("submit", async function (event) {
+  event.preventDefault();
+
+  const user = JSON.parse(localStorage.getItem("usuarioLogado"));
+  console.log("👤 Usuário logado recuperado:", user);
+
+  const nome = user?.Nome || "Desconhecido";
+  const from_email = user?.Email || "desconhecido@dominio.com";
+
+  const obra = document.getElementById("obras").value;
   const centroCusto = document.getElementById("centroCusto").value;
-  const prazo = document.getElementById("prazo").value;
+  const prazo = document.getElementById("prazoEntrega").value;
   const localEntrega = document.getElementById("localEntrega").value;
 
-  if (!obra || !centroCusto || !prazo || !localEntrega) {
-    Swal.fire("⚠️ Atenção", "Preencha todos os campos obrigatórios!", "warning");
-    return;
-  }
-
-  // ✅ Agora o array está *dentro* do submit, reinicia sempre
-  const materiais = [];
-  const linhas = tabelaBody.querySelectorAll("tr");
-
-  linhas.forEach(linha => {
-    const colunas = linha.querySelectorAll("td");
-    if (colunas.length >= 3) {
-      materiais.push({
-        material: colunas[0].innerText.trim(),
-        und: colunas[1].innerText.trim(),
-        quantidade: colunas[2].innerText.trim()
-      });
-    }
+  console.log("📌 Dados coletados do formulário:", {
+    obra,
+    centroCusto,
+    prazo,
+    localEntrega,
   });
 
-  if (materiais.length === 0) {
-    Swal.fire("⚠️ Atenção", "Adicione pelo menos um material!", "warning");
-    return;
-  }
-
+  const materiais = JSON.parse(localStorage.getItem("materiais")) || [];
   console.log("📦 Materiais coletados:", materiais);
 
-  const materiaisHtml = materiais.map(m =>
-    `<tr>
-       <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.material}</td>
-       <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.quantidade}</td>
-     </tr>`
-  ).join("");
-
   const templateParams = {
-    nome: usuarioLogado.Nome,
-    from_email: usuarioLogado.Email,
+    nome,
+    from_email,
     obra,
     centro_custo: centroCusto,
     data: prazo,
     local_entrega: localEntrega,
-    materiais: materiaisHtml
+    materiais: JSON.stringify(materiais, null, 2),
   };
 
   console.log("📧 Enviando com parâmetros:", templateParams);
@@ -63,26 +47,16 @@ solicitacaoForm.addEventListener("submit", async (e) => {
     const response = await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
     console.log("✅ Email enviado:", response);
 
-    Swal.fire({
-      icon: "success",
-      title: "Solicitação enviada com sucesso!",
-      showConfirmButton: false,
-      timer: 2500
-    });
+    // Limpar localStorage e tabela após envio
+    localStorage.removeItem("materiais");
 
-    // 🔁 RESET REAL
-    document.getElementById("obra").selectedIndex = 0;
-    document.getElementById("centroCusto").value = "";
-    document.getElementById("prazo").value = "";
-    document.getElementById("material").selectedIndex = 0;
-    document.getElementById("quantidade").value = "";
-    document.getElementById("localEntrega").selectedIndex = 0;
+    const tabelaBody = document.querySelector("#tabelaMateriais tbody");
+    if (tabelaBody) {
+      tabelaBody.innerHTML = "";
+    }
 
-    tabelaBody.innerHTML = "";
-    console.log("🧹 Todos os campos e tabela resetados. v2.1");
-
-  } catch (err) {
-    console.error("❌ Erro ao enviar o email:", err);
-    Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
+    console.log("🧹 Lista e tabela de materiais resetadas.✅");
+  } catch (error) {
+    console.error("❌ Erro ao enviar o email:", error);
   }
 });
