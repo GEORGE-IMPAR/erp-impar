@@ -37,17 +37,17 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Coletar materiais visíveis da tabela
-    let materiais = [];
-    const linhas = document.querySelectorAll("#tabelaMateriais tbody tr");
+    // Coleta segura dos materiais visíveis da TABELA
+    const materiais = [];
+    const linhas = tabelaBody.querySelectorAll("tr");
 
     linhas.forEach(linha => {
-      const cols = linha.querySelectorAll("td");
-      if (cols.length >= 3) {
+      const colunas = linha.querySelectorAll("td");
+      if (colunas.length >= 3) {
         materiais.push({
-          material: cols[0].innerText.trim(),
-          und: cols[1].innerText.trim(),
-          quantidade: cols[2].innerText.trim()
+          material: colunas[0].innerText.trim(),
+          und: colunas[1].innerText.trim(),
+          quantidade: colunas[2].innerText.trim()
         });
       }
     });
@@ -89,14 +89,19 @@ document.addEventListener("DOMContentLoaded", () => {
         timer: 2500
       });
 
-      // 🔁 RESET TOTAL (HTML + variável)
-      tabelaBody.innerHTML = "";
+      // ✅ RESET COMPLETO APÓS ENVIO
+      document.getElementById("obra").selectedIndex = 0;
+      document.getElementById("centroCusto").value = "";
+      document.getElementById("prazo").value = "";
       document.getElementById("material").selectedIndex = 0;
       document.getElementById("quantidade").value = "";
       document.getElementById("localEntrega").selectedIndex = 0;
-      materiais = [];
 
-      console.log("🧹 Lista e tabela de materiais resetadas.v1.0");
+      // Limpa a tabela visual
+      tabelaBody.innerHTML = "";
+
+      console.log("🧹 Todos os campos e tabela resetados. v2.0");
+
     } catch (err) {
       console.error("❌ Erro ao enviar o email:", err);
       Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
