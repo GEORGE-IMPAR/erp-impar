@@ -36,9 +36,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Capturar materiais da tabela
-    const linhas = document.querySelectorAll("#tabelaMateriais tbody tr");
+    // Reset local da variável para garantir que a lista seja limpa a cada envio
     let materiais = [];
+
+    const linhas = document.querySelectorAll("#tabelaMateriais tbody tr");
     linhas.forEach(linha => {
       const cols = linha.querySelectorAll("td");
       materiais.push({
@@ -55,7 +56,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     console.log("📦 Materiais coletados:", materiais);
 
-    // Montar HTML dos materiais para o template
     const materiaisHtml = materiais.map(m =>
       `<tr>
          <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.material}</td>
@@ -78,14 +78,19 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
       console.log("✅ Email enviado:", resp);
+
       Swal.fire({
         icon: "success",
         title: "Solicitação enviada com sucesso!",
         showConfirmButton: false,
         timer: 2500
       });
+
+      // Limpar a tabela e a lista DOM
       solicitacaoForm.reset();
       document.querySelector("#tabelaMateriais tbody").innerHTML = "";
+      materiais = []; // <<<<<< ZERA a variável de materiais após o envio
+      console.log("🧹 Lista e tabela de materiais resetadas.");
     } catch (err) {
       console.error("❌ Erro EmailJS:", err);
       Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
