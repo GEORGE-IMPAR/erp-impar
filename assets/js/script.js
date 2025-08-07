@@ -1,5 +1,5 @@
 // Inicializar EmailJS
-(function () {
+(function() {
   emailjs.init("WddODLBw11FUrjP-q"); // sua public key
 })();
 
@@ -14,12 +14,15 @@ document.addEventListener("DOMContentLoaded", () => {
   if (usuarioSelect && loginForm) {
     carregarUsuarios(usuarioSelect);
 
+    // Mostrar/ocultar senha
     toggleSenha.addEventListener("click", () => {
       senhaInput.type = senhaInput.type === "password" ? "text" : "password";
     });
 
+    // Login
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+
       const email = usuarioSelect.value;
       const senha = senhaInput.value;
 
@@ -67,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let materiaisAdicionados = [];
     let sequencial = Date.now().toString().slice(-4);
 
+    // Carregar dados do usuário logado
     const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
     if (!usuarioLogado) {
       Swal.fire("Erro", "Você precisa fazer login novamente!", "error").then(() => {
@@ -74,9 +78,10 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       return;
     }
-    document.getElementById("user-info").innerText =
+    document.getElementById("user-info").innerText = 
       `${usuarioLogado.Nome} - ${usuarioLogado.Email}`;
 
+    // Carregar obras vinculadas ao usuário
     fetch("obras.json")
       .then(r => r.json())
       .then(obras => {
@@ -104,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
         Swal.fire("Erro", "Falha ao carregar obras!", "error");
       });
 
+    // Carregar materiais
     fetch("materiais.json")
       .then(r => r.json())
       .then(materiais => {
@@ -121,12 +127,15 @@ document.addEventListener("DOMContentLoaded", () => {
         Swal.fire("Erro", "Falha ao carregar materiais!", "error");
       });
 
+    // Adicionar material na lista
     adicionarBtn.addEventListener("click", () => {
       const material = materialSelect.value;
       const und = materialSelect.selectedOptions[0]?.dataset.und || "";
       const quantidade = quantidadeInput.value;
 
-      if (!material || !quantidade) return;
+      if (!material || !quantidade) {
+        return; // não mostra alerta, só ignora
+      }
 
       materiaisAdicionados.push({ material, und, quantidade });
       atualizarTabela();
@@ -156,15 +165,12 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    // Após envio do email (em script_email.js), resetar os materiais:
-    window.addEventListener("materiaisResetar", () => {
-      materiaisAdicionados = [];
-      atualizarTabela();
-      console.log("🧹 Lista de materiais reiniciada via evento externo.");
-    });
+    // Enviar solicitação
+   
   }
 });
 
+// Carregar usuários
 function carregarUsuarios(selectElement) {
   fetch("usuarios.json")
     .then(r => r.json())
