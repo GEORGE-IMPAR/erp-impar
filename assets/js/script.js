@@ -127,20 +127,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // ✅ ALERTA DE MATERIAL NÃO SELECIONADO
       if (!material) {
-        alert("Selecione um material.");
+        materialSelect.setCustomValidity("Preencha este campo.");
+        materialSelect.reportValidity();
         return;
+      } else {
+        materialSelect.setCustomValidity("");
       }
 
       // ✅ ALERTA SE QUANTIDADE VAZIA OU ZERO
       if (!quantidade || isNaN(quantidade)) {
-        alert("Informe uma quantidade válida.");
+        quantidadeInput.setCustomValidity("Preencha este campo.");
+        quantidadeInput.reportValidity();
         return;
       }
 
       // ✅ BLOQUEIO QUANTIDADE <= 0
       if (parseInt(quantidade) <= 0) {
-        alert("A quantidade deve ser maior que zero.");
+        quantidadeInput.setCustomValidity("A quantidade deve ser maior que zero");
+        quantidadeInput.reportValidity();
         return;
+      } else {
+        quantidadeInput.setCustomValidity("");
       }
 
       materiaisAdicionados.push({ material, und, quantidade });
