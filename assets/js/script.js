@@ -79,8 +79,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (headerDiv) {
       headerDiv.style.textAlign = "center";
       headerDiv.innerHTML = `
-        <div style="font-size: 1.5em;">${usuarioLogado.Nome}</div>
-        <div style="font-size: 1.5em;">${usuarioLogado.Email}</div>
+        <div style="font-size: 0.9em;">${usuarioLogado.Nome}</div>
+        <div style="font-size: 0.9em;">${usuarioLogado.Email}</div>
       `;
     }
 
