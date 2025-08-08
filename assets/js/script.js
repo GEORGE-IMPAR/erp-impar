@@ -118,11 +118,23 @@ document.addEventListener("DOMContentLoaded", () => {
           opt.dataset.und = mat.UND;
           materialSelect.appendChild(opt);
         });
+
+        // ✅ Aplicar Tom Select após preenchimento dos materiais
+        new TomSelect("#material", {
+          create: false,
+          maxOptions: 1000,
+          sortField: {
+            field: "text",
+            direction: "asc"
+          },
+          placeholder: "Selecione um material..."
+        });
       });
 
     adicionarBtn.addEventListener("click", () => {
       const material = materialSelect.value;
-      const und = materialSelect.selectedOptions[0]?.dataset.und || "";
+      const selectedOption = materialSelect.selectedOptions[0];
+      const und = selectedOption?.dataset.und || "";
       const quantidade = quantidadeInput.value;
 
       // ✅ ALERTA DE MATERIAL NÃO SELECIONADO
@@ -153,7 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
       materiaisAdicionados.push({ material, und, quantidade });
       atualizarTabela();
       quantidadeInput.value = "";
-      materialSelect.value = "";
+      materialSelect.tomselect.clear();  // limpa seleção no TomSelect
     });
 
     function atualizarTabela() {
