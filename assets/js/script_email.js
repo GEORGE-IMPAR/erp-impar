@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
       materiais.push({
         material: cols[0].innerText,
         und: cols[1].innerText,
-        quantidade: cols[2].innerText
+        quantidade: cols[2].innerText,
         observacao: cols[3].innerText
       });
     });
