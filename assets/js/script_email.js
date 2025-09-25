@@ -45,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
         material: cols[0].innerText,
         und: cols[1].innerText,
         quantidade: cols[2].innerText
+        observacao: cols[3].innerText
       });
     });
 
@@ -61,6 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
          <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.material}</td>
          <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.und}</td>
          <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.quantidade}</td>
+         <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.observacao}</td>
        </tr>`
     ).join("");
 

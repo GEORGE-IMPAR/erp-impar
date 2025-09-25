@@ -60,6 +60,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const centroCustoInput = document.getElementById("centroCusto");
     const materialSelect = document.getElementById("material");
     const quantidadeInput = document.getElementById("quantidade");
+    const observacaoInput = document.getElementById("observacao");	
+
     const tabelaMateriais = document.querySelector("#tabelaMateriais tbody");
     const adicionarBtn = document.getElementById("adicionarMaterial");
     const localEntregaSelect = document.getElementById("localEntrega");
@@ -136,6 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const selectedOption = materialSelect.selectedOptions[0];
       const und = selectedOption?.dataset.und || "";
       const quantidade = quantidadeInput.value;
+      const observacao = (observacaoInput?.value || "").trim(); // NOVO
 
       // ✅ ALERTA DE MATERIAL NÃO SELECIONADO
       if (!material) {
@@ -162,10 +165,11 @@ document.addEventListener("DOMContentLoaded", () => {
         quantidadeInput.setCustomValidity("");
       }
 
-      materiaisAdicionados.push({ material, und, quantidade });
+      materiaisAdicionados.push({ material, und, quantidade, observacao });
       atualizarTabela();
       quantidadeInput.value = "";
       materialSelect.tomselect.clear();  // limpa seleção no TomSelect
+      if (observacaoInput) observacaoInput.value = ""; // NOVO
     });
 
     function atualizarTabela() {
@@ -176,6 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <td>${item.material}</td>
           <td>${item.und}</td>
           <td>${item.quantidade}</td>
+          <td>${item.observacao || ""}</td>
           <td><span class="btn-remover" data-index="${index}">❌</span></td>
         `;
         tabelaMateriais.appendChild(row);
