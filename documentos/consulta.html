@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consulta de Documentos — ERP Ímpar</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;margin:24px;line-height:1.4;}
+  .card{max-width:980px;margin:auto;border:1px solid #e5e7eb;border-radius:12px;padding:20px;box-shadow:0 2px 6px rgba(0,0,0,.05);}
+  h1{font-size:22px;margin:0 0 16px;}
+  label{display:block;font-size:14px;margin:10px 0 6px;}
+  input{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  button{border:0;background:#111827;color:#fff;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:12px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;margin-top:18px;font-size:14px}
+  th,td{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}
+  th{background:#f9fafb;font-weight:700}
+  .muted{color:#6b7280}
+  .ok{color:#059669}
+  .err{color:#b91c1c}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Consulta de Documentos — ERP Ímpar</h1>
+    <div class="row">
+      <div>
+        <label>Código (opcional)</label>
+        <input id="codigo" placeholder="Ex.: AC00025">
+      </div>
+      <div>
+        <label>Token da API</label>
+        <input id="token" placeholder="Cole seu token" autocomplete="off">
+      </div>
+    </div>
+    <div class="row3">
+      <div>
+        <label>Endpoint detectado</label>
+        <input id="endpoint" readonly>
+      </div>
+      <div>
+        <label>Status</label>
+        <input id="status" class="muted" readonly>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="buscar">Buscar</button>
+      </div>
+    </div>
+    <table id="tbl" style="display:none">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Código</th>
+          <th>Contratante</th>
+          <th>Contratada</th>
+          <th>Serviço</th>
+          <th>PDF</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p id="msg" class="muted"></p>
+  </div>
+
+<script>
+(function(){
+  const $ = sel => document.querySelector(sel);
+  const BASES = [
+    'https://api.erpimpar.com.br/gerador/',
+    'https://api.erpimpar.com.br/api/gerador/'
+  ];
+  const savedToken = localStorage.getItem('impar_api_token') || '';
+  $('#token').value = savedToken;
+
+  async function detectBase(token){
+    for (const b of BASES){
+      try{
+        const url = b + 'list.php?token=' + encodeURIComponent(token);
+        const r = await fetch(url, {method:'GET'});
+        if(r.ok){
+          const j = await r.json();
+          if (j && typeof j==='object' && 'ok' in j) return b;
+        }
+      }catch(e){/* try next */}
+    }
+    return null;
+  }
+
+  function fmtDate(iso){
+    if(!iso) return '';
+    try{
+      const d = new Date(iso);
+      return d.toLocaleString('pt-BR');
+    }catch(e){ return iso; }
+  }
+
+  $('#buscar').addEventListener('click', async ()=>{
+    const token = $('#token').value.trim();
+    const codigo = $('#codigo').value.trim();
+    if(!token){ alert('Informe o token da API.'); return; }
+    localStorage.setItem('impar_api_token', token);
+    $('#status').value = 'Detectando endpoint...';
+
+    const base = await detectBase(token);
+    if(!base){
+      $('#status').value = 'Falha ao detectar endpoint';
+      $('#status').className = 'err';
+      return;
+    }
+    $('#endpoint').value = base;
+    $('#status').value = 'Consultando...';
+
+    let url = base + 'list.php?token=' + encodeURIComponent(token);
+    if(codigo) url += '&codigo=' + encodeURIComponent(codigo);
+
+    try{
+      const r = await fetch(url, {method:'GET'});
+      const j = await r.json();
+      if(!r.ok || !j.ok){
+        $('#status').value = 'Erro na consulta';
+        $('#status').className = 'err';
+        $('#msg').textContent = JSON.stringify(j || {}, null, 2);
+        return;
+      }
+      $('#status').value = 'OK';
+      $('#status').className = 'ok';
+      const rows = j.rows || [];
+      const tb = $('#tbody'); tb.innerHTML='';
+      if(rows.length===0){ $('#msg').textContent = 'Nenhum registro encontrado.'; $('#tbl').style.display='none'; return; }
+      $('#msg').textContent = '';
+      $('#tbl').style.display='table';
+      for(const r of rows){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${fmtDate(r.created_at)}</td>
+          <td>${r.codigo || ''}</td>
+          <td><div><strong>${r.contratante_nome||''}</strong></div><div class="muted">${r.contratante_doc||''}</div></td>
+          <td><div><strong>${r.contratada_nome||''}</strong></div><div class="muted">${r.contratada_doc||''}</div></td>
+          <td>${r.servico||''}</td>
+          <td>${r.pdf_url?(`<a href="${r.pdf_url}" target="_blank">abrir</a>`):''}</td>
+        `;
+        tb.appendChild(tr);
+      }
+    }catch(e){
+      $('#status').value = 'Erro de rede';
+      $('#status').className = 'err';
+      $('#msg').textContent = e.message || String(e);
+    }
+  });
+})();
+</script>
+</body>
+</html>
