@@ -4,8 +4,8 @@
 
 (function(){
   // ====== CONFIG DO BACKEND ======
-  const SAVE_URL   = 'https://www.erpimpar.com.br/api/gerador/save.php';
-  const LIST_URL   = 'https://www.erpimpar.com.br/api/gerador/list.php';
+  const SAVE_URL   = 'https://api.erpimpar.com.br/gerador/save.php';
+  const LIST_URL   = 'https://api.erpimpar.com.br/gerador/list.php';
   const SAVE_TOKEN = '8cce9abb2fd53b1cceaa93b9cecfd5384b2ea6fb931e8882c543cbd7d3663b77';
   // =================================
 
