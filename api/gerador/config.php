@@ -1,6 +1,6 @@
 <?php
 // api/gerador/config.php  — FLAT-FILE (sem MySQL)
-define('API_TOKEN', 'TROQUE_POR_UM_TOKEN_BEM_LONGO'); // ex.: Xk93... (min 32 chars)
+define('API_TOKEN', '8cce9abb2fd53b1cceaa93b9cecfd5384b2ea6fb931e8882c543cbd7d3663b77');
 
 // Diretórios (ajuste se quiser mover para fora da pasta pública)
 define('PDF_DIR', __DIR__ . '/../../storage/docs');      // onde salvam os PDFs
