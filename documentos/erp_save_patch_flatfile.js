@@ -1,6 +1,6 @@
-// ERP IMPAR — Patch de salvamento (flat‑file) v1
+// ERP IMPAR — Patch de salvamento (flat-file) v1
 // Incluir após os scripts do documentos/index.html:
-//   <script src="documentos/erp_save_patch_flatfile.js"></script>
+//   <script src="documentos/erp_save_patch_flatfile.js?v=5"></script>
 
 (function(){
   // ====== CONFIG DO BACKEND ======
@@ -65,48 +65,44 @@
     return resp.json();
   }
 
-  // Guarda referência da função original (caso queira reverter)
-  const originalFinalize = window.finalizeStep5;
-
-  window.finalizeStep5 = function(){
-    // Função util de toast (se existir no app)
-    const toast = (typeof window.showToast === 'function') ? window.showToast : console.log;
-
-    toast('Documento cadastrado com sucesso!');
-    (async () => {
-      try {
-        if (typeof window.createPdfBlob !== 'function') {
-          toast('Falha: gerador de PDF não disponível.');
-          return;
-        }
-        // 1) Gerar PDF
-        const blob = await window.createPdfBlob();
-        window.__pdfBlob = blob;
-        if (window.__pdfUrl) URL.revokeObjectURL(window.__pdfUrl);
-        window.__pdfUrl  = URL.createObjectURL(blob);
-        const code = (typeof window.currentCode === 'function') ? window.currentCode() : 'DOC';
-        const ymd  = (typeof window.todayYMD === 'function') ? window.todayYMD() : new Date().toISOString().slice(0,10).replace(/-/g,'');
-        window.__pdfName = `${code}_${ymd}.pdf`;
-
-        // 2) Salvar no ERP
-        const out = await saveToServer(blob, window.__pdfName);
-        if(out && out.ok){
-          window.__pdfSavedUrl = out.pdfUrl;
-          toast('Registro salvo no ERP ✅');
-        } else {
-          console.warn('save error', out);
-          toast('Gerado localmente. Falha ao salvar no ERP ❗');
-        }
-      } catch (e){
-        console.error(e);
-        toast('Gerado localmente. Falha ao salvar no ERP ❗');
-      }
-      // 3) Abrir modal de sucesso (se existir)
-      const modal = document.getElementById('successModal');
-      if(modal) modal.style.display='flex';
-    })();
-  };
-
   // Exponho utilidades caso queira usar em outra parte (ex.: consulta)
   window.__ERP_SAVE_PATCH__ = { SAVE_URL, LIST_URL, SAVE_TOKEN, saveToServer };
+
+  // ---- Gancho ROBUSTO no finalizeStep5 -------------------------------
+  (function installHook() {
+    // já instalado?
+    if (typeof window.finalizeStep5 === 'function'
+        && (window.finalizeStep5 + '').includes('saveToServer')) {
+      return; // nada a fazer
+    }
+
+    if (typeof window.finalizeStep5 !== 'function') {
+      // ainda não existe: espera um pouco e tenta de novo
+      return setTimeout(installHook, 200);
+    }
+
+    const orig = window.finalizeStep5;
+
+    window.finalizeStep5 = async function () {
+      try {
+        if (typeof window.createPdfBlob === 'function') {
+          const blob = await window.createPdfBlob();
+
+          const codigo = (document.getElementById('codigo')?.value || 'DOC').replace(/\W+/g, '');
+          const stamp  = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0,14); // yyyymmddhhmmss
+          const name   = `${codigo || 'DOC'}_${stamp}.pdf`;
+
+          const out = await saveToServer(blob, name);
+          console.log('[PATCH] save result', out);
+        } else {
+          console.warn('[PATCH] createPdfBlob não disponível');
+        }
+      } catch (e) {
+        console.error('[PATCH] erro ao salvar', e);
+      }
+      return typeof orig === 'function' ? orig.apply(this, arguments) : undefined;
+    };
+
+    console.log('[PATCH] finalizeStep5 hook instalado');
+  })();
 })();
