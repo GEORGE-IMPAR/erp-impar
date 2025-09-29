@@ -1,182 +1,547 @@
-<!-- === Consulta integrada (modal) – cole antes do </body> === -->
-<script>
-(function () {
-  // Usa as configs já expostas pelo patch de salvamento
-  const PATCH  = (window.__ERP_SAVE_PATCH__ || {});
-  const LIST_URL   = PATCH.LIST_URL   || 'https://api.erpimpar.com.br/gerador/list.php';
-  const SAVE_TOKEN = PATCH.SAVE_TOKEN || ''; // mantém vazio se não existir (só para não quebrar)
+<!DOCTYPE html><html lang="pt-br" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerador de documentos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#f1f1f1;--card:#ffffff;--text:#1f2937;--border:#d1d5db;--capbg:#f3f4f6;
+--accent:#2ea3f2;--accentText:#fff;--disabled:#cbd5e1;--disabledText:#6b7280;--error:#ef4444}
+:root[data-theme="dark"]{--bg:#0b1220;--card:#0f172a;--text:#e5e7eb;--border:#1f2a40;--capbg:#0c1830;
+--accent:#3b82f6;--accentText:#fff;--disabled:#334155;--disabledText:#a3b1c6;--error:#f87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 Arial,Helvetica,sans-serif}
+.wrap{width:100%;max-width:clamp(420px, 90vw, 860px);margin:0 auto;padding:10px 10px 18px}
+@media (min-width: 768px){ .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px} }
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center;margin:10px 0 6px;flex-wrap:wrap}
+.dot{width:18px;height:18px;border-radius:50%;border:1px solid #c7c7c7;color:#4b5563;display:flex;align-items:center;justify-content:center;font-size:11px;background:#fff}
+.dot.done,.dot.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.dot.active{box-shadow:0 0 0 2px rgba(46,163,242,.35)}
+.line{height:1px;flex:1;background:#c7c7c7;max-width:24px}
+.line.done{background:var(--accent)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:6px;overflow:hidden;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+.header{padding:14px 14px 6px}
+.title{font-family:Georgia,Times,serif;font-weight:600;font-size:22px;margin:0 0 6px;color:#111827}
+.user{font-size:13px;color:#4b5563;margin:0 0 8px}
+.code{font-size:13px;color:#374151;margin:0 0 8px}.code b{font-weight:700}
+.body{padding:12px 14px 16px}
+.block{border:1px solid var(--border);background:#fff;margin:0 0 12px;border-radius:4px;overflow:hidden}
+.block .cap{background:var(--capbg);color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:.3px;padding:6px 8px;border-bottom:1px solid var(--border)}
+.block .cap .req{color:#dc2626}.block .content{padding:8px}
+.textarea,.input,select{width:100%;border:1px solid #e5e7eb;background:#fff;padding:8px;border-radius:4px;font:15px/1.45 Arial,Helvetica,sans-serif;color:#111827;outline:none;transition:border-color .15s,box-shadow .15s}
+.textarea{min-height:120px;resize:vertical}.textarea:focus,.input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(46,163,242,.25)}
+.file{font:14px Arial,Helvetica,sans-serif}.error{color:var(--error);font-size:12px;margin-top:6px}.hint{font-size:12px;color:#6b7280;margin-top:6px}
+.bar{position:sticky;bottom:0;left:0;right:0;text-align:center;padding:14px;font-weight:700;cursor:default;margin-top:10px;border-top:1px solid #e5e7eb}
+.bar.disabled{background:var(--disabled);color:var(--disabledText)}.bar.enabled{background:var(--accent);color:var(--accentText);cursor:pointer}
+.back{display:flex;align-items:center;gap:6px;justify-content:center;color:#111827;font-size:14px;margin-top:6px;cursor:pointer;user-select:none}.back .chev{color:#f59e0b}
+.hidden{display:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:14px;z-index:60}
+.modal .box{width:100%;max-width:520px;background:#fff;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);border:1px solid #e5e7eb;overflow:hidden}
+.modal .box .hd{padding:16px;border-bottom:1px solid #e5e7eb;font-weight:700}
+.modal .box .bd{padding:16px}
+.modal .box .ft{padding:12px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.btn{padding:10px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer}
+.btn.primary{background:#2ea3f2;color:#fff;border-color:transparent}
+.viewer{position:fixed;inset:0;background:#111827cc;display:none;align-items:center;justify-content:center;z-index:65}
+.viewer .panel{width:96%;max-width:900px;background:#fff;border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+.viewer .panel .top{padding:10px;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.viewer .panel iframe{width:100%;height:80vh;border:0}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:#10b981;color:#fff;padding:12px 16px;border-radius:6px;font-weight:700;box-shadow:0 10px 20px rgba(0,0,0,.2);display:none;z-index:70}
 
-  // --- Util: cria estilos enxutos pro modal de consulta (reaproveita seu .modal/.box) ---
-  const css = `
-  .consulta-head{display:flex;gap:8px;align-items:center;justify-content:space-between}
-  .consulta-grid{width:100%;border-collapse:collapse;margin-top:12px}
-  .consulta-grid th,.consulta-grid td{border:1px solid var(--border);padding:10px;text-align:left}
-  .consulta-grid th{background:var(--capbg);color:#374151;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
-  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:20px;padding:6px 10px;font-weight:700;cursor:pointer}
-  .pill.primary{background:#2ea3f2;border-color:transparent;color:#fff}
-  .pill:disabled{opacity:.65;cursor:default}
-  .muted{color:#6b7280}
-  .nowrap{white-space:nowrap}
-  .pdf-btn{display:inline-flex;align-items:center;gap:6px;font-weight:700}
-  .pdf-btn .dot{width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block}
-  .right{margin-left:auto}
-  .xbtn{cursor:pointer;font-size:18px;font-weight:900;line-height:1}
-  `;
-  const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
+/* ===== Estilo da consulta ===== */
+.table-consulta{width:100%;border-collapse:collapse;margin-top:10px}
+.table-consulta th,.table-consulta td{padding:10px 8px;border-bottom:1px solid var(--border);font-size:14px;vertical-align:top}
+.table-consulta th{font-weight:700;color:#374151;background:var(--capbg)}
+.table-consulta td a{color:#2563eb;text-decoration:none}
+.table-consulta td a:hover{text-decoration:underline}
+.modal .box--wide{max-width:980px}
+.row-muted{color:#6b7280;font-size:12px}
+</style>
+</head>
 
-  // --- Injeta HTML do modal (usa sua mesma estrutura .modal/.box/.hd/.bd/.ft) ---
-  const modal = document.createElement('div');
-  modal.id = 'consultaModal';
-  modal.className = 'modal';
-  modal.innerHTML = `
-    <div class="box" style="max-width:980px">
-      <div class="hd consulta-head">
-        <div><b>Consulta de Documentos — ERP Ímpar</b></div>
-        <div class="xbtn" id="consultaClose">×</div>
-      </div>
-      <div class="bd">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <div style="flex:1 1 260px;min-width:260px">
-            <div style="font-size:12px;color:#6b7280;margin-bottom:4px">Código (opcional)</div>
-            <input id="consultaCodigo" class="input" placeholder="Ex.: AC00025">
-          </div>
-          <button id="consultaBuscar" class="pill primary">Buscar</button>
-          <div id="consultaStatus" class="muted"></div>
-        </div>
+<!-- mantém seu patch que já injeta LIST_URL/TOKEN -->
+<script src="/documentos/erp_save_patch_flatfile.js"></script>
 
-        <table class="consulta-grid" style="margin-top:14px">
-          <thead>
-            <tr>
-              <th style="width:110px">Código</th>
-              <th>Obra</th>
-              <th style="width:90px" class="nowrap">PDF</th>
-            </tr>
-          </thead>
-          <tbody id="consultaRows">
-            <tr><td colspan="3" class="muted">Informe um código e clique <b>Buscar</b> ou deixe vazio para listar todos.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="ft" style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn" id="consultaFechar">Fechar</button>
+<body>
+<div class="wrap">
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;"><button class="btn" onclick="toggleTheme()" id="themeBtn">🌙 Tema</button></div>
+
+  <div class="stepper" id="stepper">
+    <div class="dot" id="dot1">1</div><div class="line" id="line12"></div>
+    <div class="dot" id="dot2">2</div><div class="line" id="line23"></div>
+    <div class="dot" id="dot3">3</div><div class="line" id="line34"></div>
+    <div class="dot" id="dot4">4</div><div class="line" id="line45"></div>
+    <div class="dot" id="dot5">5</div>
+  </div>
+
+  <!-- TELA 1 -->
+  <div class="card" id="screen1">
+    <div class="header"><h2 class="title">Gerador de documentos</h2><p class="user" id="userInfo1">Usuário</p></div>
+    <div class="body">
+      <p class="intro">Informar a código do projeto no campo abaixo. Esse código será a chave para busca de documentos e utilizado para outras funcionalidades importantes na empresa</p>
+      <div class="block"><div class="cap">CÓDIGO <span class="req">*</span></div><div class="content">
+        <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()">
+      </div></div>
+
+      <!-- BOTÃO DE CONSULTA (como no mock) -->
+      <div style="margin-top:8px">
+        <button class="btn primary" style="width:100%" onclick="openConsulta()">Pesquisar documentos cadastrados</button>
       </div>
     </div>
-  `;
-  document.body.appendChild(modal);
+  </div>
+  <div id="bar1" class="bar disabled" onclick="noop()">Continuar</div>
 
-  // --- Botão na Tela 1 (se não existir, cria automaticamente) ---
-  function ensureOpenButton() {
-    const host = document.querySelector('#screen1 .body') || document.getElementById('screen1');
-    if (!host) return;
-    let btn = document.getElementById('btnOpenConsulta');
-    if (!btn) {
-      const wrapper = document.createElement('div');
-      wrapper.style.marginTop = '8px';
-      wrapper.innerHTML = `
-        <button id="btnOpenConsulta" class="btn" style="width:100%;font-weight:700">
-          Pesquisar documentos cadastrados
-        </button>
-      `;
-      host.appendChild(wrapper);
-      btn = wrapper.querySelector('#btnOpenConsulta');
+  <!-- TELA 2 -->
+  <div class="card hidden" id="screen2">
+    <div class="header"><h2 class="title">Gerador de documentos</h2><p class="user" id="userInfo2">Usuário</p><p class="code">Código Projeto: <b id="codigoVal">AC00025</b></p></div>
+    <div class="body">
+      <div class="block"><div class="cap">SERVIÇO <span class="req">*</span></div><div class="content"><textarea id="servico" class="textarea" placeholder="Digite o serviço do projeto" oninput="validate2()"></textarea></div></div>
+      <div class="block"><div class="cap">ENDEREÇO DA OBRA <span class="req">*</span></div><div class="content"><input id="endereco" class="input" placeholder="Digite o endereço da obra" oninput="validate2()"></div></div>
+    </div>
+  </div>
+  <div id="bar2" class="bar hidden disabled" onclick="noop()">Continuar</div>
+  <div id="back2" class="back hidden" onclick="goTo(1)"><span class="chev">◀</span> Voltar</div>
+
+  <!-- TELA 3 -->
+  <div class="card hidden" id="screen3">
+    <div class="header"><h2 class="title">Gerador de documentos</h2><p class="user" id="userInfo3">Usuário</p><p class="code">Código Projeto: <b id="codigoVal3">AC00025</b></p></div>
+    <div class="body">
+      <div class="block"><div class="cap">DADOS DO CONTRATANTE</div></div>
+      <div class="grid-2">
+        <div class="block"><div class="cap">NOME <span class="req">*</span></div><div class="content"><input id="nomeContratante" class="input" placeholder="Digite o nome do contratante" oninput="validate3()"></div></div>
+        <div class="block"><div class="cap">CPF/CNPJ <span class="req">*</span></div><div class="content">
+          <input id="docContratante" class="input" placeholder="Digite o CPF ou CNPJ do contratante" oninput="docInput(this); validate3()" onblur="docBlur(this); validate3()" onfocus="docFocus(this)">
+          <div id="docContratanteErr" class="error hidden">Documento inválido</div>
+        </div></div>
+      </div>
+      <div class="block"><div class="cap">CONTATO <span class="req">*</span></div><div class="content"><input id="contatoContratante" class="input" placeholder="Digite o nome do responsável pela obra" oninput="validate3()"></div></div>
+
+      <div class="grid-2">
+        <div class="block"><div class="cap">CEP <span class="req">*</span></div><div class="content">
+          <input id="cepContratante" class="input" placeholder="00000-000" oninput="cepOnInput(this)" onblur="cepOnBlur(this,'Contratante')" onchange="cepOnBlur(this,'Contratante')" onfocusout="cepOnBlur(this,'Contratante')">
+          <div id="cepContratanteErr"  class="error hidden">CEP inválido</div>
+          <div id="cepContratanteHint" class="hint hidden">Endereço preenchido pelo CEP.</div>
+        </div></div>
+        <div class="block"><div class="cap">NÚMERO <span class="req">*</span></div><div class="content"><input id="numeroContratante" class="input" placeholder="Número" oninput="validate3()"></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="block"><div class="cap">LOGRADOURO <span class="req">*</span></div><div class="content"><input id="logradouroContratante" class="input" placeholder="Rua / Avenida" oninput="validate3()"></div></div>
+        <div class="block"><div class="cap">COMPLEMENTO</div><div class="content"><input id="complementoContratante" class="input" placeholder="Opcional" oninput="validate3()"></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="block"><div class="cap">BAIRRO <span class="req">*</span></div><div class="content"><input id="bairroContratante" class="input" placeholder="Bairro" oninput="validate3()"></div></div>
+        <div class="block"><div class="cap">CIDADE <span class="req">*</span></div><div class="content"><input id="cidadeContratante" class="input" placeholder="Cidade" oninput="validate3()"></div></div>
+      </div>
+
+      <div class="block"><div class="cap">UF <span class="req">*</span></div><div class="content">
+        <select id="ufContratante" class="input" onchange="validate3()">
+          <option value="">UF</option>
+          <option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option>
+          <option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option>
+          <option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option>
+          <option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option>
+        </select>
+      </div></div>
+
+      <div class="block"><div class="cap">TELEFONE DO CONTATO <span class="req">*</span></div><div class="content"><input id="telefoneContratante" class="input" placeholder="(00)00000-0000" oninput="maskPhoneSimple(this); validate3()"><div id="telContratanteErr" class="error hidden">Telefone inválido — formato (99)99999-9999</div></div></div>
+      <div class="block"><div class="cap">E-MAIL <span class="req">*</span></div><div class="content"><input id="emailContratante" class="input" placeholder="Digite o e-mail do contato" oninput="validate3()"><div id="emailContratanteErr" class="error hidden">E-mail inválido</div></div></div>
+    </div>
+  </div>
+  <div id="bar3" class="bar hidden disabled" onclick="noop()">Continuar</div>
+  <div id="back3" class="back hidden" onclick="goTo(2)"><span class="chev">◀</span> Voltar</div>
+
+  <!-- TELA 4 (estrutura espelhada) -->
+  <div class="card hidden" id="screen4">
+    <div class="header"><h2 class="title">Gerador de documentos</h2><p class="user" id="userInfo4">Usuário</p><p class="code">Código Projeto: <b id="codigoVal4">AC00025</b></p></div>
+    <div class="body">
+      <div class="block"><div class="cap">DADOS DA CONTRATADA</div></div>
+      <div class="grid-2">
+        <div class="block"><div class="cap">NOME <span class="req">*</span></div><div class="content"><input id="nomeContratada" class="input" placeholder="Digite o nome da contratada" oninput="validate4()"></div></div>
+        <div class="block"><div class="cap">CPF/CNPJ <span class="req">*</span></div><div class="content">
+          <input id="docContratada" class="input" placeholder="Digite o CPF ou CNPJ da contratada" oninput="docInput(this); validate4()" onblur="docBlur(this); validate4()" onfocus="docFocus(this)">
+          <div id="docContratadaErr" class="error hidden">Documento inválido</div>
+        </div></div>
+      </div>
+      <div class="block"><div class="cap">CONTATO <span class="req">*</span></div><div class="content"><input id="contatoContratada" class="input" placeholder="Digite o nome do responsável pela obra" oninput="validate4()"></div></div>
+
+      <div class="grid-2">
+        <div class="block"><div class="cap">CEP <span class="req">*</span></div><div class="content">
+          <input id="cepContratada" class="input" placeholder="00000-000" oninput="cepOnInput(this)" onblur="cepOnBlur(this,'Contratada')" onchange="cepOnBlur(this,'Contratada')" onfocusout="cepOnBlur(this,'Contratada')">
+          <div id="cepContratadaErr"  class="error hidden">CEP inválido</div>
+          <div id="cepContratadaHint" class="hint hidden">Endereço preenchido pelo CEP.</div>
+        </div></div>
+        <div class="block"><div class="cap">NÚMERO <span class="req">*</span></div><div class="content"><input id="numeroContratada" class="input" placeholder="Número" oninput="validate4()"></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="block"><div class="cap">LOGRADOURO <span class="req">*</span></div><div class="content"><input id="logradouroContratada" class="input" placeholder="Rua / Avenida" oninput="validate4()"></div></div>
+        <div class="block"><div class="cap">COMPLEMENTO</div><div class="content"><input id="complementoContratada" class="input" placeholder="Opcional" oninput="validate4()"></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="block"><div class="cap">BAIRRO <span class="req">*</span></div><div class="content"><input id="bairroContratada" class="input" placeholder="Bairro" oninput="validate4()"></div></div>
+        <div class="block"><div class="cap">CIDADE <span class="req">*</span></div><div class="content"><input id="cidadeContratada" class="input" placeholder="Cidade" oninput="validate4()"></div></div>
+      </div>
+
+      <div class="block"><div class="cap">UF <span class="req">*</span></div><div class="content">
+        <select id="ufContratada" class="input" onchange="validate4()">
+          <option value="">UF</option>
+          <option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option>
+          <option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option>
+          <option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option>
+          <option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option>
+        </select>
+      </div></div>
+
+      <div class="block"><div class="cap">TELEFONE DO CONTATO <span class="req">*</span></div><div class="content"><input id="telefoneContratada" class="input" placeholder="(00)00000-0000" oninput="maskPhoneSimple(this); validate4()"><div id="telContratadaErr" class="error hidden">Telefone inválido — formato (99)99999-9999</div></div></div>
+      <div class="block"><div class="cap">E-MAIL <span class="req">*</span></div><div class="content"><input id="emailContratada" class="input" placeholder="Digite o e-mail do contato" oninput="validate4()"><div id="emailContratadaErr" class="error hidden">E-mail inválido</div></div></div>
+    </div>
+  </div>
+  <div id="bar4" class="bar hidden disabled" onclick="noop()">Continuar</div>
+  <div id="back4" class="back hidden" onclick="goTo(3)"><span class="chev">◀</span> Voltar</div>
+
+  <!-- TELA 5 -->
+  <div class="card hidden" id="screen5">
+    <div class="header"><h2 class="title">Gerador de documentos</h2><p class="user" id="userInfo5">Usuário</p><p class="code">Código Projeto: <b id="codigoVal5">AC00025</b></p></div>
+    <div class="body">
+      <div class="grid-2">
+        <div class="block"><div class="cap">CLÁUSULAS <span class="req">*</span></div><div class="content"><textarea id="clausulas" class="textarea" placeholder="Digite as cláusulas do documento" oninput="validate5()"></textarea></div></div>
+        <div class="block"><div class="cap">CONDIÇÕES DE PAGAMENTO <span class="req">*</span></div><div class="content"><textarea id="condicoes" class="textarea" placeholder="Digite as condições de pagamento" oninput="validate5()"></textarea></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="block"><div class="cap">VALOR <span class="req">*</span></div><div class="content"><input id="valor" class="input" placeholder="R$ 0,00" oninput="maskCurrency(this); setValorExtenso(); validate5()"><div class="hint">Formato: R$ 0.000,00</div></div></div>
+        <div class="block"><div class="cap">VALOR POR EXTENSO <span class="req">*</span></div><div class="content"><input id="valorExtenso" class="input" placeholder="Gerado automaticamente a partir do valor" readonly></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="block"><div class="cap">PRAZO (em dias) <span class="req">*</span></div><div class="content"><input id="prazo" class="input" type="number" inputmode="numeric" min="1" step="1" placeholder="Digite o prazo de pagamento (dias)" oninput="validate5()"></div></div>
+        <div class="block"><div class="cap">DATA POR EXTENSO <span class="req">*</span></div><div class="content"><input id="dataExtenso" class="input" placeholder="Escolha uma data" readonly onclick="openDatePicker()"><input id="dataPicker" type="date" class="hidden" onchange="fillDateExtenso()"></div></div>
+      </div>
+      <div class="block"><div class="cap">LOGO DA EMPRESA</div><div class="content"><input id="logo" class="file" type="file" accept="image/*" onchange="showLogoName(this)"><div id="logoInfo" class="hint" style="margin-top:6px">Anexar logo do contratante</div></div></div>
+    </div>
+  </div>
+  <div id="bar5" class="bar hidden disabled" onclick="noop()">Continuar</div>
+  <div id="back5" class="back hidden" onclick="goTo(4)"><span class="chev">◀</span> Voltar</div>
+
+</div>
+
+<div id="toast" class="toast">Documento cadastrado com sucesso!</div>
+<div id="successModal" class="modal">
+  <div class="box">
+    <div class="hd">Documento cadastrado com sucesso!</div>
+    <div class="bd">Seu documento foi gerado. Você pode visualizá-lo agora em PDF para compartilhar.</div>
+    <div class="ft">
+      <button class="btn" onclick="closeSuccess()">Fechar</button>
+      <button class="btn primary" onclick="visualizarPdf()">Visualizar documento</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL DE CONSULTA ===== -->
+<div id="consultaModal" class="modal">
+  <div class="box box--wide">
+    <div class="hd" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Consulta de Documentos — ERP Ímpar</span>
+      <button class="btn" onclick="closeConsulta()">Fechar</button>
+    </div>
+    <div class="bd">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1 1 260px">
+          <div class="cap" style="border:1px solid var(--border);border-bottom:0;border-radius:4px 4px 0 0;padding:6px 8px;background:var(--capbg);color:#6b7280;font-size:12px">CÓDIGO (opcional)</div>
+          <input id="consCodigo" class="input" placeholder="Ex.: AC00025">
+        </div>
+        <div>
+          <button class="btn primary" onclick="buscarConsulta()">Buscar</button>
+        </div>
+      </div>
+      <div id="consStatus" class="hint" style="margin-top:8px"></div>
+      <div style="overflow:auto">
+        <table class="table-consulta" id="consTable">
+          <thead><tr><th style="width:120px">CÓDIGO</th><th>OBRA</th><th style="width:80px;text-align:center">PDF</th></tr></thead>
+          <tbody id="consBody"><tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="viewer" class="viewer">
+  <div class="panel">
+    <div class="top">
+      <button class="btn" onclick="downloadLastPdf()">Baixar PDF</button>
+      <button class="btn primary" onclick="shareLastPdf()">Compartilhar</button>
+      <button class="btn" onclick="closeViewer()">Fechar</button>
+    </div>
+    <iframe id="pdfFrame"></iframe>
+  </div>
+</div>
+
+<script>
+function noop(){} function onlyDigits(s){return (s||'').replace(/\D+/g,'');}
+// Tema
+const THEME_KEY='impar_theme';
+function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); const b=document.getElementById('themeBtn'); if(b) b.textContent=(t==='dark'?'☀️ Tema':'🌙 Tema'); }
+(function initTheme(){ const saved=localStorage.getItem(THEME_KEY); if(saved){applyTheme(saved);} else { const prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches; applyTheme(prefersDark?'dark':'light'); } })();
+function toggleTheme(){ const cur=document.documentElement.getAttribute('data-theme')||'light'; const next=(cur==='dark')?'light':'dark'; localStorage.setItem(THEME_KEY,next); applyTheme(next); }
+
+// carregar usuário
+function loadUser(){
+  let u=null; try{ u=JSON.parse(localStorage.getItem('impar_user')||'null'); }catch(e){}
+  const label = u ? (u.Nome+'\n'+u.Email) : 'Rafael Ramos\nrafael.@imparsistemas.com';
+  document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label.replace('\n','<br>'); });
+}
+loadUser();
+
+// CEP
+function cepOnInput(el){ el.value = onlyDigits(el.value).slice(0,8); const e=document.getElementById(el.id+'Err'); const h=document.getElementById(el.id+'Hint'); if(e) e.classList.add('hidden'); if(h) h.classList.add('hidden'); }
+async function cepOnBlur(el, prefix){
+  const d = onlyDigits(el.value).slice(0,8);
+  el.value = d.length<=5 ? d : (d.substring(0,5)+'-'+d.substring(5));
+  const ok = d.length===8; const e=document.getElementById(el.id+'Err'); const h=document.getElementById(el.id+'Hint'); if(e) e.classList.toggle('hidden',ok); if(h) h.classList.add('hidden'); if(!ok) return;
+  try{ const r=await fetch('https://viacep.com.br/ws/'+d+'/json/'); const data=await r.json(); if(!data.erro){ const map={logradouro:'logradouro',bairro:'bairro',localidade:'cidade',uf:'uf'}; for(const k in map){ const t=document.getElementById(map[k]+prefix); if(t) t.value=data[k]||''; } if(h) h.classList.remove('hidden'); } }catch(err){}
+  if(prefix==='Contratante') validate3(); else validate4();
+}
+
+// CPF/CNPJ
+function formatCPF(d){d=onlyDigits(d).slice(0,11);return d.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');}
+function formatCNPJ(d){d=onlyDigits(d).slice(0,14);return d.replace(/(\d{2})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1/$2').replace(/(\d{4})(\d{1,2})$/,'$1-$2');}
+function isValidCPF(cpf){cpf=onlyDigits(cpf);if(cpf.length!==11||/(\d)\1{10}/.test(cpf))return false;let s=0;for(let i=0;i<9;i++)s+=+cpf[i]*(10-i);let d1=11-(s%11);d1=d1>9?0:d1;if(+cpf[9]!==d1)return false;s=0;for(let i=0;i<10;i++)s+=+cpf[i]*(11-i);let d2=11-(s%11);d2=d2>9?0:d2;return +cpf[10]===d2;}
+function isValidCNPJ(cnpj){cnpj=onlyDigits(cnpj);if(cnpj.length!==14||/(\d)\1{13}/.test(cnpj))return false;const calc=(b)=>{let s=0,p=b.length-7;for(let i=b.length;i>=1;i--){s+=+b[b.length-i]*p--;if(p<2)p=9}return s%11<2?0:11-(s%11)};const b=cnpj.slice(0,12);const d1=calc(b);if(+cnpj[12]!==d1)return false;const d2=calc(b+d1);return +cnpj[13]===d2;}
+function docFocus(inp){inp.value=onlyDigits(inp.value);document.getElementById(inp.id+'Err').classList.add('hidden');}
+function docInput(inp){inp.value=onlyDigits(inp.value).slice(0,14);document.getElementById(inp.id+'Err').classList.add('hidden');}
+function docBlur(inp){const d=onlyDigits(inp.value);let ok=false;if(d.length===11){ok=isValidCPF(d);inp.value=formatCPF(d);}else if(d.length===14){ok=isValidCNPJ(d);inp.value=formatCNPJ(d);}document.getElementById(inp.id+'Err').classList.toggle('hidden',ok);}
+
+// Telefone
+function formatPhoneSimple(d){d=onlyDigits(d).slice(0,11);if(d.length<=6)return d.replace(/(\d{2})(\d{0,5})/,'($1)$2');return d.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1)$2-$3');}
+function maskPhoneSimple(inp){const d=onlyDigits(inp.value).slice(0,11);inp.value=formatPhoneSimple(d);const id=inp.id.replace('telefone','tel')+'Err';document.getElementById(id).classList.toggle('hidden',d.length===11||d.length===0);}
+
+// Valor + por extenso
+function formatCurrencyBR(cents){const r=Math.floor(cents/100),c=(cents%100).toString().padStart(2,'0');const rr=r.toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');return 'R$ '+rr+','+c;}
+function maskCurrency(inp){let d=onlyDigits(inp.value);if(!d){inp.value='';return;}inp.value=formatCurrencyBR(parseInt(d,10));}
+const UNIDADES=['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove'];
+const DEZ_A_DEZENOVE=['dez','onze','doze','treze','catorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+const DEZENAS=['','dez','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+const CENTENAS=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+function trioPorExtenso(n){n%=1000;if(n===0)return'';if(n===100)return'cem';const c=Math.floor(n/100),d=Math.floor((n%100)/10),u=n%10;let p=[];if(c)p.push(CENTENAS[c]);if(d===1)p.push(DEZ_A_DEZENOVE[u]);else{if(d)p.push(DEZENAS[d]);if(u)p.push(UNIDADES[u]);}return p.join(' e ');}
+function inteiroBR(n){if(n===0)return'zero';const g=[{v:n%1000,n:''},{v:Math.floor(n/1000)%1000,n:'mil'},{v:Math.floor(n/1e6)%1000,n:'milhão',p:'milhões'},{v:Math.floor(n/1e9)%1000,n:'bilhão',p:'bilhões'}];let partes=[];for(let i=g.length-1;i>=0;i--){const x=g[i];if(!x.v)continue;const ext=trioPorExtenso(x.v);if(i===1){partes.push(x.v===1?'mil':ext+' mil');continue;}if(i>=2){partes.push(ext+' '+(x.v===1?x.n:x.p));continue;}if(i===0)partes.push(ext);}return partes.join(' ');}
+function valorExt(cents){const r=Math.floor(cents/100),c=cents%100;let t='';if(r>0)t+=inteiroBR(r)+' '+(r===1?'real':'reais');if(c>0){const s=inteiroBR(c)+' '+(c===1?'centavo':'centavos');t=t? t+' e '+s : s;}return t||'zero real';}
+function setValorExtenso(){const d=onlyDigits(document.getElementById('valor').value);document.getElementById('valorExtenso').value=d?valorExt(parseInt(d,10)):'';}
+
+// Data
+function openDatePicker(){ const p=document.getElementById('dataPicker'); if(p.showPicker) p.showPicker(); else p.click(); }
+function fillDateExtenso(){ const p=document.getElementById('dataPicker'); if(!p.value) return; const d=new Date(p.value+'T12:00:00'); document.getElementById('dataExtenso').value=d.toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}); validate5(); }
+
+// Email
+function isValidEmail(e){ return /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(e); }
+
+// Navegação
+function updateStepper(step){[1,2,3,4,5].forEach(n=>{const d=document.getElementById('dot'+n);d.classList.remove('done','active');if(n<step)d.classList.add('done');if(n===step)d.classList.add('active');});[['line12',2],['line23',3],['line34',4],['line45',5]].forEach(([id,to])=>{const el=document.getElementById(id);if(step>=to)el.classList.add('done');else el.classList.remove('done');});}
+function showOnly(id){['screen1','screen2','screen3','screen4','screen5'].forEach(s=>document.getElementById(s).classList.add('hidden'));document.getElementById(id).classList.remove('hidden');['bar1','bar2','bar3','bar4','bar5','back2','back3','back4','back5'].forEach(i=>{const el=document.getElementById(i);if(el)el.classList.add('hidden');});}
+function goTo(step){updateStepper(step);showOnly('screen'+step);const codigo=(document.getElementById('codigo').value||'').trim()||'AC00025';['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=codigo;});const bar=document.getElementById('bar'+step);if(bar)bar.classList.remove('hidden');const back=document.getElementById('back'+step);if(back)back.classList.remove('hidden');const fn=window['validate'+step];if(typeof fn==='function')fn();}
+
+// Validadores
+function addrOk(prefix){return ['logradouro','numero','bairro','cidade','uf'].every(k => document.getElementById(k+prefix).value.trim());}
+function validate1(){const v=document.getElementById('codigo').value.trim(),b=document.getElementById('bar1');if(v){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(2);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}updateStepper(1);}
+function validate2(){const s=document.getElementById('servico').value.trim(),e=document.getElementById('endereco').value.trim(),b=document.getElementById('bar2');if(s&&e){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(3);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+function validate3(){const d=document.getElementById('docContratante').value,t=document.getElementById('telefoneContratante').value,m=document.getElementById('emailContratante').value.trim(),cep=document.getElementById('cepContratante').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratanteErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratanteErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratanteErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratante','contatoContratante'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratante');const b=document.getElementById('bar3');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(4);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+function validate4(){const d=document.getElementById('docContratada').value,t=document.getElementById('telefoneContratada').value,m=document.getElementById('emailContratada').value.trim(),cep=document.getElementById('cepContratada').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratadaErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratadaErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratadaErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratada','contatoContratada'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratada');const b=document.getElementById('bar4');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(5);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+function isValidCurrencyInput(){return /R\$\s\d{1,3}(\.\d{3})*,\d{2}$/.test(document.getElementById('valor').value);}
+function validate5(){setValorExtenso();const ok=isValidCurrencyInput()&&parseInt(document.getElementById('prazo').value,10)>0&&document.getElementById('dataExtenso').value.trim().length>0&&['clausulas','condicoes','valorExtenso'].every(id=>document.getElementById(id).value.trim());const b=document.getElementById('bar5');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=finalizeStep5;}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+
+
+// LOGO - util
+let __logoCached = null;
+function showLogoName(inp){
+  const f = inp.files && inp.files[0];
+  const el = document.getElementById('logoInfo');
+  el.textContent = f ? ('Anexo: ' + f.name) : 'Anexar logo do contratante';
+  __logoCached = null; // reset cache
+}
+function detectFormatFromDataUrl(dt){
+  if(!dt || typeof dt!=='string') return 'PNG';
+  if(dt.startsWith('data:image/jpeg')) return 'JPEG';
+  if(dt.startsWith('data:image/jpg'))  return 'JPEG';
+  if(dt.startsWith('data:image/webp')) return 'WEBP';
+  return 'PNG';
+}
+function loadLogoForPdf(){
+  return new Promise((resolve)=>{
+    if(__logoCached) return resolve(__logoCached);
+    const inp = document.getElementById('logo');
+    const file = inp && inp.files && inp.files[0];
+    if(!file) return resolve(null);
+    const fr = new FileReader();
+    fr.onload = () => {
+      const url = fr.result;
+      const img = new Image();
+      img.onload = () => {
+        // largura alvo (em pt) ~110; preserva proporção
+        const maxW = 110;
+        const ratio = img.naturalWidth ? (maxW / img.naturalWidth) : 1;
+        const w = Math.min(maxW, img.naturalWidth) * (img.naturalWidth ? ratio : 1);
+        const h = img.naturalHeight ? (img.naturalHeight * (w / (img.naturalWidth||w))) : 40;
+        __logoCached = { url, w, h, fmt: detectFormatFromDataUrl(url) };
+        resolve(__logoCached);
+      };
+      img.src = url;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+// PDF
+function currentCode(){ return (document.getElementById('codigo').value||'').trim() || 'DOC'; }
+function todayYMD(){ const d=new Date(); const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return `${y}${m}${dd}`; }
+let __pdfBlob=null, __pdfUrl=null, __pdfName='documento.pdf';
+
+async function createPdfBlob(){
+  const logo = await loadLogoForPdf();
+  const { jsPDF } = window.jspdf;
+  const pdf=new jsPDF({unit:'pt',format:'a4'}), pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight(), M=40; let y=M;
+  function drawLogo(){ if(!logo) return; try{ pdf.addImage(logo.url, logo.fmt, pageW - M - logo.w, M - 6, logo.w, logo.h); }catch(e){} }
+  function h1(t){pdf.setFont('Helvetica','bold');pdf.setFontSize(16);drawLogo();pdf.text(t,pageW/2,y,{align:'center'});y+=22;pdf.setDrawColor(200);pdf.line(M,y,pageW-M,y);y+=14;}
+  function lv(l,v){pdf.setFont('Helvetica','bold');pdf.setFontSize(11);const lines=pdf.splitTextToSize(l+' '+v,pageW-2*M);pdf.text(lines,M,y);y+=lines.length*14;}
+  function block(l,v){pdf.setFont('Helvetica','bold');pdf.setFontSize(12);pdf.text(l,M,y);y+=14;pdf.setFont('Helvetica','normal');pdf.setFontSize(11);const lines=pdf.splitTextToSize(v,pageW-2*M);for(const line of lines){if(y>pageH-M){pdf.addPage();y=M;drawLogo();}pdf.text(line,M,y);y+=14;}y+=6;}
+  function ensure(h){if(y+h>pageH-M){pdf.addPage();y=M;}}
+  const get=(id)=>(document.getElementById(id).value||'').trim();
+  const end=(p)=>{ const log=document.getElementById('logradouro'+p).value||'',num=document.getElementById('numero'+p).value||'',comp=document.getElementById('complemento'+p).value||'',bai=document.getElementById('bairro'+p).value||'',cid=document.getElementById('cidade'+p).value||'',uf=document.getElementById('uf'+p).value||'',cep=(document.getElementById('cep'+p).value||''); let base=log+', '+num+(comp?(' - '+comp):''); base+=' — '+bai+' — '+cid+'/'+uf+' — CEP '+cep; return base; };
+  const u = JSON.parse(localStorage.getItem('impar_user')||'null');
+
+  h1('Resumo do Documento');
+  lv('Operador:', u ? (u.Nome+' ('+u.Email+')') : '—'); y+=6;
+  lv('Código do Projeto:', get('codigo')); y+=8;
+  block('Serviço:', get('servico'));
+  lv('Endereço da obra:', get('endereco')); y+=8;
+
+  pdf.setFont('Helvetica','bold');pdf.setFontSize(13);ensure(24);pdf.text('CONTRATANTE',M,y);y+=16;pdf.setDrawColor(220);pdf.line(M,y,pageW-M,y);y+=10;
+  lv('Nome:', get('nomeContratante'));
+  lv('CPF/CNPJ:', get('docContratante'));
+  lv('Endereço:', end('Contratante'));
+  lv('Contato:', get('contatoContratante'));
+  lv('Telefone:', get('telefoneContratante'));
+  lv('E-mail:', get('emailContratante')); y+=8;
+
+  pdf.setFont('Helvetica','bold');pdf.setFontSize(13);ensure(24);pdf.text('CONTRATADA',M,y);y+=16;pdf.setDrawColor(220);pdf.line(M,y,pageW-M,y);y+=10;
+  lv('Nome:', get('nomeContratada'));
+  lv('CPF/CNPJ:', get('docContratada'));
+  lv('Endereço:', end('Contratada'));
+  lv('Contato:', get('contatoContratada'));
+  lv('Telefone:', get('telefoneContratada'));
+  lv('E-mail:', get('emailContratada')); y+=8;
+
+  pdf.setFont('Helvetica','bold');pdf.setFontSize(13);ensure(24);pdf.text('CONDIÇÕES',M,y);y+=16;pdf.setDrawColor(220);pdf.line(M,y,pageW-M,y);y+=10;
+  lv('Valor:', get('valor')+' ('+get('valorExtenso')+')');
+  lv('Prazo:', get('prazo')+' dias');
+  lv('Data:', get('dataExtenso'));
+  block('Condições de pagamento:', get('condicoes'));
+  block('Cláusulas:', get('clausulas'));
+
+  return pdf.output('blob');
+}
+
+function openViewerWithBlob(blob){
+  __pdfBlob = blob;
+  if(__pdfUrl) URL.revokeObjectURL(__pdfUrl);
+  __pdfUrl = URL.createObjectURL(blob);
+  __pdfName = `${currentCode()}_${todayYMD()}.pdf`;
+  document.getElementById('pdfFrame').src = __pdfUrl;
+  document.getElementById('viewer').style.display='flex';
+}
+function closeViewer(){ document.getElementById('viewer').style.display='none'; }
+function downloadLastPdf(){ if(!__pdfBlob) return; const a=document.createElement('a'); a.href=__pdfUrl; a.download=__pdfName; document.body.appendChild(a); a.click(); a.remove(); }
+async function shareLastPdf(){
+  if(!__pdfBlob){ showToast('Gere o PDF primeiro'); return; }
+  const file = new File([__pdfBlob], __pdfName, {type:'application/pdf'});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'Documento', text:'Envio do documento em PDF'});
+    }else if(navigator.share){
+      await navigator.share({title:'Documento', text:'Envio do documento em PDF', url: __pdfUrl});
+    }else{
+      const txt = encodeURIComponent('Documento gerado. Baixe aqui: '+location.href);
+      window.open('https://wa.me/?text='+txt,'_blank');
     }
-    btn.addEventListener('click', openConsulta);
-  }
-  ensureOpenButton();
+  }catch(e){}
+}
 
-  // --- Helpers ---
-  function openConsulta() {
-    // Prefill com o código digitado na tela 1, se existir
-    const codeEl = document.getElementById('codigo');
-    const cod = (codeEl && codeEl.value || '').trim();
-    const inp = document.getElementById('consultaCodigo');
-    if (inp && cod && !inp.value) inp.value = cod;
+// Toast + success modal
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2000);}
+function finalizeStep5(){ showToast('Documento cadastrado com sucesso!'); setTimeout(()=>{ document.getElementById('successModal').style.display='flex'; }, 300); }
+function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
+async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
 
-    document.getElementById('consultaStatus').textContent = '';
-    document.getElementById('consultaRows').innerHTML =
-      `<tr><td colspan="3" class="muted">Informe um código e clique <b>Buscar</b> ou deixe vazio para listar todos.</td></tr>`;
-    modal.style.display = 'flex';
-    setTimeout(()=>inp && inp.focus(), 50);
-  }
-  function closeConsulta(){ modal.style.display='none'; }
-
-  function resolvePdfHref(urlLike, row) {
-    // Aceita pdf_url ou, se não houver, pdf_file
-    let href = urlLike || (row && row.pdf_url) || '';
-    if (!href && row && row.pdf_file) {
-      href = 'https://api.erpimpar.com.br/storage/docs/' + row.pdf_file;
+// ===== Consulta =====
+const API_CONF = (() => {
+  const fb = { LIST_URL: 'https://api.erpimpar.com.br/gerador/list.php', TOKEN: '8cce9abb2fd53b1cceaa93b9cecfd5384b2ea6fb931e8882c543cbd7d3663b77' };
+  try{
+    if (window.__ERP_SAVE_PATCH__) {
+      return {
+        LIST_URL: window.__ERP_SAVE_PATCH__.LIST_URL || fb.LIST_URL,
+        TOKEN: window.__ERP_SAVE_PATCH__.SAVE_TOKEN || fb.TOKEN
+      };
     }
-    try {
-      const u = new URL(href, 'https://api.erpimpar.com.br/');
-      // Se for /storage/docs/..., usa o proxy pdf.php (evita 404/caminho interno)
-      if (/^\/?storage\/docs\//.test(u.pathname)) {
-        const file = u.pathname.split('/').pop();
-        return 'https://api.erpimpar.com.br/gerador/pdf.php?f=' + encodeURIComponent(file);
-      }
-      return u.href;
-    } catch(e) {
-      // fallback “cru”
-      return href || '#';
-    }
-  }
-
-  function rowHTML(row) {
-    const codigo = row.codigo || '';
-    const obra   = row.contratante_nome || row.obra || '';
-    const pdfHref = resolvePdfHref(row.pdf_url, row);
-    const hasPdf  = !!pdfHref && pdfHref !== '#';
-    return `
-      <tr>
-        <td class="nowrap"><b>${escapeHtml(codigo)}</b></td>
-        <td>${escapeHtml(obra)}</td>
-        <td class="nowrap">
-          ${hasPdf
-            ? `<a class="pdf-btn" href="${pdfHref}" target="_blank" rel="noopener">
-                 <span class="dot"></span> abrir
-               </a>`
-            : `<span class="muted">—</span>`}
-        </td>
-      </tr>
-    `;
-  }
-
-  function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-  async function buscar() {
-    const status = document.getElementById('consultaStatus');
-    const tbody  = document.getElementById('consultaRows');
-    const codigo = (document.getElementById('consultaCodigo').value || '').trim();
-
-    try {
-      status.textContent = 'Buscando...';
-      const fd = new FormData();
-      if (SAVE_TOKEN) fd.append('token', SAVE_TOKEN);
-      if (codigo) fd.append('codigo', codigo);
-
-      const resp = await fetch(LIST_URL, { method: 'POST', body: fd });
-      const data = await resp.json().catch(()=>({}));
-
-      const rows = (data && data.rows) || [];
-      if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="3" class="muted">Nenhum registro encontrado.</td></tr>`;
-      } else {
-        tbody.innerHTML = rows.map(rowHTML).join('');
-      }
-      status.textContent = 'OK';
-    } catch (e) {
-      console.error(e);
-      status.textContent = 'Falha ao buscar';
-      document.getElementById('consultaRows').innerHTML =
-        `<tr><td colspan="3" class="muted">Erro ao buscar. Tente novamente.</td></tr>`;
-    }
-  }
-
-  // Eventos do modal
-  document.getElementById('consultaBuscar').addEventListener('click', buscar);
-  document.getElementById('consultaFechar').addEventListener('click', closeConsulta);
-  document.getElementById('consultaClose').addEventListener('click', closeConsulta);
-  window.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeConsulta(); });
-
+  }catch(e){}
+  return fb;
 })();
+
+function openConsulta(){
+  document.getElementById('consultaModal').style.display='flex';
+  // pré-preenche com o código digitado (se houver)
+  const v = (document.getElementById('codigo').value || '').trim();
+  document.getElementById('consCodigo').value = v;
+  buscarConsulta();
+}
+function closeConsulta(){ document.getElementById('consultaModal').style.display='none'; }
+
+function resolvePdfHref(pdfUrl, pdfFile){
+  const base = 'https://api.erpimpar.com.br/gerador/pdf.php?f=';
+  const getFile = (s)=> (s||'').split('/').pop().split('?')[0];
+  const fname = pdfFile || getFile(pdfUrl);
+  return fname ? (base + encodeURIComponent(fname)) : (pdfUrl || '#');
+}
+
+async function buscarConsulta(){
+  const status = document.getElementById('consStatus');
+  const tbody  = document.getElementById('consBody');
+  status.textContent = 'Buscando...';
+  tbody.innerHTML = '<tr><td colspan="3" class="row-muted">Carregando...</td></tr>';
+
+  try{
+    const fd = new FormData();
+    fd.append('token', API_CONF.TOKEN);
+    const cod = (document.getElementById('consCodigo').value || '').trim();
+    if (cod) fd.append('codigo', cod);
+
+    const resp = await fetch(API_CONF.LIST_URL, { method:'POST', body: fd });
+    const out  = await resp.json();
+
+    if(!out || out.ok !== true){
+      status.textContent = 'Falha na consulta.';
+      tbody.innerHTML = '<tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr>';
+      return;
+    }
+
+    const rows = out.rows || [];
+    status.textContent = rows.length ? `Encontrados ${rows.length} registro(s).` : 'Nenhum registro encontrado.';
+    if(!rows.length){
+      tbody.innerHTML = '<tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(r => {
+      const code = r.codigo || '';
+      const obra = r.contratante_nome || '';
+      const href = resolvePdfHref(r.pdf_url, r.pdf_file);
+      const pdf  = href && href !== '#' ? `<a href="${href}" target="_blank" rel="noopener">abrir</a>` : '—';
+      return `<tr><td>${code}</td><td>${obra}</td><td style="text-align:center">${pdf}</td></tr>`;
+    }).join('');
+  }catch(e){
+    console.error(e);
+    status.textContent = 'Erro na consulta.';
+    tbody.innerHTML = '<tr><td colspan="3" class="row-muted">Falha ao consultar.</td></tr>';
+  }
+}
+
+// init
+loadUser();
+updateStepper(1);validate1();
 </script>
-<!-- === fim da consulta integrada === -->
+</body>
+</html>
