@@ -67,7 +67,9 @@
 <div class="wrap">
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
     <button class="btn" onclick="toggleTheme()" id="themeBtn">🌙 Tema</button>
-  </div>
+    <button class="btn" onclick="closeWizard()" id="btnFecharTopo">Fechar</button>
+    <button class="btn" onclick="clearLocal()" id="btnLimparTopo" title="Limpa apenas dados locais (browser)">Limpar dados locais</button>
+</div>
 
   <div class="stepper" id="stepper">
     <div class="dot" id="dot1">1</div><div class="line" id="line12"></div>
@@ -307,12 +309,6 @@
   </div>
 </div>
 
-<!-- Ações fixas (Fechar/Limpar) -->
-<div id="wizardActions" style="position:fixed;left:0;right:0;bottom:10px;display:flex;gap:8px;justify-content:center;z-index:50">
-  <button class="btn" onclick="closeWizard()">Fechar</button>
-  <button class="btn" onclick="clearLocal()" title="Limpa apenas dados locais (browser)">Limpar dados locais</button>
-</div>
-
 <script>
 function noop(){} function onlyDigits(s){return (s||'').replace(/\D+/g,'');}
 
@@ -502,12 +498,89 @@ async function shareLastPdf(){
 
 /* Toast + success modal */
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2000);}
-function finalizeStep5(){ showToast('Documento cadastrado com sucesso!'); setTimeout(()=>{ document.getElementById('successModal').style.display='flex'; }, 300); }
+async function finalizeStep5(){ try{ await saveDocument(); }catch(e){} showToast('Documento cadastrado com sucesso!'); setTimeout(()=>{ document.getElementById('successModal').style.display='flex'; }, 300); }
 function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
 async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
 
+
+/* ===== Salvar Documento (inclui cláusulas, condições e anexo logo) ===== */
+async function getLogoDataUrl() {
+  try{
+    const inp = document.getElementById('logo');
+    const file = inp && inp.files && inp.files[0];
+    if(!file) return null;
+    const fr = new FileReader();
+    return await new Promise((resolve,reject)=>{
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(file);
+    });
+  }catch(e){ return null; }
+}
+
+async function saveDocumentPayload(){
+  const get=(id)=>(document.getElementById(id)?.value||'').trim();
+  const u = JSON.parse(localStorage.getItem('impar_user')||'null');
+  const logoUrl = await getLogoDataUrl();
+  const payload = {
+    codigo: get('codigo'),
+    servico: get('servico'),
+    endereco_obra: get('endereco'),
+    contratante_nome: get('nomeContratante'),
+    contratante_doc: get('docContratante'),
+    contratante_contato: get('contatoContratante'),
+    contratante_tel: get('telefoneContratante'),
+    contratante_email: get('emailContratante'),
+    contratante_endereco: (document.getElementById('logradouroContratante').value||'') + ', ' +
+                          (document.getElementById('numeroContratante').value||'') + ' - ' +
+                          (document.getElementById('complementoContratante').value||'') + ' — ' +
+                          (document.getElementById('bairroContratante').value||'') + ' — ' +
+                          (document.getElementById('cidadeContratante').value||'') + '/' +
+                          (document.getElementById('ufContratante').value||'') + ' — CEP ' +
+                          (document.getElementById('cepContratante').value||''),
+    contratada_nome: get('nomeContratada'),
+    contratada_doc: get('docContratada'),
+    contratada_contato: get('contatoContratada'),
+    contratada_tel: get('telefoneContratada'),
+    contratada_email: get('emailContratada'),
+    contratada_endereco: (document.getElementById('logradouroContratada').value||'') + ', ' +
+                         (document.getElementById('numeroContratada').value||'') + ' - ' +
+                         (document.getElementById('complementoContratada').value||'') + ' — ' +
+                         (document.getElementById('bairroContratada').value||'') + ' — ' +
+                         (document.getElementById('cidadeContratada').value||'') + '/' +
+                         (document.getElementById('ufContratada').value||'') + ' — CEP ' +
+                         (document.getElementById('cepContratada').value||''),
+    valor: get('valor'),
+    valor_extenso: get('valorExtenso'),
+    prazo_dias: get('prazo'),
+    data_extenso: get('dataExtenso'),
+    // >>> Itens pedidos
+    clausulas: get('clausulas'),
+    condicoes: get('condicoes'),
+    logo_name: (document.getElementById('logo')?.files?.[0]?.name)||'',
+    logo_mime: (document.getElementById('logo')?.files?.[0]?.type)||'',
+    logo_dataurl: logoUrl || '',
+    operador_nome: u ? u.Nome : '',
+    operador_email: u ? u.Email : ''
+  };
+  return payload;
+}
+
+async function saveDocument(){
+  try{
+    const patch = (window.__ERP_SAVE_PATCH__||{});
+    const SAVE_URL = patch.SAVE_URL;
+    const SAVE_TOKEN = patch.SAVE_TOKEN;
+    if(!SAVE_URL || !SAVE_TOKEN){ return; }
+    const payload = await saveDocumentPayload();
+    payload.token = SAVE_TOKEN;
+    const r = await fetch(SAVE_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    // ignore response errors silently to not break flow
+  }catch(e){ /* no-op */ }
+}
+
 /* ===== Consulta ===== */
-const LOGIN_URL='login.doc';
+const LOGIN_URL='login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
 function pdfHrefFromRow(row){
   if (row.pdf_url && /^https?:\/\//.test(row.pdf_url)) return row.pdf_url;
@@ -660,8 +733,6 @@ function fillAllFromRow(row){
   setVal('valorExtenso',   row.valor_extenso);
   setVal('prazo',          row.prazo_dias);
   setVal('dataExtenso',    row.data_extenso);
-  setVal('clausula',       row.clausula);
-  setVal('condicoes',      row.condicoes);
 
   try { validate2(); } catch(_){}
   try { validate3(); } catch(_){}
