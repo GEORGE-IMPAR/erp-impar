@@ -7,12 +7,19 @@ try {
   $codigo = preg_replace('/[^a-zA-Z0-9-_]/', '_', $codigo);
   if (!$codigo) throw new Exception('Código não informado.');
 
-  $dirDocs = __DIR__ . '/docs';
-  if (!is_dir($dirDocs)) mkdir($dirDocs, 0777, true);
+  $raiz = dirname(__DIR__, 2);
+  $meta = $raiz . '/storage/docs/' . $codigo . '.json';
+  if (!file_exists($meta)) {
+    http_response_code(404);
+    echo json_encode(['ok'=>false,'error'=>'Documento não encontrado.']);
+    exit;
+  }
 
-  $exists = file_exists($dirDocs . '/' . $codigo . '.json');
-  echo json_encode(['exists'=>$exists]);
+  $dados = json_decode(file_get_contents($meta), true);
+  if (!$dados) $dados = [];
+
+  echo json_encode(['ok'=>true,'doc'=>$dados]);
 } catch (Exception $e) {
   http_response_code(400);
-  echo json_encode(['exists'=>false, 'error'=>$e->getMessage()]);
+  echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
 }
