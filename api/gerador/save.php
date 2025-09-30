@@ -1,250 +1,95 @@
 <?php
-/**
- * save.php — ERP Ímpar (KingHost)
- * - Impede código duplicado (chave do sistema)
- * - Salva PDF e JSON em /storage/docs
- * - Opcionalmente salva LOGO em /storage/docs/logos
- * - Acrescenta linha no CSV /storage/data/contratos.csv
- * - Retorno padronizado: { ok, pdfUrl, file } | { ok:false, code_exists } | { ok:false, error }
- */
-
 header('Content-Type: application/json; charset=utf-8');
-// Libere CORS se necessário (frente hospedada em outro subdomínio)
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Headers: Authorization, Content-Type');
+header('Access-Control-Allow-Origin: https://erpimpar.com.br');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
-/* =========================
-   CONFIGURAÇÕES RÁPIDAS
-   ========================= */
-$TOKEN = 'TROQUE_AQUI_PELO_TOKEN_DO_PATCH'; // <<< coloque o mesmo SAVE_TOKEN usado no JS
+try {
+  // pastas
+  $root      = dirname(__FILE__,2);               // /www
+  $docsDir   = $root.'/storage/docs';
+  $dataDir   = $root.'/storage/data';
+  $csvPath   = $dataDir.'/contratos.csv';
 
-// Descobre caminhos baseado em /api/gerador/save.php
-$ROOT     = realpath(__DIR__ . '/../../');          // raiz do site
-$STORAGE  = $ROOT . '/storage';
-$DIR_DATA = $STORAGE . '/data';
-$DIR_DOCS = $STORAGE . '/docs';
-$DIR_LOGS = $STORAGE . '/logs';
-$DIR_LOGOS = $DIR_DOCS . '/logos';
+  if (!is_dir($docsDir)) @mkdir($docsDir, 0775, true);
+  if (!is_dir($dataDir)) @mkdir($dataDir, 0775, true);
 
-// URL pública p/ montar o link do PDF (ajuste o domínio se necessário)
-$PUBLIC_BASE = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') .
-               ($_SERVER['HTTP_HOST'] ?? 'localhost');
-$PDF_PUBLIC_BASE = $PUBLIC_BASE . '/storage/docs/';
+  // dados + pdf
+  if (!isset($_FILES['pdf'])) throw new Exception('PDF n�o enviado.');
+  $nomePdfOrig = basename($_FILES['pdf']['name']);
+  $pdfTmp      = $_FILES['pdf']['tmp_name'];
 
-// Garante diretórios
-@mkdir($DIR_DATA, 0775, true);
-@mkdir($DIR_DOCS, 0775, true);
-@mkdir($DIR_LOGS, 0775, true);
-@mkdir($DIR_LOGOS, 0775, true);
+  if (!isset($_POST['dados'])) throw new Exception('JSON "dados" n�o enviado.');
+  $dados = json_decode($_POST['dados'], true);
+  if (!is_array($dados)) throw new Exception('JSON "dados" inv�lido.');
 
-// Arquivo CSV
-$CSV_PATH   = $DIR_DATA . '/contratos.csv';
-$CSV_HEADER = 'saved_at;codigo;servico;enderecoObra;valor;valorExtenso;prazo;dataExtenso;contratante_nome;contratante_doc;contratada_nome;contratada_doc;clausulas;condicoes;pdf' . PHP_EOL;
+  $codigo = preg_replace('/[^A-Za-z0-9_-]/','_', $dados['codigo'] ?? '');
+  if ($codigo==='') throw new Exception('C�digo vazio.');
 
-/* =========================
-   HELPERS
-   ========================= */
-function jexit($arr, $status = 200) {
-  http_response_code($status);
-  echo json_encode($arr, JSON_UNESCAPED_UNICODE);
-  exit;
-}
-function log_err($msg) {
-  global $DIR_LOGS;
-  @file_put_contents($DIR_LOGS . '/save.log', '['.date('c')."] ".$msg.PHP_EOL, FILE_APPEND);
-}
-function bearer_token() {
-  $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-  if (!$h) return null;
-  if (stripos($h, 'Bearer ') === 0) return trim(substr($h, 7));
-  return null;
-}
-function sanitize_filename($name) {
-  $name = preg_replace('/[^a-zA-Z0-9\.\-_]/', '_', $name);
-  return trim($name, '_');
-}
-function normalize_codigo($v) {
-  $v = trim($v ?? '');
-  $v = preg_replace('/[^a-zA-Z0-9\-_]/', '_', $v);
-  return strtoupper($v);
-}
-function csv_has_code($csvPath, $codigo, &$lastFile = null) {
-  $lastFile = null;
-  if (!is_file($csvPath)) return false;
-  $h = fopen($csvPath, 'r');
-  if (!$h) return false;
-  while (($line = fgets($h)) !== false) {
-    $line = trim($line);
-    if ($line === '' || str_starts_with($line, 'saved_at;')) continue;
-    $cols = explode(';', $line);
-    if (count($cols) >= 15) {
-      // colunas: 0:saved_at 1:codigo ... 14:pdf
-      if (strtoupper($cols[1]) === strtoupper($codigo)) {
-        $lastFile = $cols[14] ?? null;
-        fclose($h);
-        return true;
-      }
-    }
+  $jsonPath = $docsDir.'/'.$codigo.'.json';
+  $pdfPath  = $docsDir.'/'.$nomePdfOrig;
+
+  $isUpdate = isset($_POST['update']) && ($_POST['update'] == '1');
+
+  // bloqueia duplicidade
+  if (file_exists($jsonPath) && !$isUpdate) {
+    echo json_encode(['ok'=>false,'error'=>'C�digo j� cadastrado']);
+    exit;
   }
-  fclose($h);
-  return false;
-}
-function csv_append_line($csvPath, $header, array $cols) {
-  if (!file_exists($csvPath)) {
+
+  // move PDF
+  if (!move_uploaded_file($pdfTmp, $pdfPath)) throw new Exception('Falha ao gravar PDF.');
+
+  // salva metadados JSON
+  $dados['pdf_file']   = basename($pdfPath);
+  $dados['saved_at']   = date('c');
+  file_put_contents($jsonPath, json_encode($dados, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+
+  // anexo opcional (logo) � mant�m compatibilidade com o front j� publicado
+  if (!empty($_FILES['logo']['tmp_name'])) {
+    $ext  = pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION);
+    @move_uploaded_file($_FILES['logo']['tmp_name'], $docsDir.'/'.$codigo.'_logo.'.$ext);
+  }
+
+  // CSV (cria cabe�alho se n�o existir)
+  if (!file_exists($csvPath) || filesize($csvPath)===0) {
+    $header = 'saved_at;codigo;servico;enderecoObra;valor;valorExtenso;prazo;dataExtenso;'.
+              'contratante_nome;contratante_doc;contratada_nome;contratada_doc;'.
+              'clausulas;condicoes;pdf'."\n";
     file_put_contents($csvPath, $header);
   }
-  // sanitiza ; \r \n para não quebrar o CSV
-  $cols = array_map(function($v){
-    $v = (string)$v;
-    $v = str_replace(["\r","\n",";"], [' ',' ',' '], $v);
-    return $v;
-  }, $cols);
-  file_put_contents($csvPath, implode(';', $cols) . PHP_EOL, FILE_APPEND);
+
+  // linha CSV
+  $linha = [
+    date('Y-m-d H:i:s'),
+    $codigo,
+    $dados['servico'] ?? '',
+    $dados['enderecoObra'] ?? '',
+    $dados['valor'] ?? '',
+    $dados['valorExtenso'] ?? '',
+    $dados['prazo'] ?? '',
+    $dados['dataExtenso'] ?? '',
+    $dados['contratante']['nome'] ?? '',
+    $dados['contratante']['cpfCnpj'] ?? '',
+    $dados['contratada']['nome'] ?? '',
+    $dados['contratada']['cpfCnpj'] ?? '',
+    isset($dados['clausulas']) ? preg_replace('/\s+/',' ', $dados['clausulas']) : '',
+    isset($dados['condicoesPagamento']) ? preg_replace('/\s+/',' ', $dados['condicoesPagamento']) : '',
+    basename($pdfPath),
+  ];
+  // escapa ; e quebras
+  $linha = array_map(function($v){ $v=str_replace(["\r","\n"],' ',$v); return str_replace(';', ',', $v); }, $linha);
+  file_put_contents($csvPath, implode(';',$linha)."\n", FILE_APPEND);
+
+  echo json_encode([
+    'ok'=>true,
+    'pdfUrl'=>'https://api.erpimpar.com.br/storage/docs/'.basename($pdfPath),
+    'file'=>basename($pdfPath)
+  ]);
+} catch (Exception $e) {
+  http_response_code(400);
+  echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
 }
 
-/* =========================
-   AUTENTICAÇÃO (TOKEN)
-   ========================= */
-$tok = $_POST['token'] ?? bearer_token();
-if (!$TOKEN || $tok !== $TOKEN) {
-  jexit(['ok'=>false, 'error'=>'unauthorized'], 401);
 }
-
-/* =========================
-   ENTRADA (FormData)
-   - pdf: File (obrigatório)
-   - dados: JSON (obrigatório)
-   - logo: File (opcional)
-   ========================= */
-if (empty($_FILES['pdf']['tmp_name'])) {
-  jexit(['ok'=>false, 'error'=>'PDF não enviado (campo "pdf").'], 400);
-}
-$dadosJson = $_POST['dados'] ?? null;
-if (!$dadosJson && !empty($_FILES['dados']['tmp_name'])) {
-  $dadosJson = file_get_contents($_FILES['dados']['tmp_name']);
-}
-if (!$dadosJson) {
-  jexit(['ok'=>false, 'error'=>'JSON não enviado (campo "dados").'], 400);
-}
-$dados = json_decode($dadosJson, true);
-if (!is_array($dados)) {
-  jexit(['ok'=>false, 'error'=>'JSON inválido em "dados".'], 400);
-}
-
-/* =========================
-   MAPA DE CAMPOS (tolerante)
-   ========================= */
-$codigo         = normalize_codigo($dados['codigo'] ?? '');
-$servico        = $dados['servico']        ?? '';
-$enderecoObra   = $dados['enderecoObra']   ?? ($dados['endereco'] ?? '');
-$valor          = $dados['valor']          ?? '';
-$valorExtenso   = $dados['valorExtenso']   ?? '';
-$prazo          = $dados['prazo']          ?? '';
-$dataExtenso    = $dados['dataExtenso']    ?? '';
-$clausulas      = $dados['clausulas']      ?? '';
-$condicoes      = $dados['condicoes']      ?? ($dados['condicoesPagamento'] ?? '');
-
-$contratante    = $dados['contratante']    ?? [];
-$contratada     = $dados['contratada']     ?? [];
-
-$contratante_nome = $contratante['nome'] ?? $contratante['razao'] ?? '';
-$contratante_doc  = $contratante['cpfCnpj'] ?? $contratante['cnpj'] ?? $contratante['cpf'] ?? '';
-$contratada_nome  = $contratada['nome'] ?? $contratada['razao'] ?? '';
-$contratada_doc   = $contratada['cpfCnpj'] ?? $contratada['cnpj'] ?? $contratada['cpf'] ?? '';
-
-if (!$codigo) {
-  jexit(['ok'=>false, 'error'=>'Código não informado.'], 400);
-}
-
-/* =========================
-   DUPLICIDADE (chave do sistema)
-   ========================= */
-$existingFile = null;
-if (csv_has_code($CSV_PATH, $codigo, $existingFile)) {
-  $url = $existingFile ? ($PDF_PUBLIC_BASE . sanitize_filename($existingFile)) : null;
-  jexit(['ok'=>false, 'code_exists'=>true, 'file'=>$existingFile, 'pdfUrl'=>$url], 200);
-}
-
-/* =========================
-   SALVA PDF
-   ========================= */
-$stamp   = date('YmdHis');
-$pdfName = sanitize_filename($codigo . '_' . $stamp . '.pdf');
-$pdfPath = $DIR_DOCS . '/' . $pdfName;
-
-if (!move_uploaded_file($_FILES['pdf']['tmp_name'], $pdfPath)) {
-  log_err('Falha ao mover PDF para ' . $pdfPath);
-  jexit(['ok'=>false, 'error'=>'Falha ao salvar o PDF.'], 500);
-}
-
-/* =========================
-   SALVA LOGO (opcional)
-   ========================= */
-$logoName = null;
-if (!empty($_FILES['logo']['tmp_name'])) {
-  $logoName = sanitize_filename($codigo . '__' . ($_FILES['logo']['name'] ?? 'logo'));
-  $logoPath = $DIR_LOGOS . '/' . $logoName;
-  if (!move_uploaded_file($_FILES['logo']['tmp_name'], $logoPath)) {
-    // Não é crítico — apenas registra log
-    log_err('Falha ao salvar LOGO: ' . $logoPath);
-    $logoName = null;
-  }
-}
-
-/* =========================
-   SALVA JSON DE METADADOS
-   ========================= */
-$meta = [
-  'codigo'            => $codigo,
-  'servico'           => $servico,
-  'enderecoObra'      => $enderecoObra,
-  'valor'             => $valor,
-  'valorExtenso'      => $valorExtenso,
-  'prazo'             => $prazo,
-  'dataExtenso'       => $dataExtenso,
-  'contratante_nome'  => $contratante_nome,
-  'contratante_doc'   => $contratante_doc,
-  'contratada_nome'   => $contratada_nome,
-  'contratada_doc'    => $contratada_doc,
-  'clausulas'         => $clausulas,
-  'condicoes'         => $condicoes,
-  'pdf'               => $pdfName,
-  'logo'              => $logoName,
-  'criado_em'         => date('c')
-];
-file_put_contents($DIR_DOCS . '/' . $codigo . '.json', json_encode($meta, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-
-/* =========================
-   ESCREVE CSV (com cabeçalho)
-   ========================= */
-if (!file_exists($CSV_PATH)) {
-  file_put_contents($CSV_PATH, $CSV_HEADER);
-}
-csv_append_line($CSV_PATH, $CSV_HEADER, [
-  date('c'),
-  $codigo,
-  $servico,
-  $enderecoObra,
-  $valor,
-  $valorExtenso,
-  $prazo,
-  $dataExtenso,
-  $contratante_nome,
-  $contratante_doc,
-  $contratada_nome,
-  $contratada_doc,
-  $clausulas,
-  $condicoes,
-  $pdfName
-]);
-
-/* =========================
-   RESPOSTA
-   ========================= */
-jexit([
-  'ok'     => true,
-  'file'   => $pdfName,
-  'pdfUrl' => $PDF_PUBLIC_BASE . $pdfName
-], 200);
