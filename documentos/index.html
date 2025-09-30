@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Gerador de documentos</title>
 
-  <script src="/documentos/erp_save_patch_flatfile.js"></script>
-
   <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
@@ -135,7 +133,47 @@
   </script>
 
   <!-- 2) Patch de salvamento do ERP (usa o collectFormData acima) -->
-  
+
+  <script src="/documentos/erp_save_patch_flatfile.js"></script>
+
+<script>
+// ========== Helpers de resposta segura ==========
+async function safeJsonFromResponse(resp) {
+  const text = await resp.text();
+  try { return JSON.parse(text); }
+  catch {
+    console.error('Resposta não-JSON do servidor:', text);
+    return {
+      ok: false,
+      success: false,
+      status: resp.status,
+      error: 'Resposta não-JSON do servidor (possível erro PHP no save.php).',
+      raw: text
+    };
+  }
+}
+
+// Monta e envia o POST para o save.php (usa __ERP_SAVE_PATCH__ se existir)
+async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
+  const patch      = window.__ERP_SAVE_PATCH__ || {};
+  const SAVE_URL   = patch.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
+  const SAVE_TOKEN = patch.SAVE_TOKEN || '';
+
+  const fd = new FormData();
+  fd.append('pdf', new File([pdfBlob], pdfName, { type:'application/pdf' }));
+  // MUITO IMPORTANTE: enviar "dados" como string JSON
+  fd.append('dados', JSON.stringify(window.collectFormData()));
+  if (updateFlag) fd.append('update', '1');
+
+  const headers = {};
+  if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
+
+  const resp = await fetch(SAVE_URL, { method:'POST', headers, body: fd });
+  return await safeJsonFromResponse(resp);
+}
+</script>
+
+
 </head>
 <body>
   <div class="wrap">
@@ -863,52 +901,261 @@ async function preencherCamposComRow(row){
     return resp.json();
   }
 
-  // intercepta o finalizeStep5 para:
-  // 1) checar duplicidade no backend
-  // 2) perguntar (imprimir/atualizar)
-  // 3) salvar (gera CSV + PDF + JSON no ERP) — lado servidor
-  const orig = window.finalizeStep5;
-  window.finalizeStep5 = function(){
-    const toast = (typeof window.showToast === 'function') ? window.showToast : console.log;
-    (async () => {
-      try{
-        const cod = currentCode();
-        const dupRows = await checkCodigoDuplicado(cod);
-        if(dupRows && dupRows.length){
-          await abrirDupModal(dupRows);
-          return; // não sobrescrever
-        }
+<script>
+(function () {
+  // Usa as constantes do PATCH já carregado no index (erp_save_patch_flatfile.js)
+  const PATCH = window.__ERP_SAVE_PATCH__ || {};
+  const SAVE_URL   = PATCH.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
+  const LIST_URL   = PATCH.LIST_URL   || 'https://api.erpimpar.com.br/gerador/list.php';
+  const SAVE_TOKEN = PATCH.SAVE_TOKEN || '';
 
-        if (typeof window.createPdfBlob !== 'function') { toast('Falha: gerador de PDF não disponível.'); return; }
-        const blob = await window.createPdfBlob();
-        window.__pdfBlob = blob;
-        if (window.__pdfUrl) URL.revokeObjectURL(window.__pdfUrl);
-        window.__pdfUrl  = URL.createObjectURL(blob);
-        const ymd  = todayYMD();
-        window.__pdfName = `${cod}_${ymd}.pdf`;
+  function currentCode(){
+    return (document.getElementById('codigo')?.value || '').trim();
+  }
+  function todayYMD(){
+    const d=new Date(); const y=d.getFullYear(), m=('0'+(d.getMonth()+1)).slice(-2), dd=('0'+d.getDate()).slice(-2);
+    return `${y}${m}${dd}`;
+  }
 
-        const out = await saveWithLogo(blob, window.__pdfName);
-        if(out && (out.ok || out.success)){
-          window.__pdfSavedUrl = out.pdfUrl || out.pdf;
-          toast('Registro salvo no ERP ✅');
-          // abre modal de sucesso (já existe no HTML)
-          const modal = document.getElementById('successModal');
-          if(modal) modal.style.display='flex';
-        }else{
-          console.warn('save error', out);
-          toast('Gerado localmente. Falha ao salvar no ERP ❗');
-          const modal = document.getElementById('successModal');
-          if(modal) modal.style.display='flex';
-        }
-      }catch(e){
-        console.error(e);
-        toast('Gerado localmente. Falha ao salvar no ERP ❗');
-        const modal = document.getElementById('successModal');
-        if(modal) modal.style.display='flex';
+  // Mesmo resolvedor usado na consulta (abre via pdf.php)
+  function resolvePdfHref(row){
+    const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
+    const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
+    const file  = row.pdf_file || (row.file || '').replace(/^.*\//,'');
+    if(!file) return '#';
+    return endpoint + 'pdf.php?f=' + encodeURIComponent(file) + '&token=' + encodeURIComponent(token);
+  }
+
+  // 1) Checa duplicidade no backend (list.php)
+  async function checkCodigoDuplicado(codigo){
+    let url = LIST_URL + '?token=' + encodeURIComponent(SAVE_TOKEN) + '&codigo=' + encodeURIComponent(codigo);
+    const r  = await fetch(url, { cache: 'no-store' });
+    const js = await r.json().catch(()=>({}));
+    return (js && js.rows) ? js.rows : [];
+  }
+
+  // 2) Carrega JSON salvo em /docs/<codigo>.json e preenche o formulário
+  async function carregarDocumentoNosCampos(codigo){
+    const base = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
+    const url  = base + 'docs/' + encodeURIComponent(codigo) + '.json' + (SAVE_TOKEN ? ('?token='+encodeURIComponent(SAVE_TOKEN)) : '');
+    const r    = await fetch(url, { cache: 'no-store' });
+    const data = await r.json();
+
+    // Preenche os campos baseado no collectFormData
+    const set = (id,v)=>{ const el=document.getElementById(id); if(el!=null){ el.value = v || ''; el.dispatchEvent(new Event('input')); } };
+    set('codigo',  data.codigo);
+    set('servico', data.servico);
+    set('endereco', data.enderecoObra);
+
+    // CONTRATANTE
+    const ct = data.contratante || {};
+    set('nomeContratante', ct.nome);
+    set('docContratante', ct.cpfCnpj);
+    set('contatoContratante', ct.contato);
+    set('telefoneContratante', ct.telefone);
+    set('emailContratante', ct.email);
+    // tenta fatiar endereço "logradouro, numero - comp — bairro — cidade/UF — CEP 00000-000"
+    (function parseEnd(end, prefix){
+      if(!end) return;
+      // heurística simples
+      const cepMatch = end.match(/CEP\s+([\d\-]+)/i);
+      const ufMatch  = end.match(/\/([A-Z]{2})\s+—\s+CEP/i);
+      const cidadeB  = end.split('—');
+      const cidadeUF = (cidadeB[2]||'').trim();
+      const bairro   = (cidadeB[1]||'').trim();
+      const logNum   = (end.split('—')[0]||'').trim().split(' - ')[0]||'';
+      const log      = (logNum.split(',')[0]||'').trim();
+      const num      = (logNum.split(',')[1]||'').trim();
+
+      set('logradouro'+prefix, log);
+      set('numero'+prefix, num);
+      set('bairro'+prefix, bairro.replace(/^bairro\s*:\s*/i,''));
+      if (cidadeUF.includes('/')){
+        const parts = cidadeUF.split('/');
+        set('cidade'+prefix, (parts[0]||'').trim());
+        set('uf'+prefix, (parts[1]||'').trim());
       }
-    })();
-  };
-})();
+      if (cepMatch) set('cep'+prefix, cepMatch[1]);
+    })(ct.endereco,'Contratante');
+
+    // CONTRATADA
+    const cd = data.contratada || {};
+    set('nomeContratada', cd.nome);
+    set('docContratada', cd.cpfCnpj);
+    set('contatoContratada', cd.contato);
+    set('telefoneContratada', cd.telefone);
+    set('emailContratada', cd.email);
+    (function parseEnd(end, prefix){ /* mesma heurística */ })(cd.endereco,'Contratada');
+
+    // CONDIÇÕES / VALORES
+    set('clausulas', data.clausulas);
+    set('condicoes', data.condicoesPagamento || data.condicoes);
+    set('valor', data.valor);
+    set('valorExtenso', data.valorExtenso);
+    set('prazo', data.prazo);
+    set('dataExtenso', data.dataExtenso);
+
+    // Vai para etapa 2 e deixa o usuário seguir até 5
+    if (typeof window.goTo === 'function') {
+      window.goTo(2);
+    }
+  }
+
+
+
+  // 3) Diálogo: imprimir ou atualizar
+  async function abrirDupModal(dupRows){
+    // Diálogo simples: OK = IMPRIMIR, Cancel = ATUALIZAR
+    const escolhaImprimir = confirm('DOCUMENTO JÁ CADASTRADO.\n\nOK = Imprimir PDF\nCancelar = Atualizar informações');
+    const row = dupRows[0];
+
+    if(escolhaImprimir){
+      const href = resolvePdfHref(row);
+      if(href && href !== '#') {
+        window.open(href, '_blank');
+      } else {
+        alert('Não foi possível localizar o PDF para este código.');
+      }
+      return 'imprimir';
+    } else {
+      await carregarDocumentoNosCampos(row.codigo || currentCode());
+      return 'atualizar';
+    }
+  }
+
+  // 4) Salvar (usa o saveWithLogo do patch já existente)
+  async function saveWithLogo(pdfBlob, pdfName){
+    if(!window.__ERP_SAVE_PATCH__ || !window.__ERP_SAVE_PATCH__.SAVE_URL){
+      throw new Error('Patch de salvamento não carregado.');
+    }
+    const fd = new FormData();
+    fd.append('pdf', new File([pdfBlob], pdfName, {type:'application/pdf'}));
+    fd.append('dados', JSON.stringify(window.collectFormData()));
+    fd.append('token', SAVE_TOKEN);
+    const logoFile = document.getElementById('logo')?.files?.[0];
+    if(logoFile) fd.append('logo', logoFile, logoFile.name);
+
+    const resp = await fetch(SAVE_URL, {
+      method:'POST',
+      headers:{ 'Authorization': 'Bearer ' + SAVE_TOKEN },
+      body: fd
+    });
+
+    // parse seguro
+    const raw = await resp.text();
+    let json = null; try { json = JSON.parse(raw); } catch(_) {}
+    return json || { ok:false, raw, status: resp.status };
+  }
+
+<script>
+// 5) Intercepta o finalizeStep5 (versão corrigida e autossuficiente)
+const orig = window.finalizeStep5;
+window.finalizeStep5 = function(){
+  const toast = (typeof window.showToast === 'function') ? window.showToast : console.log;
+  (async () => {
+    try{
+      const cod = currentCode();
+      if(!cod){ toast('Informe o código do projeto.'); return; }
+
+      // Checa duplicidade
+      let updateFlag = false;
+      const dupRows = await checkCodigoDuplicado(cod);
+      if (dupRows && dupRows.length){
+        const acao = await abrirDupModal(dupRows);
+        if (acao === 'imprimir') {
+          // usuário optou por abrir/imprimir o PDF existente → encerrar
+          return;
+        }
+        if (acao === 'atualizar') {
+          // sinaliza atualização (save.php aceitará sobrescrever)
+          updateFlag = true;
+        }
+        // se cair aqui, segue para gerar PDF e salvar (com updateFlag quando for o caso)
+      }
+
+      // Gera PDF
+      if (typeof window.createPdfBlob !== 'function') {
+        toast('Falha: gerador de PDF não disponível.');
+        return;
+      }
+      const blob = await window.createPdfBlob();
+      window.__pdfBlob = blob;
+      if (window.__pdfUrl) URL.revokeObjectURL(window.__pdfUrl);
+      window.__pdfUrl  = URL.createObjectURL(blob);
+      const ymd  = todayYMD();
+      window.__pdfName = `${cod}_${ymd}.pdf`;
+
+      // >>> ALTERAÇÃO AQUI <<<
+      // Em vez de saveWithLogo(...), usamos o helper robusto saveToServerWithFallback(...)
+      const out = await saveToServerWithFallback(blob, window.__pdfName, updateFlag);
+
+      if(out && (out.ok || out.success)){
+        window.__pdfSavedUrl = out.pdfUrl || out.pdf || out.file;
+        toast('Registro salvo no ERP ✅');
+      }else{
+        console.warn('save error', out);
+        const msg = (out && (out.error || out.message)) ? (out.error || out.message) : 'Falha desconhecida';
+        toast('Gerado localmente. Falha ao salvar no ERP ❗ ' + msg);
+        if (out && out.raw) {
+          console.error('RAW do servidor (HTML/erro PHP):\n', out.raw);
+          alert('Servidor retornou um erro (não-JSON). Abra o Console para detalhes.');
+        }
+      }
+
+      // Modal de sucesso (já existe no HTML)
+      const modal = document.getElementById('successModal');
+      if(modal) modal.style.display='flex';
+
+    }catch(e){
+      console.error(e);
+      toast('Gerado localmente. Falha ao salvar no ERP ❗ ' + e.message);
+      const modal = document.getElementById('successModal');
+      if(modal) modal.style.display='flex';
+    }
+  })();
+};
+</script>
+
+
+<script>
+// ========== Helpers de resposta segura ==========
+async function safeJsonFromResponse(resp) {
+  const text = await resp.text(); // lê SEMPRE como texto
+  try {
+    return JSON.parse(text);      // tenta virar JSON
+  } catch {
+    console.error('Resposta não-JSON do servidor:', text);
+    return {
+      ok: false,
+      success: false,
+      status: resp.status,
+      error: 'Resposta não-JSON do servidor (possível erro PHP no save.php).',
+      raw: text
+    };
+  }
+}
+
+// Monta e envia o POST para o save.php usando as configs do patch se existirem
+async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
+  // tenta usar as configs do patch (se existir)
+  const patch = window.__ERP_SAVE_PATCH__ || {};
+  const SAVE_URL   = patch.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
+  const SAVE_TOKEN = patch.SAVE_TOKEN || '';
+
+  const fd = new FormData();
+  fd.append('pdf', new File([pdfBlob], pdfName, { type: 'application/pdf' }));
+  // MUITO IMPORTANTE: enviar como string, não Blob
+  fd.append('dados', JSON.stringify(window.collectFormData()));
+  if (updateFlag) fd.append('update', '1');
+
+  const headers = {};
+  if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
+
+  const resp = await fetch(SAVE_URL, { method: 'POST', headers, body: fd });
+  return await safeJsonFromResponse(resp);
+}
+</script>
+  
 
 <!-- ...seu código acima permanece... -->
 </script>
