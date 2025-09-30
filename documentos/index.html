@@ -505,9 +505,75 @@ function closeSuccess(){ document.getElementById('successModal').style.display='
 async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
 
 
+
 async function saveDocumentWithPdf(pdfBlob){
   try{
     const patch=(window.__ERP_SAVE_PATCH__||{});
+    const SAVE_URL = patch.SAVE_URL || 'https://api.impar.com.br/api/gerador/save.php';
+    const SAVE_TOKEN = patch.SAVE_TOKEN;
+
+    const get=(id)=>(document.getElementById(id)?.value||'').trim();
+    const joinAddr=(p)=>{
+      const log=document.getElementById('logradouro'+p).value||'';
+      const num=document.getElementById('numero'+p).value||'';
+      const comp=document.getElementById('complemento'+p).value||'';
+      const bai=document.getElementById('bairro'+p).value||'';
+      const cid=document.getElementById('cidade'+p).value||'';
+      const uf=document.getElementById('uf'+p).value||'';
+      const cep=document.getElementById('cep'+p).value||'';
+      return `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}`;
+    };
+    const u = JSON.parse(localStorage.getItem('impar_user')||'null')||{};
+
+    const dados = {
+      codigo: get('codigo'),
+      servico: get('servico'),
+      enderecoObra: get('endereco'),
+      valor: get('valor'),
+      valorExtenso: get('valorExtenso'),
+      prazo: get('prazo'),
+      dataExtenso: get('dataExtenso'),
+      clausulas: get('clausulas'),
+      condicoes: get('condicoes'),
+      contratante: {
+        nome: get('nomeContratante'),
+        cpfCnpj: get('docContratante'),
+        endereco: joinAddr('Contratante'),
+        contato: get('contatoContratante'),
+        telefone: get('telefoneContratante'),
+        email: get('emailContratante')
+      },
+      contratada: {
+        nome: get('nomeContratada'),
+        cpfCnpj: get('docContratada'),
+        endereco: joinAddr('Contratada'),
+        contato: get('contatoContratada'),
+        telefone: get('telefoneContratada'),
+        email: get('emailContratada')
+      },
+      operador: { nome: u.Nome||'', email: u.Email||'' }
+    };
+
+    const fd = new FormData();
+    // O save.php usa check_auth(); normalmente ele lê Authorization: Bearer <token>
+    // Mantemos compat: se houver token, enviamos no Header e não poluímos o corpo
+    const headers = {};
+    if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
+    fd.append('dados', JSON.stringify(dados));
+    const ymd = (new Date()).toISOString().slice(0,10).replace(/-/g,'');
+    const code = (dados.codigo||'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
+    const pdfName = code + '_' + ymd + '.pdf';
+    const pdfFile = new File([pdfBlob], pdfName, {type:'application/pdf'});
+    fd.append('pdf', pdfFile, pdfName);
+
+    const rsp = await fetch(SAVE_URL, { method:'POST', body: fd, mode:'cors', headers });
+    const txt = await rsp.text();
+    try{ console.log('save.php response:', txt); }catch(_){}
+  }catch(e){
+    try{ console.warn('saveDocumentWithPdf error', e); }catch(_){}
+  }
+}
+);
     const SAVE_URL = patch.SAVE_URL || 'https://api.impar.com.br/api/gerador/save.php';
     const SAVE_TOKEN = patch.SAVE_TOKEN;
 
