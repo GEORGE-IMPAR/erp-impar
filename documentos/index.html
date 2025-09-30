@@ -554,28 +554,110 @@ async function saveDocumentPayload(){
     valor_extenso: get('valorExtenso'),
     prazo_dias: get('prazo'),
     data_extenso: get('dataExtenso'),
-    // >>> Itens pedidos
     clausulas: get('clausulas'),
     condicoes: get('condicoes'),
     logo_name: (document.getElementById('logo')?.files?.[0]?.name)||'',
     logo_mime: (document.getElementById('logo')?.files?.[0]?.type)||'',
-    logo_dataurl: logoUrl || '',
-    operador_nome: u ? u.Nome : '',
-    operador_email: u ? u.Email : ''
+    logo_dataurl: logoUrl || ''
   };
   return payload;
 }
 
+
 async function saveDocument(){
   try{
     const patch = (window.__ERP_SAVE_PATCH__||{});
-    const SAVE_URL = patch.SAVE_URL;
+    let SAVE_URL = patch.SAVE_URL || 'https://api.impar.com.br/api/gerador/save.php';
     const SAVE_TOKEN = patch.SAVE_TOKEN;
-    if(!SAVE_URL || !SAVE_TOKEN){ return; }
+
+    // Build payload (text fields)
+    const get=(id)=>(document.getElementById(id)?.value||'').trim();
+    const u = JSON.parse(localStorage.getItem('impar_user')||'null');
+
+    const fd = new FormData();
+    if (SAVE_TOKEN) fd.append('token', SAVE_TOKEN);
+    fd.append('codigo', get('codigo'));
+    fd.append('servico', get('servico'));
+    fd.append('endereco_obra', get('endereco'));
+
+    // Contratante
+    fd.append('contratante_nome', get('nomeContratante'));
+    fd.append('contratante_doc', get('docContratante'));
+    fd.append('contratante_contato', get('contatoContratante'));
+    fd.append('contratante_tel', get('telefoneContratante'));
+    fd.append('contratante_email', get('emailContratante'));
+    fd.append('contratante_endereco',
+      (document.getElementById('logradouroContratante').value||'') + ', ' +
+      (document.getElementById('numeroContratante').value||'') + ' - ' +
+      (document.getElementById('complementoContratante').value||'') + ' — ' +
+      (document.getElementById('bairroContratante').value||'') + ' — ' +
+      (document.getElementById('cidadeContratante').value||'') + '/' +
+      (document.getElementById('ufContratante').value||'') + ' — CEP ' +
+      (document.getElementById('cepContratante').value||'')
+    );
+
+    // Contratada
+    fd.append('contratada_nome', get('nomeContratada'));
+    fd.append('contratada_doc', get('docContratada'));
+    fd.append('contratada_contato', get('contatoContratada'));
+    fd.append('contratada_tel', get('telefoneContratada'));
+    fd.append('contratada_email', get('emailContratada'));
+    fd.append('contratada_endereco',
+      (document.getElementById('logradouroContratada').value||'') + ', ' +
+      (document.getElementById('numeroContratada').value||'') + ' - ' +
+      (document.getElementById('complementoContratada').value||'') + ' — ' +
+      (document.getElementById('bairroContratada').value||'') + ' — ' +
+      (document.getElementById('cidadeContratada').value||'') + '/' +
+      (document.getElementById('ufContratada').value||'') + ' — CEP ' +
+      (document.getElementById('cepContratada').value||'')
+    );
+
+    // Etapa 5
+    fd.append('valor', get('valor'));
+    fd.append('valor_extenso', get('valorExtenso'));
+    fd.append('prazo_dias', get('prazo'));
+    fd.append('data_extenso', get('dataExtenso'));
+
+    // **Pedidos críticos**
+    fd.append('clausulas', get('clausulas'));
+    fd.append('condicoes', get('condicoes'));
+    // Aliases comuns em PHP que podem estar mapeados
+    fd.append('clausulas_texto', get('clausulas'));
+    fd.append('condicoes_pagamento', get('condicoes'));
+
+    // Operador (se houver)
+    if (u){ fd.append('operador_nome', u.Nome||''); fd.append('operador_email', u.Email||''); }
+
+    // Logo (arquivo real)
+    const inp = document.getElementById('logo');
+    if (inp && inp.files && inp.files[0]){
+      fd.append('logo', inp.files[0], inp.files[0].name);
+    }
+
+    // Marcação de origem (útil para debug no save.php)
+    fd.append('client_kind', 'web-formdata');
+
+    const res = await fetch(SAVE_URL, { method:'POST', body: fd, mode:'cors' });
+    const text = await res.text();
+    try { console.log('save.php response:', text); } catch(_){}
+    // Não bloqueia o fluxo em caso de 4xx/5xx, mas registra
+  }catch(e){
+    try { console.warn('saveDocument error', e); } catch(_){}
+  }
+}
+
     const payload = await saveDocumentPayload();
-    payload.token = SAVE_TOKEN;
-    const r = await fetch(SAVE_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    // ignore response errors silently to not break flow
+    if (SAVE_TOKEN) payload.token = SAVE_TOKEN;
+    payload.clausulas_texto = payload.clausulas;
+    payload.condicoes_pagamento = payload.condicoes;
+    payload.etapa5_clausulas = payload.clausulas;
+    payload.etapa5_condicoes = payload.condicoes;
+    await fetch(SAVE_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      mode:'cors',
+      body: JSON.stringify(payload)
+    });
   }catch(e){ /* no-op */ }
 }
 
@@ -600,7 +682,8 @@ function renderConsMsg(msg){
   tb.innerHTML=`<tr><td colspan="3" class="row-muted">${msg}</td></tr>`;
 }
 async function doSearch(){
-  const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
+  let LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
+  if(!LIST_URL){ LIST_URL = 'https://api.impar.com.br/api/gerador/list.php'; }
   if(!LIST_URL||!SAVE_TOKEN){ renderConsMsg('Endpoint não configurado.'); return; }
   const code=(document.getElementById('consCodigo').value||'').trim();
   let url=`${LIST_URL}?token=${encodeURIComponent(SAVE_TOKEN)}`;
@@ -671,7 +754,8 @@ function clearLocal(){
 })();
 
 async function proceedFromStep1(codigo){
-  const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
+  let LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
+  if(!LIST_URL){ LIST_URL = 'https://api.impar.com.br/api/gerador/list.php'; }
   if(!LIST_URL || !SAVE_TOKEN){ goTo(2); return; }
   try{
     const url = `${LIST_URL}?token=${encodeURIComponent(SAVE_TOKEN)}&codigo=${encodeURIComponent(codigo)}`;
