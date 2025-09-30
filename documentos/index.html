@@ -49,7 +49,7 @@
     .back{display:flex;align-items:center;gap:6px;justify-content:center;color:#111827;font-size:14px;margin-top:6px;cursor:pointer;user-select:none}.back .chev{color:#f59e0b}
     .hidden{display:none}
 
-    /* Modais */
+    /* Consulta modal */
     .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:14px;z-index:60}
     .modal .box{width:100%;max-width:900px;background:#fff;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);border:1px solid #e5e7eb;overflow:hidden;display:flex;flex-direction:column;max-height:90vh}
     .modal .box .hd{padding:16px;border-bottom:1px solid #e5e7eb;font-weight:700;display:flex;align-items:center;gap:10px}
@@ -63,11 +63,38 @@
     .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:#10b981;color:#fff;padding:12px 16px;border-radius:6px;font-weight:700;box-shadow:0 10px 20px rgba(0,0,0,.2);display:none;z-index:70}
   </style>
 
-  <!-- 1) Coletor de dados (inclui clausulas/condicoes e metadados) -->
+  <!-- 1) Coletor de dados próprio (inclui clausulas/condicoes e metadados) -->
   <script>
     window.collectFormData = function() {
       const get = (id) => (document.getElementById(id)?.value || '').trim();
-      const u = JSON.parse(localStorage.getItem('impar_user') || 'null');
+      // carrega usuário: primeiro tenta /assets/usuario_doc.json, depois localStorage (fallback)
+      const getUser = () => {
+        try { return JSON.parse(localStorage.getItem('impar_user') || 'null'); } catch(e){ return null; }
+      };
+      const __userCache = { loaded:false, data:null };
+      (async () => {
+        if (__userCache.loaded) return;
+        try {
+          const r = await fetch('/assets/usuario_doc.json', { cache: 'no-store' });
+          if (r.ok) {
+            const j = await r.json();
+            __userCache.data = { Nome: j.nome || j.Nome || '', Email: j.email || j.Email || '' };
+          } else {
+            const u = getUser();
+            __userCache.data = u ? { Nome: u.Nome, Email: u.Email } : null;
+          }
+        } catch(e) {
+          const u = getUser();
+          __userCache.data = u ? { Nome: u.Nome, Email: u.Email } : null;
+        } finally {
+          __userCache.loaded = true;
+          // Atualiza cabeçalhos existentes (.user) se houver
+          const label = __userCache.data ? (__userCache.data.Nome + '<br>' + __userCache.data.Email) : 'Usuário<br>usuario@empresa.com';
+          document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label; });
+        }
+      })();
+
+      const u = __userCache.data || getUser();
       const end = (p) => {
         const log = get('logradouro' + p), num = get('numero' + p),
               comp = get('complemento' + p), bai = get('bairro' + p),
@@ -100,182 +127,18 @@
         dataExtenso: get('dataExtenso'),
         clausulas: get('clausulas'),
         condicoesPagamento: get('condicoes'),
-        operador: u ? { nome: u.Nome, email: u.Email } : {}
+        operador: u ? { nome: (u.Nome||u.nome||''), email: (u.Email||u.email||'') } : {}
       };
     };
   </script>
 
   <!-- 2) Patch de salvamento do ERP (usa o collectFormData acima) -->
   <script src="/documentos/erp_save_patch_flatfile.js"></script>
-<script>
-
-<script>
-// === CHECK DUPLICADO: verifica e oferece Imprimir/Atualizar
-window.checkCodigoExistente = async function (inp) {
-  try {
-    const v = (inp && inp.value ? inp.value : '').trim();
-    if (!v) return;
-
-    const patch = window.__ERP_SAVE_PATCH__;
-    // endpoint do check que você criou no item 1
-    const apiBase = (patch && patch.SAVE_URL ? patch.SAVE_URL.replace('/save.php','/') : '/api/gerador/');
-    const token   = (patch && patch.SAVE_TOKEN) ? ('&token='+encodeURIComponent(patch.SAVE_TOKEN)) : '';
-    const url     = apiBase + 'check_code.php?codigo=' + encodeURIComponent(v) + token;
-
-    const r  = await fetch(url, { cache:'no-store' });
-    const js = await parseJsonSafe(r); // usa o parse seguro
-
-    if (js.exists) {
-      const escolha = confirm('DOCUMENTO JÁ CADASTRADO.\n\nOK = IMPRIMIR PDF\nCancelar = ATUALIZAR INFORMAÇÕES');
-      if (escolha) {
-        // imprimir/abrir PDF (igual "abrir" da consulta)
-        const pdfFile = js.file;
-        if (pdfFile) {
-          const pdfHref = apiBase + 'pdf.php?f=' + encodeURIComponent(pdfFile) + token.replace('&','&');
-          window.open(pdfHref, '_blank');
-        } else {
-          alert('Não recebi o nome do PDF no retorno do servidor.');
-        }
-      } else {
-        // atualizar: carregar campos e pular para Etapa 2
-        if (js.row) {
-          preencherCamposCom(js.row);
-          // navega para a Etapa 2 (ajuste se sua função tiver outro nome)
-          if (typeof goTo === 'function') goTo(2);
-          else if (typeof go === 'function') go(2);
-        }
-      }
-    }
-  } catch (e) {
-    console.error('Falha ao checar código existente:', e);
-  }
-};
-
-// === Helper: preenche os campos do seu formulário (ajuste IDs se precisar)
-function preencherCamposCom(row){
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
-
-  set('servico',        row.servico);
-  set('endereco',       row.enderecoObra || row.endereco);
-  set('clausulas',      row.clausulas);
-  set('condicoes',      row.condicoesPagamento || row.condicoes);
-  set('valor',          row.valor);
-  set('valorExtenso',   row.valorExtenso);
-  set('prazo',          row.prazo);
-  set('dataExtenso',    row.dataExtenso);
-
-  // contratante
-  set('nomeContratante',       row.contratante?.nome);
-  set('docContratante',        row.contratante?.cpfCnpj);
-  set('contatoContratante',    row.contratante?.contato);
-  set('telefoneContratante',   row.contratante?.telefone);
-  set('emailContratante',      row.contratante?.email);
-  // endereço contratante (seu index tem vários campos)
-  // preencha aqui se o JSON retornar aberto (logradouro/bairro/etc.)
-
-  // contratada
-  set('nomeContratada',        row.contratada?.nome);
-  set('docContratada',         row.contratada?.cpfCnpj);
-  set('contatoContratada',     row.contratada?.contato);
-  set('telefoneContratada',    row.contratada?.telefone);
-  set('emailContratada',       row.contratada?.email);
-
-  // qualquer outro campo que você tenha no formulário…
-}
-</script>
-
-  // Usa o endpoint check_code.php do subdomínio API
-  async function checkCodigoExistente(input) {
-    try {
-      const codigo = (input.value || '').trim();
-      if (!codigo) return;
-
-      // Ajuste a origem do endpoint se necessário
-      const url = 'https://api.erpimpar.com.br/gerador/check_code.php?codigo=' + encodeURIComponent(codigo);
-      const r = await fetch(url, { cache: 'no-store' });
-      const j = await r.json();
-
-      if (j && j.exists) {
-        // Abre o mesmo modal de "consulta" já existente, com as duas ações
-        // 1) Imprimir (abre o PDF como na consulta)
-        // 2) Atualizar (carrega dados e pula para Etapa 2)
-        abrirDialogoCodigoExiste(codigo);
-      }
-    } catch(e) {
-      // silencioso para não atrapalhar digitação
-      console.warn('Falha ao checar código', e);
-    }
-  }
-
-  // Mostra o diálogo para o usuário escolher: Imprimir PDF ou Atualizar
-  async function abrirDialogoCodigoExiste(codigo) {
-    const msg = `Documento já cadastrado para o código ${codigo}. Deseja imprimir o PDF ou atualizar as informações?`;
-    const escolher = confirm(msg + '\n\nOK = Imprimir PDF\nCancelar = Atualizar');
-    if (escolher) {
-      // Imprimir: simula o "abrir" da consulta:
-      // 1) busca na list.php para obter o arquivo
-      const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-      const listUrl = 'https://api.erpimpar.com.br/gerador/list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(codigo);
-      try {
-        const r = await fetch(listUrl);
-        const j = await r.json();
-        const row = j.rows && j.rows[0];
-        if (row && row.pdf_file) {
-          const pdfUrl = 'https://api.erpimpar.com.br/gerador/pdf.php?f=' + encodeURIComponent(row.pdf_file) + '&token=' + encodeURIComponent(token);
-          window.open(pdfUrl, '_blank');
-        } else {
-          alert('PDF não localizado para este código.');
-        }
-      } catch(err) {
-        alert('Erro ao localizar o PDF.');
-      }
-    } else {
-      // Atualizar: carrega dados e navega para Etapa 2
-      try {
-        await carregarDadosParaEdicao(codigo);
-        // sua função que vai para a etapa 2
-        if (typeof goTo === 'function') goTo(2);
-      } catch(e) {
-        console.warn(e);
-        alert('Falha ao carregar dados para edição.');
-      }
-    }
-  }
-
-  // Lê o CSV via list.php e (se você já tem) outro endpoint que devolve JSON completo
-  async function carregarDadosParaEdicao(codigo) {
-    const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-    const listUrl = 'https://api.erpimpar.com.br/gerador/list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(codigo);
-    const r = await fetch(listUrl);
-    const j = await r.json();
-    if (!j.ok || !j.rows || !j.rows.length) throw new Error('Código não encontrado');
-
-    // Aqui você pode, se quiser, buscar também um JSON completo por código (se existir no backend)
-    // e preencher todos os campos:
-    // preencherCampos(formJson)...
-  }
-</script>
-
-<script>
-// === FIX JSON: parse seguro pra quando o PHP manda HTML/erro
-async function parseJsonSafe(resp) {
-  const text = await resp.text();
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    console.error('Resposta não-JSON do servidor:\n', text);
-    alert('Falha ao processar a resposta do servidor. Abra o console (F12) > Console para ver os detalhes.');
-    throw e;
-  }
-}
-</script>
-
-
 </head>
 <body>
   <div class="wrap">
 
-    <!-- TOPO -->
+    <!-- TOPO: Tema / Limpar / Fechar -->
     <div class="topbar">
       <button class="btn" id="themeBtn" onclick="toggleTheme()">🌙 Tema</button>
       <button class="btn warn" onclick="limparDados()">Limpar dados</button>
@@ -303,8 +166,7 @@ async function parseJsonSafe(resp) {
         <div class="block">
           <div class="cap">CÓDIGO <span class="req">*</span></div>
           <div class="content">
-            <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()" onblur="checkCodigoExistente(this)">
-            <div id="codigoHint" class="hint">Será verificado se já existe documento para este código.</div>
+            <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()">
           </div>
         </div>
 
@@ -541,19 +403,6 @@ async function parseJsonSafe(resp) {
       </div>
     </div>
 
-    <!-- Modal: Código já existe -->
-    <div id="existModal" class="modal">
-      <div class="box">
-        <div class="hd">Documento já cadastrado</div>
-        <div class="bd">IMPRIMIR DOCUMENTO OU ATUALIZAR INFORMAÇÕES?</div>
-        <div class="ft">
-          <button class="btn" onclick="closeExist()">Cancelar</button>
-          <button class="btn" onclick="existUpdate()">Atualizar</button>
-          <button class="btn primary" onclick="existPrint()">Imprimir</button>
-        </div>
-      </div>
-    </div>
-
   </div><!-- /wrap -->
 
   <script>
@@ -565,10 +414,20 @@ async function parseJsonSafe(resp) {
     (function initTheme(){ const saved=localStorage.getItem(THEME_KEY); if(saved){applyTheme(saved);} else { const prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches; applyTheme(prefersDark?'dark':'light'); } })();
     function toggleTheme(){ const cur=document.documentElement.getAttribute('data-theme')||'light'; const next=(cur==='dark')?'light':'dark'; localStorage.setItem(THEME_KEY,next); applyTheme(next); }
 
-    // usuário
-    function loadUser(){
-      let u=null; try{ u=JSON.parse(localStorage.getItem('impar_user')||'null'); }catch(e){}
-      const label = u ? (u.Nome+'\n'+u.Email) : 'Rafael Ramos\nrafael.@imparsistemas.com';
+    // usuário (dinâmico via /assets/usuario_doc.json com fallback em localStorage)
+    async function loadUser(){
+      let u=null;
+      try {
+        const r = await fetch('/assets/usuario_doc.json', { cache: 'no-store' });
+        if (r.ok) {
+          const j = await r.json();
+          u = { Nome: j.nome || j.Nome || 'Usuário', Email: j.email || j.Email || 'usuario@empresa.com' };
+        }
+      } catch(e){}
+      if(!u){
+        try{ const l = JSON.parse(localStorage.getItem('impar_user')||'null'); if(l) u = { Nome:l.Nome, Email:l.Email }; }catch(e){}
+      }
+      const label = u ? (u.Nome+'\n'+u.Email) : 'Usuário\nusuario@empresa.com';
       document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label.replace('\n','<br>'); });
     }
     loadUser();
@@ -613,7 +472,7 @@ async function parseJsonSafe(resp) {
     function fillDateExtenso(){ const p=document.getElementById('dataPicker'); if(!p.value) return; const d=new Date(p.value+'T12:00:00'); document.getElementById('dataExtenso').value=d.toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}); validate5(); }
 
     // Toast
-    function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2200);}
+    function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2000);}
 
     // Navegação / validações
     let __currentStep = 1;
@@ -669,7 +528,7 @@ async function parseJsonSafe(resp) {
       });
     }
 
-    // PDF
+// PDF
     function currentCode(){ return (document.getElementById('codigo').value||'').trim() || 'DOC'; }
     function todayYMD(){ const d=new Date(); const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return `${y}${m}${dd}`; }
     let __pdfBlob=null, __pdfUrl=null, __pdfName='documento.pdf';
@@ -727,155 +586,304 @@ async function parseJsonSafe(resp) {
       document.getElementById('pdfFrame').src = __pdfUrl;
       document.getElementById('viewer').style.display='flex';
     }
+
     function closeViewer(){ document.getElementById('viewer').style.display='none'; }
-    function downloadLastPdf(){ if(!__pdfBlob) return; const a=document.createElement('a'); a.href=__pdfUrl; a.download=__pdfName; document.body.appendChild(a); a.click(); a.remove(); }
-    async function shareLastPdf(){
-      if(!__pdfBlob){ showToast('Gere o PDF primeiro'); return; }
-      const file = new File([__pdfBlob], __pdfName, {type:'application/pdf'});
+// baixar / compartilhar PDF já aberto no viewer
+function downloadLastPdf(){
+  if(!window.__pdfBlob || !window.__pdfUrl) return;
+  const a=document.createElement('a');
+  a.href=window.__pdfUrl;
+  a.download=window.__pdfName || ('documento_'+todayYMD()+'.pdf');
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function shareLastPdf(){
+  if(!window.__pdfBlob){ showToast('Gere o PDF primeiro'); return; }
+  const file = new File([window.__pdfBlob], window.__pdfName || ('documento_'+todayYMD()+'.pdf'), {type:'application/pdf'});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'Documento', text:'Envio do documento em PDF'});
+    }else if(navigator.share){
+      await navigator.share({title:'Documento', text:'Envio do documento em PDF', url: window.__pdfUrl});
+    }else{
+      const txt = encodeURIComponent('Documento gerado. Baixe aqui: '+location.href);
+      window.open('https://wa.me/?text='+txt,'_blank');
+    }
+  }catch(e){}
+}
+function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
+async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
+
+// ---------- Consulta (modal já existe no HTML) ----------
+function abrirConsulta(){
+  const m = document.getElementById('consultaModal');
+  const q = document.getElementById('qCodigo');
+  q.value = (document.getElementById('codigo').value || '').trim();
+  document.getElementById('consultaTBody').innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Sem código, sem resultados.</td></tr>`;
+  m.style.display='flex';
+}
+function fecharConsulta(){ document.getElementById('consultaModal').style.display='none'; }
+
+async function buscarConsulta(){
+  const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
+  const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
+  const codigo = (document.getElementById('qCodigo').value || '').trim();
+  let url = endpoint + 'list.php?token=' + encodeURIComponent(token);
+  if(codigo) url += '&codigo=' + encodeURIComponent(codigo);
+
+  const tb = document.getElementById('consultaTBody');
+  tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Buscando...</td></tr>`;
+
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    const j = await r.json();
+    const rows = (j && j.rows) ? j.rows : [];
+    if(!rows.length){
+      tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">${codigo?'Nenhum documento para o código informado.':'Nenhum registro encontrado.'}</td></tr>`;
+      return;
+    }
+    tb.innerHTML = rows.map(row=>{
+      const code = row.codigo || '';
+      const obra = row.contratante_nome || '';
+      const href = resolvePdfHref(row);
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #eee">${code}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee">${obra}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">
+          <a class="btn" style="padding:4px 10px" target="_blank" href="${href}">abrir</a>
+        </td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#ef4444;text-align:center">Erro ao consultar.</td></tr>`;
+  }
+}
+function resolvePdfHref(row){
+  const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
+  const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
+  const file  = row.pdf_file || (row.file || '').replace(/^.*\//,'');
+  if(!file) return '#';
+  // stream via pdf.php pra evitar 404 por proxy/cache
+  return endpoint + 'pdf.php?f=' + encodeURIComponent(file) + '&token=' + encodeURIComponent(token);
+}
+
+// ---------- Fechar / Limpar ----------
+function fecharFluxo(){
+  if(window.__currentStep === 1){
+    // RAIZ (conforme você pediu): /login_doc.html
+    location.href = '/login_doc.html';
+  }else{
+    goTo(1);
+  }
+}
+function limparDados(){
+  document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], textarea').forEach(i=>i.value='');
+  const logo = document.getElementById('logo'); if(logo) logo.value='';
+  const h = document.getElementById('logoInfo'); if(h) h.textContent='Anexar logo do contratante';
+  window.__logoCached = null;
+  goTo(1);
+  showToast('Campos limpos');
+}
+
+// ========== DUPLICIDADE: checar, perguntar e (se atualizar) preencher ==========
+async function checkCodigoDuplicado(cod){
+  const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
+  const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
+  const url = endpoint + 'list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(cod);
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    const j = await r.json();
+    const rows = (j && j.rows) ? j.rows : [];
+    return rows; // [] se não existe
+  }catch(e){
+    return [];
+  }
+}
+
+// cria modal simples reutilizável
+function ensureDupModal(){
+  if(document.getElementById('dupModal')) return;
+  const m = document.createElement('div');
+  m.id='dupModal';
+  m.className='modal';
+  m.innerHTML = `
+    <div class="box">
+      <div class="hd">Documento já cadastrado</div>
+      <div class="bd">
+        <p>Já existe um documento para este código. Deseja <b>imprimir o PDF</b> ou <b>atualizar informações</b>?</p>
+      </div>
+      <div class="ft">
+        <button class="btn" id="dupFechar">Fechar</button>
+        <button class="btn" id="dupImprimir">Imprimir PDF</button>
+        <button class="btn primary" id="dupAtualizar">Atualizar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(m);
+  document.getElementById('dupFechar').onclick=()=>{ m.style.display='none'; };
+}
+let __dupRowsCache = [];
+async function abrirDupModal(rows){
+  __dupRowsCache = rows||[];
+  ensureDupModal();
+  const m = document.getElementById('dupModal');
+  m.style.display='flex';
+  // ações
+  document.getElementById('dupImprimir').onclick = ()=>{
+    m.style.display='none';
+    // abre o primeiro PDF correspondente
+    if(__dupRowsCache.length){
+      const href = resolvePdfHref(__dupRowsCache[0]);
+      if(href && href !== '#') window.open(href, '_blank');
+    }
+  };
+  document.getElementById('dupAtualizar').onclick = async ()=>{
+    m.style.display='none';
+    if(__dupRowsCache.length){
+      await preencherCamposComRow(__dupRowsCache[0]);
+      goTo(2); // já cai na etapa 2 para seguir até 5
+      showToast('Campos carregados do documento existente');
+    }
+  };
+}
+
+// Preencher campos de tela a partir da linha retornada pelo list.php
+async function preencherCamposComRow(row){
+  // mapeia campos prováveis (depende do list.php incluir clausulas/condicoes)
+  const byId = (id,val)=>{ const el=document.getElementById(id); if(el) el.value=(val||''); };
+
+  byId('servico', row.servico);
+  byId('endereco', row.enderecoObra || row.endereco || '');
+
+  // contratante
+  byId('nomeContratante', row.contratante_nome);
+  byId('docContratante',  (row.contratante_doc||'').replace(/\D+/g,''));
+  byId('contatoContratante', row.contratante_contato);
+  byId('telefoneContratante', row.contratante_telefone);
+  byId('emailContratante', row.contratante_email);
+
+  // se seu list.php já envia CEP/logradouro/bairro/... preencha aqui
+  // (ex.: row.cep_contratante, row.logradouro_contratante, etc.)
+  // byId('cepContratante', row.cep_contratante);
+  // byId('logradouroContratante', row.logradouro_contratante);
+  // byId('numeroContratante', row.numero_contratante);
+  // byId('complementoContratante', row.complemento_contratante);
+  // byId('bairroContratante', row.bairro_contratante);
+  // byId('cidadeContratante', row.cidade_contratante);
+  // if(row.uf_contratante){ const s=document.getElementById('ufContratante'); if(s) s.value=row.uf_contratante; }
+
+  // contratada
+  byId('nomeContratada', row.contratada_nome);
+  byId('docContratada', (row.contratada_doc||'').replace(/\D+/g,''));
+  byId('contatoContratada', row.contratada_contato);
+  byId('telefoneContratada', row.contratada_telefone);
+  byId('emailContratada', row.contratada_email);
+  // idem endereço da contratada se disponível nos campos do list.php
+
+  // condições finais
+  byId('valor', row.valor);
+  byId('valorExtenso', row.valorExtenso || row.valor_extenso || '');
+  byId('prazo', row.prazo);
+  byId('dataExtenso', row.dataExtenso || row.data_extenso || '');
+  byId('clausulas', row.clausulas || '');
+  byId('condicoes', row.condicoes || '');
+
+  // revalidar barras
+  if(typeof validate2==='function') validate2();
+  if(typeof validate3==='function') validate3();
+  if(typeof validate4==='function') validate4();
+  if(typeof validate5==='function') validate5();
+}
+
+// --- Hook no fluxo da Etapa 1: ao clicar "Continuar", primeiro verificar duplicidade ---
+(function hookEtapa1(){
+  const b = document.getElementById('bar1');
+  if(!b) return;
+  const original = b.onclick;
+  b.onclick = async function(){
+    const cod = (document.getElementById('codigo').value || '').trim();
+    if(!cod){ showToast('Informe o código'); return; }
+    const rows = await checkCodigoDuplicado(cod);
+    if(rows && rows.length){
+      await abrirDupModal(rows);
+    }else{
+      // segue o fluxo normal (vai p/ etapa 2)
+      if(typeof original === 'function') original(); else goTo(2);
+    }
+  };
+})();
+
+// ========== Salvar com LOGO + CSV + checagem de código no backend ==========
+(function enableSaveWithLogo(){
+  const patch = window.__ERP_SAVE_PATCH__;
+  if(!patch) return;
+
+  const SAVE_URL = patch.SAVE_URL;
+  const SAVE_TOKEN = patch.SAVE_TOKEN;
+
+  async function saveWithLogo(pdfBlob, pdfName){
+    const fd = new FormData();
+    fd.append('pdf', new File([pdfBlob], pdfName, {type:'application/pdf'}));
+    fd.append('dados', JSON.stringify(window.collectFormData()));
+    fd.append('token', SAVE_TOKEN);
+    const file = document.getElementById('logo')?.files?.[0];
+    if(file) fd.append('logo', file, file.name);
+    const resp = await fetch(SAVE_URL, {
+      method:'POST',
+      headers:{ 'Authorization': 'Bearer ' + SAVE_TOKEN },
+      body: fd
+    });
+    return resp.json();
+  }
+
+  // intercepta o finalizeStep5 para:
+  // 1) checar duplicidade no backend
+  // 2) perguntar (imprimir/atualizar)
+  // 3) salvar (gera CSV + PDF + JSON no ERP) — lado servidor
+  const orig = window.finalizeStep5;
+  window.finalizeStep5 = function(){
+    const toast = (typeof window.showToast === 'function') ? window.showToast : console.log;
+    (async () => {
       try{
-        if(navigator.canShare && navigator.canShare({files:[file]})){
-          await navigator.share({files:[file], title:'Documento', text:'Envio do documento em PDF'});
-        }else if(navigator.share){
-          await navigator.share({title:'Documento', text:'Envio do documento em PDF', url: __pdfUrl});
-        }else{
-          const txt = encodeURIComponent('Documento gerado. Baixe aqui: '+location.href);
-          window.open('https://wa.me/?text='+txt,'_blank');
+        const cod = currentCode();
+        const dupRows = await checkCodigoDuplicado(cod);
+        if(dupRows && dupRows.length){
+          await abrirDupModal(dupRows);
+          return; // não sobrescrever
         }
-      }catch(e){}
-    }
 
-    function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
-    async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
+        if (typeof window.createPdfBlob !== 'function') { toast('Falha: gerador de PDF não disponível.'); return; }
+        const blob = await window.createPdfBlob();
+        window.__pdfBlob = blob;
+        if (window.__pdfUrl) URL.revokeObjectURL(window.__pdfUrl);
+        window.__pdfUrl  = URL.createObjectURL(blob);
+        const ymd  = todayYMD();
+        window.__pdfName = `${cod}_${ymd}.pdf`;
 
-    // Consulta
-    function abrirConsulta(){
-      const m = document.getElementById('consultaModal');
-      const q = document.getElementById('qCodigo');
-      q.value = (document.getElementById('codigo').value || '').trim();
-      document.getElementById('consultaTBody').innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Sem código, sem resultados.</td></tr>`;
-      m.style.display='flex';
-    }
-    function fecharConsulta(){ document.getElementById('consultaModal').style.display='none'; }
-
-    async function buscarConsulta(){
-      const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-      const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-      const codigo = (document.getElementById('qCodigo').value || '').trim();
-      let url = endpoint + 'list.php?token=' + encodeURIComponent(token);
-      if(codigo) url += '&codigo=' + encodeURIComponent(codigo);
-
-      const tb = document.getElementById('consultaTBody');
-      tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Buscando...</td></tr>`;
-
-      try{
-        const r = await fetch(url);
-        const j = await r.json();
-        const rows = (j && j.rows) ? j.rows : [];
-        if(!rows.length){
-          tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">${codigo?'Nenhum documento para o código informado.':'Nenhum registro encontrado.'}</td></tr>`;
-          return;
-        }
-        tb.innerHTML = rows.map(row=>{
-          const code = row.codigo || '';
-          const obra = row.contratante_nome || '';
-          const href = resolvePdfHref(row);
-          return `<tr>
-            <td style="padding:8px;border-bottom:1px solid #eee">${code}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee">${obra}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">
-              <a class="btn" style="padding:4px 10px" target="_blank" href="${href}">abrir</a>
-            </td>
-          </tr>`;
-        }).join('');
-      }catch(e){
-        tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#ef4444;text-align:center">Erro ao consultar.</td></tr>`;
-      }
-    }
-
-    function resolvePdfHref(row){
-      const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-      const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-      const file  = row.pdf_file || (row.file || '').replace(/^.*\//,'');
-      if(!file) return '#';
-      // Abre via pdf.php (stream) pra evitar 404 por cache/proxy
-      return endpoint + 'pdf.php?f=' + encodeURIComponent(file) + '&token=' + encodeURIComponent(token);
-    }
-
-    // Fechar / Limpar
-    function fecharFluxo(){
-      if(__currentStep === 1){
-        location.href = 'login_doc.html';
-      }else{
-        goTo(1);
-      }
-    }
-    function limparDados(){
-      document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], textarea').forEach(i=>i.value='');
-      const logo = document.getElementById('logo'); if(logo) logo.value='';
-      const h = document.getElementById('logoInfo'); if(h) h.textContent='Anexar logo do contratante';
-      __logoCached = null;
-      goTo(1);
-      showToast('Campos limpos');
-    }
-
-    // === Reinstala finalizeStep5 para anexar LOGO no POST ===
-    (function enableSaveWithLogo(){
-      const patch = window.__ERP_SAVE_PATCH__;
-      if(!patch) return;
-
-      const SAVE_URL = patch.SAVE_URL;
-      const SAVE_TOKEN = patch.SAVE_TOKEN;
-
-      async function saveWithLogo(pdfBlob, pdfName){
-        const fd = new FormData();
-        fd.append('pdf', new File([pdfBlob], pdfName, {type:'application/pdf'}));
-        fd.append('dados', JSON.stringify(window.collectFormData()));
-        fd.append('token', SAVE_TOKEN);
-        const file = document.getElementById('logo')?.files?.[0];
-        if(file) fd.append('logo', file, file.name);
-        const resp = await fetch(SAVE_URL, {
-          method:'POST',
-          headers:{ 'Authorization': 'Bearer ' + SAVE_TOKEN },
-          body: fd
-        });
-        return resp.json();
-      }
-
-      const orig = window.finalizeStep5;
-      window.finalizeStep5 = function(){
-        const toast = (typeof window.showToast === 'function') ? window.showToast : console.log;
-        toast('Documento cadastrado com sucesso!');
-        (async () => {
-          try{
-            if (typeof window.createPdfBlob !== 'function') { toast('Falha: gerador de PDF não disponível.'); return; }
-            const blob = await window.createPdfBlob();
-            window.__pdfBlob = blob;
-            if (window.__pdfUrl) URL.revokeObjectURL(window.__pdfUrl);
-            window.__pdfUrl  = URL.createObjectURL(blob);
-            const code = currentCode();
-            const ymd  = todayYMD();
-            window.__pdfName = `${code}_${ymd}.pdf`;
-
-            const out = await saveWithLogo(blob, window.__pdfName);
-            if(out && out.ok){
-              window.__pdfSavedUrl = out.pdfUrl;
-              toast('Registro salvo no ERP ✅');
-            }else{
-              console.warn('save error', out);
-              toast('Gerado localmente. Falha ao salvar no ERP ❗');
-            }
-          }catch(e){
-            console.error(e);
-            toast('Gerado localmente. Falha ao salvar no ERP ❗');
-          }
+        const out = await saveWithLogo(blob, window.__pdfName);
+        if(out && (out.ok || out.success)){
+          window.__pdfSavedUrl = out.pdfUrl || out.pdf;
+          toast('Registro salvo no ERP ✅');
+          // abre modal de sucesso (já existe no HTML)
           const modal = document.getElementById('successModal');
           if(modal) modal.style.display='flex';
-        })();
-      };
+        }else{
+          console.warn('save error', out);
+          toast('Gerado localmente. Falha ao salvar no ERP ❗');
+          const modal = document.getElementById('successModal');
+          if(modal) modal.style.display='flex';
+        }
+      }catch(e){
+        console.error(e);
+        toast('Gerado localmente. Falha ao salvar no ERP ❗');
+        const modal = document.getElementById('successModal');
+        if(modal) modal.style.display='flex';
+      }
     })();
+  };
+})();
 
-    // Init
-    updateStepper(1); validate1();
-  </script>
-</body>
-</html>
+// ========== (RE)Init ==========
+updateStepper(1);
+validate1();
+
+</script>
