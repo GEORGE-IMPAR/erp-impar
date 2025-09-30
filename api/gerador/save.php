@@ -9,9 +9,7 @@ require __DIR__ . '/common.php';
 check_auth();
 ensure_storage();
 
-if (!isset($_FILES['pdf']) || $_FILES['pdf']['error']!==UPLOAD_ERR_OK) {
-  respond(['ok'=>false,'error'=>'pdf_missing_or_error'],400);
-}
+if (!isset($_FILES['pdf']) || $_FILES['pdf']['error']!==UPLOAD_ERR_OK) respond(['ok'=>false,'error'=>'pdf_missing_or_error'],400);
 
 $dados = json_decode($_POST['dados'] ?? '{}', true);
 if (!is_array($dados)) $dados = [];
@@ -39,10 +37,6 @@ $op  = $dados['operador'] ?? [];
 $ip  = $_SERVER['REMOTE_ADDR'] ?? '';
 $ua  = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
-// Normaliza textos longos (mantém CSV em uma linha)
-$clausulas = isset($dados['clausulas']) ? preg_replace('/\s+/', ' ', (string)$dados['clausulas']) : '';
-$condicoes = isset($dados['condicoes']) ? preg_replace('/\s+/', ' ', (string)$dados['condicoes']) : '';
-
 // Linha CSV
 $row = [
   date('Y-m-d H:i:s'),
@@ -52,9 +46,6 @@ $row = [
   $ctt['nome'] ?? '', $ctt['cpfCnpj'] ?? '', $ctt['endereco'] ?? '', $ctt['contato'] ?? '', $ctt['telefone'] ?? '', $ctt['email'] ?? '',
   $cta['nome'] ?? '', $cta['cpfCnpj'] ?? '', $cta['endereco'] ?? '', $cta['contato'] ?? '', $cta['telefone'] ?? '', $cta['email'] ?? '',
   $dados['valor'] ?? '', $dados['valorExtenso'] ?? '', $dados['prazo'] ?? '', $dados['dataExtenso'] ?? '',
-  /* ▼ NOVAS COLUNAS ▼ */
-  $clausulas, $condicoes,
-  /* ▲ NOVAS COLUNAS ▲ */
   $op['nome'] ?? '', $op['email'] ?? '',
   $basename, $pdfUrl, $ip, $ua
 ];
@@ -66,10 +57,6 @@ fclose($f);
 
 // Grava JSONL (um por dia)
 $fn = JSONL_DIR . '/' . $ymd . '.jsonl';
-file_put_contents(
-  $fn,
-  json_encode(['row'=>$row,'dados'=>$dados,'pdf'=>$basename,'url'=>$pdfUrl], JSON_UNESCAPED_UNICODE) . "\n",
-  FILE_APPEND
-);
+file_put_contents($fn, json_encode(['row'=>$row,'dados'=>$dados,'pdf'=>$basename,'url'=>$pdfUrl], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
 
 respond(['ok'=>true,'pdfUrl'=>$pdfUrl,'file'=>$basename]);
