@@ -108,6 +108,57 @@
   <!-- 2) Patch de salvamento do ERP (usa o collectFormData acima) -->
   <script src="/documentos/erp_save_patch_flatfile.js"></script>
 <script>
+
+window.checkCodigoExistente = async function (inp) {
+  try {
+    const v = (inp?.value || '').trim();
+    if (!v) return;
+
+    // ajuste a URL para o seu endpoint (com token, se precisar)
+    const url = `${(window.__ERP_SAVE_PATCH__?.SAVE_URL||'').replace('/save.php', '/check_code.php')}?codigo=${encodeURIComponent(v)}&token=${encodeURIComponent(window.__ERP_SAVE_PATCH__?.SAVE_TOKEN||'')}`;
+
+    const r = await fetch(url, { cache: 'no-store' });
+    const text = await r.text();
+    let js;
+    try { js = JSON.parse(text); } catch { console.warn('check_code não devolveu JSON:', text); return; }
+
+    if (js.exists) {
+      // fluxo: já cadastrado
+      const escolha = confirm('DOCUMENTO JÁ CADASTRADO.\n\nOK = IMPRIMIR PDF\nCancelar = ATUALIZAR INFORMAÇÕES');
+      if (escolha) {
+        // abrir PDF
+        if (js.file) {
+          const pdfHref = ((window.__ERP_SAVE_PATCH__?.SAVE_URL||'').replace('/save.php', '/pdf.php')) + `?f=${encodeURIComponent(js.file)}&token=${encodeURIComponent(window.__ERP_SAVE_PATCH__?.SAVE_TOKEN||'')}`;
+          window.open(pdfHref, '_blank');
+        } else {
+          alert('Não recebi o nome do PDF no retorno.');
+        }
+      } else if (js.row) {
+        // carregar dados e ir para etapa 2
+        preencherFormularioComDados(js.row);
+        goTo && goTo(2); // use sua função de navegação
+      }
+    }
+  } catch (e) {
+    console.error('Falha ao checar código:', e);
+  }
+};
+
+// Exemplo de "preencher" (ajuste ids conforme seus campos):
+function preencherFormularioComDados(row){
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('servico', row.servico);
+  set('endereco', row.enderecoObra);
+  set('clausulas', row.clausulas);
+  set('condicoes', row.condicoesPagamento || row.condicoes);
+  set('valor', row.valor);
+  set('valorExtenso', row.valorExtenso);
+  set('prazo', row.prazo);
+  set('dataExtenso', row.dataExtenso);
+  // ...demais campos (contratante/contratada) mapeando do seu back
+}
+
+
   // Usa o endpoint check_code.php do subdomínio API
   async function checkCodigoExistente(input) {
     try {
