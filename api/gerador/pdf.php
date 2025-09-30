@@ -1,31 +1,14 @@
 <?php
-// /www/api/gerador/pdf.php
-// Serve PDFs salvos em /www/storage/docs
-
-// Sobe 2 níveis a partir de /www/api/gerador -> /www, e aponta para /storage/docs
-$base = realpath(dirname(__DIR__, 2) . '/storage/docs');
-
-if (!$base) {
-  http_response_code(500);
-  echo 'Base path not found';
-  exit;
-}
-
-$fname = basename($_GET['f'] ?? '');
-$path  = $fname ? realpath($base . '/' . $fname) : false;
-
-// segurança + existência
-if (!$fname || !$path || strpos($path, $base) !== 0 || !is_file($path)) {
+header('Access-Control-Allow-Origin: *');
+$fname = isset($_GET['f']) ? basename($_GET['f']) : '';
+$path = __DIR__ . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR . $fname;
+if(!$fname || !preg_match('/\.pdf$/i', $fname) || !file_exists($path)){
   http_response_code(404);
-  echo 'File not found.';
+  header('Content-Type: text/plain; charset=utf-8');
+  echo 'Arquivo não encontrado';
   exit;
 }
-
-$download = isset($_GET['dl']); // use ?dl=1 para forçar download
-
 header('Content-Type: application/pdf');
+header('Content-Disposition: inline; filename="'. $fname .'"');
 header('Content-Length: ' . filesize($path));
-header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $fname . '"');
-
 readfile($path);
-exit;

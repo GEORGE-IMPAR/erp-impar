@@ -1,25 +1,25 @@
 <?php
+// api/gerador/get_doc.php
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
 try {
   $codigo = isset($_GET['codigo']) ? $_GET['codigo'] : '';
   $codigo = preg_replace('/[^a-zA-Z0-9-_]/', '_', $codigo);
-  if (!$codigo) throw new Exception('Código não informado.');
+  if ($codigo === '') throw new Exception('Código não informado.');
 
-  $raiz = dirname(__DIR__, 2);
-  $meta = $raiz . '/storage/docs/' . $codigo . '.json';
-  if (!file_exists($meta)) {
-    http_response_code(404);
-    echo json_encode(['ok'=>false,'error'=>'Documento não encontrado.']);
-    exit;
-  }
+  $dirDocs = realpath(__DIR__ . '/../../storage/docs');
+  if ($dirDocs === false) $dirDocs = __DIR__ . '/../../storage/docs';
 
-  $dados = json_decode(file_get_contents($meta), true);
-  if (!$dados) $dados = [];
+  $metaPath = $dirDocs . DIRECTORY_SEPARATOR . $codigo . '.json';
+  if (!file_exists($metaPath)) throw new Exception('Documento não encontrado.');
 
-  echo json_encode(['ok'=>true,'doc'=>$dados]);
+  $raw = file_get_contents($metaPath);
+  $dados = json_decode($raw, true);
+  if (!is_array($dados)) throw new Exception('JSON inválido.');
+
+  echo json_encode(['success'=>true, 'dados'=>$dados]);
 } catch (Exception $e) {
-  http_response_code(400);
-  echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+  http_response_code(404);
+  echo json_encode(['success'=>false, 'error'=>$e->getMessage()]);
 }
