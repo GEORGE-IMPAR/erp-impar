@@ -90,3 +90,63 @@
   window.saveWithLogo = saveWithLogo;
   window.checkCodigoDuplicado = checkCodigoDuplicado;
 })();
+
+
+// ===== Integração com o index.html (FINALIZAR/Salvar) =====
+// Define finalizeStep5 no escopo global, usando as funções já expostas acima.
+(function(){
+  if (typeof window.finalizeStep5 === "function") return; // evita duplicar
+
+  function todayYMD() {
+    var d = new Date();
+    var y = d.getFullYear();
+    var m = String(d.getMonth()+1).padStart(2,'0');
+    var day = String(d.getDate()).padStart(2,'0');
+    return y + m + day;
+  }
+  function currentCode(){
+    var el = document.getElementById("codigo");
+    var v = (el && el.value ? el.value : "").trim();
+    return v || "DOC";
+  }
+
+  window.finalizeStep5 = async function finalizeStep5(){
+    try{
+      if (typeof window.createPdfBlob !== "function") {
+        console.error("createPdfBlob() não encontrada");
+        if (typeof window.showToast === "function") showToast("Erro: função de PDF ausente.");
+        return;
+      }
+      const blob = await window.createPdfBlob();
+      const name = currentCode() + "_" + todayYMD() + ".pdf";
+
+      let resp;
+      if (typeof window.saveWithLogo === "function") {
+        resp = await window.saveWithLogo(blob, name);
+      } else if (typeof window.saveToServerWithFallback === "function") {
+        resp = await window.saveToServerWithFallback(blob, name, false);
+      } else {
+        console.error("Nenhuma função de salvar encontrada.");
+        if (typeof window.showToast === "function") showToast("Erro: função de salvar ausente.");
+        return;
+      }
+
+      const ok = !!(resp && (resp.ok === true || resp.success === true));
+      if (!ok) {
+        console.error("Falha no save.php:", resp);
+        if (typeof window.showToast === "function") showToast("Erro ao salvar.");
+        return;
+      }
+
+      // Modal de sucesso (se existir)
+      const modal = document.getElementById("successModal");
+      if (modal) { modal.style.display = "flex"; return; }
+
+      // Fallback: abrir o viewer direto
+      if (typeof window.openViewerWithBlob === "function") window.openViewerWithBlob(blob);
+    }catch(e){
+      console.error("finalizeStep5() error:", e);
+      if (typeof window.showToast === "function") showToast("Erro inesperado ao finalizar.");
+    }
+  };
+})();
