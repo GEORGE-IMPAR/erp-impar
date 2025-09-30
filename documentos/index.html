@@ -107,6 +107,79 @@
 
   <!-- 2) Patch de salvamento do ERP (usa o collectFormData acima) -->
   <script src="/documentos/erp_save_patch_flatfile.js"></script>
+<script>
+  // Usa o endpoint check_code.php do subdomínio API
+  async function checkCodigoExistente(input) {
+    try {
+      const codigo = (input.value || '').trim();
+      if (!codigo) return;
+
+      // Ajuste a origem do endpoint se necessário
+      const url = 'https://api.erpimpar.com.br/gerador/check_code.php?codigo=' + encodeURIComponent(codigo);
+      const r = await fetch(url, { cache: 'no-store' });
+      const j = await r.json();
+
+      if (j && j.exists) {
+        // Abre o mesmo modal de "consulta" já existente, com as duas ações
+        // 1) Imprimir (abre o PDF como na consulta)
+        // 2) Atualizar (carrega dados e pula para Etapa 2)
+        abrirDialogoCodigoExiste(codigo);
+      }
+    } catch(e) {
+      // silencioso para não atrapalhar digitação
+      console.warn('Falha ao checar código', e);
+    }
+  }
+
+  // Mostra o diálogo para o usuário escolher: Imprimir PDF ou Atualizar
+  async function abrirDialogoCodigoExiste(codigo) {
+    const msg = `Documento já cadastrado para o código ${codigo}. Deseja imprimir o PDF ou atualizar as informações?`;
+    const escolher = confirm(msg + '\n\nOK = Imprimir PDF\nCancelar = Atualizar');
+    if (escolher) {
+      // Imprimir: simula o "abrir" da consulta:
+      // 1) busca na list.php para obter o arquivo
+      const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
+      const listUrl = 'https://api.erpimpar.com.br/gerador/list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(codigo);
+      try {
+        const r = await fetch(listUrl);
+        const j = await r.json();
+        const row = j.rows && j.rows[0];
+        if (row && row.pdf_file) {
+          const pdfUrl = 'https://api.erpimpar.com.br/gerador/pdf.php?f=' + encodeURIComponent(row.pdf_file) + '&token=' + encodeURIComponent(token);
+          window.open(pdfUrl, '_blank');
+        } else {
+          alert('PDF não localizado para este código.');
+        }
+      } catch(err) {
+        alert('Erro ao localizar o PDF.');
+      }
+    } else {
+      // Atualizar: carrega dados e navega para Etapa 2
+      try {
+        await carregarDadosParaEdicao(codigo);
+        // sua função que vai para a etapa 2
+        if (typeof goTo === 'function') goTo(2);
+      } catch(e) {
+        console.warn(e);
+        alert('Falha ao carregar dados para edição.');
+      }
+    }
+  }
+
+  // Lê o CSV via list.php e (se você já tem) outro endpoint que devolve JSON completo
+  async function carregarDadosParaEdicao(codigo) {
+    const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
+    const listUrl = 'https://api.erpimpar.com.br/gerador/list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(codigo);
+    const r = await fetch(listUrl);
+    const j = await r.json();
+    if (!j.ok || !j.rows || !j.rows.length) throw new Error('Código não encontrado');
+
+    // Aqui você pode, se quiser, buscar também um JSON completo por código (se existir no backend)
+    // e preencher todos os campos:
+    // preencherCampos(formJson)...
+  }
+</script>
+
 </head>
 <body>
   <div class="wrap">
