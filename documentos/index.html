@@ -699,5 +699,96 @@
     // Init
     updateStepper(1); validate1();
   </script>
+
+<script>
+// ===== DUPLICATE CODE HANDLING (minimal intrusion) =====
+(function(){
+  const codigoEl = document.getElementById('codigo');
+  if(!codigoEl) return;
+  async function checkExists(code){
+    try{
+      const patch = window.__ERP_SAVE_PATCH__;
+      const base = (patch && patch.SAVE_URL) ? patch.SAVE_URL.replace('/save.php','/') : '/api/gerador/';
+      const r = await fetch(base + 'check_code.php?codigo=' + encodeURIComponent(code), {cache:'no-store'});
+      const j = await r.json();
+      return !!(j && j.exists);
+    }catch(e){ return false; }
+  }
+  async function loadDoc(code){
+    const patch = window.__ERP_SAVE_PATCH__;
+    const base = (patch && patch.SAVE_URL) ? patch.SAVE_URL.replace('/save.php','/') : '/api/gerador/';
+    const r = await fetch(base + 'get_doc.php?codigo=' + encodeURIComponent(code), {cache:'no-store'});
+    return r.json();
+  }
+  function fillFields(d){
+    if(!d) return;
+    const map = {
+      servico: 'servico', enderecoObra: 'endereco',
+      valor: 'valor', valorExtenso: 'valorExtenso',
+      prazo: 'prazo', dataExtenso: 'dataExtenso',
+      clausulas: 'clausulas', condicoesPagamento: 'condicoes'
+    };
+    Object.keys(map).forEach(k => {
+      const id = map[k]; const el = document.getElementById(id);
+      if(el && d[k]!=null){ el.value = d[k]; el.dispatchEvent(new Event('input')); }
+    });
+    if(d.contratante){
+      const c = d.contratante;
+      const f = (id,val)=>{ const el=document.getElementById(id); if(el && val!=null){ el.value=val; el.dispatchEvent(new Event('input')); } };
+      f('nomeContratante', c.nome);
+      f('docContratante', c.cpfCnpj);
+      f('contatoContratante', c.contato);
+      f('telefoneContratante', c.telefone);
+      f('emailContratante', c.email);
+    }
+    if(d.contratada){
+      const c = d.contratada;
+      const f = (id,val)=>{ const el=document.getElementById(id); if(el && val!=null){ el.value=val; el.dispatchEvent(new Event('input')); } };
+      f('nomeContratada', c.nome);
+      f('docContratada', c.cpfCnpj);
+      f('contatoContratada', c.contato);
+      f('telefoneContratada', c.telefone);
+      f('emailContratada', c.email);
+    }
+  }
+  codigoEl.addEventListener('blur', async function(){
+    const code = (codigoEl.value||'').trim();
+    if(!code) return;
+    const exists = await checkExists(code);
+    if(!exists) return;
+    const op = window.confirm('DOCUMENTO JÁ CADASTRADO.
+
+OK = IMPRIMIR PDF
+Cancelar = ATUALIZAR INFORMAÇÕES');
+    const patch = window.__ERP_SAVE_PATCH__;
+    const base = (patch && patch.SAVE_URL) ? patch.SAVE_URL.replace('/save.php','/') : '/api/gerador/';
+    if(op){
+      try{
+        const j = await loadDoc(code);
+        const file = j && j.dados && (j.dados.arquivo_pdf || j.dados.pdf_file || j.dados.file);
+        const token = (patch && patch.SAVE_TOKEN) ? patch.SAVE_TOKEN : '';
+        if(file){
+          const href = base + 'pdf.php?f=' + encodeURIComponent(file) + (token?('&token='+encodeURIComponent(token)):'');
+          window.open(href, '_blank');
+        }else{
+          alert('PDF não encontrado para este código.');
+        }
+      }catch(e){ alert('Falha ao abrir o PDF.'); }
+    }else{
+      try{
+        const j = await loadDoc(code);
+        if(j && j.success && j.dados){
+          fillFields(j.dados);
+          if(typeof window.goTo==='function'){ window.goTo(2); }
+          else if(typeof window.go==='function'){ window.go(2); }
+        }else{
+          alert('Não foi possível carregar os dados.');
+        }
+      }catch(e){ alert('Erro ao carregar documento.'); }
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
