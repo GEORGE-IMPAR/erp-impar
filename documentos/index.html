@@ -109,55 +109,80 @@
   <script src="/documentos/erp_save_patch_flatfile.js"></script>
 <script>
 
+<script>
+// === CHECK DUPLICADO: verifica e oferece Imprimir/Atualizar
 window.checkCodigoExistente = async function (inp) {
   try {
-    const v = (inp?.value || '').trim();
+    const v = (inp && inp.value ? inp.value : '').trim();
     if (!v) return;
 
-    // ajuste a URL para o seu endpoint (com token, se precisar)
-    const url = `${(window.__ERP_SAVE_PATCH__?.SAVE_URL||'').replace('/save.php', '/check_code.php')}?codigo=${encodeURIComponent(v)}&token=${encodeURIComponent(window.__ERP_SAVE_PATCH__?.SAVE_TOKEN||'')}`;
+    const patch = window.__ERP_SAVE_PATCH__;
+    // endpoint do check que você criou no item 1
+    const apiBase = (patch && patch.SAVE_URL ? patch.SAVE_URL.replace('/save.php','/') : '/api/gerador/');
+    const token   = (patch && patch.SAVE_TOKEN) ? ('&token='+encodeURIComponent(patch.SAVE_TOKEN)) : '';
+    const url     = apiBase + 'check_code.php?codigo=' + encodeURIComponent(v) + token;
 
-    const r = await fetch(url, { cache: 'no-store' });
-    const text = await r.text();
-    let js;
-    try { js = JSON.parse(text); } catch { console.warn('check_code não devolveu JSON:', text); return; }
+    const r  = await fetch(url, { cache:'no-store' });
+    const js = await parseJsonSafe(r); // usa o parse seguro
 
     if (js.exists) {
-      // fluxo: já cadastrado
       const escolha = confirm('DOCUMENTO JÁ CADASTRADO.\n\nOK = IMPRIMIR PDF\nCancelar = ATUALIZAR INFORMAÇÕES');
       if (escolha) {
-        // abrir PDF
-        if (js.file) {
-          const pdfHref = ((window.__ERP_SAVE_PATCH__?.SAVE_URL||'').replace('/save.php', '/pdf.php')) + `?f=${encodeURIComponent(js.file)}&token=${encodeURIComponent(window.__ERP_SAVE_PATCH__?.SAVE_TOKEN||'')}`;
+        // imprimir/abrir PDF (igual "abrir" da consulta)
+        const pdfFile = js.file;
+        if (pdfFile) {
+          const pdfHref = apiBase + 'pdf.php?f=' + encodeURIComponent(pdfFile) + token.replace('&','&');
           window.open(pdfHref, '_blank');
         } else {
-          alert('Não recebi o nome do PDF no retorno.');
+          alert('Não recebi o nome do PDF no retorno do servidor.');
         }
-      } else if (js.row) {
-        // carregar dados e ir para etapa 2
-        preencherFormularioComDados(js.row);
-        goTo && goTo(2); // use sua função de navegação
+      } else {
+        // atualizar: carregar campos e pular para Etapa 2
+        if (js.row) {
+          preencherCamposCom(js.row);
+          // navega para a Etapa 2 (ajuste se sua função tiver outro nome)
+          if (typeof goTo === 'function') goTo(2);
+          else if (typeof go === 'function') go(2);
+        }
       }
     }
   } catch (e) {
-    console.error('Falha ao checar código:', e);
+    console.error('Falha ao checar código existente:', e);
   }
 };
 
-// Exemplo de "preencher" (ajuste ids conforme seus campos):
-function preencherFormularioComDados(row){
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-  set('servico', row.servico);
-  set('endereco', row.enderecoObra);
-  set('clausulas', row.clausulas);
-  set('condicoes', row.condicoesPagamento || row.condicoes);
-  set('valor', row.valor);
-  set('valorExtenso', row.valorExtenso);
-  set('prazo', row.prazo);
-  set('dataExtenso', row.dataExtenso);
-  // ...demais campos (contratante/contratada) mapeando do seu back
-}
+// === Helper: preenche os campos do seu formulário (ajuste IDs se precisar)
+function preencherCamposCom(row){
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
 
+  set('servico',        row.servico);
+  set('endereco',       row.enderecoObra || row.endereco);
+  set('clausulas',      row.clausulas);
+  set('condicoes',      row.condicoesPagamento || row.condicoes);
+  set('valor',          row.valor);
+  set('valorExtenso',   row.valorExtenso);
+  set('prazo',          row.prazo);
+  set('dataExtenso',    row.dataExtenso);
+
+  // contratante
+  set('nomeContratante',       row.contratante?.nome);
+  set('docContratante',        row.contratante?.cpfCnpj);
+  set('contatoContratante',    row.contratante?.contato);
+  set('telefoneContratante',   row.contratante?.telefone);
+  set('emailContratante',      row.contratante?.email);
+  // endereço contratante (seu index tem vários campos)
+  // preencha aqui se o JSON retornar aberto (logradouro/bairro/etc.)
+
+  // contratada
+  set('nomeContratada',        row.contratada?.nome);
+  set('docContratada',         row.contratada?.cpfCnpj);
+  set('contatoContratada',     row.contratada?.contato);
+  set('telefoneContratada',    row.contratada?.telefone);
+  set('emailContratada',       row.contratada?.email);
+
+  // qualquer outro campo que você tenha no formulário…
+}
+</script>
 
   // Usa o endpoint check_code.php do subdomínio API
   async function checkCodigoExistente(input) {
@@ -231,6 +256,21 @@ function preencherFormularioComDados(row){
   }
 </script>
 
+<script>
+// === FIX JSON: parse seguro pra quando o PHP manda HTML/erro
+async function parseJsonSafe(resp) {
+  const text = await resp.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error('Resposta não-JSON do servidor:\n', text);
+    alert('Falha ao processar a resposta do servidor. Abra o console (F12) > Console para ver os detalhes.');
+    throw e;
+  }
+}
+</script>
+
+
 </head>
 <body>
   <div class="wrap">
@@ -263,7 +303,7 @@ function preencherFormularioComDados(row){
         <div class="block">
           <div class="cap">CÓDIGO <span class="req">*</span></div>
           <div class="content">
-            <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()" onblur="checkCodigoExistente()">
+            <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()" onblur="checkCodigoExistente(this)">
             <div id="codigoHint" class="hint">Será verificado se já existe documento para este código.</div>
           </div>
         </div>
