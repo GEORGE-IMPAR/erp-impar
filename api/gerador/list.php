@@ -1,89 +1,70 @@
 <?php
-// === CORS (deixe só aqui OU no .htaccess, não nos dois!) ====================
-$allowed_origin = 'https://www.erpimpar.com.br'; // origem do front em produção
-header('Vary: Origin');
-header('Access-Control-Allow-Origin: ' . $allowed_origin);
+// CORS básico e preflight
+$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '*';
+$allowed = ['https://erpimpar.com.br', 'https://erpmpar.com.br', 'https://www.erpimpar.com.br'];
+if (in_array($origin, $allowed)) {
+  header('Access-Control-Allow-Origin: ' . $origin);
+} else {
+  header('Access-Control-Allow-Origin: https://erpimpar.com.br');
+}
+header('Access-Control-Allow-Credentials: true');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Authorization, Content-Type');
-header('Access-Control-Max-Age: 86400');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-  http_response_code(204);
-  exit;
-}
-
-// === Segurança básica (token opcional) =======================================
-$TOKEN_OK = true; // coloque aqui uma verificação real, se quiser
-if (isset($_GET['token'])) {
-  $token = trim($_GET['token']);
-  // $TOKEN_OK = hash_equals(getenv('GERADOR_TOKEN') ?: 'seu_token', $token);
-}
-if (!$TOKEN_OK) {
-  http_response_code(401);
-  header('Content-Type: application/json; charset=utf-8');
-  echo json_encode(['ok'=>false,'error'=>'unauthorized']);
-  exit;
-}
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 header('Content-Type: application/json; charset=utf-8');
 
-// === Origem dos dados ========================================================
-// 1) Se você usa CSV:  storage/data/contratos.csv
-// 2) Se você salva 1 JSON por código em storage/docs/*.json
-$base = __DIR__ . '/../storage';
-$csv  = $base . '/data/contratos.csv';
-$docs = $base . '/docs';
+// ====== CONFIG ======
+$API_TOKEN = 'SEU_TOKEN_AQUI'; // MESMO TOKEN usado no front/patch
 
-// filtro
+// pastas
+$BASE = __DIR__ . '/../storage';
+$DIR_DATA = $BASE . '/data';
+$DIR_DOCS = $BASE . '/docs';
+$CSV = $DIR_DATA . '/contratos.csv';
+
+// ====== TOKEN ======
+$token = isset($_GET['token']) ? $_GET['token'] : '';
+if (!$token || $token !== $API_TOKEN) {
+  http_response_code(401);
+  echo json_encode(['ok'=>false, 'error'=>'unauthorized']);
+  exit;
+}
+
+// ====== PARÂMETRO OPCIONAL ======
 $filtroCodigo = isset($_GET['codigo']) ? trim($_GET['codigo']) : '';
 
-// helper
-function normaliza($s){ return is_string($s) ? trim($s) : $s; }
+// ====== GARANTE PASTAS ======
+if (!is_dir($DIR_DATA)) @mkdir($DIR_DATA, 0777, true);
+if (!is_dir($DIR_DOCS)) @mkdir($DIR_DOCS, 0777, true);
 
+// ====== SE CSV NÃO EXISTE, RESPONDE VAZIO ======
+if (!file_exists($CSV)) {
+  echo json_encode(['ok'=>true, 'rows'=>[]]);
+  exit;
+}
+
+// ====== LÊ CSV ======
+// Cabeçalho esperado:
+// saved_at;codigo;servico;enderecoObra;valor;valorExtenso;prazo;dataExtenso;contratante_nome;contratante_doc;contratada_nome;contratada_doc;clausulas;condicoes;pdf
+$fh = fopen($CSV, 'r');
+$header = fgetcsv($fh, 0, ';');
 $rows = [];
+while (($r = fgetcsv($fh, 0, ';')) !== false) {
+  if (!count($r)) continue;
+  $linha = array_combine($header, array_pad($r, count($header), ''));
+  if (!$linha) continue;
+  if ($filtroCodigo && strcasecmp($linha['codigo'], $filtroCodigo) !== 0) continue;
 
-// Preferência: CSV
-if (is_file($csv)) {
-  if (($h = fopen($csv, 'r')) !== false) {
-    // cabeçalhos esperados no CSV:
-    // saved_at;codigo;servico;enderecoObra;valor;valorExtenso;prazo;dataExtenso;
-    // contratante_nome;contratante_doc;contratada_nome;contratada_doc;clausulas;condicoes;pdf
-    $header = fgetcsv($h, 0, ';');
-    while (($r = fgetcsv($h, 0, ';')) !== false) {
-      $o = array_combine($header, $r);
-      if (!$o) continue;
-      $o = array_map('normaliza', $o);
-      if ($filtroCodigo && strcasecmp($o['codigo'] ?? '', $filtroCodigo) !== 0) continue;
-
-      $rows[] = [
-        'codigo'            => $o['codigo'] ?? '',
-        'contratante_nome'  => $o['contratante_nome'] ?? '',
-        'file'              => basename($o['pdf'] ?? ''), // pode vir nome do PDF
-        'pdf_file'          => basename($o['pdf'] ?? ''),
-        'servico'           => $o['servico'] ?? '',
-        'created_at'        => $o['saved_at'] ?? '',
-      ];
-    }
-    fclose($h);
-  }
+  // monta nome do PDF (compatível com pdf.php?f=)
+  $pdf_file = trim($linha['pdf']);
+  $rows[] = [
+    'codigo'            => $linha['codigo'],
+    'contratante_nome'  => $linha['contratante_nome'],
+    'pdf_file'          => $pdf_file,
+  ];
 }
+fclose($fh);
 
-// Se não achou no CSV, tenta JSONs em /docs
-if (!$rows && is_dir($docs)) {
-  foreach (glob($docs . '/*.json') as $jpath) {
-    $data = json_decode(file_get_contents($jpath), true);
-    if (!$data) continue;
-    if ($filtroCodigo && strcasecmp($data['codigo'] ?? '', $filtroCodigo) !== 0) continue;
+echo json_encode(['ok'=>true, 'rows'=>$rows]);
 
-    $rows[] = [
-      'codigo'           => $data['codigo'] ?? '',
-      'contratante_nome' => $data['contratante']['nome'] ?? ($data['contratante_nome'] ?? ''),
-      'file'             => basename($data['arquivo_pdf'] ?? ($data['file'] ?? '')),
-      'pdf_file'         => basename($data['arquivo_pdf'] ?? ($data['file'] ?? '')),
-      'servico'          => $data['servico'] ?? '',
-      'created_at'       => $data['criado_em'] ?? '',
-    ];
-  }
-}
-
-echo json_encode(['ok'=>true, 'rows'=>$rows], JSON_UNESCAPED_UNICODE);
