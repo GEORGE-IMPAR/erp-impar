@@ -600,19 +600,40 @@
 
 // baixar / compartilhar PDF já aberto no viewer
 function downloadLastPdf(){
-  if(!window.__pdfBlob){ showToast('Gere o PDF primeiro'); return; }
-  const file = new File([window.__pdfBlob], window.__pdfName || ('documento_'+todayYMD()+'.pdf'), {type:'application/pdf'});
-  try{
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:'Documento', text:'Envio do documento em PDF'});
-    }else if(navigator.share){
-      await navigator.share({title:'Documento', text:'Envio do documento em PDF', url: window.__pdfUrl});
-    }else{
-      const txt = encodeURIComponent('Documento gerado. Baixe aqui: '+location.href);
-      window.open('https://wa.me/?text='+txt,'_blank');
+    if(!window.__pdfBlob || !window.__pdfUrl){
+      if (typeof window.showToast === 'function') showToast('Gere o PDF primeiro');
+      return;
     }
-  }catch(e){}
+    const a = document.createElement('a');
+    a.href = window.__pdfUrl;
+    a.download = window.__pdfName || ('documento_' + todayYMD() + '.pdf');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
 }
+// Compartilhar o último PDF (Web Share API quando disponível)
+  async function shareLastPdf(){
+    if(!window.__pdfBlob || !window.__pdfUrl){
+      if (typeof window.showToast === 'function') showToast('Gere o PDF primeiro');
+      return;
+    }
+    const nome = window.__pdfName || ('documento_' + todayYMD() + '.pdf');
+    const file = new File([window.__pdfBlob], nome, { type: 'application/pdf' });
+
+    try{
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Documento', text: 'Envio do documento em PDF' });
+      } else if (navigator.share) {
+        await navigator.share({ title: 'Documento', text: 'Envio do documento em PDF', url: window.__pdfUrl });
+      } else {
+        // fallback: WhatsApp web
+        const txt = encodeURIComponent('Documento gerado. Baixe aqui: ' + location.href);
+        window.open('https://wa.me/?text=' + txt, '_blank');
+      }
+    } catch(e) {
+      // Usuário cancelou ou plataforma não permitiu — fica silencioso
+    }
+  }
 function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
 async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
 
