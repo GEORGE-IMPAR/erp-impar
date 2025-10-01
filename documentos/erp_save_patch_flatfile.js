@@ -57,7 +57,7 @@
     const url = LIST_URL + '?token=' + encodeURIComponent(SAVE_TOKEN) + '&codigo=' + encodeURIComponent(codigo||'');
     const r = await fetch(url, { cache: 'no-store' });
     const j = await r.json().catch(()=>null);
-    return (j && j.rows) ? j.rows : [];
+    return (j && (j.items || j.rows)) ? (j.items || j.rows) : [];
   }
 
   // ------- API pública: salvar (usada pelo index.html) -------
@@ -93,7 +93,6 @@
 
 
 // ===== Integração com o index.html (FINALIZAR/Salvar) =====
-// Define finalizeStep5 no escopo global, usando as funções já expostas acima.
 (function(){
   if (typeof window.finalizeStep5 === "function") return; // evita duplicar
 
