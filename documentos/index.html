@@ -588,8 +588,19 @@ async function saveDocument(){
 const LOGIN_URL='login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
 function pdfHrefFromRow(row){
-  if (row.pdf_url && /^https?:\/\//.test(row.pdf_url)) return row.pdf_url;
-  return (window.location.origin + '/gerador/pdf.php?f=' + encodeURIComponent(row.pdf_file || ''));
+  const patch = (window.__ERP_SAVE_PATCH__ || {});
+  // base da API a partir do SAVE_URL, com fallback correto:
+  const base = (patch.SAVE_URL || 'https://api.erpimpar.com.br/gerador/save.php')
+                 .replace('/save.php','/'); // -> https://api.erpimpar.com.br/gerador/
+
+  const url  = row.pdfUrl || row.pdf_url || row.url || '';
+  const file = row.file   || row.pdf_file || row.PDF || row.pdf || '';
+
+  if (url)  return url; // já é absoluto
+  if (file) return base + 'pdf.php?f=' + encodeURIComponent(String(file).replace(/^.*\//,''));
+
+  // último recurso: nada a abrir
+  return '';
 }
 function openConsulta(){
   const el=document.getElementById('consultaModal');
@@ -605,28 +616,81 @@ function renderConsMsg(msg){
   tb.innerHTML=`<tr><td colspan="3" class="row-muted">${msg}</td></tr>`;
 }
 async function doSearch(){
-  let LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
-  if(!LIST_URL){ LIST_URL = 'https://api.impar.com.br/api/gerador/list.php'; }
-  if(!LIST_URL||!SAVE_TOKEN){ renderConsMsg('Endpoint não configurado.'); return; }
+function _normKey(k){
+  return String(k||'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+}
+function _pickByKey(obj, cands){
+  const keys = Object.keys(obj||{});
+  for (const cand of cands){
+    const wanted = _normKey(cand);
+    for (const k of keys){
+      if (_normKey(k) === wanted) return obj[k];
+    }
+  }
+  return undefined;
+}
+function _pickByValue(obj, testFn){
+  for (const k of Object.keys(obj||{})){
+    const v = obj[k];
+    if (testFn(v, k)) return v;
+  }
+  return undefined;
+}
+function _guessCodigo(row){
+  let v = _pickByKey(row, ['codigo','cod','codigo_projeto','CÓDIGO','Código']);
+  if (v) return v;
+  v = _pickByValue(row, val => /^[A-Za-z]{1,3}\d{4,7}$/.test(String(val||'').trim())); // ex: AC00025
+  if (v) return v;
+  v = _pickByValue(row, val => { const s=String(val||'').trim(); return s && s.length<=15 && /[A-Za-z]/.test(s); });
+  return v || '-';
+}
+function _guessObra(row){
+  let v = _pickByKey(row, ['enderecoObra','obra','endereco','servico','contratante_nome','cliente','descricao']);
+  if (v) return v;
+  const addrWords = /(rua|avenida|av\.|estrada|rodovia|bairro|cep|\d{2}\.\d{3}-\d{3})/i;
+  v = _pickByValue(row, val => addrWords.test(String(val||'')));
+  if (v) return v;
+  const entries = Object.values(row||{}).map(x=>String(x||''));
+  entries.sort((a,b)=>b.length-a.length);
+  return entries[0] || '-';
+}
+
+async function doSearch(){
+  const patch     = (window.__ERP_SAVE_PATCH__||{});
+  const LIST_URL  = (patch.LIST_URL || 'https://api.erpimpar.com.br/gerador/list.php'); // fallback corrigido
+  const SAVE_TOKEN=  patch.SAVE_TOKEN;
+  if (!LIST_URL || !SAVE_TOKEN){ renderConsMsg('Endpoint não configurado.'); return; }
+
   const code=(document.getElementById('consCodigo').value||'').trim();
   let url=`${LIST_URL}?token=${encodeURIComponent(SAVE_TOKEN)}`;
   if(code) url+=`&codigo=${encodeURIComponent(code)}`;
+
   renderConsMsg('Buscando...');
   try{
-    const r=await fetch(url);
-    const j=await r.json();
-    const rows=j && j.rows ? j.rows : [];
-    if(!rows.length){ renderConsMsg(code? 'Código não encontrado.':'Nenhum registro encontrado.'); return; }
-    const tb=document.getElementById('consBody');
-    tb.innerHTML='';
+    const r=await fetch(url,{cache:'no-store'});
+    const j=await r.json().catch(()=>({rows:[],items:[]}));
+    const rows=j.rows || j.items || [];
+    if (!rows.length){ renderConsMsg(code? 'Código não encontrado.':'Nenhum registro encontrado.'); return; }
+
+    const tb=document.getElementById('consBody'); tb.innerHTML='';
     rows.forEach(row=>{
+      const codigo = _guessCodigo(row);
+      const obra   = _guessObra(row);
+      const href   = pdfHrefFromRow(row);
+
       const tr=document.createElement('tr');
-      const td1=document.createElement('td'); td1.textContent=row.codigo||'-';
-      const td2=document.createElement('td'); td2.textContent=row.contratante_nome||'-';
+      const td1=document.createElement('td'); td1.textContent=codigo||'-';
+      const td2=document.createElement('td'); td2.textContent=obra||'-';
       const td3=document.createElement('td');
-      const a=document.createElement('a'); a.href=pdfHrefFromRow(row); a.target='_blank'; a.className='pdf-link'; a.textContent='abrir';
-      td3.appendChild(a);
-      tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);
+      if (href){
+        const a=document.createElement('a');
+        a.href=href; a.target='_blank'; a.rel='noopener'; a.className='pdf-link'; a.textContent='abrir';
+        a.addEventListener('click', ev => ev.stopPropagation()); // não “pegar carona” na linha
+        td3.appendChild(a);
+      } else {
+        td3.textContent='—';
+      }
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
       tb.appendChild(tr);
     });
   }catch(e){
