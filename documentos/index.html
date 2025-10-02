@@ -62,14 +62,11 @@
     .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:#10b981;color:#fff;padding:12px 16px;border-radius:6px;font-weight:700;box-shadow:0 10px 20px rgba(0,0,0,.2);display:none;z-index:70}
   </style>
 
-  <!-- 1) Coletor de dados próprio (inclui clausulas/condicoes e metadados) -->
+  <!-- 1) Coletor de dados próprio -->
   <script>
     window.collectFormData = function() {
       const get = (id) => (document.getElementById(id)?.value || '').trim();
-      // carrega usuário: primeiro tenta /assets/usuario_doc.json, depois localStorage (fallback)
-      const getUser = () => {
-        try { return JSON.parse(localStorage.getItem('impar_user') || 'null'); } catch(e){ return null; }
-      };
+      const getUser = () => { try { return JSON.parse(localStorage.getItem('impar_user') || 'null'); } catch(e){ return null; } };
       const __userCache = { loaded:false, data:null };
       (async () => {
         if (__userCache.loaded) return;
@@ -87,7 +84,6 @@
           __userCache.data = u ? { Nome: u.Nome, Email: u.Email } : null;
         } finally {
           __userCache.loaded = true;
-          // Atualiza cabeçalhos existentes (.user) se houver
           const label = __userCache.data ? (__userCache.data.Nome + '<br>' + __userCache.data.Email) : 'Usuário<br>usuario@empresa.com';
           document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label; });
         }
@@ -131,90 +127,73 @@
     };
   </script>
 
-  <!-- 2) Patch de salvamento do ERP (usa o collectFormData acima) -->
+  <!-- 2) Patch de salvamento -->
+  <script src="/documentos/erp_save_patch_flatfile.js?v=20251001"></script>
 
-  <script src="/documentos/erp_save_patch_flatfile.js"></script>
-
-<script>
-// ========== Helpers de resposta segura ==========
-async function safeJsonFromResponse(resp) {
-  const text = await resp.text();
-  try { return JSON.parse(text); }
-  catch {
-    console.error('Resposta não-JSON do servidor:', text);
-    return {
-      ok: false,
-      success: false,
-      status: resp.status,
-      error: 'Resposta não-JSON do servidor (possível erro PHP no save.php).',
-      raw: text
-    };
+  <script>
+  async function safeJsonFromResponse(resp) {
+    const text = await resp.text();
+    try { return JSON.parse(text); }
+    catch {
+      console.error('Resposta não-JSON do servidor:', text);
+      return { ok:false, success:false, status: resp.status, error: 'Resposta não-JSON do servidor (possível erro PHP).', raw: text };
+    }
   }
-}
+  async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
+    const patch      = window.__ERP_SAVE_PATCH__ || {};
+    const SAVE_URL   = patch.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
+    const SAVE_TOKEN = patch.SAVE_TOKEN || '';
 
-// Monta e envia o POST para o save.php (usa __ERP_SAVE_PATCH__ se existir)
-async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
-  const patch      = window.__ERP_SAVE_PATCH__ || {};
-  const SAVE_URL   = patch.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
-  const SAVE_TOKEN = patch.SAVE_TOKEN || '';
+    const fd = new FormData();
+    fd.append('pdf', new File([pdfBlob], pdfName, { type:'application/pdf' }));
+    fd.append('dados', JSON.stringify(window.collectFormData()));
+    if (updateFlag) fd.append('update', '1');
 
-  const fd = new FormData();
-  fd.append('pdf', new File([pdfBlob], pdfName, { type:'application/pdf' }));
-  // MUITO IMPORTANTE: enviar "dados" como string JSON
-  fd.append('dados', JSON.stringify(window.collectFormData()));
-  if (updateFlag) fd.append('update', '1');
+    const headers = {};
+    if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
 
-  const headers = {};
-  if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
-
-  const resp = await fetch(SAVE_URL, { method:'POST', headers, body: fd });
-  return await safeJsonFromResponse(resp);
-}
-</script>
-
-
+    const resp = await fetch(SAVE_URL, { method:'POST', headers, body: fd });
+    return await safeJsonFromResponse(resp);
+  }
+  </script>
 </head>
 <body>
   <div class="wrap">
 
-    <!-- TOPO: Tema / Limpar / Fechar -->
     <div class="topbar">
       <button class="btn" id="themeBtn" onclick="toggleTheme()">🌙 Tema</button>
       <button class="btn warn" onclick="limparDados()">Limpar dados</button>
-      <button class="btn" onclick="fecharFluxo()">Fechar</button>
+      <button class="btn" id="btnFecharTopo">Fechar</button>
     </div>
 
-    <!-- STEPPER -->
     <div class="stepper" id="stepper">
-      <div class="dot" id="dot1">1</div><div class="line" id="line12"></div>
-      <div class="dot" id="dot2">2</div><div class="line" id="line23"></div>
-      <div class="dot" id="dot3">3</div><div class="line" id="line34"></div>
-      <div class="dot" id="dot4">4</div><div class="line" id="line45"></div>
-      <div class="dot" id="dot5">5</div>
+      <div class="dot" id="dot1" data-step="1">1</div><div class="line" id="line12"></div>
+      <div class="dot" id="dot2" data-step="2">2</div><div class="line" id="line23"></div>
+      <div class="dot" id="dot3" data-step="3">3</div><div class="line" id="line34"></div>
+      <div class="dot" id="dot4" data-step="4">4</div><div class="line" id="line45"></div>
+      <div class="dot" id="dot5" data-step="5">5</div>
     </div>
 
-    <!-- ========== TELA 1 ========== -->
+    <!-- TELA 1 -->
     <div class="card" id="screen1">
       <div class="header">
         <h2 class="title">Gerador de documentos</h2>
         <p class="user" id="userInfo1">Usuário</p>
       </div>
       <div class="body">
-        <p>Informar a código do projeto no campo abaixo. Esse código será a chave para busca de documentos e utilizado para outras funcionalidades importantes na empresa</p>
-
+        <p>Informar a código do projeto...</p>
         <div class="block">
           <div class="cap">CÓDIGO <span class="req">*</span></div>
           <div class="content">
             <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()">
           </div>
         </div>
-
-        <button class="btn primary" onclick="abrirConsulta()">Pesquisar documentos cadastrados</button>
+        <button class="btn primary" id="btnPesquisarDocs">Pesquisar documentos cadastrados</button>
       </div>
     </div>
     <div id="bar1" class="bar disabled" onclick="noop()">Continuar</div>
 
-    <!-- ========== TELA 2 ========== -->
+    <!-- TELA 2 -->
     <div class="card hidden" id="screen2">
       <div class="header">
         <h2 class="title">Gerador de documentos</h2>
@@ -224,22 +203,18 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       <div class="body">
         <div class="block">
           <div class="cap">SERVIÇO <span class="req">*</span></div>
-          <div class="content">
-            <textarea id="servico" class="textarea" placeholder="Digite o serviço do projeto" oninput="validate2()"></textarea>
-          </div>
+          <div class="content"><textarea id="servico" class="textarea" oninput="validate2()"></textarea></div>
         </div>
         <div class="block">
           <div class="cap">ENDEREÇO DA OBRA <span class="req">*</span></div>
-          <div class="content">
-            <input id="endereco" class="input" placeholder="Digite o endereço da obra" oninput="validate2()">
-          </div>
+          <div class="content"><input id="endereco" class="input" oninput="validate2()"></div>
         </div>
       </div>
     </div>
     <div id="bar2" class="bar hidden disabled" onclick="noop()">Continuar</div>
     <div id="back2" class="back hidden" onclick="goTo(1)"><span class="chev">◀</span> Voltar</div>
 
-    <!-- ========== TELA 3 ========== -->
+    <!-- TELA 3 -->
     <div class="card hidden" id="screen3">
       <div class="header">
         <h2 class="title">Gerador de documentos</h2>
@@ -249,34 +224,29 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       <div class="body">
         <div class="block"><div class="cap">DADOS DO CONTRATANTE</div></div>
         <div class="grid-2">
-          <div class="block"><div class="cap">NOME <span class="req">*</span></div><div class="content"><input id="nomeContratante" class="input" placeholder="Digite o nome do contratante" oninput="validate3()"></div></div>
+          <div class="block"><div class="cap">NOME <span class="req">*</span></div><div class="content"><input id="nomeContratante" class="input" oninput="validate3()"></div></div>
           <div class="block"><div class="cap">CPF/CNPJ <span class="req">*</span></div><div class="content">
-            <input id="docContratante" class="input" placeholder="Digite o CPF ou CNPJ do contratante" oninput="docInput(this); validate3()" onblur="docBlur(this); validate3()" onfocus="docFocus(this)">
+            <input id="docContratante" class="input" oninput="docInput(this); validate3()" onblur="docBlur(this); validate3()" onfocus="docFocus(this)">
             <div id="docContratanteErr" class="error hidden">Documento inválido</div>
           </div></div>
         </div>
-
-        <div class="block"><div class="cap">CONTATO <span class="req">*</span></div><div class="content"><input id="contatoContratante" class="input" placeholder="Digite o nome do responsável pela obra" oninput="validate3()"></div></div>
-
+        <div class="block"><div class="cap">CONTATO <span class="req">*</span></div><div class="content"><input id="contatoContratante" class="input" oninput="validate3()"></div></div>
         <div class="grid-2">
           <div class="block"><div class="cap">CEP <span class="req">*</span></div><div class="content">
-            <input id="cepContratante" class="input" placeholder="00000-000" oninput="cepOnInput(this)" onblur="cepOnBlur(this,'Contratante')" onchange="cepOnBlur(this,'Contratante')" onfocusout="cepOnBlur(this,'Contratante')">
+            <input id="cepContratante" class="input" oninput="cepOnInput(this)" onblur="cepOnBlur(this,'Contratante')" onchange="cepOnBlur(this,'Contratante')" onfocusout="cepOnBlur(this,'Contratante')">
             <div id="cepContratanteErr"  class="error hidden">CEP inválido</div>
             <div id="cepContratanteHint" class="hint hidden">Endereço preenchido pelo CEP.</div>
           </div></div>
-          <div class="block"><div class="cap">NÚMERO <span class="req">*</span></div><div class="content"><input id="numeroContratante" class="input" placeholder="Número" oninput="validate3()"></div></div>
+          <div class="block"><div class="cap">NÚMERO <span class="req">*</span></div><div class="content"><input id="numeroContratante" class="input" oninput="validate3()"></div></div>
         </div>
-
         <div class="grid-2">
-          <div class="block"><div class="cap">LOGRADOURO <span class="req">*</span></div><div class="content"><input id="logradouroContratante" class="input" placeholder="Rua / Avenida" oninput="validate3()"></div></div>
-          <div class="block"><div class="cap">COMPLEMENTO</div><div class="content"><input id="complementoContratante" class="input" placeholder="Opcional" oninput="validate3()"></div></div>
+          <div class="block"><div class="cap">LOGRADOURO <span class="req">*</span></div><div class="content"><input id="logradouroContratante" class="input" oninput="validate3()"></div></div>
+          <div class="block"><div class="cap">COMPLEMENTO</div><div class="content"><input id="complementoContratante" class="input" oninput="validate3()"></div></div>
         </div>
-
         <div class="grid-2">
-          <div class="block"><div class="cap">BAIRRO <span class="req">*</span></div><div class="content"><input id="bairroContratante" class="input" placeholder="Bairro" oninput="validate3()"></div></div>
-          <div class="block"><div class="cap">CIDADE <span class="req">*</span></div><div class="content"><input id="cidadeContratante" class="input" placeholder="Cidade" oninput="validate3()"></div></div>
+          <div class="block"><div class="cap">BAIRRO <span class="req">*</span></div><div class="content"><input id="bairroContratante" class="input" oninput="validate3()"></div></div>
+          <div class="block"><div class="cap">CIDADE <span class="req">*</span></div><div class="content"><input id="cidadeContratante" class="input" oninput="validate3()"></div></div>
         </div>
-
         <div class="block"><div class="cap">UF <span class="req">*</span></div><div class="content">
           <select id="ufContratante" class="input" onchange="validate3()">
             <option value="">UF</option>
@@ -286,15 +256,14 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
             <option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option>
           </select>
         </div></div>
-
-        <div class="block"><div class="cap">TELEFONE DO CONTATO <span class="req">*</span></div><div class="content"><input id="telefoneContratante" class="input" placeholder="(00)00000-0000" oninput="maskPhoneSimple(this); validate3()"><div id="telContratanteErr" class="error hidden">Telefone inválido — formato (99)99999-9999</div></div></div>
-        <div class="block"><div class="cap">E-MAIL <span class="req">*</span></div><div class="content"><input id="emailContratante" class="input" placeholder="Digite o e-mail do contato" oninput="validate3()"><div id="emailContratanteErr" class="error hidden">E-mail inválido</div></div></div>
+        <div class="block"><div class="cap">TELEFONE <span class="req">*</span></div><div class="content"><input id="telefoneContratante" class="input" oninput="maskPhoneSimple(this); validate3()"><div id="telContratanteErr" class="error hidden">Telefone inválido</div></div></div>
+        <div class="block"><div class="cap">E-MAIL <span class="req">*</span></div><div class="content"><input id="emailContratante" class="input" oninput="validate3()"><div id="emailContratanteErr" class="error hidden">E-mail inválido</div></div></div>
       </div>
     </div>
     <div id="bar3" class="bar hidden disabled" onclick="noop()">Continuar</div>
     <div id="back3" class="back hidden" onclick="goTo(2)"><span class="chev">◀</span> Voltar</div>
 
-    <!-- ========== TELA 4 ========== -->
+    <!-- TELA 4 -->
     <div class="card hidden" id="screen4">
       <div class="header">
         <h2 class="title">Gerador de documentos</h2>
@@ -304,34 +273,29 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       <div class="body">
         <div class="block"><div class="cap">DADOS DA CONTRATADA</div></div>
         <div class="grid-2">
-          <div class="block"><div class="cap">NOME <span class="req">*</span></div><div class="content"><input id="nomeContratada" class="input" placeholder="Digite o nome da contratada" oninput="validate4()"></div></div>
+          <div class="block"><div class="cap">NOME <span class="req">*</span></div><div class="content"><input id="nomeContratada" class="input" oninput="validate4()"></div></div>
           <div class="block"><div class="cap">CPF/CNPJ <span class="req">*</span></div><div class="content">
-            <input id="docContratada" class="input" placeholder="Digite o CPF ou CNPJ da contratada" oninput="docInput(this); validate4()" onblur="docBlur(this); validate4()" onfocus="docFocus(this)">
+            <input id="docContratada" class="input" oninput="docInput(this); validate4()" onblur="docBlur(this); validate4()" onfocus="docFocus(this)">
             <div id="docContratadaErr" class="error hidden">Documento inválido</div>
           </div></div>
         </div>
-
-        <div class="block"><div class="cap">CONTATO <span class="req">*</span></div><div class="content"><input id="contatoContratada" class="input" placeholder="Digite o nome do responsável pela obra" oninput="validate4()"></div></div>
-
+        <div class="block"><div class="cap">CONTATO <span class="req">*</span></div><div class="content"><input id="contatoContratada" class="input" oninput="validate4()"></div></div>
         <div class="grid-2">
           <div class="block"><div class="cap">CEP <span class="req">*</span></div><div class="content">
-            <input id="cepContratada" class="input" placeholder="00000-000" oninput="cepOnInput(this)" onblur="cepOnBlur(this,'Contratada')" onchange="cepOnBlur(this,'Contratada')" onfocusout="cepOnBlur(this,'Contratada')">
+            <input id="cepContratada" class="input" oninput="cepOnInput(this)" onblur="cepOnBlur(this,'Contratada')" onchange="cepOnBlur(this,'Contratada')" onfocusout="cepOnBlur(this,'Contratada')">
             <div id="cepContratadaErr"  class="error hidden">CEP inválido</div>
             <div id="cepContratadaHint" class="hint hidden">Endereço preenchido pelo CEP.</div>
           </div></div>
-          <div class="block"><div class="cap">NÚMERO <span class="req">*</span></div><div class="content"><input id="numeroContratada" class="input" placeholder="Número" oninput="validate4()"></div></div>
+          <div class="block"><div class="cap">NÚMERO <span class="req">*</span></div><div class="content"><input id="numeroContratada" class="input" oninput="validate4()"></div></div>
         </div>
-
         <div class="grid-2">
-          <div class="block"><div class="cap">LOGRADOURO <span class="req">*</span></div><div class="content"><input id="logradouroContratada" class="input" placeholder="Rua / Avenida" oninput="validate4()"></div></div>
-          <div class="block"><div class="cap">COMPLEMENTO</div><div class="content"><input id="complementoContratada" class="input" placeholder="Opcional" oninput="validate4()"></div></div>
+          <div class="block"><div class="cap">LOGRADOURO <span class="req">*</span></div><div class="content"><input id="logradouroContratada" class="input" oninput="validate4()"></div></div>
+          <div class="block"><div class="cap">COMPLEMENTO</div><div class="content"><input id="complementoContratada" class="input" oninput="validate4()"></div></div>
         </div>
-
         <div class="grid-2">
-          <div class="block"><div class="cap">BAIRRO <span class="req">*</span></div><div class="content"><input id="bairroContratada" class="input" placeholder="Bairro" oninput="validate4()"></div></div>
-          <div class="block"><div class="cap">CIDADE <span class="req">*</span></div><div class="content"><input id="cidadeContratada" class="input" placeholder="Cidade" oninput="validate4()"></div></div>
+          <div class="block"><div class="cap">BAIRRO <span class="req">*</span></div><div class="content"><input id="bairroContratada" class="input" oninput="validate4()"></div></div>
+          <div class="block"><div class="cap">CIDADE <span class="req">*</span></div><div class="content"><input id="cidadeContratada" class="input" oninput="validate4()"></div></div>
         </div>
-
         <div class="block"><div class="cap">UF <span class="req">*</span></div><div class="content">
           <select id="ufContratada" class="input" onchange="validate4()">
             <option value="">UF</option>
@@ -341,15 +305,14 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
             <option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option>
           </select>
         </div></div>
-
-        <div class="block"><div class="cap">TELEFONE DO CONTATO <span class="req">*</span></div><div class="content"><input id="telefoneContratada" class="input" placeholder="(00)00000-0000" oninput="maskPhoneSimple(this); validate4()"><div id="telContratadaErr" class="error hidden">Telefone inválido — formato (99)99999-9999</div></div></div>
-        <div class="block"><div class="cap">E-MAIL <span class="req">*</span></div><div class="content"><input id="emailContratada" class="input" placeholder="Digite o e-mail do contato" oninput="validate4()"><div id="emailContratadaErr" class="error hidden">E-mail inválido</div></div></div>
+        <div class="block"><div class="cap">TELEFONE <span class="req">*</span></div><div class="content"><input id="telefoneContratada" class="input" oninput="maskPhoneSimple(this); validate4()"><div id="telContratadaErr" class="error hidden">Telefone inválido</div></div></div>
+        <div class="block"><div class="cap">E-MAIL <span class="req">*</span></div><div class="content"><input id="emailContratada" class="input" oninput="validate4()"><div id="emailContratadaErr" class="error hidden">E-mail inválido</div></div></div>
       </div>
     </div>
     <div id="bar4" class="bar hidden disabled" onclick="noop()">Continuar</div>
     <div id="back4" class="back hidden" onclick="goTo(3)"><span class="chev">◀</span> Voltar</div>
 
-    <!-- ========== TELA 5 ========== -->
+    <!-- TELA 5 -->
     <div class="card hidden" id="screen5">
       <div class="header">
         <h2 class="title">Gerador de documentos</h2>
@@ -358,30 +321,25 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       </div>
       <div class="body">
         <div class="grid-2">
-          <div class="block"><div class="cap">CLÁUSULAS <span class="req">*</span></div><div class="content"><textarea id="clausulas" class="textarea" placeholder="Digite as cláusulas do documento" oninput="validate5()"></textarea></div></div>
-          <div class="block"><div class="cap">CONDIÇÕES DE PAGAMENTO <span class="req">*</span></div><div class="content"><textarea id="condicoes" class="textarea" placeholder="Digite as condições de pagamento" oninput="validate5()"></textarea></div></div>
+          <div class="block"><div class="cap">CLÁUSULAS <span class="req">*</span></div><div class="content"><textarea id="clausulas" class="textarea" oninput="validate5()"></textarea></div></div>
+          <div class="block"><div class="cap">CONDIÇÕES DE PAGAMENTO <span class="req">*</span></div><div class="content"><textarea id="condicoes" class="textarea" oninput="validate5()"></textarea></div></div>
         </div>
-
         <div class="grid-2">
-          <div class="block"><div class="cap">VALOR <span class="req">*</span></div><div class="content"><input id="valor" class="input" placeholder="R$ 0,00" oninput="maskCurrency(this); setValorExtenso(); validate5()"><div class="hint">Formato: R$ 0.000,00</div></div></div>
-          <div class="block"><div class="cap">VALOR POR EXTENSO <span class="req">*</span></div><div class="content"><input id="valorExtenso" class="input" placeholder="Gerado automaticamente a partir do valor" readonly></div></div>
+          <div class="block"><div class="cap">VALOR <span class="req">*</span></div><div class="content"><input id="valor" class="input" oninput="maskCurrency(this); setValorExtenso(); validate5()"><div class="hint">Formato: R$ 0.000,00</div></div></div>
+          <div class="block"><div class="cap">VALOR POR EXTENSO <span class="req">*</span></div><div class="content"><input id="valorExtenso" class="input" readonly></div></div>
         </div>
-
         <div class="grid-2">
-          <div class="block"><div class="cap">PRAZO (em dias) <span class="req">*</span></div><div class="content"><input id="prazo" class="input" type="number" inputmode="numeric" min="1" step="1" placeholder="Digite o prazo de pagamento (dias)" oninput="validate5()"></div></div>
-          <div class="block"><div class="cap">DATA POR EXTENSO <span class="req">*</span></div><div class="content"><input id="dataExtenso" class="input" placeholder="Escolha uma data" readonly onclick="openDatePicker()"><input id="dataPicker" type="date" class="hidden" onchange="fillDateExtenso()"></div></div>
+          <div class="block"><div class="cap">PRAZO (dias) <span class="req">*</span></div><div class="content"><input id="prazo" class="input" type="number" min="1" step="1" oninput="validate5()"></div></div>
+          <div class="block"><div class="cap">DATA POR EXTENSO <span class="req">*</span></div><div class="content"><input id="dataExtenso" class="input" readonly onclick="openDatePicker()"><input id="dataPicker" type="date" class="hidden" onchange="fillDateExtenso()"></div></div>
         </div>
-
-        <div class="block"><div class="cap">LOGO DA EMPRESA</div><div class="content"><input id="logo" class="file" type="file" accept="image/*" onchange="showLogoName(this)"><div id="logoInfo" class="hint" style="margin-top:6px">Anexar logo do contratante</div></div></div>
+        <div class="block"><div class="cap">LOGO</div><div class="content"><input id="logo" class="file" type="file" accept="image/*" onchange="showLogoName(this)"><div id="logoInfo" class="hint" style="margin-top:6px">Anexar logo do contratante</div></div></div>
       </div>
     </div>
     <div id="bar5" class="bar hidden disabled" onclick="noop()">Continuar</div>
     <div id="back5" class="back hidden" onclick="goTo(4)"><span class="chev">◀</span> Voltar</div>
 
-    <!-- Toast -->
     <div id="toast" class="toast"></div>
 
-    <!-- Modal de sucesso -->
     <div id="successModal" class="modal">
       <div class="box">
         <div class="hd">Documento cadastrado com sucesso!</div>
@@ -393,7 +351,6 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       </div>
     </div>
 
-    <!-- Viewer PDF -->
     <div id="viewer" class="viewer">
       <div class="panel">
         <div class="top">
@@ -405,7 +362,6 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       </div>
     </div>
 
-    <!-- Consulta Modal -->
     <div id="consultaModal" class="modal">
       <div class="box">
         <div class="hd">Consulta de Documentos — ERP Ímpar</div>
@@ -417,7 +373,6 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
               <button class="btn primary" onclick="buscarConsulta()">Buscar</button>
             </div>
           </div>
-
           <div class="block">
             <div class="cap">Digite o código do projeto.</div>
             <div class="content" style="overflow:auto;">
@@ -436,42 +391,28 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
             </div>
           </div>
         </div>
-        <div class="ft">
-          <button class="btn" onclick="fecharConsulta()">Fechar</button>
-        </div>
+        <div class="ft"><button class="btn" onclick="fecharConsulta()">Fechar</button></div>
       </div>
     </div>
 
-  </div><!-- /wrap -->
+  </div>
 
   <script>
     function noop(){} function onlyDigits(s){return (s||'').replace(/\D+/g,'');}
-
-    // Tema
     const THEME_KEY='impar_theme';
     function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); const b=document.getElementById('themeBtn'); if(b) b.textContent=(t==='dark'?'☀️ Tema':'🌙 Tema'); }
     (function initTheme(){ const saved=localStorage.getItem(THEME_KEY); if(saved){applyTheme(saved);} else { const prefersDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches; applyTheme(prefersDark?'dark':'light'); } })();
     function toggleTheme(){ const cur=document.documentElement.getAttribute('data-theme')||'light'; const next=(cur==='dark')?'light':'dark'; localStorage.setItem(THEME_KEY,next); applyTheme(next); }
 
-    // usuário (dinâmico via /assets/usuario_doc.json com fallback em localStorage)
     async function loadUser(){
       let u=null;
-      try {
-        const r = await fetch('/assets/usuario_doc.json', { cache: 'no-store' });
-        if (r.ok) {
-          const j = await r.json();
-          u = { Nome: j.nome || j.Nome || 'Usuário', Email: j.email || j.Email || 'usuario@empresa.com' };
-        }
-      } catch(e){}
-      if(!u){
-        try{ const l = JSON.parse(localStorage.getItem('impar_user')||'null'); if(l) u = { Nome:l.Nome, Email:l.Email }; }catch(e){}
-      }
+      try { const r = await fetch('/assets/usuario_doc.json', { cache: 'no-store' }); if (r.ok) { const j = await r.json(); u = { Nome: j.nome || j.Nome || 'Usuário', Email: j.email || j.Email || 'usuario@empresa.com' }; } } catch(e){}
+      if(!u){ try{ const l = JSON.parse(localStorage.getItem('impar_user')||'null'); if(l) u = { Nome:l.Nome, Email:l.Email }; }catch(e){} }
       const label = u ? (u.Nome+'\n'+u.Email) : 'Usuário\nusuario@empresa.com';
       document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label.replace('\n','<br>'); });
     }
     loadUser();
 
-    // CEP
     function cepOnInput(el){ el.value = onlyDigits(el.value).slice(0,8); const e=document.getElementById(el.id+'Err'); const h=document.getElementById(el.id+'Hint'); if(e) e.classList.add('hidden'); if(h) h.classList.add('hidden'); }
     async function cepOnBlur(el, prefix){
       const d = onlyDigits(el.value).slice(0,8);
@@ -481,7 +422,6 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       if(prefix==='Contratante') validate3(); else validate4();
     }
 
-    // CPF/CNPJ
     function formatCPF(d){d=onlyDigits(d).slice(0,11);return d.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');}
     function formatCNPJ(d){d=onlyDigits(d).slice(0,14);return d.replace(/(\d{2})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1/$2').replace(/(\d{4})(\d{1,2})$/,'$1-$2');}
     function isValidCPF(cpf){cpf=onlyDigits(cpf);if(cpf.length!==11||/(\d)\1{10}/.test(cpf))return false;let s=0;for(let i=0;i<9;i++)s+=+cpf[i]*(10-i);let d1=11-(s%11);d1=d1>9?0:d1;if(+cpf[9]!==d1)return false;s=0;for(let i=0;i<10;i++)s+=+cpf[i]*(11-i);let d2=11-(s%11);d2=d2>9?0:d2;return +cpf[10]===d2;}
@@ -490,11 +430,9 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
     function docInput(inp){inp.value=onlyDigits(inp.value).slice(0,14);document.getElementById(inp.id+'Err').classList.add('hidden');}
     function docBlur(inp){const d=onlyDigits(inp.value);let ok=false;if(d.length===11){ok=isValidCPF(d);inp.value=formatCPF(d);}else if(d.length===14){ok=isValidCNPJ(d);inp.value=formatCNPJ(d);}document.getElementById(inp.id+'Err').classList.toggle('hidden',ok);}
 
-    // Telefone
     function formatPhoneSimple(d){d=onlyDigits(d).slice(0,11);if(d.length<=6)return d.replace(/(\d{2})(\d{0,5})/,'($1)$2');return d.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1)$2-$3');}
     function maskPhoneSimple(inp){const d=onlyDigits(inp.value).slice(0,11);inp.value=formatPhoneSimple(d);const id=inp.id.replace('telefone','tel')+'Err';document.getElementById(id).classList.toggle('hidden',d.length===11||d.length===0);}
 
-    // Valor + por extenso
     function formatCurrencyBR(cents){const r=Math.floor(cents/100),c=(cents%100).toString().padStart(2,'0');const rr=r.toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');return 'R$ '+rr+','+c;}
     function maskCurrency(inp){let d=onlyDigits(inp.value);if(!d){inp.value='';return;}inp.value=formatCurrencyBR(parseInt(d,10));}
     const UNIDADES=['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove'];
@@ -506,14 +444,11 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
     function valorExt(cents){const r=Math.floor(cents/100),c=cents%100;let t='';if(r>0)t+=inteiroBR(r)+' '+(r===1?'real':'reais');if(c>0){const s=inteiroBR(c)+' '+(c===1?'centavo':'centavos');t=t? t+' e '+s : s;}return t||'zero real';}
     function setValorExtenso(){const d=onlyDigits(document.getElementById('valor').value);document.getElementById('valorExtenso').value=d?valorExt(parseInt(d,10)):'';}
 
-    // Data
     function openDatePicker(){ const p=document.getElementById('dataPicker'); if(p.showPicker) p.showPicker(); else p.click(); }
     function fillDateExtenso(){ const p=document.getElementById('dataPicker'); if(!p.value) return; const d=new Date(p.value+'T12:00:00'); document.getElementById('dataExtenso').value=d.toLocaleDateString('pt-BR',{day:'numeric',month:'long',year:'numeric'}); validate5(); }
 
-    // Toast
     function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2000);}
 
-    // Navegação / validações
     let __currentStep = 1;
     function updateStepper(step){__currentStep=step;[1,2,3,4,5].forEach(n=>{const d=document.getElementById('dot'+n);d.classList.remove('done','active');if(n<step)d.classList.add('done');if(n===step)d.classList.add('active');});[['line12',2],['line23',3],['line34',4],['line45',5]].forEach(([id,to])=>{const el=document.getElementById(id);if(step>=to)el.classList.add('done');else el.classList.remove('done');});}
     function showOnly(id){['screen1','screen2','screen3','screen4','screen5'].forEach(s=>document.getElementById(s).classList.add('hidden'));document.getElementById(id).classList.remove('hidden');['bar1','bar2','bar3','bar4','bar5','back2','back3','back4','back5'].forEach(i=>{const el=document.getElementById(i);if(el)el.classList.add('hidden');});}
@@ -528,46 +463,11 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
     function isValidCurrencyInput(){return /R\$\s\d{1,3}(\.\d{3})*,\d{2}$/.test(document.getElementById('valor').value);}
     function validate5(){setValorExtenso();const ok=isValidCurrencyInput()&&parseInt(document.getElementById('prazo').value,10)>0&&document.getElementById('dataExtenso').value.trim().length>0&&['clausulas','condicoes','valorExtenso'].every(id=>document.getElementById(id).value.trim());const b=document.getElementById('bar5');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=finalizeStep5;}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
 
-    // LOGO
     let __logoCached = null;
-    function showLogoName(inp){
-      const f = inp.files && inp.files[0];
-      const el = document.getElementById('logoInfo');
-      el.textContent = f ? ('Anexo: ' + f.name) : 'Anexar logo do contratante';
-      __logoCached = null;
-    }
-    function detectFormatFromDataUrl(dt){
-      if(!dt || typeof dt!=='string') return 'PNG';
-      if(dt.startsWith('data:image/jpeg')) return 'JPEG';
-      if(dt.startsWith('data:image/jpg'))  return 'JPEG';
-      if(dt.startsWith('data:image/webp')) return 'WEBP';
-      return 'PNG';
-    }
-    function loadLogoForPdf(){
-      return new Promise((resolve)=>{
-        if(__logoCached) return resolve(__logoCached);
-        const inp = document.getElementById('logo');
-        const file = inp && inp.files && inp.files[0];
-        if(!file) return resolve(null);
-        const fr = new FileReader();
-        fr.onload = () => {
-          const url = fr.result;
-          const img = new Image();
-          img.onload = () => {
-            const maxW = 110;
-            const ratio = img.naturalWidth ? (maxW / img.naturalWidth) : 1;
-            const w = Math.min(maxW, img.naturalWidth) * (img.naturalWidth ? ratio : 1);
-            const h = img.naturalHeight ? (img.naturalHeight * (w / (img.naturalWidth||w))) : 40;
-            __logoCached = { url, w, h, fmt: detectFormatFromDataUrl(url) };
-            resolve(__logoCached);
-          };
-          img.src = url;
-        };
-        fr.readAsDataURL(file);
-      });
-    }
+    function showLogoName(inp){ const f = inp.files && inp.files[0]; const el = document.getElementById('logoInfo'); el.textContent = f ? ('Anexo: ' + f.name) : 'Anexar logo do contratante'; __logoCached = null; }
+    function detectFormatFromDataUrl(dt){ if(!dt || typeof dt!=='string') return 'PNG'; if(dt.startsWith('data:image/jpeg')) return 'JPEG'; if(dt.startsWith('data:image/jpg'))  return 'JPEG'; if(dt.startsWith('data:image/webp')) return 'WEBP'; return 'PNG'; }
+    function loadLogoForPdf(){ return new Promise((resolve)=>{ if(__logoCached) return resolve(__logoCached); const inp = document.getElementById('logo'); const file = inp && inp.files && inp.files[0]; if(!file) return resolve(null); const fr = new FileReader(); fr.onload = () => { const url = fr.result; const img = new Image(); img.onload = () => { const maxW = 110; const ratio = img.naturalWidth ? (maxW / img.naturalWidth) : 1; const w = Math.min(maxW, img.naturalWidth) * (img.naturalWidth ? ratio : 1); const h = img.naturalHeight ? (img.naturalHeight * (w / (img.naturalWidth||w))) : 40; __logoCached = { url, w, h, fmt: detectFormatFromDataUrl(url) }; resolve(__logoCached); }; img.src = url; }; fr.readAsDataURL(file); }); }
 
-// PDF
     function currentCode(){ return (document.getElementById('codigo').value||'').trim() || 'DOC'; }
     function todayYMD(){ const d=new Date(); const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return `${y}${m}${dd}`; }
     let __pdfBlob=null, __pdfUrl=null, __pdfName='documento.pdf';
@@ -625,571 +525,26 @@ async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
       document.getElementById('pdfFrame').src = __pdfUrl;
       document.getElementById('viewer').style.display='flex';
     }
-
     function closeViewer(){ document.getElementById('viewer').style.display='none'; }
-   // baixar / compartilhar PDF já aberto no viewer
-   function downloadLastPdf(){
-   if(!window.__pdfBlob || !window.__pdfUrl) return;
-   const a=document.createElement('a');
-   a.href=window.__pdfUrl;
-   a.download=window.__pdfName || ('documento_'+todayYMD()+'.pdf');
-   document.body.appendChild(a); a.click(); a.remove();
-}
+    function downloadLastPdf(){ if(!window.__pdfBlob || !window.__pdfUrl){ showToast('Gere o PDF primeiro'); return; } const a=document.createElement('a'); a.href=window.__pdfUrl; a.download=window.__pdfName || ('documento_'+todayYMD()+'.pdf'); document.body.appendChild(a); a.click(); a.remove(); }
+    async function shareLastPdf(){ if(!window.__pdfBlob || !window.__pdfUrl){ showToast('Gere o PDF primeiro'); return; } const nome = window.__pdfName || ('documento_' + todayYMD() + '.pdf'); const file = new File([window.__pdfBlob], nome, { type: 'application/pdf' }); try{ if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Documento', text: 'Envio do documento em PDF' }); } else if (navigator.share) { await navigator.share({ title: 'Documento', text: 'Envio do documento em PDF', url: window.__pdfUrl }); } else { const txt = encodeURIComponent('Documento gerado. Baixe aqui: ' + location.href); window.open('https://wa.me/?text=' + txt, '_blank'); } }catch(e){} }
+    function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
+    async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
 
+    function abrirConsulta(){ const m = document.getElementById('consultaModal'); const q = document.getElementById('qCodigo'); q.value = (document.getElementById('codigo').value || '').trim(); document.getElementById('consultaTBody').innerHTML = '<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Sem código, sem resultados.</td></tr>'; m.style.display='flex'; }
+    function fecharConsulta(){ document.getElementById('consultaModal').style.display='none'; }
+    async function buscarConsulta(){ const patch = window.__ERP_SAVE_PATCH__ || {}; const token = patch.SAVE_TOKEN || ''; const endpoint = (patch.SAVE_URL || 'https://api.erpimpar.com.br/gerador/save.php').replace('/save.php','/'); const codigo = (document.getElementById('qCodigo').value || '').trim(); const url = endpoint + 'list.php?token=' + encodeURIComponent(token) + (codigo ? '&codigo=' + encodeURIComponent(codigo) : ''); const tb = document.getElementById('consultaTBody'); tb.innerHTML = '<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Buscando...</td></tr>'; try{ const r = await fetch(url, {cache:'no-store', headers: token ? {Authorization: 'Bearer '+token} : {} }); const j = await r.json(); const rows = (j && (j.rows||j.items||j.linhas||j.itens)) ? (j.rows||j.items||j.linhas||j.itens) : []; if(!rows.length){ tb.innerHTML = '<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">' + (codigo?'Nenhum documento para o código informado.':'Nenhum registro encontrado.') + '</td></tr>'; return; } tb.innerHTML = rows.map(row=>{ const code = row.codigo || ''; const obra = row.contratante_nome || row.servico || ''; const file = row.pdf_file || (row.file || '').replace(/^.*\//,''); const href = file ? (endpoint + 'pdf.php?f=' + encodeURIComponent(file) + (token ? ('&token='+encodeURIComponent(token)) : '')) : '#'; return '<tr>' + '<td style="padding:8px;border-bottom:1px solid #eee">'+code+'</td>' + '<td style="padding:8px;border-bottom:1px solid #eee">'+obra+'</td>' + '<td style="padding:8px;border-bottom:1px solid #eee;text-align:center">' +   '<a class="btn" style="padding:4px 10px" target="_blank" href="'+href+'">abrir</a>' + '</td></tr>'; }).join(''); }catch(e){ tb.innerHTML = '<tr><td colspan="3" style="padding:10px;color:#ef4444;text-align:center">Erro ao consultar.</td></tr>'; } }
 
-// =============== CONTINUAÇÃO (colar após closeViewer) ===============
+    function fecharFluxo(){ if(window.__currentStep === 1){ location.href = location.origin + '/login_doc.html'; }else{ goTo(1); } }
+    document.getElementById('btnFecharTopo').addEventListener('click', (e)=>{ e.preventDefault(); fecharFluxo(); });
 
-// baixar / compartilhar PDF já aberto no viewer
-function downloadLastPdf(){
-    if(!window.__pdfBlob || !window.__pdfUrl){
-      if (typeof window.showToast === 'function') showToast('Gere o PDF primeiro');
-      return;
-    }
-    const a = document.createElement('a');
-    a.href = window.__pdfUrl;
-    a.download = window.__pdfName || ('documento_' + todayYMD() + '.pdf');
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-}
-// Compartilhar o último PDF (Web Share API quando disponível)
-  async function shareLastPdf(){
-    if(!window.__pdfBlob || !window.__pdfUrl){
-      if (typeof window.showToast === 'function') showToast('Gere o PDF primeiro');
-      return;
-    }
-    const nome = window.__pdfName || ('documento_' + todayYMD() + '.pdf');
-    const file = new File([window.__pdfBlob], nome, { type: 'application/pdf' });
+    function limparDados(){ document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], textarea').forEach(i=>i.value=''); const logo = document.getElementById('logo'); if(logo) logo.value=''; const h = document.getElementById('logoInfo'); if(h) h.textContent='Anexar logo do contratante'; window.__logoCached = null; goTo(1); showToast('Campos limpos'); }
 
-    try{
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Documento', text: 'Envio do documento em PDF' });
-      } else if (navigator.share) {
-        await navigator.share({ title: 'Documento', text: 'Envio do documento em PDF', url: window.__pdfUrl });
-      } else {
-        // fallback: WhatsApp web
-        const txt = encodeURIComponent('Documento gerado. Baixe aqui: ' + location.href);
-        window.open('https://wa.me/?text=' + txt, '_blank');
-      }
-    } catch(e) {
-      // Usuário cancelou ou plataforma não permitiu — fica silencioso
-    }
-  }
-function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
-async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
+    async function finalizeStep5(){ const blob = await createPdfBlob(); const name = `${currentCode()}_${todayYMD()}.pdf`; const resp = await saveToServerWithFallback(blob, name); if(resp && (resp.ok || resp.success)){ document.getElementById('successModal').style.display='flex'; }else{ showToast((resp && (resp.error || resp.raw)) || 'Falha ao salvar'); } }
 
-// ---------- Consulta (modal já existe no HTML) ----------
-function abrirConsulta(){
-  const m = document.getElementById('consultaModal');
-  const q = document.getElementById('qCodigo');
-  q.value = (document.getElementById('codigo').value || '').trim();
-  document.getElementById('consultaTBody').innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Sem código, sem resultados.</td></tr>`;
-  m.style.display='flex';
-}
-function fecharConsulta(){ document.getElementById('consultaModal').style.display='none'; }
-
-async function buscarConsulta(){
-  const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-  const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-  const codigo = (document.getElementById('qCodigo').value || '').trim();
-  let url = endpoint + 'list.php?token=' + encodeURIComponent(token);
-  if(codigo) url += '&codigo=' + encodeURIComponent(codigo);
-
-  const tb = document.getElementById('consultaTBody');
-  tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">Buscando...</td></tr>`;
-
-  try{
-    const r = await fetch(url, {cache:'no-store'});
-    const j = await r.json();
-    const rows = (j && j.rows) ? j.rows : [];
-    if(!rows.length){
-      tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#6b7280;text-align:center">${codigo?'Nenhum documento para o código informado.':'Nenhum registro encontrado.'}</td></tr>`;
-      return;
-    }
-    tb.innerHTML = rows.map(row=>{
-      const code = row.codigo || '';
-      const obra = row.contratante_nome || '';
-      const href = resolvePdfHref(row);
-      return `<tr>
-        <td style="padding:8px;border-bottom:1px solid #eee">${code}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee">${obra}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">
-          <a class="btn" style="padding:4px 10px" target="_blank" href="${href}">abrir</a>
-        </td>
-      </tr>`;
-    }).join('');
-  }catch(e){
-    tb.innerHTML = `<tr><td colspan="3" style="padding:10px;color:#ef4444;text-align:center">Erro ao consultar.</td></tr>`;
-  }
-}
-function resolvePdfHref(row){
-  const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-  const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-  const file  = row.pdf_file || (row.file || '').replace(/^.*\//,'');
-  if(!file) return '#';
-  // stream via pdf.php pra evitar 404 por proxy/cache
-  return endpoint + 'pdf.php?f=' + encodeURIComponent(file) + '&token=' + encodeURIComponent(token);
-}
-
-// ---------- Fechar / Limpar ----------
-function fecharFluxo(){
-  if(window.__currentStep === 1){
-    // RAIZ (conforme você pediu): /login_doc.html
-    location.href = '/login_doc.html';
-  }else{
-    goTo(1);
-  }
-}
-function limparDados(){
-  document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], textarea').forEach(i=>i.value='');
-  const logo = document.getElementById('logo'); if(logo) logo.value='';
-  const h = document.getElementById('logoInfo'); if(h) h.textContent='Anexar logo do contratante';
-  window.__logoCached = null;
-  goTo(1);
-  showToast('Campos limpos');
-}
-
-// ========== DUPLICIDADE: checar, perguntar e (se atualizar) preencher ==========
-async function checkCodigoDuplicado(cod){
-  const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-  const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-  const url = endpoint + 'list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(cod);
-  try{
-    const r = await fetch(url, {cache:'no-store'});
-    const j = await r.json();
-    const rows = (j && j.rows) ? j.rows : [];
-    return rows; // [] se não existe
-  }catch(e){
-    return [];
-  }
-}
-
-// cria modal simples reutilizável
-function ensureDupModal(){
-  if(document.getElementById('dupModal')) return;
-  const m = document.createElement('div');
-  m.id='dupModal';
-  m.className='modal';
-  m.innerHTML = `
-    <div class="box">
-      <div class="hd">Documento já cadastrado</div>
-      <div class="bd">
-        <p>Já existe um documento para este código. Deseja <b>imprimir o PDF</b> ou <b>atualizar informações</b>?</p>
-      </div>
-      <div class="ft">
-        <button class="btn" id="dupFechar">Fechar</button>
-        <button class="btn" id="dupImprimir">Imprimir PDF</button>
-        <button class="btn primary" id="dupAtualizar">Atualizar</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(m);
-  document.getElementById('dupFechar').onclick=()=>{ m.style.display='none'; };
-}
-let __dupRowsCache = [];
-async function abrirDupModal(rows){
-  __dupRowsCache = rows||[];
-  ensureDupModal();
-  const m = document.getElementById('dupModal');
-  m.style.display='flex';
-  // ações
-  document.getElementById('dupImprimir').onclick = ()=>{
-    m.style.display='none';
-    // abre o primeiro PDF correspondente
-    if(__dupRowsCache.length){
-      const href = resolvePdfHref(__dupRowsCache[0]);
-      if(href && href !== '#') window.open(href, '_blank');
-    }
-  };
-  document.getElementById('dupAtualizar').onclick = async ()=>{
-    m.style.display='none';
-    if(__dupRowsCache.length){
-      await preencherCamposComRow(__dupRowsCache[0]);
-      goTo(2); // já cai na etapa 2 para seguir até 5
-      showToast('Campos carregados do documento existente');
-    }
-  };
-}
-
-// Preencher campos de tela a partir da linha retornada pelo list.php
-async function preencherCamposComRow(row){
-  // mapeia campos prováveis (depende do list.php incluir clausulas/condicoes)
-  const byId = (id,val)=>{ const el=document.getElementById(id); if(el) el.value=(val||''); };
-
-  byId('servico', row.servico);
-  byId('endereco', row.enderecoObra || row.endereco || '');
-
-  // contratante
-  byId('nomeContratante', row.contratante_nome);
-  byId('docContratante',  (row.contratante_doc||'').replace(/\D+/g,''));
-  byId('contatoContratante', row.contratante_contato);
-  byId('telefoneContratante', row.contratante_telefone);
-  byId('emailContratante', row.contratante_email);
-
-  // se seu list.php já envia CEP/logradouro/bairro/... preencha aqui
-  // (ex.: row.cep_contratante, row.logradouro_contratante, etc.)
-  // byId('cepContratante', row.cep_contratante);
-  // byId('logradouroContratante', row.logradouro_contratante);
-  // byId('numeroContratante', row.numero_contratante);
-  // byId('complementoContratante', row.complemento_contratante);
-  // byId('bairroContratante', row.bairro_contratante);
-  // byId('cidadeContratante', row.cidade_contratante);
-  // if(row.uf_contratante){ const s=document.getElementById('ufContratante'); if(s) s.value=row.uf_contratante; }
-
-  // contratada
-  byId('nomeContratada', row.contratada_nome);
-  byId('docContratada', (row.contratada_doc||'').replace(/\D+/g,''));
-  byId('contatoContratada', row.contratada_contato);
-  byId('telefoneContratada', row.contratada_telefone);
-  byId('emailContratada', row.contratada_email);
-  // idem endereço da contratada se disponível nos campos do list.php
-
-  // condições finais
-  byId('valor', row.valor);
-  byId('valorExtenso', row.valorExtenso || row.valor_extenso || '');
-  byId('prazo', row.prazo);
-  byId('dataExtenso', row.dataExtenso || row.data_extenso || '');
-  byId('clausulas', row.clausulas || '');
-  byId('condicoes', row.condicoes || '');
-
-  // revalidar barras
-  if(typeof validate2==='function') validate2();
-  if(typeof validate3==='function') validate3();
-  if(typeof validate4==='function') validate4();
-  if(typeof validate5==='function') validate5();
-}
-
-// --- Hook no fluxo da Etapa 1: ao clicar "Continuar", primeiro verificar duplicidade ---
-(function hookEtapa1(){
-  const b = document.getElementById('bar1');
-  if(!b) return;
-  const original = b.onclick;
-  b.onclick = async function(){
-    const cod = (document.getElementById('codigo').value || '').trim();
-    if(!cod){ showToast('Informe o código'); return; }
-    const rows = await checkCodigoDuplicado(cod);
-    if(rows && rows.length){
-      await abrirDupModal(rows);
-    }else{
-      // segue o fluxo normal (vai p/ etapa 2)
-      if(typeof original === 'function') original(); else goTo(2);
-    }
-  };
-})();
-
-// ========== Salvar com LOGO + CSV + checagem de código no backend ==========
-(function enableSaveWithLogo(){
-  const patch = window.__ERP_SAVE_PATCH__;
-  if(!patch) return;
-
-  const SAVE_URL = patch.SAVE_URL;
-  const SAVE_TOKEN = patch.SAVE_TOKEN;
-
-  async function saveWithLogo(pdfBlob, pdfName){
-    const fd = new FormData();
-    fd.append('pdf', new File([pdfBlob], pdfName, {type:'application/pdf'}));
-    fd.append('dados', JSON.stringify(window.collectFormData()));
-    fd.append('token', SAVE_TOKEN);
-    const file = document.getElementById('logo')?.files?.[0];
-    if(file) fd.append('logo', file, file.name);
-    const resp = await fetch(SAVE_URL, {
-      method:'POST',
-      headers:{ 'Authorization': 'Bearer ' + SAVE_TOKEN },
-      body: fd
-    });
-    return resp.json();
-  }
-
-
-(function () {
-  // Usa as constantes do PATCH já carregado no index (erp_save_patch_flatfile.js)
-  const PATCH = window.__ERP_SAVE_PATCH__ || {};
-  const SAVE_URL   = PATCH.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
-  const LIST_URL   = PATCH.LIST_URL   || 'https://api.erpimpar.com.br/gerador/list.php';
-  const SAVE_TOKEN = PATCH.SAVE_TOKEN || '';
-
-  function currentCode(){
-    return (document.getElementById('codigo')?.value || '').trim();
-  }
-  function todayYMD(){
-    const d=new Date(); const y=d.getFullYear(), m=('0'+(d.getMonth()+1)).slice(-2), dd=('0'+d.getDate()).slice(-2);
-    return `${y}${m}${dd}`;
-  }
-
-  // Mesmo resolvedor usado na consulta (abre via pdf.php)
-  function resolvePdfHref(row){
-    const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-    const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-    const file  = row.pdf_file || (row.file || '').replace(/^.*\//,'');
-    if(!file) return '#';
-    return endpoint + 'pdf.php?f=' + encodeURIComponent(file) + '&token=' + encodeURIComponent(token);
-  }
-
-  // 1) Checa duplicidade no backend (list.php)
-  async function checkCodigoDuplicado(codigo){
-    let url = LIST_URL + '?token=' + encodeURIComponent(SAVE_TOKEN) + '&codigo=' + encodeURIComponent(codigo);
-    const r  = await fetch(url, { cache: 'no-store' });
-    const js = await r.json().catch(()=>({}));
-    return (js && js.rows) ? js.rows : [];
-  }
-
-  // 2) Carrega JSON salvo em /docs/<codigo>.json e preenche o formulário
-  async function carregarDocumentoNosCampos(codigo){
-    const base = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-    const url  = base + 'docs/' + encodeURIComponent(codigo) + '.json' + (SAVE_TOKEN ? ('?token='+encodeURIComponent(SAVE_TOKEN)) : '');
-    const r    = await fetch(url, { cache: 'no-store' });
-    const data = await r.json();
-
-    // Preenche os campos baseado no collectFormData
-    const set = (id,v)=>{ const el=document.getElementById(id); if(el!=null){ el.value = v || ''; el.dispatchEvent(new Event('input')); } };
-    set('codigo',  data.codigo);
-    set('servico', data.servico);
-    set('endereco', data.enderecoObra);
-
-    // CONTRATANTE
-    const ct = data.contratante || {};
-    set('nomeContratante', ct.nome);
-    set('docContratante', ct.cpfCnpj);
-    set('contatoContratante', ct.contato);
-    set('telefoneContratante', ct.telefone);
-    set('emailContratante', ct.email);
-    // tenta fatiar endereço "logradouro, numero - comp — bairro — cidade/UF — CEP 00000-000"
-    (function parseEnd(end, prefix){
-      if(!end) return;
-      // heurística simples
-      const cepMatch = end.match(/CEP\s+([\d\-]+)/i);
-      const ufMatch  = end.match(/\/([A-Z]{2})\s+—\s+CEP/i);
-      const cidadeB  = end.split('—');
-      const cidadeUF = (cidadeB[2]||'').trim();
-      const bairro   = (cidadeB[1]||'').trim();
-      const logNum   = (end.split('—')[0]||'').trim().split(' - ')[0]||'';
-      const log      = (logNum.split(',')[0]||'').trim();
-      const num      = (logNum.split(',')[1]||'').trim();
-
-      set('logradouro'+prefix, log);
-      set('numero'+prefix, num);
-      set('bairro'+prefix, bairro.replace(/^bairro\s*:\s*/i,''));
-      if (cidadeUF.includes('/')){
-        const parts = cidadeUF.split('/');
-        set('cidade'+prefix, (parts[0]||'').trim());
-        set('uf'+prefix, (parts[1]||'').trim());
-      }
-      if (cepMatch) set('cep'+prefix, cepMatch[1]);
-    })(ct.endereco,'Contratante');
-
-    // CONTRATADA
-    const cd = data.contratada || {};
-    set('nomeContratada', cd.nome);
-    set('docContratada', cd.cpfCnpj);
-    set('contatoContratada', cd.contato);
-    set('telefoneContratada', cd.telefone);
-    set('emailContratada', cd.email);
-    (function parseEnd(end, prefix){ /* mesma heurística */ })(cd.endereco,'Contratada');
-
-    // CONDIÇÕES / VALORES
-    set('clausulas', data.clausulas);
-    set('condicoes', data.condicoesPagamento || data.condicoes);
-    set('valor', data.valor);
-    set('valorExtenso', data.valorExtenso);
-    set('prazo', data.prazo);
-    set('dataExtenso', data.dataExtenso);
-
-    // Vai para etapa 2 e deixa o usuário seguir até 5
-    if (typeof window.goTo === 'function') {
-      window.goTo(2);
-    }
-  }
-
-
-
-  // 3) Diálogo: imprimir ou atualizar
-  async function abrirDupModal(dupRows){
-    // Diálogo simples: OK = IMPRIMIR, Cancel = ATUALIZAR
-    const escolhaImprimir = confirm('DOCUMENTO JÁ CADASTRADO.\n\nOK = Imprimir PDF\nCancelar = Atualizar informações');
-    const row = dupRows[0];
-
-    if(escolhaImprimir){
-      const href = resolvePdfHref(row);
-      if(href && href !== '#') {
-        window.open(href, '_blank');
-      } else {
-        alert('Não foi possível localizar o PDF para este código.');
-      }
-      return 'imprimir';
-    } else {
-      await carregarDocumentoNosCampos(row.codigo || currentCode());
-      return 'atualizar';
-    }
-  }
-
-  // 4) Salvar (usa o saveWithLogo do patch já existente)
-  async function saveWithLogo(pdfBlob, pdfName){
-    if(!window.__ERP_SAVE_PATCH__ || !window.__ERP_SAVE_PATCH__.SAVE_URL){
-      throw new Error('Patch de salvamento não carregado.');
-    }
-    const fd = new FormData();
-    fd.append('pdf', new File([pdfBlob], pdfName, {type:'application/pdf'}));
-    fd.append('dados', JSON.stringify(window.collectFormData()));
-    fd.append('token', SAVE_TOKEN);
-    const logoFile = document.getElementById('logo')?.files?.[0];
-    if(logoFile) fd.append('logo', logoFile, logoFile.name);
-
-    const resp = await fetch(SAVE_URL, {
-      method:'POST',
-      headers:{ 'Authorization': 'Bearer ' + SAVE_TOKEN },
-      body: fd
-    });
-
-    // parse seguro
-    const raw = await resp.text();
-    let json = null; try { json = JSON.parse(raw); } catch(_) {}
-    return json || { ok:false, raw, status: resp.status };
-  }
-
-
-// 5) Intercepta o finalizeStep5 (versão corrigida e autossuficiente)
-const orig = window.finalizeStep5;
-window.finalizeStep5 = function(){
-  const toast = (typeof window.showToast === 'function') ? window.showToast : console.log;
-  (async () => {
-    try{
-      const cod = currentCode();
-      if(!cod){ toast('Informe o código do projeto.'); return; }
-
-      // Checa duplicidade
-      let updateFlag = false;
-      const dupRows = await checkCodigoDuplicado(cod);
-      if (dupRows && dupRows.length){
-        const acao = await abrirDupModal(dupRows);
-        if (acao === 'imprimir') {
-          // usuário optou por abrir/imprimir o PDF existente → encerrar
-          return;
-        }
-        if (acao === 'atualizar') {
-          // sinaliza atualização (save.php aceitará sobrescrever)
-          updateFlag = true;
-        }
-        // se cair aqui, segue para gerar PDF e salvar (com updateFlag quando for o caso)
-      }
-
-      // Gera PDF
-      if (typeof window.createPdfBlob !== 'function') {
-        toast('Falha: gerador de PDF não disponível.');
-        return;
-      }
-      const blob = await window.createPdfBlob();
-      window.__pdfBlob = blob;
-      if (window.__pdfUrl) URL.revokeObjectURL(window.__pdfUrl);
-      window.__pdfUrl  = URL.createObjectURL(blob);
-      const ymd  = todayYMD();
-      window.__pdfName = `${cod}_${ymd}.pdf`;
-
-      // >>> ALTERAÇÃO AQUI <<<
-      // Em vez de saveWithLogo(...), usamos o helper robusto saveToServerWithFallback(...)
-      const out = await saveToServerWithFallback(blob, window.__pdfName, updateFlag);
-
-      if(out && (out.ok || out.success)){
-        window.__pdfSavedUrl = out.pdfUrl || out.pdf || out.file;
-        toast('Registro salvo no ERP ✅');
-      }else{
-        console.warn('save error', out);
-        const msg = (out && (out.error || out.message)) ? (out.error || out.message) : 'Falha desconhecida';
-        toast('Gerado localmente. Falha ao salvar no ERP ❗ ' + msg);
-        if (out && out.raw) {
-          console.error('RAW do servidor (HTML/erro PHP):\n', out.raw);
-          alert('Servidor retornou um erro (não-JSON). Abra o Console para detalhes.');
-        }
-      }
-
-      // Modal de sucesso (já existe no HTML)
-      const modal = document.getElementById('successModal');
-      if(modal) modal.style.display='flex';
-
-    }catch(e){
-      console.error(e);
-      toast('Gerado localmente. Falha ao salvar no ERP ❗ ' + e.message);
-      const modal = document.getElementById('successModal');
-      if(modal) modal.style.display='flex';
-    }
-  })();
-};
-
-// ========== Helpers de resposta segura ==========
-async function safeJsonFromResponse(resp) {
-  const text = await resp.text(); // lê SEMPRE como texto
-  try {
-    return JSON.parse(text);      // tenta virar JSON
-  } catch {
-    console.error('Resposta não-JSON do servidor:', text);
-    return {
-      ok: false,
-      success: false,
-      status: resp.status,
-      error: 'Resposta não-JSON do servidor (possível erro PHP no save.php).',
-      raw: text
-    };
-  }
-}
-
-// Monta e envia o POST para o save.php usando as configs do patch se existirem
-async function saveToServerWithFallback(pdfBlob, pdfName, updateFlag=false) {
-  // tenta usar as configs do patch (se existir)
-  const patch = window.__ERP_SAVE_PATCH__ || {};
-  const SAVE_URL   = patch.SAVE_URL   || 'https://api.erpimpar.com.br/gerador/save.php';
-  const SAVE_TOKEN = patch.SAVE_TOKEN || '';
-
-  const fd = new FormData();
-  fd.append('pdf', new File([pdfBlob], pdfName, { type: 'application/pdf' }));
-  // MUITO IMPORTANTE: enviar como string, não Blob
-  fd.append('dados', JSON.stringify(window.collectFormData()));
-  if (updateFlag) fd.append('update', '1');
-
-  const headers = {};
-  if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
-
-  const resp = await fetch(SAVE_URL, { method: 'POST', headers, body: fd });
-  return await safeJsonFromResponse(resp);
-}
-
-
-<!-- ...seu código acima permanece... -->
-
-// ========== (RE)Init ==========
-document.addEventListener('DOMContentLoaded', async () => {
-  // 1) Usuário no cabeçalho (assets/usuario_doc.json)
-  try {
-    const r = await fetch('/assets/usuario_doc.json', { cache: 'no-store' });
-    if (r.ok) {
-      const u = await r.json();
-      document.querySelectorAll('.user').forEach(el => {
-        el.innerHTML = `${u.Nome || 'Usuário'}<br>${u.Email || ''}`;
-      });
-    }
-  } catch (_) { /* ignora se não existir */ }
-
-  // 2) Stepper + validações
-  if (typeof updateStepper === 'function') updateStepper(1);
-  if (typeof validate1 === 'function') validate1();
-
-  // 3) Botão "Fechar" (etapa 1) -> raiz /login_doc.html
-  const fecharBtns = [
-    document.querySelector('.topbar .btn.danger'),  // seu botão FECHAR do topo
-    document.getElementById('fecharEtapa1')         // se existir um id específico
-  ].filter(Boolean);
-
-  fecharBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      location.href = '/login_doc.html';
-    });
-  });
-
-  // 4) “Pesquisar documentos cadastrados” → abrirConsulta()
-  const btnBusca = Array.from(document.querySelectorAll('button'))
-    .find(b => /pesquisar.*cadastrados/i.test(b.textContent));
-  if (btnBusca && typeof abrirConsulta === 'function') {
-    btnBusca.onclick = abrirConsulta;
-  }
-</script>
-});
-
+    document.getElementById('btnPesquisarDocs').addEventListener('click', (e)=>{ e.preventDefault(); abrirConsulta(); });
+    document.addEventListener('DOMContentLoaded', ()=>{ updateStepper(1); validate1(); });
+    updateStepper(1);
+  </script>
+</body>
+</html>
