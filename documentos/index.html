@@ -63,7 +63,7 @@
     .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:#10b981;color:#fff;padding:12px 16px;border-radius:6px;font-weight:700;box-shadow:0 10px 20px rgba(0,0,0,.2);display:none;z-index:70}
   </style>
 
-  <!-- 1) Coletor de dados (inclui cláusulas/condições) -->
+  <!-- 1) Coletor de dados próprio (inclui clausulas/condicoes e metadados) -->
   <script>
     window.collectFormData = function() {
       const get = (id) => (document.getElementById(id)?.value || '').trim();
@@ -105,7 +105,7 @@
     };
   </script>
 
-  <!-- 2) Patch de salvamento do ERP -->
+  <!-- 2) Patch de salvamento do ERP (usa o collectFormData acima) -->
   <script src="/documentos/erp_save_patch_flatfile.js"></script>
 </head>
 <body>
@@ -140,8 +140,6 @@
           <div class="cap">CÓDIGO <span class="req">*</span></div>
           <div class="content">
             <input id="codigo" class="input" placeholder="Digite o código do projeto" oninput="validate1()">
-            <div id="codigoHint" class="hint hidden"></div>
-            <div id="codigoErr" class="error hidden"></div>
           </div>
         </div>
 
@@ -426,7 +424,7 @@
     const UNIDADES=['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove'];
     const DEZ_A_DEZENOVE=['dez','onze','doze','treze','catorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
     const DEZENAS=['','dez','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
-    const CENTENAS=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+    const CENTENAS=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','noventos'];
     function trioPorExtenso(n){n%=1000;if(n===0)return'';if(n===100)return'cem';const c=Math.floor(n/100),d=Math.floor((n%100)/10),u=n%10;let p=[];if(c)p.push(CENTENAS[c]);if(d===1)p.push(DEZ_A_DEZENOVE[u]);else{if(d)p.push(DEZENAS[d]);if(u)p.push(UNIDADES[u]);}return p.join(' e ');}
     function inteiroBR(n){if(n===0)return'zero';const g=[{v:n%1000,n:''},{v:Math.floor(n/1000)%1000,n:'mil'},{v:Math.floor(n/1e6)%1000,n:'milhão',p:'milhões'},{v:Math.floor(n/1e9)%1000,n:'bilhão',p:'bilhões'}];let partes=[];for(let i=g.length-1;i>=0;i--){const x=g[i];if(!x.v)continue;const ext=trioPorExtenso(x.v);if(i===1){partes.push(x.v===1?'mil':ext+' mil');continue;}if(i>=2){partes.push(ext+' '+(x.v===1?x.n:x.p));continue;}if(i===0)partes.push(ext);}return partes.join(' ');}
     function valorExt(cents){const r=Math.floor(cents/100),c=cents%100;let t='';if(r>0)t+=inteiroBR(r)+' '+(r===1?'real':'reais');if(c>0){const s=inteiroBR(c)+' '+(c===1?'centavo':'centavos');t=t? t+' e '+s : s;}return t||'zero real';}
@@ -439,22 +437,6 @@
     // Toast
     function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2000);}
 
-    // ===== Checagem de CÓDIGO existente (Etapa 1) =====
-    let __codeTimer=null, __codeExists=false;
-    async function checkCodigoExists(code){
-      const endpoint = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_URL.replace('/save.php','/')) || 'https://api.erpimpar.com.br/gerador/';
-      const token    = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
-      const url = endpoint + 'list.php?token=' + encodeURIComponent(token) + '&codigo=' + encodeURIComponent(code);
-      try{
-        const r = await fetch(url);
-        const j = await r.json();
-        const rows = (j && j.rows) ? j.rows : [];
-        return { exists: rows.length > 0, count: rows.length };
-      }catch(e){
-        return { exists:false, count:0 };
-      }
-    }
-
     // Navegação / validações
     let __currentStep = 1;
     function updateStepper(step){__currentStep=step;[1,2,3,4,5].forEach(n=>{const d=document.getElementById('dot'+n);d.classList.remove('done','active');if(n<step)d.classList.add('done');if(n===step)d.classList.add('active');});[['line12',2],['line23',3],['line34',4],['line45',5]].forEach(([id,to])=>{const el=document.getElementById(id);if(step>=to)el.classList.add('done');else el.classList.remove('done');});}
@@ -462,62 +444,13 @@
     function goTo(step){updateStepper(step);showOnly('screen'+step);const codigo=(document.getElementById('codigo').value||'').trim()||'AC00025';['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=codigo;});const bar=document.getElementById('bar'+step);if(bar)bar.classList.remove('hidden');const back=document.getElementById('back'+step);if(back)back.classList.remove('hidden');const fn=window['validate'+step];if(typeof fn==='function')fn();}
 
     function addrOk(prefix){return ['logradouro','numero','bairro','cidade','uf'].every(k => document.getElementById(k+prefix).value.trim());}
-
-    function setBarEnabled(b, enabled, handler){
-      if(enabled){
-        b.classList.remove('disabled'); b.classList.add('enabled'); b.onclick = handler;
-      }else{
-        b.classList.add('disabled'); b.classList.remove('enabled'); b.onclick = noop;
-      }
-    }
-
-    function validate1(){
-      const v = document.getElementById('codigo').value.trim();
-      const b = document.getElementById('bar1');
-      const hint = document.getElementById('codigoHint');
-      const err  = document.getElementById('codigoErr');
-
-      updateStepper(1);
-
-      // reset mensagens
-      hint.classList.add('hidden'); hint.textContent='';
-      err.classList.add('hidden');  err.textContent='';
-
-      if(!v){
-        setBarEnabled(b, false, noop);
-        return;
-      }
-
-      // debounce + checagem remota
-      setBarEnabled(b, false, noop);
-      hint.textContent = 'Checando disponibilidade...';
-      hint.classList.remove('hidden');
-
-      clearTimeout(__codeTimer);
-      __codeTimer = setTimeout(async ()=>{
-        const res = await checkCodigoExists(v);
-        __codeExists = res.exists;
-
-        if(res.exists){
-          hint.classList.add('hidden');
-          err.textContent = `Já existe ${res.count} documento(s) com o código “${v}”. Escolha outro código ou pesquise na consulta.`;
-          err.classList.remove('hidden');
-          setBarEnabled(b, false, noop);
-        }else{
-          err.classList.add('hidden');
-          hint.textContent = 'Código disponível.';
-          hint.classList.remove('hidden');
-          setBarEnabled(b, true, ()=>goTo(2));
-        }
-      }, 300);
-    }
-
-    function validate2(){const s=document.getElementById('servico').value.trim(),e=document.getElementById('endereco').value.trim(),b=document.getElementById('bar2');setBarEnabled(b, !!(s&&e), ()=>goTo(3));}
-    function validate3(){const d=document.getElementById('docContratante').value,t=document.getElementById('telefoneContratante').value,m=document.getElementById('emailContratante').value.trim(),cep=document.getElementById('cepContratante').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratanteErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratanteErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratanteErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratante','contatoContratante'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratante');const b=document.getElementById('bar3');setBarEnabled(b, ok, ()=>goTo(4));}
-    function validate4(){const d=document.getElementById('docContratada').value,t=document.getElementById('telefoneContratada').value,m=document.getElementById('emailContratada').value.trim(),cep=document.getElementById('cepContratada').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratadaErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratadaErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratadaErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratada','contatoContratada'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratada');const b=document.getElementById('bar4');setBarEnabled(b, ok, ()=>goTo(5));}
+    function validate1(){const v=document.getElementById('codigo').value.trim(),b=document.getElementById('bar1');if(v){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(2);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}updateStepper(1);}
+    function validate2(){const s=document.getElementById('servico').value.trim(),e=document.getElementById('endereco').value.trim(),b=document.getElementById('bar2');if(s&&e){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(3);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+    function validate3(){const d=document.getElementById('docContratante').value,t=document.getElementById('telefoneContratante').value,m=document.getElementById('emailContratante').value.trim(),cep=document.getElementById('cepContratante').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratanteErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratanteErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratanteErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratante','contatoContratante'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratante');const b=document.getElementById('bar3');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(4);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+    function validate4(){const d=document.getElementById('docContratada').value,t=document.getElementById('telefoneContratada').value,m=document.getElementById('emailContratada').value.trim(),cep=document.getElementById('cepContratada').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratadaErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratadaErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratadaErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratada','contatoContratada'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratada');const b=document.getElementById('bar4');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(5);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
     function isValidEmail(e){ return /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(e); }
     function isValidCurrencyInput(){return /R\$\s\d{1,3}(\.\d{3})*,\d{2}$/.test(document.getElementById('valor').value);}
-    function validate5(){setValorExtenso();const ok=isValidCurrencyInput()&&parseInt(document.getElementById('prazo').value,10)>0&&document.getElementById('dataExtenso').value.trim().length>0&&['clausulas','condicoes','valorExtenso'].every(id=>document.getElementById(id).value.trim());const b=document.getElementById('bar5');setBarEnabled(b, ok, finalizeStep5);}
+    function validate5(){setValorExtenso();const ok=isValidCurrencyInput()&&parseInt(document.getElementById('prazo').value,10)>0&&document.getElementById('dataExtenso').value.trim().length>0&&['clausulas','condicoes','valorExtenso'].every(id=>document.getElementById(id).value.trim());const b=document.getElementById('bar5');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=finalizeStep5;}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
 
     // LOGO
     let __logoCached = null;
@@ -686,6 +619,7 @@
       const token = (window.__ERP_SAVE_PATCH__ && window.__ERP_SAVE_PATCH__.SAVE_TOKEN) || '';
       const file  = row.pdf_file || (row.file || '').replace(/^.*\//,'');
       if(!file) return '#';
+      // Abre via pdf.php (stream) pra evitar 404 por cache/proxy
       return endpoint + 'pdf.php?f=' + encodeURIComponent(file) + '&token=' + encodeURIComponent(token);
     }
 
