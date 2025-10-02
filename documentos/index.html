@@ -566,37 +566,12 @@ async function saveDocumentPayload(){
   return payload;
 }
 
-
 async function saveDocument(){
   try{
     const patch = (window.__ERP_SAVE_PATCH__||{});
-    let SAVE_URL = patch.SAVE_URL;
+    const SAVE_URL = patch.SAVE_URL;
     const SAVE_TOKEN = patch.SAVE_TOKEN;
-    // Fallback: default to API subdomain path if not provided by patch
-    if(!SAVE_URL){
-      const originHost = (location.hostname||'').toLowerCase();
-      const apiHost = originHost.includes('impar') ? 'https://api.impar.com.br' : (location.origin);
-      SAVE_URL = apiHost + '/www/storage/data';
-    }
-    if(!SAVE_TOKEN){ /* still try to save without token if backend allows */ }
-    const payload = await saveDocumentPayload();
-    if (SAVE_TOKEN) payload.token = SAVE_TOKEN;
-
-    // --- Ensure multiple aliases so backend captures the data regardless of expected field names
-    payload.clausulas_texto = payload.clausulas;
-    payload.condicoes_pagamento = payload.condicoes;
-    payload.etapa5_clausulas = payload.clausulas;
-    payload.etapa5_condicoes = payload.condicoes;
-
-    await fetch(SAVE_URL, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      mode:'cors',
-      body: JSON.stringify(payload)
-    });
-  }catch(e){ /* no-op */ }
-}
-
+    if(!SAVE_URL || !SAVE_TOKEN){ return; }
     const payload = await saveDocumentPayload();
     payload.token = SAVE_TOKEN;
     const r = await fetch(SAVE_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -753,17 +728,13 @@ function fillAllFromRow(row){
   setVal('cepContratada',         (row.contratada_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
   splitAddressToForm('Contratada', row.contratada_endereco);
 
-  
-  // Etapa 5 (inclui aliases)
+  // Etapa 5
   setVal('valor',          row.valor);
   setVal('valorExtenso',   row.valor_extenso);
   setVal('prazo',          row.prazo_dias);
   setVal('dataExtenso',    row.data_extenso);
 
-  // Novos: cláusulas e condições (vários nomes possíveis vindos da API)
-  setVal('clausulas',      row.clausulas || row.clausulas_texto || row.etapa5_clausulas || '');
-  setVal('condicoes',      row.condicoes || row.condicoes_pagamento || row.etapa5_condicoes || '');
-try { validate2(); } catch(_){}
+  try { validate2(); } catch(_){}
   try { validate3(); } catch(_){}
   try { validate4(); } catch(_){}
   try { validate5(); } catch(_){}
