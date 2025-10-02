@@ -1,18 +1,18 @@
-/*! user-fill.js — preenche o nome/email do usuário logado sem alterar sua lógica */
+/*! user-fill.js — preenche usuário (etapa 1 inclusive) sem alterar o fluxo */
 (function(){
   function setUser(nome, email){
     var label = (nome || 'Usuário') + '<br>' + (email || 'usuario@empresa.com');
-    var nodes = document.querySelectorAll('.user');
-    nodes.forEach(function(el){
-      var txt = (el.textContent || '').trim();
-      // só altera se estiver vazio ou com o placeholder "Usuário"
-      if (!txt || /usuário/i.test(txt)) el.innerHTML = label;
+    document.querySelectorAll('.user').forEach(function(el){
+      var html = (el.innerHTML || '').trim();
+      var txt  = (el.textContent || '').trim();
+      if (!txt || /usuário/i.test(txt) || /usuario@empresa\.com/i.test(html)) {
+        el.innerHTML = label;
+      }
     });
   }
-
   async function tryJson(){
     try{
-      var r = await fetch('/assets/usuario_doc.json', {cache: 'no-store'});
+      var r = await fetch('/assets/usuario_doc.json', {cache:'no-store'});
       if(!r.ok) return false;
       var j = await r.json();
       if(!j) return false;
@@ -20,8 +20,7 @@
       return true;
     }catch(_){ return false; }
   }
-
-  function tryLocalStorage(){
+  function tryLocal(){
     try{
       var raw = localStorage.getItem('impar_user');
       if(!raw) return false;
@@ -31,7 +30,6 @@
       return true;
     }catch(_){ return false; }
   }
-
   function tryGlobal(){
     if (window.imparUser){
       setUser(window.imparUser.nome, window.imparUser.email);
@@ -39,13 +37,16 @@
     }
     return false;
   }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    // Tenta em cascata, sem quebrar nada do seu fluxo
+  function run(){
     tryJson().then(function(ok){
       if(ok) return;
-      if(tryLocalStorage()) return;
+      if(tryLocal()) return;
       tryGlobal();
     });
-  });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
 })();
