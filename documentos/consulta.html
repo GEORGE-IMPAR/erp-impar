@@ -209,5 +209,133 @@
     // Init
     detectEndpoint();
   </script>
+
+<script>
+  // ===== CONFIG =====
+  const API_BASE  = 'https://api.erpimpar.com.br';
+  const ENDPOINT  = `${API_BASE}/gerador`;
+  const LIST_URL  = `${ENDPOINT}/list.php`;
+  const PDF_PROXY = `${ENDPOINT}/pdf.php`; // sempre absoluto p/ evitar abrir a própria página
+
+  // ===== UI/refs =====
+  const $ = (s)=>document.querySelector(s);
+  const inpCodigo = $('#codigo');
+  const inpToken  = $('#token');
+  const btnBuscar = $('#buscar');
+  const badge     = $('#status');
+  const out       = $('#resultado');
+  const inpEndpt  = $('#endpoint');
+
+  // ===== Helpers =====
+  function setBadge(txt, ok){ badge.textContent = txt; badge.className = 'status ' + (ok?'ok':'bad'); }
+  function pick(o, keys){
+    for (const k of keys){
+      if (o && o[k] !== undefined && o[k] !== null) {
+        const v = (typeof o[k] === 'string') ? o[k].trim() : o[k];
+        if (v !== '' && v !== '-') return v;
+      }
+    }
+    return '';
+  }
+  function fmtDate(s){
+    if(!s) return '—';
+    try{ return new Date(s).toLocaleString('pt-BR'); }catch(_){ return s; }
+  }
+  function pdfHrefFromRow(row){
+    const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
+    if (!raw) return '#';
+    const fname = String(raw)
+      .replace(/^https?:\/\/[^/]+/i, '')
+      .replace(/\?.*$/, '')
+      .split('/').filter(Boolean).pop();
+    if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
+    return `${PDF_PROXY}?f=${encodeURIComponent(fname)}`;
+  }
+
+  // ===== Endpoint detect =====
+  async function detectEndpoint(){
+    inpEndpt.value = `${ENDPOINT}/`;
+    try{
+      const r = await fetch(`${ENDPOINT}/ping.php`, { cache:'no-store' });
+      const j = await r.json().catch(()=> ({}));
+      setBadge(j && j.ok ? 'OK' : 'Falha ao detectar endpoint', !!(j && j.ok));
+    }catch(_){ setBadge('Falha ao detectar endpoint', false); }
+  }
+
+  // ===== Consulta =====
+  async function buscar(){
+    const token = (inpToken.value || '').trim();
+    if(!token){ setBadge('Informe o token', false); return; }
+
+    // monta URL SEM header Authorization (evita preflight/CORS)
+    const qs  = new URLSearchParams();
+    qs.set('token', token);
+    const codigo = (inpCodigo.value || '').trim();
+    if (codigo) qs.set('codigo', codigo);
+
+    setBadge('Buscando…', true);
+    try{
+      const r = await fetch(`${LIST_URL}?${qs.toString()}`, { cache:'no-store' });
+      const j = await r.json().catch(()=>null);
+      const rows = j && j.ok ? (j.rows || j.items || j.linhas || j.itens || []) : [];
+      renderRows(rows);
+      setBadge(rows.length ? 'OK' : 'Nenhum registro', !!rows.length);
+    }catch(_){
+      setBadge('Erro na consulta', false);
+      out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
+    }
+  }
+
+  function renderRows(rows){
+    if(!rows.length){
+      out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
+      return;
+    }
+    let html = `
+      <table>
+        <thead>
+          <tr>
+            <th style="width:140px">Data</th>
+            <th style="width:100px">Código</th>
+            <th>Contratante</th>
+            <th>Contratada</th>
+            <th>Serviço</th>
+            <th style="width:70px">PDF</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    for (const row of rows){
+      const dt   = pick(row, ['created_at','data','Data','timestamp']);
+      const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
+      const obra = pick(row, ['obra','enderecoObra','Endereço da obra','ENDEREÇO DA OBRA','ENDERECO_OBRA']);
+      const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição']);
+      const cttN = pick(row, ['contratante_nome','contratante','Contratante','CONTRATANTE']);
+      const cttD = pick(row, ['contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj','CNPJ CONTRATANTE']);
+      const ctaN = pick(row, ['contratada_nome','contratada','Contratada','CONTRATADA']);
+      const ctaD = pick(row, ['contratada_doc','contratada_cnpj','CNPJ CONTRATADA']);
+      const href = pdfHrefFromRow(row);
+      html += `
+        <tr>
+          <td>${fmtDate(dt) || '—'}</td>
+          <td>${cod || '—'}</td>
+          <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
+          <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
+          <td>${serv || '—'}</td>
+          <td>${href !== '#' ? `<a class="link" href="${href}" target="_blank" rel="noopener noreferrer">abrir</a>` : '—'}</td>
+        </tr>
+      `;
+    }
+    html += `</tbody></table>`;
+    out.innerHTML = html;
+  }
+
+  // Eventos + init
+  btnBuscar.addEventListener('click', buscar);
+  inpCodigo.addEventListener('keydown', (e)=>{ if(e.key==='Enter') buscar(); });
+  inpToken.addEventListener('keydown',  (e)=>{ if(e.key==='Enter') buscar(); });
+  detectEndpoint();
+</script>
+
 </body>
 </html>
