@@ -62,7 +62,7 @@
     const API_BASE   = 'https://api.erpimpar.com.br';
     const ENDPOINT   = `${API_BASE}/gerador`;
     const LIST_URL   = `${ENDPOINT}/list.php`;
-    const PDF_PROXY  = `${ENDPOINT}/pdf.php`; // <- abre o PDF pelo proxy (sem 404)
+    const PDF_PROXY  = `${ENDPOINT}/pdf.php`; // abre o PDF pelo proxy (sem 404)
     const LS_TOKEN   = 'impar_api_token';
 
     // ========= UI =========
@@ -77,7 +77,7 @@
     // Carrega token salvo
     inpToken.value = localStorage.getItem(LS_TOKEN) || '';
 
-    // Detecta endpoint / status
+    // Detecta endpoint / status (usa ping.php)
     async function detectEndpoint(){
       inpEndpt.value = `${ENDPOINT}/`;
       try{
@@ -94,35 +94,28 @@
       badge.className = 'status ' + (ok ? 'ok' : 'bad');
     }
 
-    // Formata data
+    // Formata data (campo "data" do CSV)
     function fmtDate(s){
       if(!s) return '—';
       try{
-        const d = new Date(s);
-        return d.toLocaleString('pt-BR');
+        if (/^\d{4}-\d{2}-\d{2} /.test(s)) return new Date(s.replace(' ', 'T')+'Z').toLocaleString('pt-BR');
+        return new Date(s).toLocaleString('pt-BR');
       }catch(e){ return s; }
     }
 
-    // Constrói o HREF do PDF usando o NOME do arquivo (sem caminho)
+    // Constrói o HREF do PDF usando o nome do arquivo
     function resolvePdfHref(row){
-   // pega o que vier
-    const raw = (row.pdf_file || row.pdf_url || '').trim();
-    if (!raw) return '#';
-
-    // extrai APENAS o nome, removendo caminho/host/query se existirem
-    let fname = raw
-      .replace(/^https?:\/\/[^/]+/i, '') // remove domínio se vier URL
-      .replace(/\?.*$/, '')               // remove query (?...)
-      .split('/')                         // quebra por /
-      .filter(Boolean)                    // tira strings vazias
-      .pop();                             // pega o último segmento (arquivo)
-
-    // sanity check
-    if (!fname.toLowerCase().endsWith('.pdf')) return '#';
-
-    // chama o proxy (pdf.php) SEM caminho
-    return `${PDF_PROXY}?f=${encodeURIComponent(fname)}`;
-   }
+      const raw = (row.pdf || row.pdfUrl || '').toString().trim();
+      if (!raw) return '#';
+      let fname = raw
+        .replace(/^https?:\/\/[^/]+/i, '')
+        .replace(/\?.*$/, '')
+        .split('/')
+        .filter(Boolean)
+        .pop();
+      if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
+      return `${PDF_PROXY}?f=${encodeURIComponent(fname)}`;
+    }
 
     // Busca na API
     async function buscar(){
@@ -143,15 +136,20 @@
       try{
         const r = await fetch(url, {
           headers: { 'Authorization': 'Bearer ' + token },
-          cache: 'no-store'
+          cache: 'no-store',
         });
+        if (!r.ok) {
+          setBadge('Erro na consulta', false);
+          out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
+          return;
+        }
         const j = await r.json();
         if (!j || !j.ok) {
           setBadge('Falha na consulta', false);
           out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
           return;
         }
-        renderRows(j.rows || []);
+        renderRows(j.rows || j.items || []);
         setBadge('OK', true);
       }catch(e){
         setBadge('Erro na consulta', false);
@@ -159,7 +157,7 @@
       }
     }
 
-    // Renderiza tabela
+    // Renderiza tabela (mapeando os nomes do CSV)
     function renderRows(rows){
       if(!rows.length){
         out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
@@ -181,20 +179,20 @@
       `;
       for (const row of rows){
         const contratante = `
-          <div>${row.contratante_nome||'—'}</div>
-          <small>${row.contratante_doc||''}</small>
+          <div>${row.ctt_nome || '—'}</div>
+          <small>${row.ctt_cpfCnpj || ''}</small>
         `;
         const contratada = `
-          <div>${row.contratada_nome||'—'}</div>
-          <small>${row.contratada_doc||''}</small>
+          <div>${row.cta_nome || '—'}</div>
+          <small>${row.cta_cpfCnpj || ''}</small>
         `;
         html += `
           <tr>
-            <td>${fmtDate(row.created_at)}</td>
-            <td>${row.codigo||'—'}</td>
+            <td>${fmtDate(row.data)}</td>
+            <td>${row.codigo || '—'}</td>
             <td>${contratante}</td>
             <td>${contratada}</td>
-            <td>${row.servico||'—'}</td>
+            <td>${row.servico || '—'}</td>
             <td><a class="link" href="${resolvePdfHref(row)}" target="_blank" rel="noopener">abrir</a></td>
           </tr>
         `;
