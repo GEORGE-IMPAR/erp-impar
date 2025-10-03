@@ -58,175 +58,31 @@
   </div>
 
 <script>
-  
-    // ========= CONFIG =========
-    const API_BASE   = 'https://api.erpimpar.com.br';
-    const ENDPOINT   = `${API_BASE}/gerador`;
-    const LIST_URL   = `${ENDPOINT}/list.php`;
-    const PDF_PROXY  = `${ENDPOINT}/pdf.php`; // abre o PDF pelo proxy (sem 404)
-    const LS_TOKEN   = 'impar_api_token';
-
-    // ========= UI =========
-    const $ = (s) => document.querySelector(s);
-    const inpCodigo  = $('#codigo');
-    const inpToken   = $('#token');
-    const badge      = $('#status');
-    const btnBuscar  = $('#buscar');
-    const out        = $('#resultado');
-    const inpEndpt   = $('#endpoint');
-
-    // Carrega token salvo
-    inpToken.value = localStorage.getItem(LS_TOKEN) || '';
-
-    // Detecta endpoint / status (usa ping.php)
-    async function detectEndpoint(){
-      inpEndpt.value = `${ENDPOINT}/`;
-      try{
-        const r = await fetch(`${ENDPOINT}/ping.php`, { cache:'no-store' });
-        const j = await r.json().catch(()=> ({}));
-        if (j && j.ok) setBadge('OK', true);
-        else setBadge('Falha ao detectar endpoint', false);
-      }catch(e){
-        setBadge('Falha ao detectar endpoint', false);
-      }
-    }
-    function setBadge(txt, ok){
-      badge.textContent = txt;
-      badge.className = 'status ' + (ok ? 'ok' : 'bad');
-    }
-
-    // Formata data (campo "data" do CSV)
-    function fmtDate(s){
-      if(!s) return '—';
-      try{
-        if (/^\d{4}-\d{2}-\d{2} /.test(s)) return new Date(s.replace(' ', 'T')+'Z').toLocaleString('pt-BR');
-        return new Date(s).toLocaleString('pt-BR');
-      }catch(e){ return s; }
-    }
-
-    // Constrói o HREF do PDF usando o nome do arquivo
-    function resolvePdfHref(row){
-      const raw = (row.pdf || row.pdfUrl || '').toString().trim();
-      if (!raw) return '#';
-      let fname = raw
-        .replace(/^https?:\/\/[^/]+/i, '')
-        .replace(/\?.*$/, '')
-        .split('/')
-        .filter(Boolean)
-        .pop();
-      if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
-      return `${PDF_PROXY}?f=${encodeURIComponent(fname)}`;
-    }
-
-    // Busca na API
-    async function buscar(){
-      const token = (inpToken.value || '').trim();
-      if(!token){
-        setBadge('Informe o token', false);
-        return;
-      }
-      localStorage.setItem(LS_TOKEN, token);
-
-      // monta URL (código opcional)
-      const codigo = (inpCodigo.value || '').trim();
-      const url = codigo
-        ? `${LIST_URL}?codigo=${encodeURIComponent(codigo)}`
-        : LIST_URL;
-
-      setBadge('Buscando…', true);
-      try{
-        const r = await fetch(url, {
-          headers: { 'Authorization': 'Bearer ' + token },
-          cache: 'no-store',
-        });
-        if (!r.ok) {
-          setBadge('Erro na consulta', false);
-          out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
-          return;
-        }
-        const j = await r.json();
-        if (!j || !j.ok) {
-          setBadge('Falha na consulta', false);
-          out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
-          return;
-        }
-        renderRows(j.rows || j.items || []);
-        setBadge('OK', true);
-      }catch(e){
-        setBadge('Erro na consulta', false);
-        out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
-      }
-    }
-
-    // Renderiza tabela (mapeando os nomes do CSV)
-    function renderRows(rows){
-      if(!rows.length){
-        out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
-        return;
-      }
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th style="width:140px">Data</th>
-              <th style="width:100px">Código</th>
-              <th>Contratante</th>
-              <th>Contratada</th>
-              <th>Serviço</th>
-              <th style="width:70px">PDF</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      for (const row of rows){
-        const contratante = `
-          <div>${row.ctt_nome || '—'}</div>
-          <small>${row.ctt_cpfCnpj || ''}</small>
-        `;
-        const contratada = `
-          <div>${row.cta_nome || '—'}</div>
-          <small>${row.cta_cpfCnpj || ''}</small>
-        `;
-        html += `
-          <tr>
-            <td>${fmtDate(row.data)}</td>
-            <td>${row.codigo || '—'}</td>
-            <td>${contratante}</td>
-            <td>${contratada}</td>
-            <td>${row.servico || '—'}</td>
-            <td><a class="link" href="${resolvePdfHref(row)}" target="_blank" rel="noopener">abrir</a></td>
-          </tr>
-        `;
-      }
-      html += `</tbody></table>`;
-      out.innerHTML = html;
-    }
-
-    // Eventos
-    btnBuscar.addEventListener('click', buscar);
-    inpCodigo.addEventListener('keydown', (e)=>{ if(e.key==='Enter') buscar(); });
-    inpToken.addEventListener('keydown',  (e)=>{ if(e.key==='Enter') buscar(); });
-
-    // Init
-    detectEndpoint();
-
   // ===== CONFIG =====
   const API_BASE  = 'https://api.erpimpar.com.br';
   const ENDPOINT  = `${API_BASE}/gerador`;
   const LIST_URL  = `${ENDPOINT}/list.php`;
-  const PDF_PROXY = `${ENDPOINT}/pdf.php`; // sempre absoluto p/ evitar abrir a própria página
+  const PDF_PROXY = `${ENDPOINT}/pdf.php`; // abre PDF via proxy (evita 404)
+
+  const LS_TOKEN  = 'impar_api_token';
 
   // ===== UI/refs =====
-  const $ = (s)=>document.querySelector(s);
-  const inpCodigo = $('#codigo');
-  const inpToken  = $('#token');
-  const btnBuscar = $('#buscar');
-  const badge     = $('#status');
-  const out       = $('#resultado');
-  const inpEndpt  = $('#endpoint');
+  const $        = (s)=>document.querySelector(s);
+  const inpCodigo= $('#codigo');
+  const inpToken = $('#token');
+  const btnBuscar= $('#buscar');
+  const badge    = $('#status');
+  const out      = $('#resultado');
+  const inpEndpt = $('#endpoint');
+
+  // token salvo
+  inpToken.value = localStorage.getItem(LS_TOKEN) || '';
 
   // ===== Helpers =====
-  function setBadge(txt, ok){ badge.textContent = txt; badge.className = 'status ' + (ok?'ok':'bad'); }
+  function setBadge(txt, ok){
+    badge.textContent = txt;
+    badge.className = 'status ' + (ok ? 'ok' : 'bad');
+  }
   function pick(o, keys){
     for (const k of keys){
       if (o && o[k] !== undefined && o[k] !== null) {
@@ -238,7 +94,11 @@
   }
   function fmtDate(s){
     if(!s) return '—';
-    try{ return new Date(s).toLocaleString('pt-BR'); }catch(_){ return s; }
+    try{
+      // tenta normalizar "YYYY-MM-DD HH:mm:ss"
+      if (/^\d{4}-\d{2}-\d{2} /.test(s)) return new Date(s.replace(' ','T')+'Z').toLocaleString('pt-BR');
+      return new Date(s).toLocaleString('pt-BR');
+    }catch(_){ return s; }
   }
   function pdfHrefFromRow(row){
     const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
@@ -258,16 +118,18 @@
       const r = await fetch(`${ENDPOINT}/ping.php`, { cache:'no-store' });
       const j = await r.json().catch(()=> ({}));
       setBadge(j && j.ok ? 'OK' : 'Falha ao detectar endpoint', !!(j && j.ok));
-    }catch(_){ setBadge('Falha ao detectar endpoint', false); }
+    }catch(_){
+      setBadge('Falha ao detectar endpoint', false);
+    }
   }
-
 
   // ===== Consulta =====
   async function buscar(){
     const token = (inpToken.value || '').trim();
     if(!token){ setBadge('Informe o token', false); return; }
+    localStorage.setItem(LS_TOKEN, token);
 
-    // monta URL SEM header Authorization (evita preflight/CORS)
+    // passa o token no query string (evita preflight/CORS)
     const qs  = new URLSearchParams();
     qs.set('token', token);
     const codigo = (inpCodigo.value || '').trim();
@@ -308,12 +170,11 @@
     for (const row of rows){
       const dt   = pick(row, ['created_at','data','Data','timestamp']);
       const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
-      const obra = pick(row, ['obra','enderecoObra','Endereço da obra','ENDEREÇO DA OBRA','ENDERECO_OBRA']);
       const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição']);
-      const cttN = pick(row, ['contratante_nome','contratante','Contratante','CONTRATANTE']);
-      const cttD = pick(row, ['contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj','CNPJ CONTRATANTE']);
-      const ctaN = pick(row, ['contratada_nome','contratada','Contratada','CONTRATADA']);
-      const ctaD = pick(row, ['contratada_doc','contratada_cnpj','CNPJ CONTRATADA']);
+      const cttN = pick(row, ['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE']);
+      const cttD = pick(row, ['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']);
+      const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']);
+      const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
       const href = pdfHrefFromRow(row);
       html += `
         <tr>
