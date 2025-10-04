@@ -504,96 +504,93 @@ async function finalizeStep5(){ const blob = await createPdfBlob(); await saveDo
 function closeSuccess(){ document.getElementById('successModal').style.display='none'; }
 async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob(); openViewerWithBlob(blob); }
 
-<script>
-  // ...código anterior...
+// ...código anterior...
 
-  async function saveDocumentWithPdf(pdfBlob){
-    try{
-      // Config do patch
-      const patch      = (window.__ERP_SAVE_PATCH__ || {});
-      const SAVE_URL   = patch.SAVE_URL || 'https://api.erpimpar.com.br/gerador/save.php';
-      const SAVE_TOKEN = patch.SAVE_TOKEN || '';
+async function saveDocumentWithPdf(pdfBlob){
+  try{
+    // usa as configs do patch
+    const patch      = (window.__ERP_SAVE_PATCH__ || {});
+    const SAVE_URL   = patch.SAVE_URL || 'https://api.erpimpar.com.br/gerador/save.php';
+    const SAVE_TOKEN = patch.SAVE_TOKEN || '';
 
-      // Coleta dos dados (mantido como estava)
-      const get = (id) => (document.getElementById(id)?.value || '').trim();
-      const joinAddr = (p) => {
-        const log = document.getElementById('logradouro'+p).value || '';
-        const num = document.getElementById('numero'+p).value || '';
-        const comp= document.getElementById('complemento'+p).value || '';
-        const bai = document.getElementById('bairro'+p).value || '';
-        const cid = document.getElementById('cidade'+p).value || '';
-        const uf  = document.getElementById('uf'+p).value || '';
-        const cep = document.getElementById('cep'+p).value || '';
-        return `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}`;
-      };
-      const u = JSON.parse(localStorage.getItem('impar_user') || 'null') || {};
+    const get = (id) => (document.getElementById(id)?.value || '').trim();
+    const joinAddr = (p) => {
+      const log = document.getElementById('logradouro'+p).value || '';
+      const num = document.getElementById('numero'+p).value || '';
+      const comp= document.getElementById('complemento'+p).value || '';
+      const bai = document.getElementById('bairro'+p).value || '';
+      const cid = document.getElementById('cidade'+p).value || '';
+      const uf  = document.getElementById('uf'+p).value || '';
+      const cep = document.getElementById('cep'+p).value || '';
+      return `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}`;
+    };
+    const u = JSON.parse(localStorage.getItem('impar_user') || 'null') || {};
 
-      const dados = {
-        codigo:       get('codigo'),
-        servico:      get('servico'),
-        enderecoObra: get('endereco'),
-        valor:        get('valor'),
-        valorExtenso: get('valorExtenso'),
-        prazo:        get('prazo'),
-        dataExtenso:  get('dataExtenso'),
-        clausulas:    get('clausulas'),
-        condicoes:    get('condicoes'),
-        clausulas_texto:     get('clausulas'),
-        condicoes_pagamento: get('condicoes'),
-        contratante: {
-          nome:     get('nomeContratante'),
-          cpfCnpj:  get('docContratante'),
-          endereco: joinAddr('Contratante'),
-          contato:  get('contatoContratante'),
-          telefone: get('telefoneContratante'),
-          email:    get('emailContratante')
-        },
-        contratada: {
-          nome:     get('nomeContratada'),
-          cpfCnpj:  get('docContratada'),
-          endereco: joinAddr('Contratada'),
-          contato:  get('contatoContratada'),
-          telefone: get('telefoneContratada'),
-          email:    get('emailContratada')
-        },
-        operador: { nome: u.Nome || '', email: u.Email || '' }
-      };
+    const dados = {
+      codigo:       get('codigo'),
+      servico:      get('servico'),
+      enderecoObra: get('endereco'),
+      valor:        get('valor'),
+      valorExtenso: get('valorExtenso'),
+      prazo:        get('prazo'),
+      dataExtenso:  get('dataExtenso'),
+      clausulas:    get('clausulas'),
+      condicoes:    get('condicoes'),
+      // espelhos para compatibilidade
+      clausulas_texto:     get('clausulas'),
+      condicoes_pagamento: get('condicoes'),
+      contratante: {
+        nome:     get('nomeContratante'),
+        cpfCnpj:  get('docContratante'),
+        endereco: joinAddr('Contratante'),
+        contato:  get('contatoContratante'),
+        telefone: get('telefoneContratante'),
+        email:    get('emailContratante')
+      },
+      contratada: {
+        nome:     get('nomeContratada'),
+        cpfCnpj:  get('docContratada'),
+        endereco: joinAddr('Contratada'),
+        contato:  get('contatoContratada'),
+        telefone: get('telefoneContratada'),
+        email:    get('emailContratada')
+      },
+      operador: { nome: u.Nome || '', email: u.Email || '' }
+    };
 
-      // Nome do PDF
-      const ymd     = (new Date()).toISOString().slice(0,10).replace(/-/g,'');
-      const code    = (dados.codigo || 'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
-      const pdfName = `${code}_${ymd}.pdf`;
+    // nome do arquivo
+    const ymd  = (new Date()).toISOString().slice(0,10).replace(/-/g,'');
+    const code = (dados.codigo || 'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
+    const pdfName = `${code}_${ymd}.pdf`;
 
-      // 🔒 Evita duplicação: NÃO faz fetch aqui.
-      // Usa o patch centralizado (erp_save_patch_flatfile.js)
-      if (typeof window.saveWithLogo === 'function') {
-        // O saveWithLogo já monta o FormData com token, dados e pdf
-        return await window.saveWithLogo(pdfBlob, pdfName);
-      }
-
-      // Fallback (só se o patch não estiver carregado)
-      const fd = new FormData();
-      if (SAVE_TOKEN) {
-        fd.append('token', SAVE_TOKEN);
-      }
-      fd.append('dados', JSON.stringify(dados));
-      fd.append('pdf', new File([pdfBlob], pdfName, { type:'application/pdf' }), pdfName);
-      const headers = {};
-      if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
-      const rsp = await fetch(SAVE_URL, { method:'POST', headers, body: fd, mode:'cors' });
-      if (!rsp.ok) throw new Error('save_failed_'+rsp.status);
-      return await rsp.json().catch(()=>({ok:true}));
-
-    } catch (e) {
-      console.warn('saveDocumentWithPdf error', e);
-      showToast('Erro inesperado ao salvar.');
-      return { ok:false, error:String(e) };
+    // 👉 salvamento ÚNICO pelo patch (sem duplicar)
+    if (typeof window.saveWithLogo === 'function') {
+      return await window.saveWithLogo(pdfBlob, pdfName);
     }
-  }
 
-  // ...código seguinte (consulta, etc.)...
-</script>
-<script>
+    // fallback (só se o patch não estiver disponível)
+    const fd = new FormData();
+    if (SAVE_TOKEN) {
+      fd.append('token', SAVE_TOKEN);
+    }
+    fd.append('dados', JSON.stringify(dados));                // como STRING
+    fd.append('pdf', new File([pdfBlob], pdfName, {type:'application/pdf'}), pdfName);
+
+    const headers = {};
+    if (SAVE_TOKEN) headers['Authorization'] = 'Bearer ' + SAVE_TOKEN;
+
+    const rsp = await fetch(SAVE_URL, { method:'POST', headers, body: fd, mode:'cors' });
+    const txt = await rsp.text(); try { console.log('save.php ->', rsp.status, txt); } catch(_) {}
+    if (!rsp.ok) showToast('Falha ao salvar ('+rsp.status+'). Verifique o token/servidor.');
+
+    return { ok:rsp.ok, raw:txt };
+  } catch (e) {
+    console.warn('saveDocumentWithPdf error', e);
+    showToast('Erro inesperado ao salvar.');
+    return { ok:false, error:String(e) };
+  }
+}
+
 /* ===== Consulta ===== */
 const LOGIN_URL='/login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
