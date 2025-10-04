@@ -325,43 +325,6 @@ window.__CONSULTA_CFG__ = {
           <div style="font-size:12px;color:#64748b;margin-bottom:6px">Código (opcional)</div>
           <input id="consCodigo" class="input" placeholder="Ex.: AC00025">
           <div class="hint">Digite o código do projeto.</p>
-<div id="pdfPathConfig" class="row" style="margin:8px 0;">
-  <label style="font-size:12px;color:#6b7280;margin-right:8px;">Caminho de PDF:</label>
-  <select id="pdfPathSelect" class="input" style="max-width:260px;">
-    <option value="">(auto)</option>
-    <option value="/pdf/">/pdf/</option>
-    <option value="/uploads/pdf/">/uploads/pdf/</option>
-    <option value="/pdfs/">/pdfs/</option>
-    <option value="/documentos/pdf/">/documentos/pdf/</option>
-  </select>
-  <button class="btn" id="pdfSavePathBtn" style="margin-left:6px;">OK</button>
-  <span id="pdfPathSaved" style="margin-left:8px;font-size:12px;color:#16a34a;display:none;">ok</span>
-</div>
-<script>
-document.addEventListener('DOMContentLoaded', ()=>{
-  const sel = document.getElementById('pdfPathSelect');
-  const saved = localStorage.getItem('CONSULTA_PDF_PATH');
-  if (saved){
-    // mostrar apenas o path, não a url completa
-    const path = saved.replace(/^https?:\/\/[^/]+/, '');
-    sel.value = path;
-  }
-  document.getElementById('pdfSavePathBtn').onclick = ()=>{
-    const apiBase = getApiBaseFromPatch();
-    const base = apiBase ? apiBase.replace(/\/+$/,'') : '';
-    const val = sel.value;
-    if (val){
-      const path = val.startsWith('/') ? val : ('/' + val);
-      localStorage.setItem('CONSULTA_PDF_PATH', path);
-    } else {
-      localStorage.removeItem('CONSULTA_PDF_PATH');
-    }
-    const ok = document.getElementById('pdfPathSaved');
-    ok.style.display = 'inline';
-    setTimeout(()=> ok.style.display='none', 1200);
-  };
-});
-</script>
 <p></div>
         </div>
         <button class="btn primary" id="btnBuscar">Buscar</button>
@@ -824,41 +787,24 @@ function getApiBaseFromPatch(){
   return listUrl.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
 }
 
+
 async function openPdfSmart(row){
   const file = row.pdf || row.pdf_file || '';
-  // 1) URL pronta
   if (row.pdf_url || row.PDF_URL){
     window.open(row.pdf_url || row.PDF_URL, '_blank', 'noopener');
     return;
   }
-  // 2) Monta candidatos a partir do endpoint + caminhos
   const apiBase = getApiBaseFromPatch();
   if (!apiBase || !file){
     alert('PDF não disponível para este registro.');
     return;
   }
   const base = apiBase.replace(/\/+$/,'');
+  const candidates = [
+    base + '/pdf/' + encodeURIComponent(file),
+    base + '/pdf.php?f=' + encodeURIComponent(file)
+  ];
 
-  // Caminho escolhido (somente PATH, ex: /pdf/). Se estiver salvo com host, reduz para path.
-  let saved = localStorage.getItem('CONSULTA_PDF_PATH') || '';
-  if (/^https?:\/\//i.test(saved)) {
-    try { saved = new URL(saved).pathname || ''; } catch(e){ saved=''; }
-  }
-  const userPath = saved;
-
-  const paths = [];
-  if (userPath) paths.push(userPath);
-  (window.__CONSULTA_CFG__?.PDF_PATH_CANDIDATES || ['/pdf/']).forEach(p=> paths.push(p));
-
-  const candidates = [];
-  for (const p of paths){
-    const path = p.startsWith('/') ? p : ('/' + p);
-    const clean = path.replace(/\/+$/, '');
-    candidates.push(base + clean + '/' + encodeURIComponent(file));
-    candidates.push(base + clean + '.php?f=' + encodeURIComponent(file));
-  }
-
-  // 3) Testa sequencialmente com HEAD. Se 200 abre; se 405 (HEAD não permitido), abre mesmo assim.
   for (const url of candidates){
     try{
       const r = await fetch(url, { method:'HEAD', mode:'cors' });
@@ -866,13 +812,11 @@ async function openPdfSmart(row){
         window.open(url, '_blank', 'noopener');
         return;
       }
-    }catch(e){
-      // ignora e tenta o próximo
-    }
+    }catch(e){}
   }
-  // 4) Fallback: abre o primeiro candidato (pode resultar em 404 se nenhum caminho existir)
   window.open(candidates[0], '_blank', 'noopener');
 }
+
 
 
 
@@ -918,17 +862,24 @@ function pickByKeys(obj, keysLike){
   return '';
 }
 
+
 function getContratanteFromRow(row){
-  return pickByKeys(row, [
+  const val = pickByKeys(row, [
     'contratante_nome','CONTRATANTE_NOME','contratante','CONTRATANTE','cliente','CLIENTE',
     'razao_contratante','razaoSocialContratante','razao_social_contratante','contratante_razao'
-  ]) || '-';
+  ]);
+  if (val) return val;
+  console.debug('[consulta] CONTRATANTE não identificado. Chaves disponíveis:', Object.keys(row));
+  return '-';
 }
 function getContratadaFromRow(row){
-  return pickByKeys(row, [
+  const val = pickByKeys(row, [
     'contratada_nome','CONTRATADA_NOME','contratada','CONTRATADA','fornecedor','FORNECEDOR',
     'razao_contratada','razaoSocialContratada','razao_social_contratada','contratada_razao','impar'
-  ]) || '-';
+  ]);
+  if (val) return val;
+  console.debug('[consulta] CONTRATADA não identificada. Chaves disponíveis:', Object.keys(row));
+  return '-';
 }
 
 function renderRows(tbodyId, rows){
@@ -1149,7 +1100,8 @@ async function proceedFromStep1(codigo){
     const j    = await fetchConsulta(codigo);     // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
     if(rows.length === 0){ goTo(2); return; }
-    openDupeModal(rows[0]);
+    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
+    if (exact) { openDupeModal(exact); } else { goTo(2); }
   }catch(e){
     console.error(e);
     goTo(2);
@@ -1168,7 +1120,7 @@ function closeDupeModal(){ document.getElementById('dupeModal').style.display='n
 document.getElementById('btnDupCancel').onclick = () => { closeDupeModal(); };
 document.getElementById('btnDupPrint').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
-  window.open(pdfHrefFromRow(__dupeRow), '_blank'); closeDupeModal();
+  openPdfSmart(__dupeRow); closeDupeModal();
 };
 document.getElementById('btnDupUpdate').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
