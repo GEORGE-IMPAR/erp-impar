@@ -505,10 +505,15 @@ async function visualizarPdf(){ closeSuccess(); const blob = await createPdfBlob
 
 // ...código anterior...
 
+// === SUBSTITUA sua função por esta ===
 async function saveDocumentWithPdf(pdfBlob){
-  // trava anti-duplicação
-  if (__savingNow) { console.warn('[index] salvamento já em andamento'); return; }
-  __savingNow = true;
+  // trava anti-duplicação (use SEM let/const, sempre via window)
+  if (window.__savingNow === true) {
+    console.warn('[index] salvamento já em andamento');
+    return { ok:false, reason:'locked' };
+  }
+  window.__savingNow = true;
+
   try{
     // usa as configs do patch
     const patch      = (window.__ERP_SAVE_PATCH__ || {});
@@ -565,25 +570,23 @@ async function saveDocumentWithPdf(pdfBlob){
     const code = (dados.codigo || 'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
     const pdfName = `${code}_${ymd}.pdf`;
 
-    // >>> CHAMADA ÚNICA: usa o patch E PASSA "dados"
+    // chamada ÚNICA: usa o patch e PASSA "dados"
     if (typeof window.saveWithLogo === 'function') {
-      console.log('[index] enviando dados para patch:', dados);
+      console.log('[index] enviando p/ patch:', dados);
       return await window.saveWithLogo(pdfBlob, pdfName, dados);
     }
 
-    // Sem patch? não faz fallback (para não duplicar)
-    console.warn('[index] Patch ausente — salvamento pulado (sem fallback para evitar duplicação).');
-    return { ok:false, reason:'no_patch' };
+    console.warn('[index] Patch ausente — sem fallback para evitar duplicação.');
+    return { ok:false, reason:'no-patch' };
 
   } catch (e) {
     console.warn('saveDocumentWithPdf error', e);
     showToast('Erro inesperado ao salvar.');
     return { ok:false, error:String(e) };
   } finally {
-    __savingNow = false;  // importante: NÃO colocar "let" aqui
+    window.__savingNow = false;
   }
 }
-
 
 /* ===== Consulta ===== */
 const LOGIN_URL='/login_doc.html';
