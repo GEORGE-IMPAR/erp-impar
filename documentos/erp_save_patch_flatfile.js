@@ -1,10 +1,12 @@
 // /documentos/erp_save_patch_flatfile.js
 (function(){
+  // === CONFIG DO PATCH ===
   const SAVE_URL   = 'https://api.erpimpar.com.br/gerador/save.php';
   const LIST_URL   = 'https://api.erpimpar.com.br/gerador/list.php';
   const SAVE_TOKEN = '8cce9abb2fd53b1cceaa93b9cecfd5384b2ea6fb931e8882c543cbd7d3663b77';
   window.__ERP_SAVE_PATCH__ = { SAVE_URL, LIST_URL, SAVE_TOKEN };
 
+  // === UI helper (stepper) — opcional, já existia ===
   (function () {
     function findSteps() {
       const steps = [];
@@ -31,6 +33,7 @@
     document.addEventListener('DOMContentLoaded', ()=>{ try{ window.updateStepper(1); }catch(_){} });
   })();
 
+  // === Normalizações / utilitários já usados ===
   function normalizeDados(d){
     const out = Object.assign({}, d || {});
     const clausulas = (out.clausulas ?? '').toString();
@@ -50,18 +53,15 @@
     }
     return out;
   }
-
   async function parseJsonSafe(resp){
     const raw = await resp.text();
     try{ return JSON.parse(raw); }catch(_){ return { ok:false, raw, status: resp.status }; }
   }
-
   function uniquePdfName(prefix){
     const d = new Date();
     const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
     return `${(prefix||'DOC').replace(/[^a-zA-Z0-9-_]/g,'_')}_${y}${m}${day}.pdf`;
   }
-
   async function checkCodigoDuplicado(codigo){
     const params = new URLSearchParams({ token: SAVE_TOKEN, limit: '500' });
     if (codigo) params.set('codigo', codigo);
@@ -71,39 +71,76 @@
     return (j && (j.items || j.rows || j.itens || j.linhas)) || [];
   }
 
-  let __savingNowPatch = false;
+  // === Anti-duplicação (cliente) ===
+  const DEDUPE_WINDOW_MS = 15000; // 15s
+  let __patchSaving = false;
+  function makeSignature(dados, pdfName){
+    const d = dados || {};
+    return [
+      (d.codigo || '').trim(),
+      (pdfName || '').trim(),
+      (d.valor || '').trim(),
+      (d.prazo || '').toString().trim(),
+    ].join('|');
+  }
+  function shouldSkipDuplicate(signature){
+    try{
+      const lastSig = localStorage.getItem('impar_last_save_sig') || '';
+      const lastTs  = parseInt(localStorage.getItem('impar_last_save_ts')||'0',10) || 0;
+      const now     = Date.now();
+      if (signature && lastSig === signature && (now - lastTs) < DEDUPE_WINDOW_MS){
+        console.warn('[patch] requisição repetida (<15s) — ignorada');
+        return true;
+      }
+      localStorage.setItem('impar_last_save_sig', signature || '');
+      localStorage.setItem('impar_last_save_ts', String(now));
+    }catch(_){}
+    return false;
+  }
 
-// === Anti-duplicação (cliente) ===
-const DEDUPE_WINDOW_MS = 15000; // 15s
-let __patchSaving = false;
-
-function makeSignature(dados, pdfName){
-  const d = dados || {};
-  return [
-    (d.codigo || '').trim(),
-    (pdfName || '').trim(),
-    (d.valor || '').trim(),
-    (d.prazo || '').toString().trim(),
-  ].join('|');
-}
-function shouldSkipDuplicate(signature){
-  try{
-    const lastSig = localStorage.getItem('impar_last_save_sig') || '';
-    const lastTs  = parseInt(localStorage.getItem('impar_last_save_ts')||'0',10) || 0;
-    const now     = Date.now();
-    if (signature && lastSig === signature && (now - lastTs) < DEDUPE_WINDOW_MS){
-      console.warn('[patch] requisição repetida (<15s) — ignorada');
-      return true;
+  // === SAVE principal (exportado no window) ===
+  async function saveWithLogo(pdfBlob, pdfName, dadosFromIndex){
+    if (__patchSaving){
+      console.warn('[patch] salvamento já em andamento — ignorado');
+      return { ok:true, skipped:true, reason:'already_saving' };
     }
-    localStorage.setItem('impar_last_save_sig', signature || '');
-    localStorage.setItem('impar_last_save_ts', String(now));
-  }catch(_){}
-  return false;
-}
 
+    const raw   = dadosFromIndex || (typeof window.collectFormData === 'function' ? window.collectFormData() : {});
+    const dados = normalizeDados(raw);
+    const safeName  = pdfName || uniquePdfName(dados.codigo || 'DOC');
+    const signature = makeSignature(dados, safeName);
+    if (shouldSkipDuplicate(signature)){
+      return { ok:true, duplicate:true, skipped:true };
+    }
+
+    __patchSaving = true;
+    try{
+      const fd = new FormData();
+      fd.append('pdf',   new File([pdfBlob], safeName, {type:'application/pdf'}));
+      fd.append('dados', JSON.stringify(dados));  // STRING (correto)
+      fd.append('token', SAVE_TOKEN);
+
+      const logo = document.getElementById('logo')?.files?.[0];
+      if (logo) fd.append('logo', logo, logo.name);
+
+      const resp = await fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + SAVE_TOKEN },
+        body: fd
+      });
+      const out = await parseJsonSafe(resp);
+      try{ console.log('[patch] save.php ->', resp.status, out); }catch(_){}
+      return out;
+    } finally {
+      setTimeout(()=>{ __patchSaving = false; }, 300);
+    }
+  }
+
+  // === Exports ===
   window.saveWithLogo = saveWithLogo;
   window.checkCodigoDuplicado = checkCodigoDuplicado;
 
+  // === Pequenas integrações existentes ===
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.topbar .btn, #btnFecharTopo')
       .forEach(btn => {
@@ -116,11 +153,5 @@ function shouldSkipDuplicate(signature){
           });
         }
       });
-
-    const btnBusca = document.querySelector('#btnPesquisarDocs') ||
-      Array.from(document.querySelectorAll('button')).find(b => /pesquisar\s+documentos\s+cadastrados/i.test(b.textContent||''));
-    if (btnBusca && typeof window.abrirConsulta === 'function') {
-      btnBusca.addEventListener('click', (e)=>{ e.preventDefault(); window.abrirConsulta(); });
-    }
   });
 })();
