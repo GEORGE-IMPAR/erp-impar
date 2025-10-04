@@ -73,24 +73,37 @@
 
   let __savingNowPatch = false;
 
+// ===== dentro de erp_save_patch_flatfile.js =====
 async function saveWithLogo(pdfBlob, pdfName, dadosFromCaller){
-  if (__savingNowPatch) {
-    console.warn('[patch] salvamento já em andamento');
+  // --- travas anti-duplicação no PATCH ---
+  window.__savingNowPatch = window.__savingNowPatch || false;
+  window.__lastSaveKey    = window.__lastSaveKey    || null;
+  window.__lastSaveTs     = window.__lastSaveTs     || 0;
+
+  // normaliza dados (usa os que vieram do index)
+  const raw   = dadosFromCaller || (typeof window.collectFormData === 'function' ? window.collectFormData() : {});
+  const dados = normalizeDados(raw);
+
+  // chave idempotente (mesmo pdfName + mesmos dados em <10s => ignora)
+  const key = JSON.stringify({ pdfName, dados });
+  const now = Date.now();
+  if (window.__savingNowPatch) {
+    console.warn('[patch] já salvando — ignorado');
     return { ok:false, reason:'locked' };
   }
-  __savingNowPatch = true;
-  try {
-    // Recebe dados do index; se vierem ausentes, tenta coletar (retrocompatibilidade)
-    const raw   = (dadosFromCaller && typeof dadosFromCaller === 'object')
-      ? dadosFromCaller
-      : (typeof window.collectFormData === 'function' ? window.collectFormData() : {});
-    const dados = normalizeDados(raw);
+  if (window.__lastSaveKey === key && (now - window.__lastSaveTs) < 10000) {
+    console.warn('[patch] requisição repetida (<10s) — ignorada');
+    return { ok:false, reason:'idempotent-skip' };
+  }
 
+  window.__savingNowPatch = true;
+
+  try {
     const safeName = pdfName || uniquePdfName(dados.codigo || 'DOC');
 
     const fd = new FormData();
-    fd.append('pdf', new File([pdfBlob], safeName, { type:'application/pdf' }));
-    fd.append('dados', JSON.stringify(dados));      // <<< STRING, não Blob
+    fd.append('pdf',   new File([pdfBlob], safeName, { type:'application/pdf' }));
+    fd.append('dados', JSON.stringify(dados));   // <<< sempre STRING
     fd.append('token', SAVE_TOKEN);
 
     const logo = document.getElementById('logo')?.files?.[0];
@@ -100,16 +113,22 @@ async function saveWithLogo(pdfBlob, pdfName, dadosFromCaller){
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + SAVE_TOKEN },
       body: fd,
-      mode: 'cors'
+      // evita reenvios por caches/proxies
+      cache: 'no-store',
+      redirect: 'follow',
+      keepalive: false
     });
-    const json = await parseJsonSafe(resp);
-    try { console.log('[patch] save.php ->', resp.status, json); } catch(_) {}
-    return json;
+
+    const out = await parseJsonSafe(resp);
+    try { console.log('[patch] save.php ->', resp.status, out); } catch(_) {}
+    return out;
   } catch (e) {
-    console.error('[patch] erro no salvamento', e);
+    console.warn('[patch] erro no salvamento', e);
     return { ok:false, error:String(e) };
   } finally {
-    __savingNowPatch = false;
+    window.__savingNowPatch = false;
+    window.__lastSaveKey = key;
+    window.__lastSaveTs  = Date.now();
   }
 }
 
