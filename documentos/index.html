@@ -346,6 +346,22 @@ window.__CONSULTA_CFG__ = {
   </div>
 </div>
 
+
+<!-- Modal Ação (Atualizar ou Gerar PDF) -->
+<div id="actionModal" class="modal" style="display:none">
+  <div class="box" style="max-width:520px">
+    <div class="hd">O que você deseja fazer?</div>
+    <div class="bd">
+      <div style="color:#334155;margin-bottom:8px">Documento: <b id="actDocCode">—</b></div>
+      <div class="hint">Escolha abaixo para continuar:</div>
+    </div>
+    <div class="ft" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" id="btnActionCancel" type="button">Cancelar</button>
+      <button class="btn" id="btnActionPdf" type="button">Gerar PDF</button>
+      <button class="btn primary" id="btnActionUpdate" type="button">Atualizar informações</button>
+    </div>
+  </div>
+</div>
 <!-- Modal Duplicidade -->
 <div id="dupeModal" class="modal" style="display:none">
   <div class="box" style="max-width:560px">
@@ -974,7 +990,85 @@ function updateAllFieldsFromRow(row){
   }
   proceedToStep2();
 }
-function showAction(row){
+
+// === Normalização do objeto recebido da API para o formato esperado por fillAllFromRow ===
+function normalizeRowForFill(row){
+  const pickKey = (keys)=>{
+    for (const k of keys){ if (row && row[k] != null && String(row[k]).trim() !== '') return row[k]; }
+    return '';
+  };
+  const addr = (n, altKeys=[])=>{
+    // tenta campo único de endereço; se não houver, monta com partes
+    const single = pickKey(altKeys);
+    if (single) return single;
+    const parts = [pickKey([n+'_logradouro', n+'_logradouro_nome']),
+                   pickKey([n+'_numero']),
+                   pickKey([n+'_complemento']),
+                   pickKey([n+'_bairro']),
+                   pickKey([n+'_cidade']), pickKey([n+'_uf'])].filter(Boolean);
+    return parts.length ? parts.join(', ') : '';
+  };
+
+  return {
+    // Etapa 2
+    servico:        pickKey(['servico','Serviço','descricao','objeto']),
+    endereco_obra:  pickKey(['endereco_obra','enderecoObra','obra_endereco','endereco']),
+
+    // Etapa 3 (Contratante)
+    contratante_nome:     pickKey(['ctt_nome','contratante_nome','contratante','cliente']),
+    contratante_doc:      pickKey(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
+    contratante_contato:  pickKey(['ctt_contato','contato_contratante','responsavel_contratante']),
+    contratante_tel:      pickKey(['ctt_telefone','telefone_contratante','telefone']),
+    contratante_email:    pickKey(['ctt_email','email_contratante','email']),
+    contratante_endereco: pickKey(['ctt_endereco','contratante_endereco','endereco_contratante']) || addr('ctt',['ctt_endereco']),
+    
+    // Etapa 4 (Contratada)
+    contratada_nome:      pickKey(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
+    contratada_doc:       pickKey(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
+    contratada_contato:   pickKey(['cta_contato','contato_contratada','responsavel_contratada']),
+    contratada_tel:       pickKey(['cta_telefone','telefone_contratada']),
+    contratada_email:     pickKey(['cta_email','email_contratada']),
+    contratada_endereco:  pickKey(['cta_endereco','contratada_endereco','endereco_contratada']) || addr('cta',['cta_endereco']),
+
+    // Etapa 5
+    valor:            pickKey(['valor','valor_total']),
+    valor_extenso:    pickKey(['valorExtenso','valor_extenso']),
+    prazo_dias:       pickKey(['prazo','prazo_dias']),
+    data_extenso:     pickKey(['dataExtenso','data_extenso']),
+    clausulas:        pickKey(['clausulas']),
+    condicoes:        pickKey(['condicoes','condicoes_pagamento'])
+  };
+}
+
+// === Modal de Ação (UX mais amigável) ===
+let __actionRow = null;
+function openActionModal(row){
+  __actionRow = row;
+  const m = document.getElementById('actionModal');
+  document.getElementById('actDocCode').textContent = row.codigo || row.code || '';
+  m.style.display='flex';
+}
+function closeActionModal(){
+  const m = document.getElementById('actionModal');
+  if (m) m.style.display='none';
+}
+document.addEventListener('click', function(e){
+  if(e.target && e.target.id==='btnActionCancel') closeActionModal();
+  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
+  if(e.target && e.target.id==='btnActionUpdate'){
+    if(__actionRow){
+      const norm = normalizeRowForFill(__actionRow);
+      try { fillAllFromRow(norm); } catch(err){ console.error(err); }
+      try { closeConsulta(); } catch(_){}
+    }
+    closeActionModal();
+  }
+});
+
+// Entry point chamado na célula do código
+function showAction(row){ openActionModal(row); }
+
+function showAction_old(row){
   const msg = 'Deseja atualizar as informações ou gerar o PDF?\n\nClique "OK" para Atualizar, ou "Cancelar" para Gerar o PDF.';
   const chooseUpdate = confirm(msg);
   if (chooseUpdate) updateAllFieldsFromRow(row);
