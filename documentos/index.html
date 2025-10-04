@@ -134,7 +134,7 @@
 
         <table class="tbl">
           <thead>
-            <tr><th style="width:110px">CÓDIGO</th><th>OBRA</th><th style="width:90px">PDF</th></tr>
+            <tr><th style="width:120px">DATA</th><th style="width:110px">CÓDIGO</th><th>CONTRATANTE</th><th>CONTRATADA</th><th>SERVIÇO</th><th style="width:90px">PDF</th></tr>
           </thead>
           <tbody id="consBodyInline">
             <tr><td colspan="3" class="row-muted">Sem código, sem resultados.</td></tr>
@@ -324,7 +324,7 @@
 
       <table class="tbl" id="consTable">
         <thead>
-          <tr><th style="width:110px">CÓDIGO</th><th>OBRA</th><th style="width:90px">PDF</th></tr>
+          <tr><th style="width:120px">DATA</th><th style="width:110px">CÓDIGO</th><th>CONTRATANTE</th><th>CONTRATADA</th><th>SERVIÇO</th><th style="width:90px">PDF</th></tr>
         </thead>
         <tbody id="consBody">
           <tr><td colspan="3" class="row-muted">Sem código, sem resultados.</td></tr>
@@ -775,36 +775,57 @@ function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
   if (!rows || !rows.length){
-    tb.innerHTML = '<tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
   tb.innerHTML = '';
+
+  const fmtData = (v)=>{
+    if (!v) return '-';
+    // tenta formatos comuns ISO 'YYYY-MM-DD HH:MM:SS' ou 'YYYY-MM-DDTHH:MM:SSZ'
+    const d = (typeof v === 'string') ? new Date(v.replace(' ', 'T')) : (v instanceof Date ? v : null);
+    if (d && !isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yyyy = d.getFullYear();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mi = String(d.getMinutes()).padStart(2,'0');
+      const ss = String(d.getSeconds()).padStart(2,'0');
+      return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss}`;
+    }
+    return String(v);
+  };
+
   rows.forEach(row=>{
-    const tr=document.createElement('tr');
+    const tr = document.createElement('tr');
 
-    // CÓDIGO
-    const td1=document.createElement('td');
-    td1.textContent = row.codigo || '-';
+    const tdData = document.createElement('td');
+    tdData.textContent = fmtData(row.data || row.created_at || row.dt || row.datahora);
+    tr.appendChild(tdData);
 
-    // OBRA (cobre variações do backend)
-    const td2=document.createElement('td');
-    td2.textContent = row.obra_nome || row.obra || row.nome_obra || row.Obra || '-';
+    const tdCod = document.createElement('td');
+    tdCod.textContent = row.codigo || '-';
+    tr.appendChild(tdCod);
 
-    // PDF
-    const td3=document.createElement('td');
-    const a=document.createElement('a');
+    const tdContratante = document.createElement('td');
+    tdContratante.textContent = row.contratante_nome || row.contratante || row.cliente || '-';
+    tr.appendChild(tdContratante);
 
-    // Prefere URL já pronta
+    const tdContratada = document.createElement('td');
+    tdContratada.textContent = row.contratada_nome || row.contratada || row.fornecedor || '-';
+    tr.appendChild(tdContratada);
+
+    const tdServico = document.createElement('td');
+    tdServico.textContent = row.servico || row.descricao || row.objeto || '-';
+    tr.appendChild(tdServico);
+
+    const tdPdf = document.createElement('td');
+    const a = document.createElement('a');
     let pdfUrl = row.pdf_url || row.PDF_URL;
-
-    // Se vier só o nome do arquivo, monta a partir do LIST_URL configurado no patch
     if (!pdfUrl && (row.pdf || row.pdf_file)){
       const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
-      if (apiBase) {
-        pdfUrl = apiBase.replace(/\/+$/, '') + '/pdf/' + encodeURIComponent(row.pdf || row.pdf_file);
-      }
+      if (apiBase) pdfUrl = apiBase.replace(/\/+$/, '') + '/pdf/' + encodeURIComponent(row.pdf || row.pdf_file);
     }
-
     if (pdfUrl){
       a.href = pdfUrl;
       a.target = '_blank';
@@ -817,11 +838,9 @@ function renderRows(tbodyId, rows){
       a.style.pointerEvents = 'none';
       a.title = 'PDF não disponível';
     }
+    tdPdf.appendChild(a);
+    tr.appendChild(tdPdf);
 
-    td3.appendChild(a);
-    tr.appendChild(td1);
-    tr.appendChild(td2);
-    tr.appendChild(td3);
     tb.appendChild(tr);
   });
 }
