@@ -68,14 +68,14 @@
          border-radius:50%;animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   
-.code-link{color:var(--accent);text-decoration:none;font-weight:700}.code-link:hover{text-decoration:underline}
-</style>
 
-<script>
-window.__CONSULTA_CFG__ = {
-  PDF_PATH_CANDIDATES: ['/pdf/', '/uploads/pdf/', '/pdfs/', '/documentos/pdf/']
-};
-</script>
+/* Hover/Click feedback on consulta rows */
+#consBodyInline tr, #consBody tr { cursor:pointer; }
+#consBodyInline tr:hover, #consBody tr:hover { background:#f8fafc; }
+/* clickable code style */
+.code-link{color:var(--accent);text-decoration:none;font-weight:700}
+.code-link:hover{text-decoration:underline}
+</style>
 
 <!-- Patch de salvamento (já usado) -->
 <script src="/documentos/erp_save_patch_flatfile.js"></script>
@@ -142,7 +142,7 @@ window.__CONSULTA_CFG__ = {
 
         <table class="tbl">
           <thead>
-            <tr><th style="width:120px">DATA</th><th style="width:110px">CÓDIGO</th><th>CONTRATANTE</th><th>CONTRATADA</th><th>SERVIÇO</th><th style="width:90px">PDF</th></tr>
+            <tr><th style="width:110px">CÓDIGO</th><th>OBRA</th><th style="width:90px">PDF</th></tr>
           </thead>
           <tbody id="consBodyInline">
             <tr><td colspan="3" class="row-muted">Sem código, sem resultados.</td></tr>
@@ -325,15 +325,14 @@ window.__CONSULTA_CFG__ = {
         <div style="flex:1;min-width:220px">
           <div style="font-size:12px;color:#64748b;margin-bottom:6px">Código (opcional)</div>
           <input id="consCodigo" class="input" placeholder="Ex.: AC00025">
-          <div class="hint">Digite o código do projeto.</p>
-<p></div>
+          <div class="hint">Digite o código do projeto.</div>
         </div>
         <button class="btn primary" id="btnBuscar">Buscar</button>
       </div>
 
       <table class="tbl" id="consTable">
         <thead>
-          <tr><th style="width:120px">DATA</th><th style="width:110px">CÓDIGO</th><th>CONTRATANTE</th><th>CONTRATADA</th><th>SERVIÇO</th><th style="width:90px">PDF</th></tr>
+          <tr><th style="width:110px">CÓDIGO</th><th>OBRA</th><th style="width:90px">PDF</th></tr>
         </thead>
         <tbody id="consBody">
           <tr><td colspan="3" class="row-muted">Sem código, sem resultados.</td></tr>
@@ -346,22 +345,6 @@ window.__CONSULTA_CFG__ = {
   </div>
 </div>
 
-
-<!-- Modal Ação (Atualizar ou Gerar PDF) -->
-<div id="actionModal" class="modal" style="display:none">
-  <div class="box" style="max-width:520px">
-    <div class="hd">O que você deseja fazer?</div>
-    <div class="bd">
-      <div style="color:#334155;margin-bottom:8px">Documento: <b id="actDocCode">—</b></div>
-      <div class="hint">Escolha abaixo para continuar:</div>
-    </div>
-    <div class="ft" style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" id="btnActionCancel" type="button">Cancelar</button>
-      <button class="btn" id="btnActionPdf" type="button">Gerar PDF</button>
-      <button class="btn primary" id="btnActionUpdate" type="button">Atualizar informações</button>
-    </div>
-  </div>
-</div>
 <!-- Modal Duplicidade -->
 <div id="dupeModal" class="modal" style="display:none">
   <div class="box" style="max-width:560px">
@@ -395,8 +378,8 @@ function toggleTheme(){ const cur=document.documentElement.getAttribute('data-th
 /* Usuário */
 function loadUser(){
   let u=null; try{ u=JSON.parse(localStorage.getItem('impar_user')||'null'); }catch(e){}
-  const label = u ? (u.Nome+'\n'+u.Email) : 'Rafael Ramos\nrafael.@imparsistemas.com';
-  document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label.replace(/\r?\n/g,'<br>'); });
+  const label = u ? (u.Nome+'\n'+u.Email) : 'Rafael Ramos\rafael.@imparsistemas.com';
+  document.querySelectorAll('.user').forEach(p=>{ p.innerHTML = label.replace('\n','<br>'); });
 }
 
 loadUser();
@@ -779,7 +762,8 @@ async function saveDocumentWithPdf(pdfBlob){
 const LOGIN_URL='/login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
 function pdfHrefFromRow(row){
-  return row.pdf_url || row.PDF_URL || '';
+  if (row.pdf_url && /^https?:\/\//.test(row.pdf_url)) return row.pdf_url;
+  return (window.location.origin + '/gerador/pdf.php?f=' + encodeURIComponent(row.pdf_file || ''));
 }
 function openConsulta(){
   const el=document.getElementById('consultaModal');
@@ -796,317 +780,50 @@ function renderConsMsg(msg){
 }
 
 // -------- Consulta (inline + modal) SEM token na URL --------
-
-/* === Helpers para PDF (fallback inteligente) === */
-function getApiBaseFromPatch(){
-  const listUrl = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
-  if (!listUrl) return '';
-  return listUrl.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
-}
-
-
-async function openPdfSmart(row){
-  const file = row.pdf || row.pdf_file || '';
-  if (row.pdf_url || row.PDF_URL){
-    window.open(row.pdf_url || row.PDF_URL, '_blank', 'noopener');
-    return;
-  }
-  const apiBase = getApiBaseFromPatch();
-  if (!apiBase || !file){
-    alert('PDF não disponível para este registro.');
-    return;
-  }
-  const base = apiBase.replace(/\/+$/,'');
-  const candidates = [
-    base + '/pdf/' + encodeURIComponent(file),
-    base + '/pdf.php?f=' + encodeURIComponent(file)
-  ];
-
-  for (const url of candidates){
-    try{
-      const r = await fetch(url, { method:'HEAD', mode:'cors' });
-      if (r.ok || r.status === 405){
-        window.open(url, '_blank', 'noopener');
-        return;
-      }
-    }catch(e){}
-  }
-  window.open(candidates[0], '_blank', 'noopener');
-}
-
-
-
-
-/* === Helpers para extrair nomes dinamicamente === */
-function _normalize(v){
-  if (v==null) return '';
-  if (typeof v === 'string') return v.trim();
-  if (typeof v === 'number') return String(v);
-  if (typeof v === 'object'){
-    // tenta campos comuns
-    const cand = v.razao || v.razao_social || v.razaoSocial || v.nome || v.Nome || v.fantasia;
-    if (typeof cand === 'string') return cand.trim();
-  }
-  return '';
-}
-
-function pickByKeys(obj, keysLike){
-  // 1) tenta chaves exatas
-  for (const k of keysLike){
-    if (k in obj){
-      const val = _normalize(obj[k]);
-      if (val) return val;
-    }
-  }
-  // 2) procura por substring (case-insensitive)
-  const lc = Object.keys(obj).map(k => [k, k.toLowerCase()]);
-  for (const [orig, low] of lc){
-    if (keysLike.some(s => low.includes(s.toLowerCase()))){
-      const val = _normalize(obj[orig]);
-      if (val) return val;
-    }
-  }
-  // 3) se for objeto dentro (ex.: obj.contratante = {...})
-  for (const [orig, low] of lc){
-    if (keysLike.some(s => low.includes(s.toLowerCase()))){
-      const v = obj[orig];
-      if (v && typeof v === 'object'){
-        const cand = _normalize(v);
-        if (cand) return cand;
-      }
-    }
-  }
-  return '';
-}
-
-
-
-function getContratanteFromRow(row){
-  const val = pickByKeys(row, [
-    // padrões antigos
-    'contratante_nome','CONTRATANTE_NOME','contratante','CONTRATANTE','cliente','CLIENTE',
-    'razao_contratante','razaoSocialContratante','razao_social_contratante','contratante_razao',
-    // novos (do console): cta_*
-    'cta_nome','cta_razao','ctaRazao','cta_razaoSocial','cta_razao_social','cta_nomeFantasia','cta_fantasia'
-  ]);
-  if (val) return val;
-  console.debug('[consulta] CONTRATANTE não identificado. Chaves disponíveis:', Object.keys(row));
-  return '-';
-}
-function getContratadaFromRow(row){
-  let val = pickByKeys(row, [
-    'contratada_nome','CONTRATADA_NOME','contratada','CONTRATADA','fornecedor','FORNECEDOR',
-    'razao_contratada','razaoSocialContratada','razao_social_contratada','contratada_razao',
-    // tentativas com prefixos usuais
-    'ctd_nome','ctd_razao','ctdRazao','ctd_razaoSocial','ctd_razao_social',
-    // alguns backends usam "empresa" para a contratada
-    'empresa','empresa_nome','empresaRazao'
-  ]);
-  if (!val){
-    // muitos documentos da Ímpar têm contratada fixa
-    val = 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
-  }
-  return val;
-}
-
-
-function pick(row, keys){
-  for (const k of keys){
-    if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
-      return row[k];
-    }
-  }
-  return '';
-}
-function fmtDate(v){
-  if (!v) return '';
-  const d = new Date(String(v).replace(' ', 'T'));
-  if (isNaN(d)) return String(v);
-  const dd = String(d.getDate()).padStart(2,'0');
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2,'0');
-  const mi = String(d.getMinutes()).padStart(2,'0');
-  const ss = String(d.getSeconds()).padStart(2,'0');
-  return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss}`;
-}
-// Prefer proxy like the external page does
-function pdfHrefFromRow(row){
-  const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
-  if (!raw) return '#';
-  const fname = String(raw)
-    .replace(/^https?:\/\/[^/]+/i, '')
-    .replace(/\?.*$/, '')
-    .split('/').filter(Boolean).pop();
-  if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
-  const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
-  return apiBase ? `${apiBase}/pdf.php?f=${encodeURIComponent(fname)}` : '#';
-}
-
-
-
-// === Ações no clique do CÓDIGO ===
-function openPdfFromRow(row){
-  try{
-    const href = pdfHrefFromRow ? pdfHrefFromRow(row) : (row.pdf_url || row.pdf || '#');
-    if (href && href !== '#') window.open(href, '_blank', 'noopener');
-    else alert('PDF não disponível para este registro.');
-  }catch(e){ alert('Não foi possível abrir o PDF.'); }
-}
-function setIfExists(id, value){
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.value = (value ?? '').toString();
-  try{ el.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
-}
-function pick2(row, keys){
-  for (const k of keys){
-    if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
-      return row[k];
-    }
-  }
-  return '';
-}
-function fillFromRowFallback(row){
-  setIfExists('codigo',      pick2(row, ['codigo','Código','CODIGO']));
-  setIfExists('servico',     pick2(row, ['servico','Serviço','descricao','objeto']));
-  setIfExists('endereco_obra', pick2(row, ['enderecoObra','endereco_obra','obra_endereco','endereco']));
-  setIfExists('contratante', pick2(row, ['ctt_nome','contratante_nome','contratante','cliente']));
-  setIfExists('cnpj_contratante', pick2(row, ['ctt_cpfCnpj','contratante_cnpj','cpfCnpj','cpfCnpjContratante','contratante_doc']));
-  setIfExists('contratada',  pick2(row, ['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA');
-  setIfExists('cnpj_contratada', pick2(row, ['cta_cpfCnpj','contratada_cnpj','contratada_doc']));
-}
-function proceedToStep2(){
-  try{ if (typeof goTo === 'function') goTo(2); }catch(_){}
-  const step = document.querySelector('[data-step="2"]');
-  if (step){ step.scrollIntoView({behavior:'smooth',block:'start'}); step.classList.add('pulse'); setTimeout(()=> step.classList.remove('pulse'), 1000); }
-}
-function updateAllFieldsFromRow(row){
-  if (typeof window.fillAllFromRow === 'function'){
-    try { window.fillAllFromRow(row); }
-    catch(e){ console.error('fillAllFromRow falhou, usando fallback:', e); fillFromRowFallback(row); }
-  } else {
-    fillFromRowFallback(row);
-  }
-  proceedToStep2();
-}
-
-// === Normalização do objeto recebido da API para o formato esperado por fillAllFromRow ===
-function normalizeRowForFill(row){
-  const pickKey = (keys)=>{
-    for (const k of keys){ if (row && row[k] != null && String(row[k]).trim() !== '') return row[k]; }
-    return '';
-  };
-  const addr = (n, altKeys=[])=>{
-    // tenta campo único de endereço; se não houver, monta com partes
-    const single = pickKey(altKeys);
-    if (single) return single;
-    const parts = [pickKey([n+'_logradouro', n+'_logradouro_nome']),
-                   pickKey([n+'_numero']),
-                   pickKey([n+'_complemento']),
-                   pickKey([n+'_bairro']),
-                   pickKey([n+'_cidade']), pickKey([n+'_uf'])].filter(Boolean);
-    return parts.length ? parts.join(', ') : '';
-  };
-
-  return {
-    // Etapa 2
-    servico:        pickKey(['servico','Serviço','descricao','objeto']),
-    endereco_obra:  pickKey(['endereco_obra','enderecoObra','obra_endereco','endereco']),
-
-    // Etapa 3 (Contratante)
-    contratante_nome:     pickKey(['ctt_nome','contratante_nome','contratante','cliente']),
-    contratante_doc:      pickKey(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
-    contratante_contato:  pickKey(['ctt_contato','contato_contratante','responsavel_contratante']),
-    contratante_tel:      pickKey(['ctt_telefone','telefone_contratante','telefone']),
-    contratante_email:    pickKey(['ctt_email','email_contratante','email']),
-    contratante_endereco: pickKey(['ctt_endereco','contratante_endereco','endereco_contratante']) || addr('ctt',['ctt_endereco']),
-    
-    // Etapa 4 (Contratada)
-    contratada_nome:      pickKey(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
-    contratada_doc:       pickKey(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
-    contratada_contato:   pickKey(['cta_contato','contato_contratada','responsavel_contratada']),
-    contratada_tel:       pickKey(['cta_telefone','telefone_contratada']),
-    contratada_email:     pickKey(['cta_email','email_contratada']),
-    contratada_endereco:  pickKey(['cta_endereco','contratada_endereco','endereco_contratada']) || addr('cta',['cta_endereco']),
-
-    // Etapa 5
-    valor:            pickKey(['valor','valor_total']),
-    valor_extenso:    pickKey(['valorExtenso','valor_extenso']),
-    prazo_dias:       pickKey(['prazo','prazo_dias']),
-    data_extenso:     pickKey(['dataExtenso','data_extenso']),
-    clausulas:        pickKey(['clausulas']),
-    condicoes:        pickKey(['condicoes','condicoes_pagamento'])
-  };
-}
-
-// === Modal de Ação (UX mais amigável) ===
-let __actionRow = null;
-function openActionModal(row){
-  __actionRow = row;
-  const m = document.getElementById('actionModal');
-  document.getElementById('actDocCode').textContent = row.codigo || row.code || '';
-  m.style.display='flex';
-}
-function closeActionModal(){
-  const m = document.getElementById('actionModal');
-  if (m) m.style.display='none';
-}
-document.addEventListener('click', function(e){
-  if(e.target && e.target.id==='btnActionCancel') closeActionModal();
-  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
-  if(e.target && e.target.id==='btnActionUpdate'){
-    if(__actionRow){
-      const norm = normalizeRowForFill(__actionRow);
-      try { fillAllFromRow(norm); } catch(err){ console.error(err); }
-      try { closeConsulta(); } catch(_){}
-    }
-    closeActionModal();
-  }
-});
-
-// Entry point chamado na célula do código
-function showAction(row){ openActionModal(row); }
-
-function showAction_old(row){
-  const msg = 'Deseja atualizar as informações ou gerar o PDF?\n\nClique "OK" para Atualizar, ou "Cancelar" para Gerar o PDF.';
-  const chooseUpdate = confirm(msg);
-  if (chooseUpdate) updateAllFieldsFromRow(row);
-  else openPdfFromRow(row);
-}
-
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
   if (!rows || !rows.length){
-    tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
-  let html = '';
-  for (const row of rows){
-    const rowData = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-    const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
-    const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
-    const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
-    const cttN = pick(row, ['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE','cliente','CLIENTE']);
-    const cttD = pick(row, ['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']);
-    const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
-    const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
-    const href = pdfHrefFromRow(row);
-    html += `
-      <tr>
-        <td>${fmtDate(dt) || '—'}</td>
-        <td>${cod ? `<a href="#" class="code-link" data-row="${rowData}" onclick='showAction(JSON.parse(this.dataset.row));return false;'>${cod}</a>` : '—'}</td>
-        <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
-        <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
-        <td>${serv || '—'}</td>
-        <td>${href !== '#' ? `<a class="link" href="${href}" target="_blank" rel="noopener noreferrer">abrir</a>` : '—'}</td>
-      </tr>
-    `;
-  }
-  tb.innerHTML = html;
-}
+  tb.innerHTML = '';
+  
+rows.forEach(row=>{
+  const tr=document.createElement('tr');
 
+  const td1=document.createElement('td');
+  const codeTxt = row.codigo||'-';
+  if (codeTxt && codeTxt !== '-') {
+    const aCode = document.createElement('a');
+    aCode.href='#'; aCode.className='code-link'; aCode.textContent=codeTxt;
+    aCode.addEventListener('click', (ev)=>{ ev.preventDefault(); showAction(row); });
+    td1.appendChild(aCode);
+  } else {
+    td1.textContent='-';
+  }
+
+  const td2=document.createElement('td'); td2.textContent=row.contratante_nome||row.ctt_nome||'-';
+
+  const td3=document.createElement('td');
+  const href = pdfHrefFromRow(row);
+  if (href && href !== '#'){
+    const a=document.createElement('a');
+    a.href=href; a.target='_blank'; a.className='pdf-link'; a.textContent='abrir';
+    a.addEventListener('click', (ev)=>ev.stopPropagation());
+    td3.appendChild(a);
+  } else {
+    td3.textContent='-';
+  }
+
+  tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+
+  tr.addEventListener('click', ()=> showAction(row));
+
+  tb.appendChild(tr);
+});
+
+}
 
 function renderConsMsgInline(msg){
   const tb=document.getElementById('consBodyInline');
@@ -1129,7 +846,39 @@ async function fetchConsulta(codigo){
   return await r.json();
 }
 
+
+// === Normalização dos dados para fillAllFromRow ===
+function normalizeRowForFill(row){
+  const pick = (keys)=>{
+    for (const k of keys){ if (row && row[k]!=null && String(row[k]).trim()!=='') return row[k]; }
+    return '';
+  };
+  return {
+    servico: pick(['servico','Serviço','descricao','objeto']),
+    endereco_obra: pick(['endereco_obra','enderecoObra','obra_endereco','endereco']),
+    contratante_nome: pick(['ctt_nome','contratante_nome','contratante','cliente']),
+    contratante_doc: pick(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
+    contratante_contato: pick(['ctt_contato','contato_contratante','responsavel_contratante']),
+    contratante_tel: pick(['ctt_telefone','telefone_contratante','telefone']),
+    contratante_email: pick(['ctt_email','email_contratante','email']),
+    contratante_endereco: pick(['ctt_endereco','contratante_endereco','endereco_contratante']),
+    contratada_nome: pick(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
+    contratada_doc: pick(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
+    contratada_contato: pick(['cta_contato','contato_contratada','responsavel_contratada']),
+    contratada_tel: pick(['cta_telefone','telefone_contratada']),
+    contratada_email: pick(['cta_email','email_contratada']),
+    contratada_endereco: pick(['cta_endereco','contratada_endereco','endereco_contratada']),
+    valor: pick(['valor','valor_total']),
+    valor_extenso: pick(['valorExtenso','valor_extenso']),
+    prazo_dias: pick(['prazo','prazo_dias']),
+    data_extenso: pick(['dataExtenso','data_extenso']),
+    clausulas: pick(['clausulas','clausulas_texto']),
+    condicoes: pick(['condicoes','condicoes_pagamento'])
+  };
+}
+
 // Toggle da consulta inline
+
 function toggleInlineConsulta(){
   const box = document.getElementById('consultaInline');
   if (!box) return;
@@ -1266,8 +1015,7 @@ async function proceedFromStep1(codigo){
     const j    = await fetchConsulta(codigo);     // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
     if(rows.length === 0){ goTo(2); return; }
-    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
-    if (exact) { openDupeModal(exact); } else { goTo(2); }
+    openDupeModal(rows[0]);
   }catch(e){
     console.error(e);
     goTo(2);
@@ -1286,7 +1034,7 @@ function closeDupeModal(){ document.getElementById('dupeModal').style.display='n
 document.getElementById('btnDupCancel').onclick = () => { closeDupeModal(); };
 document.getElementById('btnDupPrint').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
-  openPdfSmart(__dupeRow); closeDupeModal();
+  window.open(pdfHrefFromRow(__dupeRow), '_blank'); closeDupeModal();
 };
 document.getElementById('btnDupUpdate').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
@@ -1295,6 +1043,9 @@ document.getElementById('btnDupUpdate').onclick = () => {
 
 function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
 function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.onchange) try{ el.onchange({}); }catch(_){} } }
+  <input id="codigo" class="input"
+       placeholder="Digite o código do projeto"
+       enterkeyhint="next" autocomplete="off" autocapitalize="off" />
 
 function fillAllFromRow(row){
   // Etapa 2
