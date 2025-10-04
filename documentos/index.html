@@ -352,7 +352,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const val = sel.value;
     if (val){
       const path = val.startsWith('/') ? val : ('/' + val);
-      localStorage.setItem('CONSULTA_PDF_PATH', base + path);
+      localStorage.setItem('CONSULTA_PDF_PATH', path);
     } else {
       localStorage.removeItem('CONSULTA_PDF_PATH');
     }
@@ -823,32 +823,112 @@ function getApiBaseFromPatch(){
   if (!listUrl) return '';
   return listUrl.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
 }
+
 async function openPdfSmart(row){
   const file = row.pdf || row.pdf_file || '';
   // 1) URL pronta
   if (row.pdf_url || row.PDF_URL){
-    window.open(row.pdf_url || row.PDF_URL, '_blank','noopener');
+    window.open(row.pdf_url || row.PDF_URL, '_blank', 'noopener');
     return;
   }
-  // 2) Monta a partir do endpoint
+  // 2) Monta candidatos a partir do endpoint + caminhos
   const apiBase = getApiBaseFromPatch();
   if (!apiBase || !file){
     alert('PDF não disponível para este registro.');
     return;
   }
-  // caminho preferido (se o usuário já configurou/testou)
-  const userPath = localStorage.getItem('CONSULTA_PDF_PATH') || '';
+  const base = apiBase.replace(/\/+$/,'');
+
+  // Caminho escolhido (somente PATH, ex: /pdf/). Se estiver salvo com host, reduz para path.
+  let saved = localStorage.getItem('CONSULTA_PDF_PATH') || '';
+  if (/^https?:\/\//i.test(saved)) {
+    try { saved = new URL(saved).pathname || ''; } catch(e){ saved=''; }
+  }
+  const userPath = saved;
+
+  const paths = [];
+  if (userPath) paths.push(userPath);
+  (window.__CONSULTA_CFG__?.PDF_PATH_CANDIDATES || ['/pdf/']).forEach(p=> paths.push(p));
+
   const candidates = [];
-  if (userPath) candidates.push(userPath);
-  (window.__CONSULTA_CFG__?.PDF_PATH_CANDIDATES || ['/pdf/']).forEach(p=>{
-    const base = apiBase.replace(/\/+$/,'');
+  for (const p of paths){
     const path = p.startsWith('/') ? p : ('/' + p);
-    candidates.push(base + path.replace(/\/+$/, '') + '/' + encodeURIComponent(file));
-    // também tenta variantes com php
-    candidates.push(base + path.replace(/\/+$/, '') + '.php?f=' + encodeURIComponent(file));
-  });
-  // abre o primeiro candidato; se der 404, o usuário pode testar outro caminho pelo menu (abaixo)
-  window.open(candidates[0], '_blank','noopener');
+    const clean = path.replace(/\/+$/, '');
+    candidates.push(base + clean + '/' + encodeURIComponent(file));
+    candidates.push(base + clean + '.php?f=' + encodeURIComponent(file));
+  }
+
+  // 3) Testa sequencialmente com HEAD. Se 200 abre; se 405 (HEAD não permitido), abre mesmo assim.
+  for (const url of candidates){
+    try{
+      const r = await fetch(url, { method:'HEAD', mode:'cors' });
+      if (r.ok || r.status === 405){
+        window.open(url, '_blank', 'noopener');
+        return;
+      }
+    }catch(e){
+      // ignora e tenta o próximo
+    }
+  }
+  // 4) Fallback: abre o primeiro candidato (pode resultar em 404 se nenhum caminho existir)
+  window.open(candidates[0], '_blank', 'noopener');
+}
+
+
+
+/* === Helpers para extrair nomes dinamicamente === */
+function _normalize(v){
+  if (v==null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'object'){
+    // tenta campos comuns
+    const cand = v.razao || v.razao_social || v.razaoSocial || v.nome || v.Nome || v.fantasia;
+    if (typeof cand === 'string') return cand.trim();
+  }
+  return '';
+}
+
+function pickByKeys(obj, keysLike){
+  // 1) tenta chaves exatas
+  for (const k of keysLike){
+    if (k in obj){
+      const val = _normalize(obj[k]);
+      if (val) return val;
+    }
+  }
+  // 2) procura por substring (case-insensitive)
+  const lc = Object.keys(obj).map(k => [k, k.toLowerCase()]);
+  for (const [orig, low] of lc){
+    if (keysLike.some(s => low.includes(s.toLowerCase()))){
+      const val = _normalize(obj[orig]);
+      if (val) return val;
+    }
+  }
+  // 3) se for objeto dentro (ex.: obj.contratante = {...})
+  for (const [orig, low] of lc){
+    if (keysLike.some(s => low.includes(s.toLowerCase()))){
+      const v = obj[orig];
+      if (v && typeof v === 'object'){
+        const cand = _normalize(v);
+        if (cand) return cand;
+      }
+    }
+  }
+  return '';
+}
+
+function getContratanteFromRow(row){
+  return pickByKeys(row, [
+    'contratante_nome','CONTRATANTE_NOME','contratante','CONTRATANTE','cliente','CLIENTE',
+    'razao_contratante','razaoSocialContratante','razao_social_contratante','contratante_razao'
+  ]) || '-';
+}
+function getContratadaFromRow(row){
+  return pickByKeys(row, [
+    'contratada_nome','CONTRATADA_NOME','contratada','CONTRATADA','fornecedor','FORNECEDOR',
+    'razao_contratada','razaoSocialContratada','razao_social_contratada','contratada_razao','impar'
+  ]) || '-';
 }
 
 function renderRows(tbodyId, rows){
@@ -888,25 +968,11 @@ function renderRows(tbodyId, rows){
     tr.appendChild(tdCod);
 
     const tdContratante = document.createElement('td');
-    tdContratante.textContent = (
-      row.contratante_nome || row.CONTRATANTE_NOME ||
-      row.contratante || row.CONTRATANTE ||
-      row.cliente || row.CLIENTE ||
-      row.contratante_razao || row.razao_contratante || row.razaoSocialContratante || row.razao_social_contratante ||
-      (row.contratante_obj && (row.contratante_obj.razao || row.contratante_obj.nome)) ||
-      '-'
-    );
+    tdContratante.textContent = getContratanteFromRow(row);
     tr.appendChild(tdContratante);
 
     const tdContratada = document.createElement('td');
-    tdContratada.textContent = (
-      row.contratada_nome || row.CONTRATADA_NOME ||
-      row.contratada || row.CONTRATADA ||
-      row.fornecedor || row.FORNECEDOR ||
-      row.contratada_razao || row.razao_contratada || row.razaoSocialContratada || row.razao_social_contratada ||
-      (row.contratada_obj && (row.contratada_obj.razao || row.contratada_obj.nome)) ||
-      '-'
-    );
+    tdContratada.textContent = getContratadaFromRow(row);
     tr.appendChild(tdContratada);
 
     const tdServico = document.createElement('td');
