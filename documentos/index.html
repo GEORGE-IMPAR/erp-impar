@@ -771,6 +771,37 @@ function renderConsMsg(msg){
 }
 
 // -------- Consulta (inline + modal) SEM token na URL --------
+
+/* === Helpers para PDF (fallback inteligente) === */
+function getApiBaseFromPatch(){
+  const listUrl = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+  if (!listUrl) return '';
+  return listUrl.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
+}
+async function openPdfSmart(row){
+  const file = row.pdf || row.pdf_file || '';
+  const candidates = [];
+  if (row.pdf_url || row.PDF_URL) candidates.push(row.pdf_url || row.PDF_URL);
+  const apiBase = getApiBaseFromPatch();
+  if (apiBase && file){
+    candidates.push(apiBase + '/pdf/' + encodeURIComponent(file));
+    candidates.push(apiBase + '/pdf.php?f=' + encodeURIComponent(file));
+  }
+  // ultimo recurso: se houver um "pdf" que pareça url completa
+  if (!candidates.length && typeof file === 'string' && /^https?:\/\//i.test(file)) candidates.push(file);
+
+  for (const url of candidates){
+    try{
+      const r = await fetch(url, { method:'HEAD' });
+      if (r.ok){
+        window.open(url, '_blank');
+        return;
+      }
+    }catch(e){ /* tenta o próximo */ }
+  }
+  alert('PDF não encontrado neste servidor.');
+}
+
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
@@ -782,9 +813,9 @@ function renderRows(tbodyId, rows){
 
   const fmtData = (v)=>{
     if (!v) return '-';
-    // tenta formatos comuns ISO 'YYYY-MM-DD HH:MM:SS' ou 'YYYY-MM-DDTHH:MM:SSZ'
-    const d = (typeof v === 'string') ? new Date(v.replace(' ', 'T')) : (v instanceof Date ? v : null);
-    if (d && !isNaN(d.getTime())) {
+    const s = (''+v).replace(' ', 'T');
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
       const dd = String(d.getDate()).padStart(2,'0');
       const mm = String(d.getMonth()+1).padStart(2,'0');
       const yyyy = d.getFullYear();
@@ -800,45 +831,43 @@ function renderRows(tbodyId, rows){
     const tr = document.createElement('tr');
 
     const tdData = document.createElement('td');
-    tdData.textContent = fmtData(row.data || row.created_at || row.dt || row.datahora);
+    tdData.textContent = fmtData(row.data || row.created_at || row.dt || row.datahora || row.DATA);
     tr.appendChild(tdData);
 
     const tdCod = document.createElement('td');
-    tdCod.textContent = row.codigo || '-';
+    tdCod.textContent = row.codigo || row.CODIGO || '-';
     tr.appendChild(tdCod);
 
     const tdContratante = document.createElement('td');
-    tdContratante.textContent = row.contratante_nome || row.contratante || row.cliente || '-';
+    tdContratante.textContent = (
+      row.contratante_nome || row.CONTRATANTE_NOME ||
+      row.contratante || row.CONTRATANTE ||
+      row.cliente || row.CLIENTE ||
+      row.razao_contratante || row.razaoSocialContratante || row.razao_social_contratante ||
+      row.contratante_razao || '-'
+    );
     tr.appendChild(tdContratante);
 
     const tdContratada = document.createElement('td');
-    tdContratada.textContent = row.contratada_nome || row.contratada || row.fornecedor || '-';
+    tdContratada.textContent = (
+      row.contratada_nome || row.CONTRATADA_NOME ||
+      row.contratada || row.CONTRATADA ||
+      row.fornecedor || row.FORNECEDOR ||
+      row.razao_contratada || row.razaoSocialContratada || row.razao_social_contratada ||
+      row.contratada_razao || '-'
+    );
     tr.appendChild(tdContratada);
 
     const tdServico = document.createElement('td');
-    tdServico.textContent = row.servico || row.descricao || row.objeto || '-';
+    tdServico.textContent = row.servico || row.SERVICO || row.descricao || row.objeto || '-';
     tr.appendChild(tdServico);
 
     const tdPdf = document.createElement('td');
-    const a = document.createElement('a');
-    let pdfUrl = row.pdf_url || row.PDF_URL;
-    if (!pdfUrl && (row.pdf || row.pdf_file)){
-      const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
-      if (apiBase) pdfUrl = apiBase.replace(/\/+$/, '') + '/pdf/' + encodeURIComponent(row.pdf || row.pdf_file);
-    }
-    if (pdfUrl){
-      a.href = pdfUrl;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.className = 'pdf-link';
-      a.textContent = 'abrir';
-    } else {
-      a.textContent = 'indisp.';
-      a.style.opacity = '.5';
-      a.style.pointerEvents = 'none';
-      a.title = 'PDF não disponível';
-    }
-    tdPdf.appendChild(a);
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = 'abrir';
+    btn.onclick = () => openPdfSmart(row);
+    tdPdf.appendChild(btn);
     tr.appendChild(tdPdf);
 
     tb.appendChild(tr);
