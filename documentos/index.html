@@ -69,6 +69,13 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   
 </style>
+
+<script>
+window.__CONSULTA_CFG__ = {
+  PDF_PATH_CANDIDATES: ['/pdf/', '/uploads/pdf/', '/pdfs/', '/documentos/pdf/']
+};
+</script>
+
 <!-- Patch de salvamento (já usado) -->
 <script src="/documentos/erp_save_patch_flatfile.js"></script>
 </head>
@@ -317,7 +324,45 @@
         <div style="flex:1;min-width:220px">
           <div style="font-size:12px;color:#64748b;margin-bottom:6px">Código (opcional)</div>
           <input id="consCodigo" class="input" placeholder="Ex.: AC00025">
-          <div class="hint">Digite o código do projeto.</div>
+          <div class="hint">Digite o código do projeto.</p>
+<div id="pdfPathConfig" class="row" style="margin:8px 0;">
+  <label style="font-size:12px;color:#6b7280;margin-right:8px;">Caminho de PDF:</label>
+  <select id="pdfPathSelect" class="input" style="max-width:260px;">
+    <option value="">(auto)</option>
+    <option value="/pdf/">/pdf/</option>
+    <option value="/uploads/pdf/">/uploads/pdf/</option>
+    <option value="/pdfs/">/pdfs/</option>
+    <option value="/documentos/pdf/">/documentos/pdf/</option>
+  </select>
+  <button class="btn" id="pdfSavePathBtn" style="margin-left:6px;">OK</button>
+  <span id="pdfPathSaved" style="margin-left:8px;font-size:12px;color:#16a34a;display:none;">ok</span>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', ()=>{
+  const sel = document.getElementById('pdfPathSelect');
+  const saved = localStorage.getItem('CONSULTA_PDF_PATH');
+  if (saved){
+    // mostrar apenas o path, não a url completa
+    const path = saved.replace(/^https?:\/\/[^/]+/, '');
+    sel.value = path;
+  }
+  document.getElementById('pdfSavePathBtn').onclick = ()=>{
+    const apiBase = getApiBaseFromPatch();
+    const base = apiBase ? apiBase.replace(/\/+$/,'') : '';
+    const val = sel.value;
+    if (val){
+      const path = val.startsWith('/') ? val : ('/' + val);
+      localStorage.setItem('CONSULTA_PDF_PATH', base + path);
+    } else {
+      localStorage.removeItem('CONSULTA_PDF_PATH');
+    }
+    const ok = document.getElementById('pdfPathSaved');
+    ok.style.display = 'inline';
+    setTimeout(()=> ok.style.display='none', 1200);
+  };
+});
+</script>
+<p></div>
         </div>
         <button class="btn primary" id="btnBuscar">Buscar</button>
       </div>
@@ -780,26 +825,30 @@ function getApiBaseFromPatch(){
 }
 async function openPdfSmart(row){
   const file = row.pdf || row.pdf_file || '';
-  const candidates = [];
-  if (row.pdf_url || row.PDF_URL) candidates.push(row.pdf_url || row.PDF_URL);
+  // 1) URL pronta
+  if (row.pdf_url || row.PDF_URL){
+    window.open(row.pdf_url || row.PDF_URL, '_blank','noopener');
+    return;
+  }
+  // 2) Monta a partir do endpoint
   const apiBase = getApiBaseFromPatch();
-  if (apiBase && file){
-    candidates.push(apiBase + '/pdf/' + encodeURIComponent(file));
-    candidates.push(apiBase + '/pdf.php?f=' + encodeURIComponent(file));
+  if (!apiBase || !file){
+    alert('PDF não disponível para este registro.');
+    return;
   }
-  // ultimo recurso: se houver um "pdf" que pareça url completa
-  if (!candidates.length && typeof file === 'string' && /^https?:\/\//i.test(file)) candidates.push(file);
-
-  for (const url of candidates){
-    try{
-      const r = await fetch(url, { method:'HEAD' });
-      if (r.ok){
-        window.open(url, '_blank');
-        return;
-      }
-    }catch(e){ /* tenta o próximo */ }
-  }
-  alert('PDF não encontrado neste servidor.');
+  // caminho preferido (se o usuário já configurou/testou)
+  const userPath = localStorage.getItem('CONSULTA_PDF_PATH') || '';
+  const candidates = [];
+  if (userPath) candidates.push(userPath);
+  (window.__CONSULTA_CFG__?.PDF_PATH_CANDIDATES || ['/pdf/']).forEach(p=>{
+    const base = apiBase.replace(/\/+$/,'');
+    const path = p.startsWith('/') ? p : ('/' + p);
+    candidates.push(base + path.replace(/\/+$/, '') + '/' + encodeURIComponent(file));
+    // também tenta variantes com php
+    candidates.push(base + path.replace(/\/+$/, '') + '.php?f=' + encodeURIComponent(file));
+  });
+  // abre o primeiro candidato; se der 404, o usuário pode testar outro caminho pelo menu (abaixo)
+  window.open(candidates[0], '_blank','noopener');
 }
 
 function renderRows(tbodyId, rows){
@@ -843,8 +892,9 @@ function renderRows(tbodyId, rows){
       row.contratante_nome || row.CONTRATANTE_NOME ||
       row.contratante || row.CONTRATANTE ||
       row.cliente || row.CLIENTE ||
-      row.razao_contratante || row.razaoSocialContratante || row.razao_social_contratante ||
-      row.contratante_razao || '-'
+      row.contratante_razao || row.razao_contratante || row.razaoSocialContratante || row.razao_social_contratante ||
+      (row.contratante_obj && (row.contratante_obj.razao || row.contratante_obj.nome)) ||
+      '-'
     );
     tr.appendChild(tdContratante);
 
@@ -853,8 +903,9 @@ function renderRows(tbodyId, rows){
       row.contratada_nome || row.CONTRATADA_NOME ||
       row.contratada || row.CONTRATADA ||
       row.fornecedor || row.FORNECEDOR ||
-      row.razao_contratada || row.razaoSocialContratada || row.razao_social_contratada ||
-      row.contratada_razao || '-'
+      row.contratada_razao || row.razao_contratada || row.razaoSocialContratada || row.razao_social_contratada ||
+      (row.contratada_obj && (row.contratada_obj.razao || row.contratada_obj.nome)) ||
+      '-'
     );
     tr.appendChild(tdContratada);
 
