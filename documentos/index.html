@@ -892,6 +892,41 @@ function getContratadaFromRow(row){
   return val;
 }
 
+
+function pick(row, keys){
+  for (const k of keys){
+    if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
+      return row[k];
+    }
+  }
+  return '';
+}
+function fmtDate(v){
+  if (!v) return '';
+  const d = new Date(String(v).replace(' ', 'T'));
+  if (isNaN(d)) return String(v);
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mi = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss}`;
+}
+// Prefer proxy like the external page does
+function pdfHrefFromRow(row){
+  const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
+  if (!raw) return '#';
+  const fname = String(raw)
+    .replace(/^https?:\/\/[^/]+/i, '')
+    .replace(/\?.*$/, '')
+    .split('/').filter(Boolean).pop();
+  if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
+  const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
+  return apiBase ? `${apiBase}/pdf.php?f=${encodeURIComponent(fname)}` : '#';
+}
+
+
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
@@ -899,70 +934,30 @@ function renderRows(tbodyId, rows){
     tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
-  tb.innerHTML = '';
-
-  const fmtData = (v)=>{
-    if (!v) return '-';
-    const s = (''+v).replace(' ', 'T');
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) {
-      const dd = String(d.getDate()).padStart(2,'0');
-      const mm = String(d.getMonth()+1).padStart(2,'0');
-      const yyyy = d.getFullYear();
-      const hh = String(d.getHours()).padStart(2,'0');
-      const mi = String(d.getMinutes()).padStart(2,'0');
-      const ss = String(d.getSeconds()).padStart(2,'0');
-      return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss}`;
-    }
-    return String(v);
-  };
-
-  rows.forEach(row=>{
-    const tr = document.createElement('tr');
-
-    const tdData = document.createElement('td');
-    tdData.textContent = fmtData(row.data || row.created_at || row.dt || row.datahora || row.DATA);
-    tr.appendChild(tdData);
-
-    const tdCod = document.createElement('td');
-    tdCod.textContent = row.codigo || row.CODIGO || '-';
-    tr.appendChild(tdCod);
-
-    // CONTRATANTE (prioriza cta_*)
-    const contratante =
-      row.cta_nome || row.ctaRazao || row.cta_razao || row.cta_razaoSocial || row.cta_razao_social ||
-      row.contratante_nome || row.CONTRATANTE_NOME || row.contratante || row.CONTRATANTE || row.cliente || row.CLIENTE ||
-      row.contratante_razao || row.razao_contratante || row.razaoSocialContratante || row.razao_social_contratante || '-';
-    const tdContratante = document.createElement('td');
-    tdContratante.textContent = contratante || '-';
-    tr.appendChild(tdContratante);
-
-    // CONTRATADA (usa campos se existirem; senão fallback IMPAR)
-    let contratada =
-      row.contratada_nome || row.CONTRATADA_NOME || row.contratada || row.CONTRATADA ||
-      row.fornecedor || row.FORNECEDOR || row.ctd_nome || row.ctd_razao || row.ctdRazao || row.ctd_razaoSocial || row.ctd_razao_social;
-    if (!contratada || String(contratada).trim() === '') {
-      contratada = 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
-    }
-    const tdContratada = document.createElement('td');
-    tdContratada.textContent = contratada;
-    tr.appendChild(tdContratada);
-
-    const tdServico = document.createElement('td');
-    tdServico.textContent = row.servico || row.SERVICO || row.descricao || row.objeto || '-';
-    tr.appendChild(tdServico);
-
-    const tdPdf = document.createElement('td');
-    const btn = document.createElement('button');
-    btn.className = 'btn';
-    btn.textContent = 'abrir';
-    btn.onclick = () => openPdfSmart(row);
-    tdPdf.appendChild(btn);
-    tr.appendChild(tdPdf);
-
-    tb.appendChild(tr);
-  });
+  let html = '';
+  for (const row of rows){
+    const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
+    const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
+    const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
+    const cttN = pick(row, ['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE','cliente','CLIENTE']);
+    const cttD = pick(row, ['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']);
+    const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
+    const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
+    const href = pdfHrefFromRow(row);
+    html += `
+      <tr>
+        <td>${fmtDate(dt) || '—'}</td>
+        <td>${cod || '—'}</td>
+        <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
+        <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
+        <td>${serv || '—'}</td>
+        <td>${href !== '#' ? `<a class="link" href="${href}" target="_blank" rel="noopener noreferrer">abrir</a>` : '—'}</td>
+      </tr>
+    `;
+  }
+  tb.innerHTML = html;
 }
+
 
 function renderConsMsgInline(msg){
   const tb=document.getElementById('consBodyInline');
