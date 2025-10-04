@@ -5,34 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Consulta de Documentos — ERP Ímpar</title>
   <style>
-    :root{
-      --bg:#f6f7fb;--card:#fff;--txt:#0f172a;--muted:#64748b;--line:#e2e8f0;
-      --accent:#2563eb;--accent-2:#1d4ed8;--ok:#16a34a;--bad:#ef4444;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    :root{--bg:#f6f7fb;--card:#fff;--txt:#0f172a;--muted:#64748b;--line:#e2e8f0;--accent:#2563eb;--accent-2:#1d4ed8}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
     .wrap{max-width:980px;margin:28px auto;padding:0 14px}
     .card{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 10px rgba(15,23,42,.06);overflow:hidden}
-    .hd{padding:16px;border-bottom:1px solid var(--line);font-weight:700}
-    .bd{padding:16px}
-    .row{display:grid;grid-template-columns: 1fr 340px 120px 100px;gap:10px}
-    .row + .row{margin-top:10px}
-    .input, .btn{height:40px;font:15px/1.2 inherit;border-radius:8px;border:1px solid var(--line);padding:0 10px;background:#fff}
-    .input[readonly]{background:#f8fafc;color:var(--muted)}
-    .btn{background:var(--accent);color:#fff;border-color:transparent;font-weight:700;cursor:pointer}
-    .btn:hover{background:var(--accent-2)}
-    .status{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 12px;border-radius:999px;font-weight:700}
-    .ok{background:#ecfdf5;color:var(--ok);border:1px solid #86efac}
-    .bad{background:#fef2f2;color:var(--bad);border:1px solid #fecaca}
+    .hd{padding:16px;border-bottom:1px solid var(--line);font-weight:700}.bd{padding:16px}
+    .row{display:grid;grid-template-columns: 1fr 340px 120px 100px;gap:10px}.row + .row{margin-top:10px}
+    .input,.btn{height:40px;font:15px/1.2 inherit;border-radius:8px;border:1px solid var(--line);padding:0 10px;background:#fff}
+    .btn{background:var(--accent);color:#fff;border-color:transparent;font-weight:700;cursor:pointer}.btn:hover{background:var(--accent-2)}
     table{width:100%;border-collapse:collapse;margin-top:12px;border-top:1px solid var(--line)}
     th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
     th{font-size:13px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);text-align:left}
-    td small{color:var(--muted)}
-    a.link{color:var(--accent);text-decoration:none;font-weight:700}
-    a.link:hover{text-decoration:underline}
-    .muted{color:var(--muted)}
-    .code-link{color:var(--accent);text-decoration:none;font-weight:700}
-    .code-link:hover{text-decoration:underline}
+    td small{color:var(--muted)}a.link,.code-link{color:var(--accent);text-decoration:none;font-weight:700}
+    a.link:hover,.code-link:hover{text-decoration:underline}
     .pulse{animation:pulse 1s ease-in-out 1}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,.4)}100%{box-shadow:0 0 0 14px rgba(37,99,235,0)}}
   </style>
 </head>
@@ -44,206 +29,150 @@
         <div class="row">
           <input id="codigo" class="input" placeholder="Ex.: AC00025 (opcional)" />
           <input id="token"  class="input" placeholder="Token da API" />
-          <div id="status" class="status muted" aria-live="polite">…</div>
+          <div id="status" style="display:flex;align-items:center"> </div>
           <button id="buscar" class="btn">Buscar</button>
         </div>
-        <div class="row" style="grid-template-columns: 1fr 140px 1fr 1fr; margin-top:10px">
-          <input id="endpoint" class="input" value="" readonly />
-          <span class="muted" style="display:flex;align-items:center">Endpoint detectado</span>
-          <span class="muted" style="display:flex;align-items:center">Dica: deixe o código em branco para listar tudo</span>
-        </div>
-
-        <div id="resultado" style="margin-top:14px">
-          <div class="muted">Nenhum registro encontrado.</div>
-        </div>
+        <div id="resultado" style="margin-top:14px"><div class="muted">Nenhum registro encontrado.</div></div>
       </div>
     </div>
   </div>
 
 <script>
-  // ===== CONFIG =====
-  const API_BASE  = 'https://api.erpimpar.com.br';
-  const ENDPOINT  = `${API_BASE}/gerador`;
-  const LIST_URL  = `${ENDPOINT}/list.php`;
-  const PDF_PROXY = `${ENDPOINT}/pdf.php`; // abre PDF via proxy (evita 404)
-
-  const LS_TOKEN  = 'impar_api_token';
-
-  // ===== UI/refs =====
-  const $        = (s)=>document.querySelector(s);
-  const inpCodigo= $('#codigo');
-  const inpToken = $('#token');
-  const btnBuscar= $('#buscar');
-  const badge    = $('#status');
-  const out      = $('#resultado');
-  const inpEndpt = $('#endpoint');
-
-  // token salvo
-  inpToken.value = localStorage.getItem(LS_TOKEN) || '';
-
-  // ===== Helpers =====
-  function setBadge(txt, ok){
-    badge.textContent = txt;
-    badge.className = 'status ' + (ok ? 'ok' : 'bad');
-  }
-  function pick(o, keys){
-    for (const k of keys){
-      if (o && o[k] !== undefined && o[k] !== null) {
-        const v = (typeof o[k] === 'string') ? o[k].trim() : o[k];
-        if (v !== '' && v !== '-') return v;
-      }
+// ===== Helpers =====
+function pick(o, keys){
+  for (var i=0;i<keys.length;i++){
+    var k = keys[i];
+    if (o && o[k] !== undefined && o[k] !== null){
+      var v = (typeof o[k] === 'string') ? o[k].trim() : o[k];
+      if (v !== '' && v !== '-') return v;
     }
-    return '';
   }
-  function fmtDate(s){
-    if(!s) return '—';
-    try{
-      if (/^\d{4}-\d{2}-\d{2} /.test(s)) return new Date(s.replace(' ','T')+'Z').toLocaleString('pt-BR');
-      return new Date(s).toLocaleString('pt-BR');
-    }catch(_){ return s; }
-  }
-  function pdfHrefFromRow(row){
-    const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
-    if (!raw) return '#';
-    const fname = String(raw)
-      .replace(/^https?:\/\/[^/]+/i, '')
-      .replace(/\?.*$/, '')
-      .split('/').filter(Boolean).pop();
-    if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
-    return `${PDF_PROXY}?f=${encodeURIComponent(fname)}`;
-  }
-
-  // === Ações no clique do CÓDIGO ===
-  function openPdfFromRow(row){
-    try{
-      const href = pdfHrefFromRow(row);
-      if (href && href !== '#') window.open(href, '_blank', 'noopener');
-      else alert('PDF não disponível para este registro.');
-    }catch(e){ alert('Não foi possível abrir o PDF.'); }
-  }
-  function setIfExists(id, value){
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.value = (value ?? '').toString();
-    try{ el.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
-  }
-  function fillFromRowFallback(row){
-    setIfExists('codigo',      pick(row, ['codigo','Código','CODIGO']));
-    setIfExists('servico',     pick(row, ['servico','Serviço','descricao','objeto']));
-    setIfExists('endereco_obra', pick(row, ['enderecoObra','endereco_obra','obra_endereco']));
-    setIfExists('contratante', pick(row, ['ctt_nome','contratante_nome','contratante','cliente']));
-    setIfExists('cnpj_contratante', pick(row, ['ctt_cpfCnpj','contratante_cnpj','cpfCnpj','cpfCnpjContratante']));
-    setIfExists('contratada',  pick(row, ['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA');
-    setIfExists('cnpj_contratada', pick(row, ['cta_cpfCnpj','contratada_cnpj']));
-  }
-  function proceedToStep2(){
-    try{ if (typeof goTo === 'function') goTo(2); }catch(_){}
-    const step = document.querySelector('[data-step="2"]');
-    if (step){ step.scrollIntoView({behavior:'smooth', block:'start'}); step.classList.add('pulse'); setTimeout(()=> step.classList.remove('pulse'), 1200); }
-  }
-  function updateAllFieldsFromRow(row){
-    if (typeof window.fillAllFromRow === 'function'){
-      try { window.fillAllFromRow(row); }
-      catch(e){ console.error('fillAllFromRow falhou, usando fallback:', e); fillFromRowFallback(row); }
-    } else {
-      fillFromRowFallback(row);
-    }
+  return '';
+}
+function fmtDate(s){
+  if(!s) return '—';
+  try{
+    if (/^\\d{4}-\\d{2}-\\d{2} /.test(s)) return new Date(s.replace(' ','T')+'Z').toLocaleString('pt-BR');
+    return new Date(s).toLocaleString('pt-BR');
+  }catch(_){ return s; }
+}
+function pdfHrefFromRow(row){
+  var raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
+  if (!raw) return '#';
+  var fname = String(raw).replace(/^https?:\\/\\/[^/]+/i, '').replace(/\\?.*$/, '').split('/').filter(Boolean).pop();
+  if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
+  return 'https://api.erpimpar.com.br/gerador/pdf.php?f='+encodeURIComponent(fname);
+}
+function openPdfFromRow(row){
+  var href = pdfHrefFromRow(row);
+  if (href && href !== '#') window.open(href,'_blank','noopener'); else alert('PDF não disponível.');
+}
+function setIfExists(id, value){
+  var el = document.getElementById(id); if(!el) return;
+  el.value = (value==null?'':String(value));
+  try{ el.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
+}
+function fillFromRowFallback(row){
+  setIfExists('codigo', pick(row,['codigo','Código','CODIGO']));
+  setIfExists('servico', pick(row,['servico','Serviço','descricao','objeto']));
+  setIfExists('endereco_obra', pick(row,['enderecoObra','endereco_obra','obra_endereco']));
+  setIfExists('contratante', pick(row,['ctt_nome','contratante_nome','contratante','cliente']));
+  setIfExists('cnpj_contratante', pick(row,['ctt_cpfCnpj','contratante_cnpj','cpfCnpj','cpfCnpjContratante']));
+  setIfExists('contratada', pick(row,['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA');
+  setIfExists('cnpj_contratada', pick(row,['cta_cpfCnpj','contratada_cnpj']));
+}
+function proceedToStep2(){
+  try{ if (typeof goTo==='function') goTo(2); }catch(_){}
+  var step = document.querySelector('[data-step="2"]');
+  if (step){ step.scrollIntoView({behavior:'smooth',block:'start'}); step.classList.add('pulse'); setTimeout(function(){ step.classList.remove('pulse'); },1200); }
+}
+function showActionWithRow(row){
+  var chooseUpdate = confirm('Deseja atualizar as informações ou gerar o PDF?\\n\\nClique \"OK\" para Atualizar, ou \"Cancelar\" para Gerar o PDF.');
+  if (chooseUpdate){
+    if (typeof window.fillAllFromRow==='function'){ try{ window.fillAllFromRow(row); }catch(e){ fillFromRowFallback(row);} }
+    else { fillFromRowFallback(row); }
     proceedToStep2();
+  } else {
+    openPdfFromRow(row);
   }
-  function showAction(row){
-    const msg = 'Deseja atualizar as informações ou gerar o PDF?\n\nClique "OK" para Atualizar, ou "Cancelar" para Gerar o PDF.';
-    const chooseUpdate = confirm(msg);
-    if (chooseUpdate) updateAllFieldsFromRow(row);
-    else openPdfFromRow(row);
+}
+
+// ===== Render =====
+function renderRows(rows, containerId){
+  var out = document.getElementById(containerId||'resultado');
+  if(!rows || !rows.length){ out.innerHTML = '<div class=\"muted\">Nenhum registro encontrado.</div>'; return; }
+
+  var html = '';
+  html += '<table><thead><tr>';
+  html += '<th style=\"width:140px\">Data</th>';
+  html += '<th style=\"width:100px\">Código</th>';
+  html += '<th>Contratante</th>';
+  html += '<th>Contratada</th>';
+  html += '<th>Serviço</th>';
+  html += '<th style=\"width:70px\">PDF</th>';
+  html += '</tr></thead><tbody>';
+
+  for (var i=0;i<rows.length;i++){
+    var row  = rows[i];
+    var dt   = pick(row,['created_at','data','Data','timestamp']);
+    var cod  = pick(row,['codigo','Código','CÓDIGO','CODIGO','code']);
+    var serv = pick(row,['servico','Serviço','SERVIÇO','descricao','Descrição']);
+    var cttN = pick(row,['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE','cliente','CLIENTE']);
+    var cttD = pick(row,['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']);
+    var ctaN = pick(row,['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
+    var ctaD = pick(row,['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
+    var href = pdfHrefFromRow(row);
+
+    var rowStr = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\"/g,'&quot;');
+
+    html += '<tr>';
+    html += '<td>'+(fmtDate(dt) || '—')+'</td>';
+    html += '<td>'+(cod ? '<a href=\"#\" class=\"code-link\" data-row=\"'+rowStr+'\" onclick=\"showActionWithRow(JSON.parse(this.dataset.row));return false;\">'+cod+'</a>' : '—')+'</td>';
+    html += '<td><div>'+(cttN || '—')+'</div><small>'+(cttD || '')+'</small></td>';
+    html += '<td><div>'+(ctaN || '—')+'</div><small>'+(ctaD || '')+'</small></td>';
+    html += '<td>'+(serv || '—')+'</td>';
+    html += '<td>'+(href !== '#' ? '<a class=\"link\" href=\"'+href+'\" target=\"_blank\" rel=\"noopener noreferrer\">abrir</a>' : '—')+'</td>';
+    html += '</tr>';
   }
+  html += '</tbody></table>';
+  out.innerHTML = html;
+}
 
-  // ===== Endpoint detect =====
-  async function detectEndpoint(){
-    inpEndpt.value = `${ENDPOINT}/`;
-    try{
-      const r = await fetch(`${ENDPOINT}/ping.php`, { cache:'no-store' });
-      const j = await r.json().catch(()=> ({}));
-      setBadge(j && j.ok ? 'OK' : 'Falha ao detectar endpoint', !!(j && j.ok));
-    }catch(_){
-      setBadge('Falha ao detectar endpoint', false);
-    }
+// ===== Busca (igual ao externo) =====
+var API_BASE  = 'https://api.erpimpar.com.br';
+var ENDPOINT  = API_BASE + '/gerador';
+var LIST_URL  = ENDPOINT + '/list.php';
+var PDF_PROXY = ENDPOINT + '/pdf.php';
+
+var inpCodigo = document.getElementById('codigo');
+var inpToken  = document.getElementById('token');
+var badge     = document.getElementById('status');
+var out       = document.getElementById('resultado');
+
+function setBadge(txt){ badge.textContent = txt; }
+
+async function buscar(){
+  var token = (inpToken.value||'').trim();
+  if(!token){ setBadge('Informe o token'); return; }
+
+  var qs = new URLSearchParams(); qs.set('token', token);
+  var codigo = (inpCodigo.value||'').trim(); if (codigo) qs.set('codigo', codigo);
+
+  setBadge('Buscando…');
+  try{
+    var r = await fetch(LIST_URL + '?' + qs.toString(), {cache:'no-store'});
+    var j = await r.json().catch(function(){return null});
+    var rows = (j && j.ok) ? (j.rows||j.items||j.linhas||j.itens||[]) : [];
+    renderRows(rows);
+    setBadge(rows.length ? 'OK' : 'Nenhum registro');
+  }catch(e){
+    console.error(e); setBadge('Erro na consulta'); out.innerHTML = '<div class=\"muted\">Nenhum registro encontrado.</div>';
   }
+}
 
-  // ===== Consulta =====
-  async function buscar(){
-    const token = (inpToken.value || '').trim();
-    if(!token){ setBadge('Informe o token', false); return; }
-    localStorage.setItem(LS_TOKEN, token);
-
-    const qs  = new URLSearchParams();
-    qs.set('token', token);
-    const codigo = (inpCodigo.value || '').trim();
-    if (codigo) qs.set('codigo', codigo);
-
-    setBadge('Buscando…', true);
-    try{
-      const r = await fetch(`${LIST_URL}?${qs.toString()}`, { cache:'no-store' });
-      const j = await r.json().catch(()=>null);
-      const rows = j && j.ok ? (j.rows || j.items || j.linhas || j.itens || []) : [];
-      renderRows(rows);
-      setBadge(rows.length ? 'OK' : 'Nenhum registro', !!rows.length);
-    }catch(err){
-      console.error('Erro na consulta', err);
-      setBadge('Erro na consulta', false);
-      out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
-    }
-  }
-
-  function renderRows(rows){
-    if(!rows.length){
-      out.innerHTML = `<div class="muted">Nenhum registro encontrado.</div>`;
-      return;
-    }
-    let html = `
-      <table>
-        <thead>
-          <tr>
-            <th style="width:140px">Data</th>
-            <th style="width:100px">Código</th>
-            <th>Contratante</th>
-            <th>Contratada</th>
-            <th>Serviço</th>
-            <th style="width:70px">PDF</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-    for (const row of rows){
-      const dt   = pick(row, ['created_at','data','Data','timestamp']);
-      const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
-      const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição']);
-      const cttN = pick(row, ['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE','cliente','CLIENTE']);
-      const cttD = pick(row, ['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']);
-      const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
-      const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
-      const href = pdfHrefFromRow(row);
-      html += `
-        <tr>
-          <td>\${fmtDate(dt) || '—'}</td>
-          <td>\${cod ? \`<a href="#" class="code-link" onclick='showAction(\${ROW_JSON});return false;'>\${cod}</a>\` : '—'}</td>
-          <td><div>\${cttN || '—'}</div><small>\${cttD || ''}</small></td>
-          <td><div>\${ctaN || '—'}</div><small>\${ctaD || ''}</small></td>
-          <td>\${serv || '—'}</td>
-          <td>\${href !== '#' ? \`<a class="link" href="\${href}" target="_blank" rel="noopener noreferrer">abrir</a>\` : '—'}</td>
-        </tr>
-      `;
-      html = html.replace('\${ROW_JSON}', JSON.stringify(row).replace(/</g,'\u003c'));
-    }
-    html += `</tbody></table>`;
-    out.innerHTML = html;
-  }
-
-  // Eventos + init
-  btnBuscar.addEventListener('click', buscar);
-  inpCodigo.addEventListener('keydown', (e)=>{ if(e.key==='Enter') buscar(); });
-  inpToken.addEventListener('keydown',  (e)=>{ if(e.key==='Enter') buscar(); });
-  detectEndpoint();
+document.getElementById('buscar').addEventListener('click', buscar);
+inpCodigo.addEventListener('keydown', function(e){ if(e.key==='Enter') buscar(); });
+inpToken.addEventListener('keydown',  function(e){ if(e.key==='Enter') buscar(); });
 </script>
-
 </body>
 </html>
