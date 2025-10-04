@@ -71,29 +71,47 @@
     return (j && (j.items || j.rows || j.itens || j.linhas)) || [];
   }
 
-  async function saveWithLogo(pdfBlob, pdfName){
-  const raw   = (typeof window.collectFormData === 'function') ? window.collectFormData() : {};
-  const dados = normalizeDados(raw);
-  const safeName = pdfName || uniquePdfName(dados.codigo || 'DOC');
+  let __savingNowPatch = false;
 
-  const fd = new FormData();
-  fd.append('pdf', new File([pdfBlob], safeName, {type:'application/pdf'}));
+async function saveWithLogo(pdfBlob, pdfName, dadosFromCaller){
+  if (__savingNowPatch) {
+    console.warn('[patch] salvamento já em andamento');
+    return { ok:false, reason:'locked' };
+  }
+  __savingNowPatch = true;
+  try {
+    // Recebe dados do index; se vierem ausentes, tenta coletar (retrocompatibilidade)
+    const raw   = (dadosFromCaller && typeof dadosFromCaller === 'object')
+      ? dadosFromCaller
+      : (typeof window.collectFormData === 'function' ? window.collectFormData() : {});
+    const dados = normalizeDados(raw);
 
-  // <<< AQUI ESTÁ A CORREÇÃO: enviar como STRING, não Blob >>>
-  fd.append('dados', JSON.stringify(dados));
+    const safeName = pdfName || uniquePdfName(dados.codigo || 'DOC');
 
-  fd.append('token', SAVE_TOKEN);
+    const fd = new FormData();
+    fd.append('pdf', new File([pdfBlob], safeName, { type:'application/pdf' }));
+    fd.append('dados', JSON.stringify(dados));      // <<< STRING, não Blob
+    fd.append('token', SAVE_TOKEN);
 
-  const logo = document.getElementById('logo')?.files?.[0];
-  if (logo) fd.append('logo', logo, logo.name);
+    const logo = document.getElementById('logo')?.files?.[0];
+    if (logo) fd.append('logo', logo, logo.name);
 
-  const resp = await fetch(SAVE_URL, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + SAVE_TOKEN },
-    body: fd
-  });
-  return await parseJsonSafe(resp);
- }
+    const resp = await fetch(SAVE_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SAVE_TOKEN },
+      body: fd,
+      mode: 'cors'
+    });
+    const json = await parseJsonSafe(resp);
+    try { console.log('[patch] save.php ->', resp.status, json); } catch(_) {}
+    return json;
+  } catch (e) {
+    console.error('[patch] erro no salvamento', e);
+    return { ok:false, error:String(e) };
+  } finally {
+    __savingNowPatch = false;
+  }
+}
 
   window.saveWithLogo = saveWithLogo;
   window.checkCodigoDuplicado = checkCodigoDuplicado;
