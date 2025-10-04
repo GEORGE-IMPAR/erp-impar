@@ -68,6 +68,7 @@
          border-radius:50%;animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   
+.code-link{color:var(--accent);text-decoration:none;font-weight:700}.code-link:hover{text-decoration:underline}
 </style>
 
 <script>
@@ -927,6 +928,59 @@ function pdfHrefFromRow(row){
 }
 
 
+
+// === Ações no clique do CÓDIGO ===
+function openPdfFromRow(row){
+  try{
+    const href = pdfHrefFromRow ? pdfHrefFromRow(row) : (row.pdf_url || row.pdf || '#');
+    if (href && href !== '#') window.open(href, '_blank', 'noopener');
+    else alert('PDF não disponível para este registro.');
+  }catch(e){ alert('Não foi possível abrir o PDF.'); }
+}
+function setIfExists(id, value){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = (value ?? '').toString();
+  try{ el.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
+}
+function pick2(row, keys){
+  for (const k of keys){
+    if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
+      return row[k];
+    }
+  }
+  return '';
+}
+function fillFromRowFallback(row){
+  setIfExists('codigo',      pick2(row, ['codigo','Código','CODIGO']));
+  setIfExists('servico',     pick2(row, ['servico','Serviço','descricao','objeto']));
+  setIfExists('endereco_obra', pick2(row, ['enderecoObra','endereco_obra','obra_endereco','endereco']));
+  setIfExists('contratante', pick2(row, ['ctt_nome','contratante_nome','contratante','cliente']));
+  setIfExists('cnpj_contratante', pick2(row, ['ctt_cpfCnpj','contratante_cnpj','cpfCnpj','cpfCnpjContratante','contratante_doc']));
+  setIfExists('contratada',  pick2(row, ['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA');
+  setIfExists('cnpj_contratada', pick2(row, ['cta_cpfCnpj','contratada_cnpj','contratada_doc']));
+}
+function proceedToStep2(){
+  try{ if (typeof goTo === 'function') goTo(2); }catch(_){}
+  const step = document.querySelector('[data-step="2"]');
+  if (step){ step.scrollIntoView({behavior:'smooth',block:'start'}); step.classList.add('pulse'); setTimeout(()=> step.classList.remove('pulse'), 1000); }
+}
+function updateAllFieldsFromRow(row){
+  if (typeof window.fillAllFromRow === 'function'){
+    try { window.fillAllFromRow(row); }
+    catch(e){ console.error('fillAllFromRow falhou, usando fallback:', e); fillFromRowFallback(row); }
+  } else {
+    fillFromRowFallback(row);
+  }
+  proceedToStep2();
+}
+function showAction(row){
+  const msg = 'Deseja atualizar as informações ou gerar o PDF?\n\nClique "OK" para Atualizar, ou "Cancelar" para Gerar o PDF.';
+  const chooseUpdate = confirm(msg);
+  if (chooseUpdate) updateAllFieldsFromRow(row);
+  else openPdfFromRow(row);
+}
+
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
@@ -936,6 +990,7 @@ function renderRows(tbodyId, rows){
   }
   let html = '';
   for (const row of rows){
+    const rowData = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
     const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
     const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
     const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
@@ -947,7 +1002,7 @@ function renderRows(tbodyId, rows){
     html += `
       <tr>
         <td>${fmtDate(dt) || '—'}</td>
-        <td>${cod || '—'}</td>
+        <td>${cod ? `<a href="#" class="code-link" data-row="${rowData}" onclick='showAction(JSON.parse(this.dataset.row));return false;'>${cod}</a>` : '—'}</td>
         <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
         <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
         <td>${serv || '—'}</td>
