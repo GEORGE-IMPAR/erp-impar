@@ -754,8 +754,7 @@ async function saveDocumentWithPdf(pdfBlob){
 const LOGIN_URL='/login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
 function pdfHrefFromRow(row){
-  if (row.pdf_url && /^https?:\/\//.test(row.pdf_url)) return row.pdf_url;
-  return (window.location.origin + '/gerador/pdf.php?f=' + encodeURIComponent(row.pdf_file || ''));
+  return row.pdf_url || row.PDF_URL || '';
 }
 function openConsulta(){
   const el=document.getElementById('consultaModal');
@@ -779,6 +778,53 @@ function renderRows(tbodyId, rows){
     tb.innerHTML = '<tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
+  tb.innerHTML = '';
+  rows.forEach(row=>{
+    const tr=document.createElement('tr');
+
+    // CÓDIGO
+    const td1=document.createElement('td');
+    td1.textContent = row.codigo || '-';
+
+    // OBRA (cobre variações do backend)
+    const td2=document.createElement('td');
+    td2.textContent = row.obra_nome || row.obra || row.nome_obra || row.Obra || '-';
+
+    // PDF
+    const td3=document.createElement('td');
+    const a=document.createElement('a');
+
+    // Prefere URL já pronta
+    let pdfUrl = row.pdf_url || row.PDF_URL;
+
+    // Se vier só o nome do arquivo, monta a partir do LIST_URL configurado no patch
+    if (!pdfUrl && (row.pdf || row.pdf_file)){
+      const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
+      if (apiBase) {
+        pdfUrl = apiBase.replace(/\/+$/, '') + '/pdf/' + encodeURIComponent(row.pdf || row.pdf_file);
+      }
+    }
+
+    if (pdfUrl){
+      a.href = pdfUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.className = 'pdf-link';
+      a.textContent = 'abrir';
+    } else {
+      a.textContent = 'indisp.';
+      a.style.opacity = '.5';
+      a.style.pointerEvents = 'none';
+      a.title = 'PDF não disponível';
+    }
+
+    td3.appendChild(a);
+    tr.appendChild(td1);
+    tr.appendChild(td2);
+    tr.appendChild(td3);
+    tb.appendChild(tr);
+  });
+}
   tb.innerHTML = '';
   rows.forEach(row=>{
     const tr=document.createElement('tr');
