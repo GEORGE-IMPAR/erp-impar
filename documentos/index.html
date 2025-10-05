@@ -78,13 +78,6 @@ window.__CONSULTA_CFG__ = {
 
 <!-- Patch de salvamento (já usado) -->
 <script src="/documentos/erp_save_patch_flatfile.js"></script>
-
-<style>
-/* --- Consulta UX hover/clickable row --- */
-#consBody tr, #consBodyInline tr { cursor: pointer; }
-#consBody tr:hover, #consBodyInline tr:hover { background: #f8fafc; }
-</style>
-
 </head>
 <body>
 
@@ -1117,14 +1110,14 @@ function clearLocal(){
   });
 })();
 
-async function proceedFromStep1(codigo){
+async async function proceedFromStep1(codigo){
   const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
   if(!LIST_URL || !SAVE_TOKEN){ goTo(2); return; }
   try{
     const j    = await fetchConsulta(codigo);     // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
     if(rows.length === 0){ goTo(2); return; }
-    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
+    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(codigo).toUpperCase()));
     if (exact) { openDupeModal(exact); } else { goTo(2); }
   }catch(e){
     console.error(e);
@@ -1148,7 +1141,10 @@ document.getElementById('btnDupPrint').onclick = () => {
 };
 document.getElementById('btnDupUpdate').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
-  fillAllFromRow(__dupeRow); closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
+  fillAllFromRow(__dupeRow);
+try{ setVal('clausulas', (__dupeRow.clausulas||'')); }catch(_){}
+try{ setVal('condicoes', (__dupeRow.condicoes||'')); }catch(_){}
+closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
 };
 
 function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
@@ -1244,226 +1240,5 @@ function focusNext(el){
     // ===== Init =====
     updateStepper(1); validate1();
   </script>
-
-<script>
-(function(){
-  /* ---------- Normalização de linha -> formato fillAllFromRow ---------- */
-  function normalizeRowForFill(row){
-    function pick(keys){
-      for (var i=0;i<keys.length;i++){
-        var k = keys[i];
-        if (row && row[k] != null && String(row[k]).trim() !== '') return row[k];
-      }
-      return '';
-    }
-    return {
-      // Etapa 2
-      servico:            pick(['servico','Serviço','descricao','objeto']),
-      endereco_obra:      pick(['endereco_obra','enderecoObra','obra_endereco','endereco','endereco_obra_completo']),
-      // Etapa 3 (Contratante)
-      contratante_nome:   pick(['ctt_nome','contratante_nome','contratante','cliente']),
-      contratante_doc:    pick(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
-      ctt_contato:        pick(['ctt_contato','contato_contratante','responsavel_contratante']),
-      ctt_telefone:       pick(['ctt_telefone','telefone_contratante','telefone']),
-      ctt_email:          pick(['ctt_email','email_contratante','email']),
-      ctt_endereco:       pick(['ctt_endereco','contratante_endereco','endereco_contratante']),
-      // Etapa 4 (Contratada)
-      contratada_nome:    pick(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
-      contratada_doc:     pick(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
-      cta_contato:        pick(['cta_contato','contato_contratada','responsavel_contratada']),
-      cta_telefone:       pick(['cta_telefone','telefone_contratada']),
-      cta_email:          pick(['cta_email','email_contratada']),
-      cta_endereco:       pick(['cta_endereco','contratada_endereco','endereco_contratada']),
-      // Etapa 5
-      valor:              pick(['valor','valor_total']),
-      valorExtenso:       pick(['valorExtenso','valor_extenso']),
-      prazo:              pick(['prazo','prazo_dias']),
-      dataExtenso:        pick(['dataExtenso','data_extenso']),
-      clausulas:          pick(['clausulas','clausulas_texto']),
-      condicoes:          pick(['condicoes','condicoes_pagamento'])
-    };
-  }
-
-  /* ---------- Delegação pós-render da tabela de consulta ---------- */
-  var _origRenderRows = window.renderRows;
-  if (typeof _origRenderRows === 'function'){
-    window.renderRows = function(tbodyId, rows){
-      _origRenderRows(tbodyId, rows);
-      var tb = document.getElementById(tbodyId);
-      if (!tb) return;
-
-      // Armazena as linhas em memória para evitar JSON no HTML
-      tb.__rows = rows || [];
-
-      // Impede que link "abrir" (PDF) propague clique da linha
-      Array.prototype.forEach.call(tb.querySelectorAll('a'), function(a){
-        a.addEventListener('click', function(ev){ ev.stopPropagation(); });
-      });
-
-      // Reatribui data-idx pra cada TR
-      Array.prototype.forEach.call(tb.querySelectorAll('tr'), function(tr, idx){
-        tr.dataset.idx = idx;
-      });
-
-      // Remove listeners anteriores para não acumular
-      if (tb.__rowClickHandler){
-        tb.removeEventListener('click', tb.__rowClickHandler, true);
-      }
-      tb.__rowClickHandler = function(ev){
-        var tr = ev.target.closest('tr');
-        if (!tr) return;
-        if (ev.target.closest('a')) return; // já tratamos acima, mas garantimos
-        var i = tr.dataset.idx|0;
-        var row = (tb.__rows || [])[i];
-        if (!row) return;
-        showAction(row);
-      };
-      tb.addEventListener('click', tb.__rowClickHandler, true);
-    };
-  }
-
-  /* ---------- UI da ação (modal externo se existir) ---------- */
-  window.showAction = function(row){
-    if (typeof window.openActionModal === 'function'){
-      window.__actionRow = row;
-      openActionModal(row);
-      return;
-    }
-    // Fallback simples
-    if (confirm('Deseja atualizar as informações ou gerar o PDF?
-
-OK = Atualizar, Cancelar = Gerar PDF')){
-      doUpdateFromRow(row);
-    }else{
-      if (typeof window.openPdfFromRow === 'function'){
-        window.openPdfFromRow(row);
-      }else{
-        alert('PDF indisponível.');
-      }
-    }
-  };
-
-  /* ---------- Atualizar: preenche tudo e pula para Etapa 2 ---------- */
-  window.doUpdateFromRow = function(row){
-    try{
-      // Código (Etapa 1)
-      if (typeof setVal === 'function') setVal('codigo', row.codigo || '');
-      var inp = document.getElementById('codigo'); if (inp) inp.value = row.codigo || '';
-
-      // Fecha a consulta (se estiver aberta)
-      if (typeof closeConsulta === 'function') closeConsulta();
-
-      // Normaliza e envia para seu preenchimento massivo
-      var norm = normalizeRowForFill(row);
-      if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
-
-      // Garante cláusulas/condições mesmo se fillAllFromRow não popular
-      try { if (typeof setVal === 'function') setVal('clausulas', norm.clausulas||''); } catch(e){}
-      try { if (typeof setVal === 'function') setVal('condicoes', norm.condicoes||''); } catch(e){}
-      var c1 = document.getElementById('clausulas'); if (c1) c1.value = norm.clausulas || c1.value || '';
-      var c2 = document.getElementById('condicoes'); if (c2) c2.value = norm.condicoes || c2.value || '';
-
-      if (typeof validate5 === 'function') validate5();
-
-      // Avança a etapa
-      if (typeof goTo === 'function') goTo(2);
-    }catch(e){
-      console.error('[doUpdateFromRow]', e);
-    }
-  };
-
-  // Integra com botões do modal de ação (se existirem)
-  document.addEventListener('click', function(e){
-    if (e.target && e.target.id === 'btnActionUpdate' && window.__actionRow){
-      e.preventDefault(); try{ closeActionModal && closeActionModal(); }catch(_){}
-      doUpdateFromRow(window.__actionRow);
-    }
-    if (e.target && e.target.id === 'btnActionPdf' && window.__actionRow){
-      e.preventDefault();
-      try{ openPdfFromRow && openPdfFromRow(window.__actionRow); }catch(_){}
-      try{ closeActionModal && closeActionModal(); }catch(_){}
-    }
-  });
-})();
-</script>
-
-<script>
-// ====== EXTRA PATCH: clique na linha + verificação do código na Etapa 1 ======
-(function(){
-  // Robust rebind for consulta table even if renderRows name changes:
-  function bindConsultaClicks(){
-    var tb = document.getElementById('consBodyInline') || document.getElementById('consBody');
-    if (!tb || tb.__boundClick) return;
-    tb.__boundClick = true;
-    tb.addEventListener('click', function(ev){
-      var tr = ev.target.closest('tr');
-      if (!tr) return;
-      if (ev.target.closest('a')) return; // não aciona se clicou no link "abrir"
-      // tenta descobrir índice da linha pelo DOM
-      var idx = Array.prototype.indexOf.call(tb.querySelectorAll('tbody tr'), tr);
-      var rows = tb.__rows || window.__lastRows || [];
-      var row = rows[idx] || null;
-      if (row) { showAction(row); }
-    }, false);
-  }
-  // Observa o tbody para garantir bind mesmo quando a tabela é re-renderizada
-  var moTarget = document.getElementById('consultaModal') || document.body;
-  if (window.MutationObserver && moTarget){
-    var mo = new MutationObserver(function(){
-      bindConsultaClicks();
-    });
-    mo.observe(moTarget, { childList:true, subtree:true });
-  }
-  // tentativa inicial
-  bindConsultaClicks();
-
-  // ===== Validação do código na Etapa 1 =====
-  async function fetchRowsByCodigo(code){
-    try{
-      var url = (window.LIST_URL || '').toString();
-      var token = (window.SAVE_TOKEN || '').toString();
-      if (!url || !token) return [];
-      const params = new URLSearchParams();
-      params.set('token', token);
-      if (code) params.set('codigo', code);
-      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body: params.toString(), cache:'no-store' });
-      const j = await r.json().catch(()=>null);
-      const rows = j && (j.rows||j.items||j.linhas||j.itens) || [];
-      return rows;
-    }catch(_){ return []; }
-  }
-
-  async function onTryContinueFromStep1(ev){
-    try{
-      var codeEl = document.getElementById('codigo');
-      if(!codeEl) return;
-      var code = (codeEl.value||'').trim();
-      if(!code) return; // sem código, deixa fluxo normal seguir
-      const rows = await fetchRowsByCodigo(code);
-      if (rows && rows.length){
-        ev && ev.preventDefault();
-        // Mostra modal/confirm e segue fluxo "Atualizar"
-        showAction(rows[0]);
-      }
-    }catch(e){ console.warn('check code error', e); }
-  }
-
-  // Clique no botão "Continuar" (Etapa 1)
-  document.addEventListener('click', function(e){
-    var btn = e.target.closest('button');
-    if(!btn) return;
-    if (/continuar/i.test(btn.textContent||'')) {
-      onTryContinueFromStep1(e);
-    }
-  });
-  // Enter no input de código
-  var inp = document.getElementById('codigo');
-  if (inp){
-    inp.addEventListener('keydown', function(e){
-      if (e.key === 'Enter'){ onTryContinueFromStep1(e); }
-    });
-  }
-})();
-</script>
 </body>
 </html>
