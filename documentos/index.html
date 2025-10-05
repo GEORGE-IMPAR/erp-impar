@@ -1387,5 +1387,83 @@ OK = Atualizar, Cancelar = Gerar PDF')){
 })();
 </script>
 
+<script>
+// ====== EXTRA PATCH: clique na linha + verificação do código na Etapa 1 ======
+(function(){
+  // Robust rebind for consulta table even if renderRows name changes:
+  function bindConsultaClicks(){
+    var tb = document.getElementById('consBodyInline') || document.getElementById('consBody');
+    if (!tb || tb.__boundClick) return;
+    tb.__boundClick = true;
+    tb.addEventListener('click', function(ev){
+      var tr = ev.target.closest('tr');
+      if (!tr) return;
+      if (ev.target.closest('a')) return; // não aciona se clicou no link "abrir"
+      // tenta descobrir índice da linha pelo DOM
+      var idx = Array.prototype.indexOf.call(tb.querySelectorAll('tbody tr'), tr);
+      var rows = tb.__rows || window.__lastRows || [];
+      var row = rows[idx] || null;
+      if (row) { showAction(row); }
+    }, false);
+  }
+  // Observa o tbody para garantir bind mesmo quando a tabela é re-renderizada
+  var moTarget = document.getElementById('consultaModal') || document.body;
+  if (window.MutationObserver && moTarget){
+    var mo = new MutationObserver(function(){
+      bindConsultaClicks();
+    });
+    mo.observe(moTarget, { childList:true, subtree:true });
+  }
+  // tentativa inicial
+  bindConsultaClicks();
+
+  // ===== Validação do código na Etapa 1 =====
+  async function fetchRowsByCodigo(code){
+    try{
+      var url = (window.LIST_URL || '').toString();
+      var token = (window.SAVE_TOKEN || '').toString();
+      if (!url || !token) return [];
+      const params = new URLSearchParams();
+      params.set('token', token);
+      if (code) params.set('codigo', code);
+      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body: params.toString(), cache:'no-store' });
+      const j = await r.json().catch(()=>null);
+      const rows = j && (j.rows||j.items||j.linhas||j.itens) || [];
+      return rows;
+    }catch(_){ return []; }
+  }
+
+  async function onTryContinueFromStep1(ev){
+    try{
+      var codeEl = document.getElementById('codigo');
+      if(!codeEl) return;
+      var code = (codeEl.value||'').trim();
+      if(!code) return; // sem código, deixa fluxo normal seguir
+      const rows = await fetchRowsByCodigo(code);
+      if (rows && rows.length){
+        ev && ev.preventDefault();
+        // Mostra modal/confirm e segue fluxo "Atualizar"
+        showAction(rows[0]);
+      }
+    }catch(e){ console.warn('check code error', e); }
+  }
+
+  // Clique no botão "Continuar" (Etapa 1)
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('button');
+    if(!btn) return;
+    if (/continuar/i.test(btn.textContent||'')) {
+      onTryContinueFromStep1(e);
+    }
+  });
+  // Enter no input de código
+  var inp = document.getElementById('codigo');
+  if (inp){
+    inp.addEventListener('keydown', function(e){
+      if (e.key === 'Enter'){ onTryContinueFromStep1(e); }
+    });
+  }
+})();
+</script>
 </body>
 </html>
