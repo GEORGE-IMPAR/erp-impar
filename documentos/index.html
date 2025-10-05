@@ -68,15 +68,7 @@
          border-radius:50%;animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   
-
-/* Hover/Click feedback on consulta rows */
-#consBodyInline tr, #consBody tr { cursor:pointer; }
-#consBodyInline tr:hover, #consBody tr:hover { background:#f8fafc; }
-/* clickable code style */
-.code-link{color:var(--accent);text-decoration:none;font-weight:700}
-.code-link:hover{text-decoration:underline}
 </style>
-
 <!-- Patch de salvamento (já usado) -->
 <script src="/documentos/erp_save_patch_flatfile.js"></script>
 </head>
@@ -788,41 +780,16 @@ function renderRows(tbodyId, rows){
     return;
   }
   tb.innerHTML = '';
-  
-rows.forEach(row=>{
-  const tr=document.createElement('tr');
-
-  const td1=document.createElement('td');
-  const codeTxt = row.codigo||'-';
-  if (codeTxt && codeTxt !== '-') {
-    const aCode = document.createElement('a');
-    aCode.href='#'; aCode.className='code-link'; aCode.textContent=codeTxt;
-    aCode.addEventListener('click', (ev)=>{ ev.preventDefault(); showAction(row); });
-    td1.appendChild(aCode);
-  } else {
-    td1.textContent='-';
-  }
-
-  const td2=document.createElement('td'); td2.textContent=row.contratante_nome||row.ctt_nome||'-';
-
-  const td3=document.createElement('td');
-  const href = pdfHrefFromRow(row);
-  if (href && href !== '#'){
-    const a=document.createElement('a');
-    a.href=href; a.target='_blank'; a.className='pdf-link'; a.textContent='abrir';
-    a.addEventListener('click', (ev)=>ev.stopPropagation());
+  rows.forEach(row=>{
+    const tr=document.createElement('tr');
+    const td1=document.createElement('td'); td1.textContent=row.codigo||'-';
+    const td2=document.createElement('td'); td2.textContent=row.contratante_nome||'-';
+    const td3=document.createElement('td');
+    const a=document.createElement('a'); a.href=pdfHrefFromRow(row); a.target='_blank'; a.className='pdf-link'; a.textContent='abrir';
     td3.appendChild(a);
-  } else {
-    td3.textContent='-';
-  }
-
-  tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
-
-  tr.addEventListener('click', ()=> showAction(row));
-
-  tb.appendChild(tr);
-});
-
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tb.appendChild(tr);
+  });
 }
 
 function renderConsMsgInline(msg){
@@ -846,39 +813,7 @@ async function fetchConsulta(codigo){
   return await r.json();
 }
 
-
-// === Normalização dos dados para fillAllFromRow ===
-function normalizeRowForFill(row){
-  const pick = (keys)=>{
-    for (const k of keys){ if (row && row[k]!=null && String(row[k]).trim()!=='') return row[k]; }
-    return '';
-  };
-  return {
-    servico: pick(['servico','Serviço','descricao','objeto']),
-    endereco_obra: pick(['endereco_obra','enderecoObra','obra_endereco','endereco']),
-    contratante_nome: pick(['ctt_nome','contratante_nome','contratante','cliente']),
-    contratante_doc: pick(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
-    contratante_contato: pick(['ctt_contato','contato_contratante','responsavel_contratante']),
-    contratante_tel: pick(['ctt_telefone','telefone_contratante','telefone']),
-    contratante_email: pick(['ctt_email','email_contratante','email']),
-    contratante_endereco: pick(['ctt_endereco','contratante_endereco','endereco_contratante']),
-    contratada_nome: pick(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
-    contratada_doc: pick(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
-    contratada_contato: pick(['cta_contato','contato_contratada','responsavel_contratada']),
-    contratada_tel: pick(['cta_telefone','telefone_contratada']),
-    contratada_email: pick(['cta_email','email_contratada']),
-    contratada_endereco: pick(['cta_endereco','contratada_endereco','endereco_contratada']),
-    valor: pick(['valor','valor_total']),
-    valor_extenso: pick(['valorExtenso','valor_extenso']),
-    prazo_dias: pick(['prazo','prazo_dias']),
-    data_extenso: pick(['dataExtenso','data_extenso']),
-    clausulas: pick(['clausulas','clausulas_texto']),
-    condicoes: pick(['condicoes','condicoes_pagamento'])
-  };
-}
-
 // Toggle da consulta inline
-
 function toggleInlineConsulta(){
   const box = document.getElementById('consultaInline');
   if (!box) return;
@@ -1137,5 +1072,119 @@ function focusNext(el){
     // ===== Init =====
     updateStepper(1); validate1();
   </script>
+
+<script>
+// ==== Safe row-click delegation without touching existing renderRows ====
+(function(){
+  // Normalizer to match fillAllFromRow expected keys incl. clausulas/condicoes
+  function normalizeRowForFill(row){
+    const pick = (keys)=>{
+      for (const k of keys){ if (row && row[k]!=null && String(row[k]).trim()!=='') return row[k]; }
+      return '';
+    };
+    return {
+      // Etapa 2
+      servico: pick(['servico','Serviço','descricao','objeto']),
+      endereco_obra: pick(['endereco_obra','enderecoObra','obra_endereco','endereco']),
+      // Etapa 3
+      contratante_nome: pick(['ctt_nome','contratante_nome','contratante','cliente']),
+      contratante_doc: pick(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
+      contratante_contato: pick(['ctt_contato','contato_contratante','responsavel_contratante']),
+      contratante_tel: pick(['ctt_telefone','telefone_contratante','telefone']),
+      contratante_email: pick(['ctt_email','email_contratante','email']),
+      contratante_endereco: pick(['ctt_endereco','contratante_endereco','endereco_contratante']),
+      // Etapa 4
+      contratada_nome: pick(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
+      contratada_doc: pick(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
+      contratada_contato: pick(['cta_contato','contato_contratada','responsavel_contratada']),
+      contratada_tel: pick(['cta_telefone','telefone_contratada']),
+      contratada_email: pick(['cta_email','email_contratada']),
+      contratada_endereco: pick(['cta_endereco','contratada_endereco','endereco_contratada']),
+      // Etapa 5
+      valor: pick(['valor','valor_total']),
+      valor_extenso: pick(['valorExtenso','valor_extenso']),
+      prazo_dias: pick(['prazo','prazo_dias']),
+      data_extenso: pick(['dataExtenso','data_extenso']),
+      clausulas: pick(['clausulas','clausulas_texto']),
+      condicoes: pick(['condicoes','condicoes_pagamento']),
+    };
+  }
+
+  // Override renderRows to add delegation after it runs
+  var _origRenderRows = window.renderRows;
+  if (typeof _origRenderRows === 'function'){
+    window.renderRows = function(tbodyId, rows){
+      _origRenderRows(tbodyId, rows);
+      try{
+        var tb = document.getElementById(tbodyId);
+        if (!tb) return;
+        // attach row click + hover
+        var trs = tb.querySelectorAll('tr');
+        trs.forEach(function(tr, i){
+          tr.style.cursor = 'pointer';
+          tr.addEventListener('mouseenter', function(){ tr.style.background = '#f8fafc'; });
+          tr.addEventListener('mouseleave', function(){ tr.style.background = ''; });
+          tr.addEventListener('click', function(ev){
+            if (ev.target && ev.target.closest('a')) return; // ignore clicks on links (PDF)
+            var row = rows[i];
+            if (row) showAction(row);
+          });
+        });
+        // prevent link click to bubble to row
+        tb.querySelectorAll('a').forEach(function(a){
+          a.addEventListener('click', function(ev){ ev.stopPropagation(); });
+        });
+      }catch(e){ console.warn('delegate error', e); }
+      // keep last rows if you need elsewhere
+      window.__lastRows = rows;
+    };
+  }
+
+  // Show action with modal if exists; else confirm()
+  window.showAction = function(row){
+    // Try system modal
+    if (typeof openActionModal === 'function'){ openActionModal(row); return; }
+    // Fallback confirm
+    var ok = confirm('Deseja atualizar as informações ou gerar o PDF?\\n\\nOK = Atualizar, Cancelar = Gerar PDF');
+    if (ok){
+      doUpdateFromRow(row);
+    } else {
+      try { openPdfFromRow(row); } catch(e){ console.error(e); }
+    }
+  };
+
+  // Update path equals manual flow
+  window.doUpdateFromRow = function(row){
+    // 1) Set código como no manual
+    try { setVal('codigo', row.codigo || ''); } catch(_){ var c=document.getElementById('codigo'); if (c) c.value = row.codigo||''; }
+    // 2) Fechar a consulta
+    try { closeConsulta(); } catch(_){}
+    // 3) Normalizar e preencher
+    var norm = normalizeRowForFill(row);
+    try { fillAllFromRow(norm); } catch(e){ console.error('fillAllFromRow error', e); }
+    // 4) Garantir cláusulas e condições
+    try { setVal('clausulas', norm.clausulas || ''); } catch(_){ var el=document.getElementById('clausulas'); if(el) el.value = norm.clausulas||''; }
+    try { setVal('condicoes', norm.condicoes || ''); } catch(_){ var el2=document.getElementById('condicoes'); if(el2) el2.value = norm.condicoes||''; }
+    try { if (typeof validate5==='function') validate5(); } catch(_){}
+    // 5) Ir para Etapa 2
+    try { if (typeof goTo==='function') goTo(2); } catch(_){}
+  };
+
+  // Se existir o modal bonito, conecte os botões dele a este fluxo:
+  document.addEventListener('click', function(e){
+    if (e.target && e.target.id === 'btnActionUpdate' && window.__actionRow){
+      e.preventDefault();
+      try { closeActionModal(); } catch(_){}
+      doUpdateFromRow(window.__actionRow);
+    }
+    if (e.target && e.target.id === 'btnActionPdf' && window.__actionRow){
+      e.preventDefault();
+      try { openPdfFromRow(window.__actionRow); } catch(_){}
+      try { closeActionModal(); } catch(_){}
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
