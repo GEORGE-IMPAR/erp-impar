@@ -646,7 +646,15 @@ function loadLogoForPdf(){
 
 /* PDF */
 function currentCode(){ return (document.getElementById('codigo').value||'').trim() || 'DOC'; }
-function todayYMD(){ const d=new Date(); const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return `${y}${m}${dd}`; }
+
+function todayYMD(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = ('0'+(d.getMonth()+1)).slice(-2);
+  const dd = ('0'+d.getDate()).slice(-2);
+  return `${y}${m}${dd}`;
+}
+
 let __pdfBlob=null, __pdfUrl=null, __pdfName='documento.pdf';
 
 async function createPdfBlob(){
@@ -702,6 +710,7 @@ function openViewerWithBlob(blob){
   document.getElementById('pdfFrame').src = __pdfUrl;
   document.getElementById('viewer').style.display='flex';
 }
+
 function closeViewer(){ document.getElementById('viewer').style.display='none'; }
 function downloadLastPdf(){ if(!__pdfBlob) return; const a=document.createElement('a'); a.href=__pdfUrl; a.download=__pdfName; document.body.appendChild(a); a.click(); a.remove(); }
 async function shareLastPdf(){
@@ -776,15 +785,22 @@ async function saveDocumentWithPdf(pdfBlob){
 
     const get = (id) => (document.getElementById(id)?.value || '').trim();
     const joinAddr = (p) => {
-      const log = document.getElementById('logradouro'+p).value || '';
-      const num = document.getElementById('numero'+p).value || '';
-      const comp= document.getElementById('complemento'+p).value || '';
-      const bai = document.getElementById('bairro'+p).value || '';
-      const cid = document.getElementById('cidade'+p).value || '';
-      const uf  = document.getElementById('uf'+p).value || '';
-      const cep = document.getElementById('cep'+p).value || '';
-      return `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}`;
-    };
+    const log = document.getElementById('logradouro'+p).value || '';
+    const num = document.getElementById('numero'+p).value || '';
+    const comp= document.getElementById('complemento'+p).value || '';
+    const bai = document.getElementById('bairro'+p).value || '';
+    const cid = document.getElementById('cidade'+p).value || '';
+    const uf  = document.getElementById('uf'+p).value || '';
+    const cep = document.getElementById('cep'+p).value || '';
+    return `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}`;
+   };
+
+const ymd  = (new Date()).toISOString().slice(0,10).replace(/-/g,'');
+const code = (dados.codigo || 'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
+const pdfName = `${code}_${ymd}.pdf`;
+
+const sig = `${code}|${pdfName}`;
+
     const u = JSON.parse(localStorage.getItem('impar_user') || 'null') || {};
 
     const dados = {
@@ -853,15 +869,12 @@ async function saveDocumentWithPdf(pdfBlob){
 const LOGIN_URL='/login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
 function pdfHrefFromRow(row){
-  // 1) Se veio uma URL absoluta válida do backend, usa ela
   try{
     if (row?.pdf_url) {
       const u = new URL(row.pdf_url, window.location.origin);
       if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
     }
-  }catch(_){} // se for inválida, cai no fallback
-
-  // 2) Fallback: monta a rota local com o nome do arquivo recebido
+  }catch(_){}
   const file = row?.pdf_file || '';
   return `${window.location.origin}/gerador/pdf.php?f=${encodeURIComponent(file)}`;
 }
@@ -901,7 +914,7 @@ function renderRows(tbodyId, rows){
 }
 
 function renderConsMsgInline(msg){
-  const tb=document.getElementById('consBodyInline');
+  const tb = document.getElementById('consBodyInline');
   if (tb) tb.innerHTML = `<tr><td colspan="3" class="row-muted">${msg}</td></tr>`;
 }
 
@@ -1069,7 +1082,9 @@ function openDupeModal(row){
   __dupeRow = row || null;
   const el = document.getElementById('dupeModal');
   const info = document.getElementById('dupeInfo');
-  if(info){ info.textContent = `Código: ${row.codigo || '-'} • Obra: ${row.contratante_nome || '-'}`; }
+  if(info){
+    info.textContent = `Código: ${row.codigo || '-'} • Obra: ${row.contratante_nome || '-'}`;
+  }
   el.style.display = 'flex';
 }
 function closeDupeModal(){ document.getElementById('dupeModal').style.display='none'; }
@@ -1147,27 +1162,36 @@ function fillAllFromRow(row){
   try { validate5(); } catch(_) {}
 }
 
-// quebra best-effort do endereço salvo
+// quebra best-effort do endereço salvo (ex.: "Rua X, 123 - Sala 2 — Centro — São Paulo/SP — CEP 01234-567")
 function splitAddressToForm(prefix, enderecoCompleto){
   if(!enderecoCompleto) return;
-  const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+  const r = {logradouro:'', numero:'', complemento:'', bairro:'', cidade:'', uf:''};
   try{
-    const parts = enderecoCompleto.split(' — ');
-    const p1=(parts[0]||'').split(',');
-    r.logradouro=(p1[0]||'').trim();
-    const p1b=(p1[1]||'').trim().split(' - ');
-    r.numero=(p1b[0]||'').trim();
-    r.complemento=(p1b[1]||'').trim();
-    r.bairro=(parts[1]||'').trim();
-    const m=(parts[2]||'').match(/(.+)\\/([A-Z]{2})/);
-    if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+    const parts = String(enderecoCompleto).split(' — ');
+    const p0 = parts[0] || '';           // "Rua X, 123 - Sala 2"
+    const p1 = parts[1] || '';           // "Centro"
+    const p2 = parts[2] || '';           // "São Paulo/SP"
+
+    const p0split = p0.split(',');
+    r.logradouro = (p0split[0] || '').trim();
+
+    const numComp = (p0split[1] || '').split(' - ');
+    r.numero      = (numComp[0] || '').trim();
+    r.complemento = (numComp[1] || '').trim();
+
+    r.bairro = p1.trim();
+
+    // cidade/UF
+    const m = p2.match(/(.+?)\s*\/\s*([A-Za-z]{2})/);
+    if (m){ r.cidade = m[1].trim(); r.uf = m[2].toUpperCase(); }
   }catch(_){}
-  setVal('logradouro'+prefix, r.logradouro);
-  setVal('numero'+prefix,     r.numero);
-  setVal('complemento'+prefix,r.complemento);
-  setVal('bairro'+prefix,     r.bairro);
-  setVal('cidade'+prefix,     r.cidade);
-  setSel('uf'+prefix,         r.uf);
+
+  setVal('logradouro'+prefix,  r.logradouro);
+  setVal('numero'+prefix,      r.numero);
+  setVal('complemento'+prefix, r.complemento);
+  setVal('bairro'+prefix,      r.bairro);
+  setVal('cidade'+prefix,      r.cidade);
+  setSel('uf'+prefix,          r.uf);
 }
 
 function focusNext(el){
