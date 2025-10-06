@@ -566,6 +566,63 @@ function loadLogoForPdf(){
   });
 }
 
+async function preloadLogoFromRow(row){
+  try{
+    const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
+    let url = (row.logo_url || row.logoUrl || row.LOGO_URL || '');
+
+    if (!url){
+      const file = row.logo || row.logo_file || row.logoFile || '';
+      if (file){
+        // tenta caminhos comuns no mesmo backend do list.php
+        const base = apiBase ? apiBase.replace(/\/+$/,'') : '';
+        const candidates = [
+          `${base}/logos/${encodeURIComponent(file)}`,
+          `${base}/uploads/${encodeURIComponent(file)}`,
+          `${base}/img/${encodeURIComponent(file)}`
+        ].filter(Boolean);
+        // escolhe o 1º que responder
+        for (const c of candidates){
+          try{
+            const head = await fetch(c, {method:'HEAD'});
+            if (head.ok || head.status === 405){ url = c; break; }
+          }catch(_){}
+        }
+      }
+    }
+    if (!url) return false;
+
+    const resp = await fetch(url);
+    if (!resp.ok) return false;
+
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    const dataUrl = await new Promise(res => { reader.onload = () => res(reader.result); reader.readAsDataURL(blob); });
+
+    // descobre tamanho para PDF
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+
+    const maxW = 110;
+    const ratio = img.naturalWidth ? (maxW / img.naturalWidth) : 1;
+    const w = Math.min(maxW, img.naturalWidth) * (img.naturalWidth ? ratio : 1);
+    const h = img.naturalHeight ? (img.naturalHeight * (w / (img.naturalWidth||w))) : 40;
+
+    // popula cache usado pelo PDF
+    __logoCached = { url: dataUrl, w, h, fmt: dataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG' };
+
+    // mostra nomezinho no UI
+    const info = document.getElementById('logoInfo');
+    if (info){
+      const nice = (row.logo || row.logo_file || row.logoFile || row.logo_url || 'logo');
+      info.textContent = 'Logo carregado: ' + String(nice).split('/').pop();
+    }
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
 /* PDF */
 function currentCode(){ return (document.getElementById('codigo').value||'').trim() || 'DOC'; }
 function todayYMD(){ const d=new Date(); const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2); return `${y}${m}${dd}`; }
@@ -1082,9 +1139,42 @@ function renderRows(tbodyId, rows){
     tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
+
+  // monta a tabela
   let html = '';
+  const pick = (row, keys)=>{
+    for (const k of keys){
+      if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
+        return row[k];
+      }
+    }
+    return '';
+  };
+  const fmtDate = (v)=>{
+    if (!v) return '';
+    const d = new Date(String(v).replace(' ', 'T'));
+    if (isNaN(d)) return String(v);
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mi = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss}`;
+  };
+  const pdfHrefFromRow = (row)=>{
+    const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
+    if (!raw) return '#';
+    const fname = String(raw)
+      .replace(/^https?:\/\/[^/]+/i, '')
+      .replace(/\?.*$/, '')
+      .split('/').filter(Boolean).pop();
+    if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
+    const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
+    return apiBase ? `${apiBase}/pdf.php?f=${encodeURIComponent(fname)}` : '#';
+  };
+
   for (const row of rows){
-    const rowData = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
     const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
     const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
     const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
@@ -1093,10 +1183,11 @@ function renderRows(tbodyId, rows){
     const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
     const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
     const href = pdfHrefFromRow(row);
+
     html += `
       <tr>
         <td>${fmtDate(dt) || '—'}</td>
-        <td>${cod ? `<a href="#" class="code-link" data-row="${rowData}" onclick='showAction(JSON.parse(this.dataset.row));return false;'>${cod}</a>` : '—'}</td>
+        <td>${cod || '—'}</td>
         <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
         <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
         <td>${serv || '—'}</td>
@@ -1105,8 +1196,57 @@ function renderRows(tbodyId, rows){
     `;
   }
   tb.innerHTML = html;
-}
 
+  // === NOVO: handlers de clique nas linhas (modal e inline) ===
+  const trs = tb.querySelectorAll('tr');
+  trs.forEach((tr, idx)=>{
+    const row = rows[idx];
+    if (!row) return;
+
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', (ev)=>{
+      // se clicou no link do PDF, deixa o link agir
+      if (ev.target.closest('a')) return;
+
+      const codeCell = tr.cells && tr.cells[1];
+      const code = (codeCell ? codeCell.textContent : '').trim();
+
+      const ask = window.confirm('Clique em OK para ATUALIZAR os campos.\nClique em Cancelar para ABRIR o PDF.');
+      if (ask){
+        try{
+          // 1) Atualiza o campo "código"
+          const inp = document.getElementById('codigo');
+          if (inp) inp.value = code;
+
+          // 2) Atualiza badges do cabeçalho
+          ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
+            const el = document.getElementById(id);
+            if (el) el.textContent = code;
+          });
+
+          // 3) Habilita o botão "Continuar" da etapa 1
+          if (typeof validate1 === 'function') validate1();
+
+          // 4) Carrega todos os dados nos campos
+          if (typeof fillAllFromRow === 'function') fillAllFromRow(row);
+          preloadLogoFromRow(row);
+          // 5) Fecha a janela de consulta (se estiver aberta)
+          const modal = document.getElementById('consultaModal');
+          if (modal) modal.style.display = 'none';
+
+          // 6) (não avançamos automaticamente)
+          showToast('Dados carregados; clique em Continuar para prosseguir');
+        }catch(e){ console.error(e); }
+      } else {
+        // Abrir o PDF
+        try{
+          const href = (window.pdfHrefFromRow ? pdfHrefFromRow(row) : '#');
+          if(href && href !== '#') window.open(href, '_blank', 'noopener,noreferrer');
+        }catch(e){ console.error(e); }
+      }
+    }, {passive:true});
+  });
+}
 
 function renderConsMsgInline(msg){
   const tb=document.getElementById('consBodyInline');
@@ -1262,12 +1402,28 @@ function clearLocal(){
 async function proceedFromStep1(codigo){
   const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
   if(!LIST_URL || !SAVE_TOKEN){ goTo(2); return; }
+
   try{
     const j    = await fetchConsulta(codigo);     // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
-    if(rows.length === 0){ goTo(2); return; }
-    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
-    if (exact) { openDupeModal(exact); } else { goTo(2); }
+
+    if(rows.length === 0){
+      // não encontrou, segue para cadastro novo
+      goTo(2);
+      return;
+    }
+
+    // procura match EXATO do código informado
+    const norm = s => String(s || '').trim().toUpperCase();
+    const exact = rows.find(r => norm(r.codigo) === norm(codigo));
+
+    if (exact){
+      // abre modal de duplicidade
+      openDupeModal(exact);
+    } else {
+      // existem registros, mas não exatamente esse código: segue como novo
+      goTo(2);
+    }
   }catch(e){
     console.error(e);
     goTo(2);
@@ -1291,6 +1447,7 @@ document.getElementById('btnDupPrint').onclick = () => {
 document.getElementById('btnDupUpdate').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
   fillAllFromRow(__dupeRow); closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
+  preloadLogoFromRow(__dupeRow);
 };
 
 function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
