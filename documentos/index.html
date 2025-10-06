@@ -1,4 +1,4 @@
-f<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-br" data-theme="light">
 <head>
   <meta charset="utf-8">
@@ -1117,7 +1117,7 @@ async function proceedFromStep1(codigo){
     const j    = await fetchConsulta(codigo);     // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
     if(rows.length === 0){ goTo(2); return; }
-    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(codigo).toUpperCase()));
+    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
     if (exact) { openDupeModal(exact); } else { goTo(2); }
   }catch(e){
     console.error(e);
@@ -1141,10 +1141,7 @@ document.getElementById('btnDupPrint').onclick = () => {
 };
 document.getElementById('btnDupUpdate').onclick = () => {
   if(!__dupeRow){ closeDupeModal(); return; }
-  fillAllFromRow(__dupeRow);
-try{ setVal('clausulas', (__dupeRow.clausulas||'')); }catch(_){}
-try{ setVal('condicoes', (__dupeRow.condicoes||'')); }catch(_){}
-closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
+  fillAllFromRow(__dupeRow); closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
 };
 
 function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
@@ -1240,5 +1237,98 @@ function focusNext(el){
     // ===== Init =====
     updateStepper(1); validate1();
   </script>
+
+<!-- ========== ERP ÍMPAR inline patch: bind row click + proceedFromStep1 hook + cláusulas/condições + dark tweaks ========== -->
+<script>
+(function(){
+  // helper: set first existing id from a list
+  function setAny(ids, value){
+    for (const id of ids){
+      const el = document.getElementById(id);
+      if (el){ el.value = (value ?? ''); el.dispatchEvent(new Event('input',{bubbles:true})); return true; }
+    }
+    return false;
+  }
+  // extend fillAllFromRow to also set cláusulas/condições robustly
+  if (window.fillAllFromRow && !window.__imparPatch_extendedFill){
+    const __origFill = window.fillAllFromRow;
+    window.fillAllFromRow = function(row){
+      try{ __origFill(row); }catch(_){}
+      try{
+        const claus = (window.pick ? pick(row, ['clausulas','Clausulas','Cláusulas','clausulas_texto','textoClausulas']) : (row.clausulas||row.clausulas_texto));
+        const conds = (window.pick ? pick(row, ['condicoes','Condições','condicoes_texto','textoCondicoes','condicoesGerais']) : (row.condicoes||row.condicoes_texto));
+        setAny(['clausulas','clausulasTexto','textoClausulas','clausulas_gerais'], claus||'');
+        setAny(['condicoes','condicoesGerais','textoCondicoes','condicoes_gerais'],   conds||'');
+      }catch(_){}
+    };
+    window.__imparPatch_extendedFill = true;
+  }
+  // bind click on table rows after render
+  function bindRowsById(tbodyId, rows){
+    try{
+      const tb = document.getElementById(tbodyId);
+      if (!tb) return;
+      const trs = Array.from(tb.querySelectorAll('tr'));
+      trs.forEach(tr=>{
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('mouseenter', ()=>tr.classList.add('hover'));
+        tr.addEventListener('mouseleave', ()=>tr.classList.remove('hover'));
+        tr.addEventListener('click', (ev)=>{
+          if (ev.target.closest('a')) return; // keep PDF link working
+          const codeCell = tr.cells && tr.cells[1];
+          const code = (codeCell ? codeCell.textContent : '').trim();
+          const norm = (s)=>String(s||'').toUpperCase();
+          const row = (rows||[]).find(r => norm((window.pick? pick(r,['codigo','Código','CODIGO','code']):r.codigo)) === norm(code));
+          if (!row) return;
+          // UX modal (simple)
+          const ask = window.confirm('Clique em OK para ATUALIZAR os campos.\nClique em Cancelar para ABRIR o PDF.');
+          if (ask){
+            try{ document.getElementById('codigo').value = code; }catch(_){}
+            try{ fillAllFromRow(row); }catch(_){}
+            try{ document.getElementById('consultaModal').style.display='none'; }catch(_){}
+            try{ goTo && goTo(2); }catch(_){}
+          }else{
+            try{
+              const href = (window.pdfHrefFromRow ? pdfHrefFromRow(row) : '#');
+              if(href && href !== '#') window.open(href, '_blank', 'noopener,noreferrer');
+            }catch(_){}
+          }
+        }, {passive:true});
+      });
+    }catch(_){}
+  }
+  window.__imparPatch_bindRowsById = bindRowsById;
+
+  // wrap renderRows to auto-bind
+  if (window.renderRows && !window.__imparPatch_wrappedRender){
+    const __origRender = window.renderRows;
+    window.renderRows = function(tbodyId, rows){
+      __origRender.apply(this, arguments);
+      try{ bindRowsById(tbodyId, rows); }catch(_){}
+    };
+    window.__imparPatch_wrappedRender = true;
+  }
+
+  // defensive: ensure proceedFromStep1 is *not* double-async and works on existing code typed
+  if (typeof window.proceedFromStep1 === 'function'){
+    const src = String(window.proceedFromStep1);
+    if (/async\s+async/.test(src)){
+      // rebuild without duplicated async
+      const fn = new Function('codigo', src.replace(/async\s+async\s+function\s+proceedFromStep1\s*\(codigo\)\s*\{([\s\S]*)\}$/,'async function(codigo){$1}'));
+      window.proceedFromStep1 = fn;
+    }
+  }
+})();
+</script>
+<style>
+  /* subtle hover for clickable table rows inside consulta modal */
+  #consultaModal tbody tr.hover { background: rgba(59,130,246,.08); }
+  /* dark theme tweaks */
+  :root[data-theme="dark"] .cap small,
+  :root[data-theme="dark"] .cap label,
+  :root[data-theme="dark"] .cap .hint { color: var(--accent) !important; }
+</style>
+<!-- ========== /ERP ÍMPAR inline patch ========== -->
+
 </body>
 </html>
