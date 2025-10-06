@@ -1135,45 +1135,13 @@ function showAction_old(row){
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
+
   if (!rows || !rows.length){
     tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
 
-  // monta a tabela
   let html = '';
-  const pick = (row, keys)=>{
-    for (const k of keys){
-      if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
-        return row[k];
-      }
-    }
-    return '';
-  };
-  const fmtDate = (v)=>{
-    if (!v) return '';
-    const d = new Date(String(v).replace(' ', 'T'));
-    if (isNaN(d)) return String(v);
-    const dd = String(d.getDate()).padStart(2,'0');
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    const yyyy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mi = String(d.getMinutes()).padStart(2,'0');
-    const ss = String(d.getSeconds()).padStart(2,'0');
-    return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss}`;
-  };
-  const pdfHrefFromRow = (row)=>{
-    const raw = pick(row, ['pdf_file','file','pdf','pdf_url','pdfUrl','url','URL']);
-    if (!raw) return '#';
-    const fname = String(raw)
-      .replace(/^https?:\/\/[^/]+/i, '')
-      .replace(/\?.*$/, '')
-      .split('/').filter(Boolean).pop();
-    if (!fname || !fname.toLowerCase().endsWith('.pdf')) return '#';
-    const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
-    return apiBase ? `${apiBase}/pdf.php?f=${encodeURIComponent(fname)}` : '#';
-  };
-
   for (const row of rows){
     const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
     const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
@@ -1197,7 +1165,7 @@ function renderRows(tbodyId, rows){
   }
   tb.innerHTML = html;
 
-  // === NOVO: handlers de clique nas linhas (modal e inline) ===
+  // === Clique nas linhas (modal e inline), sem pop-up aqui ===
   const trs = tb.querySelectorAll('tr');
   trs.forEach((tr, idx)=>{
     const row = rows[idx];
@@ -1205,49 +1173,35 @@ function renderRows(tbodyId, rows){
 
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', (ev)=>{
-      // se clicou no link do PDF, deixa o link agir
+      // Se clicou no link do PDF, deixa o link agir
       if (ev.target.closest('a')) return;
 
+      // Pega o código da 2ª coluna
       const codeCell = tr.cells && tr.cells[1];
       const code = (codeCell ? codeCell.textContent : '').trim();
+      if (!code) return;
 
-      const ask = window.confirm('Clique em OK para ATUALIZAR os campos.\nClique em Cancelar para ABRIR o PDF.');
-      if (ask){
-        try{
-          // 1) Atualiza o campo "código"
-          const inp = document.getElementById('codigo');
-          if (inp){
-          inp.value = code;
-          // isto aciona o "arm()" do overrideStep1 e habilita o botão "Continuar"
-          inp.dispatchEvent(new Event('input', { bubbles:true }));
-        }
-          // 2) Atualiza badges do cabeçalho
-          ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
-            const el = document.getElementById(id);
-            if (el) el.textContent = code;
-          });
-
-          // 3) Habilita o botão "Continuar" da etapa 1
-          if (typeof validate1 === 'function') validate1();
-
-          // 4) Carrega todos os dados nos campos
-          if (typeof fillAllFromRow === 'function') fillAllFromRow(row);
-          preloadLogoFromRow(row);
-          // 5) Fecha a janela de consulta (se estiver aberta)
-          const modal = document.getElementById('consultaModal');
-          if (modal) modal.style.display = 'none';
-
-          // 6) (não avançamos automaticamente)
-          showToast('Dados carregados; clique em Continuar para prosseguir');
-        }catch(e){ console.error(e); }
-      } else {
-        // Abrir o PDF
-        try{
-          const href = (window.pdfHrefFromRow ? pdfHrefFromRow(row) : '#');
-          if(href && href !== '#') window.open(href, '_blank', 'noopener,noreferrer');
-        }catch(e){ console.error(e); }
+      // 1) Preenche o campo principal "codigo" e habilita o Continuar
+      const inp = document.getElementById('codigo');
+      if (inp){
+        inp.value = code;
+        // dispara arm()/validate1 para habilitar o botão "Continuar"
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
       }
-    }, {passive:true});
+
+      // 2) Atualiza os badges de cabeçalho
+      ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
+        const el = document.getElementById(id);
+        if (el) el.textContent = code;
+      });
+
+      // 3) Fecha a janela de consulta (se estiver aberta)
+      const modal = document.getElementById('consultaModal');
+      if (modal) modal.style.display = 'none';
+
+      // 4) Nada de confirmar/atualizar aqui.
+      // O confirm (Atualizar / Imprimir) aparece apenas quando o usuário clicar em "Continuar".
+    }, { passive: true });
   });
 }
 
