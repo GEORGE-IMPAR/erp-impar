@@ -1330,5 +1330,111 @@ function focusNext(el){
 </style>
 <!-- ========== /ERP ÍMPAR inline patch ========== -->
 
+<script>
+/* ================== PATCH: preenchimento completo (contratante/contratada/obra) ================== */
+(function(){
+  function pick(o, keys){
+    for (const k of keys){
+      if (o && o[k] != null){
+        const v = (typeof o[k] === 'string') ? o[k].trim() : o[k];
+        if (v !== '' && v !== '-') return v;
+      }
+    }
+    return '';
+  }
+  function setAny(ids, v){
+    const val = (v == null ? '' : v);
+    for (const id of ids){
+      const el = document.getElementById(id);
+      if (el){ el.value = val; return true; }
+    }
+    return false;
+  }
+
+  // ---- NOVA versão, com mais IDs e chaves cobertas
+  window.fillAllFromRow = function(row){
+    if(!row){ console.warn('[fillAllFromRow] row vazio'); return; }
+    console.log('[fillAllFromRow] linha recebida:', row);
+
+    /* Código & Serviço */
+    setAny(['codigo','cod_projeto','codigo_projeto'], pick(row, ['codigo','code','Código','CODIGO']));
+    setAny(['servico','descricao_servico','servico_desc','descricao'],
+           pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição']));
+
+    /* Endereço da obra */
+    setAny(['cep','obra_cep','endereco_cep'],               pick(row, ['obra_cep','cep','CEP']));
+    setAny(['logradouro','obra_logradouro','endereco_obra','rua','obra_endereco'],
+           pick(row, ['obra_logradouro','logradouroObra','enderecoObra','obra_endereco','endereco','rua']));
+    setAny(['numero','obra_numero','endereco_numero'],      pick(row, ['obra_numero','numero','nro']));
+    setAny(['complemento','obra_complemento'],              pick(row, ['obra_complemento','complemento']));
+    setAny(['bairro','obra_bairro','endereco_bairro'],      pick(row, ['obra_bairro','bairro']));
+    setAny(['cidade','obra_cidade','endereco_cidade'],      pick(row, ['obra_cidade','cidade','municipio']));
+    setAny(['uf','obra_uf','endereco_uf','estado'],         pick(row, ['obra_uf','uf','UF','estado']));
+
+    /* CONTRATANTE */
+    setAny(['ctt_nome','nome_contratante','contratante','nome-contratante'],
+           pick(row, ['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE']));
+    setAny(['ctt_cpfCnpj','doc_contratante','cpf_cnpj_contratante','cpf_contratante','cnpj_contratante'],
+           pick(row, ['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']));
+    setAny(['ctt_contato','contato_contratante','responsavel_contratante'],
+           pick(row, ['ctt_contato','contratante_contato','responsavel']));
+    setAny(['ctt_email','email_contratante'],               pick(row, ['ctt_email','contratante_email','email']));
+    setAny(['ctt_telefone','tel_contratante','telefone_contratante'],
+           pick(row, ['ctt_telefone','contratante_telefone','telefone']));
+
+    /* CONTRATADA */
+    setAny(['cta_nome','nome_contratada','contratada','nome-contratada'],
+           pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']));
+    setAny(['cta_cpfCnpj','doc_contratada','cpf_cnpj_contratada','cpf_contratada','cnpj_contratada'],
+           pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']));
+    setAny(['cta_contato','contato_contratada','responsavel_contratada'],
+           pick(row, ['cta_contato','contratada_contato']));
+    setAny(['cta_email','email_contratada'],                pick(row, ['cta_email','contratada_email']));
+    setAny(['cta_telefone','tel_contratada','telefone_contratada'],
+           pick(row, ['cta_telefone','contratada_telefone']));
+
+    /* Valores & prazo */
+    setAny(['valor','valor_total'],                         pick(row, ['valor']));
+    setAny(['valor_extenso','valorExtenso'],               pick(row, ['valorExtenso']));
+    setAny(['prazo','prazo_execucao','prazo_servico'],     pick(row, ['prazo']));
+
+    /* Cláusulas e condições */
+    setAny(['clausulas','txt_clausulas'],                   pick(row, ['clausulas','Cláusulas']));
+    setAny(['condicoes','condicoes_pagto','condicoes_pagamento','txt_condicoes'],
+           pick(row, ['condicoes','condições','condicoesPagamento']));
+
+    /* Operador (se houver) */
+    setAny(['operador','operador_nome'],                   pick(row, ['operador','operadorNome']));
+    setAny(['operadorEmail','operador_email'],             pick(row, ['operadorEmail','emailOperador']));
+
+    console.log('[fillAllFromRow] preenchimento concluído.');
+  };
+
+  // Fecha modal e avança etapa após escolher “Atualizar”
+  const _openDupeModal = window.openDupeModal;
+  window.openDupeModal = function(row){
+    if (typeof _openDupeModal === 'function') _openDupeModal(row);
+    // injeta o listener uma vez para o botão/decisão do modal, se seu modal usa botões distintos adapte aqui
+    const modal = document.getElementById('dupeModal') || document.querySelector('.modal, [role="dialog"]');
+    if (!modal) return;
+    // Se o seu modal tiver botões “Atualizar” / “Gerar PDF”, adapte os seletores:
+    modal.addEventListener('click', function onClick(ev){
+      const t = ev.target;
+      // exemplo: data-action="update" no botão de atualizar
+      if (t && t.matches('[data-action="update"], .btn-update, .btn-primary')){
+        try { fillAllFromRow(row); } catch(e){ console.error(e); }
+        // fecha o modal (ajuste pro seu modal)
+        if (modal.close) modal.close(); else { modal.style.display='none'; }
+        if (window.goTo) goTo(2);
+        modal.removeEventListener('click', onClick);
+      }
+    }, { once:true });
+  };
+
+  console.log('%c[patch] fillAllFromRow + mapeamento ampliado ativo','color:#22c55e;font-weight:700');
+})();
+</script>
+
+
 </body>
 </html>
