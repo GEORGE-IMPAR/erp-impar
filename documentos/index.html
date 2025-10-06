@@ -1216,8 +1216,11 @@ function renderRows(tbodyId, rows){
         try{
           // 1) Atualiza o campo "código"
           const inp = document.getElementById('codigo');
-          if (inp) inp.value = code;
-
+          if (inp){
+          inp.value = code;
+          // isto aciona o "arm()" do overrideStep1 e habilita o botão "Continuar"
+          inp.dispatchEvent(new Event('input', { bubbles:true }));
+        }
           // 2) Atualiza badges do cabeçalho
           ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
             const el = document.getElementById(id);
@@ -1453,47 +1456,82 @@ document.getElementById('btnDupUpdate').onclick = () => {
 function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
 function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.onchange) try{ el.onchange({}); }catch(_){} } }
 
+// ——— substitua toda a função por esta ———
 function fillAllFromRow(row){
+  if(!row) return;
+
+  const setVal = (id, v)=>{
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = (v ?? '');
+    // dispara oninput/onchange pra habilitar botões/validações
+    if (typeof el.oninput === 'function') { try{ el.oninput({}); }catch(_){} }
+    if (typeof el.onchange === 'function'){ try{ el.onchange({}); }catch(_){} }
+  };
+  const setSel = (id, v)=>{
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = (v ?? '');
+    if (typeof el.onchange === 'function'){ try{ el.onchange({}); }catch(_){} }
+  };
+  const splitAddressToForm = (prefix, txt)=>{
+    if(!txt) return;
+    const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+    try{
+      const parts = String(txt).split(' — ');
+      const p1=(parts[0]||'').split(',');
+      r.logradouro=(p1[0]||'').trim();
+      const p1b=(p1[1]||'').trim().split(' - ');
+      r.numero=(p1b[0]||'').trim();
+      r.complemento=(p1b[1]||'').trim();
+      r.bairro=(parts[1]||'').trim();
+      const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+      if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+    }catch(_){}
+    setVal('logradouro'+prefix, r.logradouro);
+    setVal('numero'+prefix,     r.numero);
+    setVal('complemento'+prefix,r.complemento);
+    setVal('bairro'+prefix,     r.bairro);
+    setVal('cidade'+prefix,     r.cidade);
+    setSel('uf'+prefix,         r.uf);
+  };
+
   // Etapa 2
-  setVal('servico',       row.servico);
-  setVal('endereco',      row.endereco_obra);
+  setVal('servico',  row.servico ?? row.descricao ?? row.objeto);
+  setVal('endereco', row.endereco_obra ?? row.endereco);
 
   // Etapa 3 (Contratante)
-  setVal('nomeContratante',     row.contratante_nome);
+  setVal('nomeContratante',     row.contratante_nome ?? row.contratante);
   setVal('docContratante',      row.contratante_doc);
-  setVal('contatoContratante',  row.contratante_contato);
-  setVal('telefoneContratante', row.contratante_tel);
+  setVal('contatoContratante',  row.contratante_contato ?? row.responsavel);
+  setVal('telefoneContratante', row.contratante_tel ?? row.contratante_telefone);
   setVal('emailContratante',    row.contratante_email);
-  setVal('cepContratante',      (row.contratante_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
+  setVal('cepContratante',      (row.contratante_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || row.contratante_cep);
   splitAddressToForm('Contratante', row.contratante_endereco);
 
   // Etapa 4 (Contratada)
-  setVal('nomeContratada',      row.contratada_nome);
+  setVal('nomeContratada',      row.contratada_nome ?? row.empresa ?? row.contratada);
   setVal('docContratada',       row.contratada_doc);
   setVal('contatoContratada',   row.contratada_contato);
-  setVal('telefoneContratada',  row.contratada_tel);
+  setVal('telefoneContratada',  row.contratada_tel ?? row.contratada_telefone);
   setVal('emailContratada',     row.contratada_email);
-  setVal('cepContratada',       (row.contratada_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
+  setVal('cepContratada',       (row.contratada_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || row.contratada_cep);
   splitAddressToForm('Contratada', row.contratada_endereco);
 
   // Etapa 5
+  setVal('clausulas',    row.clausulas ?? row.clausulas_texto);
+  setVal('condicoes',    row.condicoes ?? row.condicoes_texto ?? row.condicoes_pagamento);
   setVal('valor',        row.valor);
-  setVal('valorExtenso', row.valor_extenso);
-  setVal('prazo',        row.prazo_dias);
-  setVal('dataExtenso',  row.data_extenso)
+  setVal('valorExtenso', row.valor_extenso ?? row.valorExtenso);
+  setVal('prazo',        row.prazo_dias ?? row.prazo);
+  setVal('dataExtenso',  row.data_extenso ?? row.dataExtenso);
 
-  
-// Etapa 5 — textos (cláusulas / condições)
-setVal('clausulas', row.clausulas || row.clausulas_texto || row.textoClausulas || row.clausulas_gerais || '');
-setVal('condicoes', row.condicoes || row.condicoes_pagamento || row.condicoes_texto || row.textoCondicoes || row.condicoesGerais || '');
-;
-
-  try { validate2(); } catch(_){}
-  try { validate3(); } catch(_){}
-  try { validate4(); } catch(_){}
-  try { validate5(); } catch(_){}
+  // Revalida para liberar botões das etapas seguintes
+  try{ validate2(); }catch(_){}
+  try{ validate3(); }catch(_){}
+  try{ validate4(); }catch(_){}
+  try{ validate5(); }catch(_){}
 }
-
 // quebra best-effort do endereço salvo
 function splitAddressToForm(prefix, enderecoCompleto){
   if(!enderecoCompleto) return;
