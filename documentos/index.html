@@ -1486,105 +1486,145 @@ function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value =
 
 // ——— substitua toda a função por esta ———
 
-function fillAllFromRow(row){
+window.fillAllFromRow = function(row){
   if(!row){ console.warn('[fillAllFromRow] row vazio'); return; }
+  console.log('[fillAllFromRow] linha recebida:', row);
 
-  // helpers locais
-  const set = (id, v)=>{
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.value = (v == null ? '' : String(v));
-    if (el.oninput) try{ el.oninput({}); }catch(_){}
-  };
-  const setSel = (id, v)=>{
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.value = (v || '');
-    if (el.onchange) try{ el.onchange({}); }catch(_){}
-  };
-  const basicAddrMissing = (prefix)=>{
-    const need = ['logradouro','bairro','cidade','uf'];
-    return need.some(k => !(document.getElementById(k+prefix)?.value || '').trim());
-  };
+  // ===== helpers locais =====
+  const digits = s => String(s||'').replace(/\D+/g,'');
+  function autoFetchCepIfNeeded(prefix){
+    try{
+      const cepEl = document.getElementById('cep'+prefix);
+      const logEl = document.getElementById('logradouro'+prefix);
+      const baiEl = document.getElementById('bairro'+prefix);
+      const cidEl = document.getElementById('cidade'+prefix);
+      const ufEl  = document.getElementById('uf'+prefix);
+
+      if (!cepEl) return;
+
+      const need =
+        (!logEl || !logEl.value) ||
+        (!baiEl || !baiEl.value) ||
+        (!cidEl || !cidEl.value) ||
+        (!ufEl  || !ufEl.value);
+
+      const d = digits(cepEl.value);
+      if (need && d.length === 8 && typeof cepOnBlur === 'function'){
+        // usa sua rotina que chama ViaCEP e já dispara validate3/4
+        cepOnBlur(cepEl, prefix);
+      }
+    }catch(_){}
+  }
+
+  // ===== Código (etapa 1) =====
+  setAny(['codigo'], pick(row, ['codigo','code','Código','CODIGO']));
 
   // ===== Etapa 2 =====
-  set('servico',  pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO','escopo','descricao_servico']));
-  set('endereco', pick(row, ['endereco','endereco_obra','enderecoObra','obra_endereco_resumo']));
+  setAny(['servico'],  pick(row, [
+    'servico','Serviço','SERVIÇO','descricao','Descrição','objeto','OBJETO','escopo','descricao_servico'
+  ]));
+  setAny(['endereco'], pick(row, ['endereco','endereco_obra','enderecoObra','obra_endereco_resumo']));
 
   // ===== Etapa 3 — CONTRATANTE =====
-  set('nomeContratante',    pick(row, ['contratante_nome','contratante','cliente','CLIENTE','ctt_nome','razao_contratante','razaoSocialContratante']));
-  set('docContratante',     pick(row, ['contratante_doc','contratante_cnpj','contratante_cpf','cpfCnpj','cpfCnpjContratante','ctt_cpfCnpj']));
-  set('contatoContratante', pick(row, ['contratante_contato','responsavel','responsavel_obra','ctt_contato']));
-  set('telefoneContratante',pick(row, ['contratante_telefone','contratante_tel','ctt_telefone','telefone_contratante','telefone']));
-  set('emailContratante',   pick(row, ['contratante_email','ctt_email','email_contratante','email']));
+  setAny(['nomeContratante'], pick(row, [
+    'contratante_nome','contratante','CLIENTE','cliente','cta_cliente','ctt_nome','razao_contratante','razaoSocialContratante'
+  ]));
+  setAny(['docContratante'],  pick(row, [
+    'contratante_doc','contratante_cnpj','contratante_cpf','cpfCnpj','cpfCnpjContratante','ctt_cpfCnpj'
+  ]));
+  setAny(['contatoContratante'], pick(row, [
+    'contratante_contato','responsavel','responsavel_obra','ctt_contato'
+  ]));
+  setAny(['telefoneContratante'], pick(row, [
+    'contratante_telefone','contratante_tel','ctt_telefone','telefone_contratante','telefone'
+  ]));
+  setAny(['emailContratante'], pick(row, [
+    'contratante_email','ctt_email','email_contratante','email'
+  ]));
 
+  // endereço em campos separados (se existirem no retorno)
+  setAny(['cepContratante'],         pick(row, ['contratante_cep','cep_contratante']));
+  setAny(['logradouroContratante'],  pick(row, ['contratante_logradouro','logradouro_contratante']));
+  setAny(['numeroContratante'],      pick(row, ['contratante_numero','numero_contratante','nro_contratante']));
+  setAny(['complementoContratante'], pick(row, ['contratante_complemento','compl_contratante']));
+  setAny(['bairroContratante'],      pick(row, ['contratante_bairro','bairro_contratante']));
+  setAny(['cidadeContratante'],      pick(row, ['contratante_cidade','cidade_contratante','municipio_contratante']));
+  (function(){
+    const uf = pick(row, ['contratante_uf','uf_contratante']);
+    const sel = document.getElementById('ufContratante');
+    if (sel){ sel.value = uf || ''; if(sel.onchange) try{ sel.onchange({}); }catch(_){} }
+  })();
+
+  // endereço em string única (quebra + CEP do texto, se houver)
   const endCtt = pick(row, ['contratante_endereco','endereco_contratante']);
   if (endCtt) splitAddressToForm('Contratante', endCtt);
+  const cepCttTxt = (endCtt||'').match(/CEP\s*([\d\-]+)/i)?.[1] || '';
+  if (cepCttTxt) setAny(['cepContratante'], cepCttTxt);
 
-  const cepCtt =
-    pick(row, ['contratante_cep','cep_contratante']) ||
-    ((endCtt||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '';
-  set('cepContratante', cepCtt);
-
-  set('logradouroContratante',pick(row, ['contratante_logradouro','logradouro_contratante']));
-  set('numeroContratante',    pick(row, ['contratante_numero','numero_contratante','nro_contratante']));
-  set('complementoContratante',pick(row,['contratante_complemento','compl_contratante']));
-  set('bairroContratante',    pick(row, ['contratante_bairro','bairro_contratante']));
-  set('cidadeContratante',    pick(row, ['contratante_cidade','cidade_contratante','municipio_contratante']));
-  setSel('ufContratante',     pick(row, ['contratante_uf','uf_contratante']));
-
-  // === NOVO: se ainda faltar endereço, dispara o auto-preenchimento pelo CEP ===
-  setTimeout(()=>{
-    const el = document.getElementById('cepContratante');
-    if (el && (onlyDigits(el.value).length===8) && basicAddrMissing('Contratante')){
-      try{ cepOnBlur(el,'Contratante'); }catch(e){ console.warn('cepOnBlur contratante', e); }
-    }
-  }, 30);
+  // tenta ViaCEP se faltar algo e houver CEP
+  autoFetchCepIfNeeded('Contratante');
 
   // ===== Etapa 4 — CONTRATADA =====
-  set('nomeContratada',      pick(row, ['contratada_nome','contratada','fornecedor','empresa','cta_nome']));
-  set('docContratada',       pick(row, ['contratada_doc','contratada_cnpj','cta_cpfCnpj']));
-  set('contatoContratada',   pick(row, ['contratada_contato','responsavel_contratada','cta_contato']));
-  set('telefoneContratada',  pick(row, ['contratada_telefone','contratada_tel','cta_telefone']));
-  set('emailContratada',     pick(row, ['contratada_email','cta_email']));
+  setAny(['nomeContratada'], pick(row, [
+    'contratada_nome','contratada','fornecedor','empresa','cta_nome'
+  ]));
+  setAny(['docContratada'],  pick(row, [
+    'contratada_doc','contratada_cnpj','cta_cpfCnpj'
+  ]));
+  setAny(['contatoContratada'], pick(row, [
+    'contratada_contato','responsavel_contratada','cta_contato'
+  ]));
+  setAny(['telefoneContratada'], pick(row, [
+    'contratada_telefone','contratada_tel','cta_telefone'
+  ]));
+  setAny(['emailContratada'], pick(row, [
+    'contratada_email','cta_email'
+  ]));
+
+  setAny(['cepContratada'],         pick(row, ['contratada_cep','cep_contratada']));
+  setAny(['logradouroContratada'],  pick(row, ['contratada_logradouro','logradouro_contratada']));
+  setAny(['numeroContratada'],      pick(row, ['contratada_numero','numero_contratada']));
+  setAny(['complementoContratada'], pick(row, ['contratada_complemento','compl_contratada']));
+  setAny(['bairroContratada'],      pick(row, ['contratada_bairro','bairro_contratada']));
+  setAny(['cidadeContratada'],      pick(row, ['contratada_cidade','cidade_contratada']));
+  (function(){
+    const uf = pick(row, ['contratada_uf','uf_contratada']);
+    const sel = document.getElementById('ufContratada');
+    if (sel){ sel.value = uf || ''; if(sel.onchange) try{ sel.onchange({}); }catch(_){} }
+  })();
 
   const endCta = pick(row, ['contratada_endereco','endereco_contratada']);
   if (endCta) splitAddressToForm('Contratada', endCta);
+  const cepCtaTxt = (endCta||'').match(/CEP\s*([\d\-]+)/i)?.[1] || '';
+  if (cepCtaTxt) setAny(['cepContratada'], cepCtaTxt);
 
-  const cepCta =
-    pick(row, ['contratada_cep','cep_contratada']) ||
-    ((endCta||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '';
-  set('cepContratada', cepCta);
+  // tenta ViaCEP se faltar algo e houver CEP
+  autoFetchCepIfNeeded('Contratada');
 
-  set('logradouroContratada',pick(row, ['contratada_logradouro','logradouro_contratada']));
-  set('numeroContratada',    pick(row, ['contratada_numero','numero_contratada']));
-  set('complementoContratada',pick(row,['contratada_complemento','compl_contratada']));
-  set('bairroContratada',    pick(row, ['contratada_bairro','bairro_contratada']));
-  set('cidadeContratada',    pick(row, ['contratada_cidade','cidade_contratada']));
-  setSel('ufContratada',     pick(row, ['contratada_uf','uf_contratada']));
+  // ===== Etapa 5 — condições, cláusulas, valores =====
+  setAny(['clausulas'], pick(row, [
+    'clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais'
+  ]));
+  setAny(['condicoes'], pick(row, [
+    'condicoes','condições','condicoes_texto','textoCondicoes','condicoes_pagamento','condicoesGerais'
+  ]));
 
-  // === NOVO: auto-preenchimento pelo CEP da contratada, se faltar endereço ===
-  setTimeout(()=>{
-    const el = document.getElementById('cepContratada');
-    if (el && (onlyDigits(el.value).length===8) && basicAddrMissing('Contratada')){
-      try{ cepOnBlur(el,'Contratada'); }catch(e){ console.warn('cepOnBlur contratada', e); }
-    }
-  }, 30);
+  setAny(['valor'],        pick(row, ['valor','valor_total']));
+  setAny(['valorExtenso'], pick(row, ['valorExtenso','valor_extenso']));
+  setAny(['prazo'],        pick(row, ['prazo','prazo_dias','prazo_execucao']));
+  setAny(['dataExtenso'],  pick(row, ['dataExtenso','data_extenso']));
 
-  // ===== Etapa 5 — Cláusulas, condições, valores =====
-  set('clausulas',    pick(row, ['clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais']));
-  set('condicoes',    pick(row, ['condicoes','condições','condicoes_texto','textoCondicoes','condicoes_pagamento','condicoesGerais']));
-  set('valor',        pick(row, ['valor','valor_total']));
-  set('valorExtenso', pick(row, ['valorExtenso','valor_extenso']));
-  set('prazo',        pick(row, ['prazo','prazo_dias','prazo_execucao']));
-  set('dataExtenso',  pick(row, ['dataExtenso','data_extenso']));
+  // ===== logo (se disponível) =====
+  try{ if (typeof preloadLogoFromRow === 'function') preloadLogoFromRow(row); }catch(_){}
 
-  // libera botões/estados
+  // ===== validações para liberar botões =====
   try{ validate2(); }catch(_){}
   try{ validate3(); }catch(_){}
   try{ validate4(); }catch(_){}
   try{ validate5(); }catch(_){}
-}
+
+  console.log('[fillAllFromRow] preenchimento concluído.');
+};
 
     // ===== Init =====
     updateStepper(1); validate1();
