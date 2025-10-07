@@ -1299,43 +1299,32 @@ function renderRows(tbodyId, rows){
   }
   tb.innerHTML = html;
 
-  // === Clique nas linhas (modal e inline), sem pop-up aqui ===
+  // Clique na linha: só preenche o código e fecha a consulta. Sem confirmação aqui.
   const trs = tb.querySelectorAll('tr');
-  trs.forEach((tr, idx)=>{
-    const row = rows[idx];
-    if (!row) return;
-
+  trs.forEach((tr)=>{
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', (ev)=>{
-      // Se clicou no link do PDF, deixa o link agir
-      if (ev.target.closest('a')) return;
+      if (ev.target.closest('a')) return; // deixa o link PDF funcionar
 
-      // Pega o código da 2ª coluna
       const codeCell = tr.cells && tr.cells[1];
       const code = (codeCell ? codeCell.textContent : '').trim();
       if (!code) return;
 
-      // 1) Preenche o campo principal "codigo" e habilita o Continuar
       const inp = document.getElementById('codigo');
       if (inp){
         inp.value = code;
-        // dispara arm()/validate1 para habilitar o botão "Continuar"
-        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('input', { bubbles:true })); // habilita "Continuar"
       }
-
-      // 2) Atualiza os badges de cabeçalho
       ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
         const el = document.getElementById(id);
         if (el) el.textContent = code;
       });
 
-      // 3) Fecha a janela de consulta (se estiver aberta)
       const modal = document.getElementById('consultaModal');
       if (modal) modal.style.display = 'none';
 
-      // 4) Nada de confirmar/atualizar aqui.
-      // O confirm (Atualizar / Imprimir) aparece apenas quando o usuário clicar em "Continuar".
-    }, { passive: true });
+      // Nada de confirmar/atualizar aqui.
+    }, { passive:true });
   });
 }
 
@@ -1495,24 +1484,17 @@ async function proceedFromStep1(codigo){
   if(!LIST_URL || !SAVE_TOKEN){ goTo(2); return; }
 
   try{
-    const j    = await fetchConsulta(codigo);     // POST com token no corpo
+    const j    = await fetchConsulta(codigo);       // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
 
-    if(rows.length === 0){
-      // não encontrou, segue para cadastro novo
-      goTo(2);
-      return;
-    }
+    if(rows.length === 0){ goTo(2); return; }
 
-    // procura match EXATO do código informado
-    const norm = s => String(s || '').trim().toUpperCase();
+    const norm  = s => String(s||'').trim().toUpperCase();
     const exact = rows.find(r => norm(r.codigo) === norm(codigo));
 
     if (exact){
-      // abre modal de duplicidade
-      openDupeModal(exact);
+      openDupeModal(exact);                         // ⚠️ só aqui mostramos a escolha Atualizar / PDF
     } else {
-      // existem registros, mas não exatamente esse código: segue como novo
       goTo(2);
     }
   }catch(e){
@@ -1521,52 +1503,72 @@ async function proceedFromStep1(codigo){
   }
 }
 
+<script>
+/* ===== Modal de Duplicidade (Atualizar / PDF) ===== */
 let __dupeRow = null;
+
 function openDupeModal(row){
   __dupeRow = row || null;
-  const el = document.getElementById('dupeModal');
+  const el   = document.getElementById('dupeModal');
   const info = document.getElementById('dupeInfo');
-  if(info){ info.textContent = `Código: ${row.codigo || '-'} • Obra: ${row.contratante_nome || '-'}`; }
+  if (info){
+    info.textContent = `Código: ${row?.codigo || '-'} • Obra: ${row?.contratante_nome || '-'}`;
+  }
   el.style.display = 'flex';
 }
-function closeDupeModal(){ document.getElementById('dupeModal').style.display='none'; }
-document.getElementById('btnDupCancel').onclick = () => { closeDupeModal(); };
+
+function closeDupeModal(){
+  const el = document.getElementById('dupeModal');
+  if (el) el.style.display = 'none';
+}
+
+/* Botões do modal */
+document.getElementById('btnDupCancel').onclick = () => {
+  closeDupeModal();
+};
+
 document.getElementById('btnDupPrint').onclick = () => {
-  if(!__dupeRow){ closeDupeModal(); return; }
-  openPdfSmart(__dupeRow); closeDupeModal();
+  if (!__dupeRow){ closeDupeModal(); return; }
+  try { openPdfSmart(__dupeRow); } catch(e){ console.error(e); }
+  closeDupeModal();
 };
+
 document.getElementById('btnDupUpdate').onclick = () => {
-  if(!__dupeRow){ closeDupeModal(); return; }
-  fillAllFromRow(__dupeRow); closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
-  preloadLogoFromRow(__dupeRow);
-};
+  if (!__dupeRow){ closeDupeModal(); return; }
 
-function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
-function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.onchange) try{ el.onchange({}); }catch(_){} } }
-
-// ——— substitua toda a função por esta ———
-
-window.fillAllFromRow = function(row){
-  if(!row){ console.warn('[fillAllFromRow] row vazio'); return; }
-
-  // helper: seta valor e dispara input/change (pros validadores já existentes)
-  function setIf(id, val){
+  // 1) Preenche o campo "CÓDIGO" e atualiza os badges
+  const code = (__dupeRow.codigo || '').toString().trim();
+  const inp  = document.getElementById('codigo');
+  if (inp){
+    inp.value = code;
+    // dispara "input" para habilitar o botão Continuar
+    try { inp.dispatchEvent(new Event('input', { bubbles:true })); } catch(_) {}
+  }
+  ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
     const el = document.getElementById(id);
-    if (!el) return;
-    el.value = (val ?? '').toString();
-    try{
-      el.dispatchEvent(new Event('input',  {bubbles:true}));
-      el.dispatchEvent(new Event('change', {bubbles:true}));
-    }catch(_){}
-  }
-  // pega o 1º valor não-vazio dentre as chaves
-  function pick(keys){
-    for (const k of keys){
-      if (k in row && row[k]!=null && String(row[k]).trim()!=='') return row[k];
-    }
-    return '';
-  }
+    if (el) el.textContent = code || '—';
+  });
 
+  // 2) Preenche TODOS os campos com a linha encontrada
+  try { fillAllFromRow(__dupeRow); } catch(e){ console.error('fillAllFromRow falhou:', e); }
+
+  // 3) Tenta carregar o LOGO, se houver
+  try { preloadLogoFromRow(__dupeRow); } catch(e){ console.warn('preloadLogoFromRow:', e); }
+
+  // 4) Fecha o modal e navega pra etapa 2
+  closeDupeModal();
+  try { goTo(2); } catch(_) {}
+
+  // 5) Roda validações (mantém o que já estava validando os botões)
+  try{ validate2(); }catch(_){}
+  try{ validate3(); }catch(_){}
+  try{ validate4(); }catch(_){}
+  try{ validate5(); }catch(_){}
+
+  // 6) Feedback rápido
+  try { showToast('Dados carregados do cadastro existente'); } catch(_) {}
+};
+</script>
   // ===== Etapa 1
   setIf('codigo', pick(['codigo','code','Código','CODIGO']));
 
@@ -1676,82 +1678,6 @@ window.fillAllFromRow = function(row){
   try{ validate4(); }catch(_){}
   try{ validate5(); }catch(_){}
 };
-
-  // ===== Etapa 4 — CONTRATADA =====
-  setAny(['nomeContratada'], pick(row, [
-    'contratada_nome','contratada','fornecedor','empresa','cta_nome'
-  ]));
-  setAny(['docContratada'],  pick(row, [
-    'contratada_doc','contratada_cnpj','cta_cpfCnpj'
-  ]));
-  setAny(['contatoContratada'], pick(row, [
-    'contratada_contato','responsavel_contratada','cta_contato'
-  ]));
-  setAny(['telefoneContratada'], pick(row, [
-    'contratada_telefone','contratada_tel','cta_telefone'
-  ]));
-  setAny(['emailContratada'], pick(row, [
-    'contratada_email','cta_email'
-  ]));
-
-  setAny(['cepContratada'],         pick(row, ['contratada_cep','cep_contratada']));
-  setAny(['logradouroContratada'],  pick(row, ['contratada_logradouro','logradouro_contratada']));
-  setAny(['numeroContratada'],      pick(row, ['contratada_numero','numero_contratada']));
-  setAny(['complementoContratada'], pick(row, ['contratada_complemento','compl_contratada']));
-  setAny(['bairroContratada'],      pick(row, ['contratada_bairro','bairro_contratada']));
-  setAny(['cidadeContratada'],      pick(row, ['contratada_cidade','cidade_contratada']));
-  (function(){
-    const uf = pick(row, ['contratada_uf','uf_contratada']);
-    const sel = document.getElementById('ufContratada');
-    if (sel){ sel.value = uf || ''; if(sel.onchange) try{ sel.onchange({}); }catch(_){} }
-  })();
-
-  const endCta = pick(row, ['contratada_endereco','endereco_contratada']);
-  if (endCta) splitAddressToForm('Contratada', endCta);
-  const cepCtaTxt = (endCta||'').match(/CEP\s*([\d\-]+)/i)?.[1] || '';
-  if (cepCtaTxt) setAny(['cepContratada'], cepCtaTxt);
-
-  // tenta ViaCEP se faltar algo e houver CEP
-  autoFetchCepIfNeeded('Contratada');
-
-// força ViaCEP se já temos 8 dígitos no CEP (contratada)
-(function(){
-  try{
-    const el = document.getElementById('cepContratada');
-    if (el){
-      const d = String(el.value||'').replace(/\D+/g,'');
-      if (d.length === 8 && typeof cepOnBlur === 'function') {
-        cepOnBlur(el, 'Contratada');
-      }
-    }
-  }catch(_){}
-})();
-
-  // ===== Etapa 5 — condições, cláusulas, valores =====
-  setAny(['clausulas'], pick(row, [
-    'clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais'
-  ]));
-  setAny(['condicoes'], pick(row, [
-    'condicoes','condições','condicoes_texto','textoCondicoes','condicoes_pagamento','condicoesGerais'
-  ]));
-
-  setAny(['valor'],        pick(row, ['valor','valor_total']));
-  setAny(['valorExtenso'], pick(row, ['valorExtenso','valor_extenso']));
-  setAny(['prazo'],        pick(row, ['prazo','prazo_dias','prazo_execucao']));
-  setAny(['dataExtenso'],  pick(row, ['dataExtenso','data_extenso']));
-
-  // ===== logo (se disponível) =====
-  try{ if (typeof preloadLogoFromRow === 'function') preloadLogoFromRow(row); }catch(_){}
-
-  // ===== validações para liberar botões =====
-  try{ validate2(); }catch(_){}
-  try{ validate3(); }catch(_){}
-  try{ validate4(); }catch(_){}
-  try{ validate5(); }catch(_){}
-
-  console.log('[fillAllFromRow] preenchimento concluído.');
-}
-
     // ===== Init =====
     updateStepper(1); validate1();
 
@@ -1942,14 +1868,66 @@ window.fillAllFromRow = function(row){
   try{ if (typeof preloadLogoFromRow === 'function') preloadLogoFromRow(row); }catch(_){}
 
   // validações
-  try{ validate2(); }catch(_){}
-  try{ validate3(); }catch(_){}
-  try{ validate4(); }catch(_){}
-  try{ validate5(); }catch(_){}
+  try { validate2(); } catch(_){}
+  try { validate3(); } catch(_){}
+  try { validate4(); } catch(_){}
+  try { validate5(); } catch(_){}
+}
 
-  console.log('[fillAllFromRow] preenchimento concluído.');
+// quebra best-effort do endereço salvo
+function splitAddressToForm(prefix, enderecoCompleto){
+  if(!enderecoCompleto) return;
+  const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+  try{
+    const parts = enderecoCompleto.split(' — ');
+    const p1=(parts[0]||'').split(',');
+    r.logradouro=(p1[0]||'').trim();
+    const p1b=(p1[1]||'').trim().split(' - ');
+    r.numero=(p1b[0]||'').trim();
+    r.complemento=(p1b[1]||'').trim();
+    r.bairro=(parts[1]||'').trim();
+    const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+    if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+  }catch(_){}
+  setVal('logradouro'+prefix, r.logradouro);
+  setVal('numero'+prefix,     r.numero);
+  setVal('complemento'+prefix,r.complemento);
+  setVal('bairro'+prefix,     r.bairro);
+  setVal('cidade'+prefix,     r.cidade);
+  setSel('uf'+prefix,         r.uf);
+}
+function focusNext(el){
+  const id = el.getAttribute('data-next');
+  if(!id) return false;
+  const nxt = document.getElementById(id);
+  if(nxt){
+    nxt.focus({ preventScroll: true });
+    // Em iOS às vezes precisa rolar um pouquinho:
+    setTimeout(()=>nxt.scrollIntoView({block:'center', behavior:'smooth'}), 60);
+    return true;
   }
+  return false;
+}
 
+// Atalho: em qualquer input/textarea com data-next,
+// pressionar Enter move para o próximo
+(function armNextKeys(){
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Enter') return;
+    const el = e.target;
+    if(!(el instanceof HTMLElement)) return;
+    if(!el.matches('input, textarea, select')) return;
+
+    // se tiver data-next, usamos navegação custom
+    if(el.hasAttribute('data-next')){
+      e.preventDefault();
+      focusNext(el);
+    }
+  });
+})();
+
+    // ===== Init =====
+    updateStepper(1); validate1();
   </script>
 </body>
 </html>
