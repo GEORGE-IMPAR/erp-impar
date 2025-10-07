@@ -1411,114 +1411,76 @@ function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value =
 function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.onchange) try{ el.onchange({}); }catch(_){} } }
 
 // ——— substitua toda a função por esta ———
-function fillAllFromRow(row){
-  if(!row) return;
 
-  const setVal = (id, v)=>{
+function fillAllFromRow(row){
+  if(!row){ console.warn('[fillAllFromRow] row vazio'); return; }
+
+  // helpers locais (não mexem no resto do seu código)
+  const set = (id, v)=>{
     const el = document.getElementById(id);
     if (!el) return;
-    el.value = (v ?? '');
-    // dispara oninput/onchange pra habilitar botões/validações
-    if (typeof el.oninput === 'function') { try{ el.oninput({}); }catch(_){} }
-    if (typeof el.onchange === 'function'){ try{ el.onchange({}); }catch(_){} }
+    el.value = (v == null ? '' : String(v));
+    if (el.oninput) try{ el.oninput({}); }catch(_){}
   };
   const setSel = (id, v)=>{
     const el = document.getElementById(id);
     if (!el) return;
-    el.value = (v ?? '');
-    if (typeof el.onchange === 'function'){ try{ el.onchange({}); }catch(_){} }
-  };
-  const splitAddressToForm = (prefix, txt)=>{
-    if(!txt) return;
-    const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
-    try{
-      const parts = String(txt).split(' — ');
-      const p1=(parts[0]||'').split(',');
-      r.logradouro=(p1[0]||'').trim();
-      const p1b=(p1[1]||'').trim().split(' - ');
-      r.numero=(p1b[0]||'').trim();
-      r.complemento=(p1b[1]||'').trim();
-      r.bairro=(parts[1]||'').trim();
-      const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
-      if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
-    }catch(_){}
-    setVal('logradouro'+prefix, r.logradouro);
-    setVal('numero'+prefix,     r.numero);
-    setVal('complemento'+prefix,r.complemento);
-    setVal('bairro'+prefix,     r.bairro);
-    setVal('cidade'+prefix,     r.cidade);
-    setSel('uf'+prefix,         r.uf);
+    el.value = (v || '');
+    if (el.onchange) try{ el.onchange({}); }catch(_){}
   };
 
-  // Etapa 2
-  setVal('servico',  row.servico ?? row.descricao ?? row.objeto);
-  setVal('endereco', row.endereco_obra ?? row.endereco);
+  // ===== Etapa 2 =====
+  set('servico',  pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO','escopo','descricao_servico']));
+  set('endereco', pick(row, ['endereco','endereco_obra','enderecoObra','obra_endereco_resumo']));
 
-  // Etapa 3 (Contratante)
-  setVal('nomeContratante',     row.contratante_nome ?? row.contratante);
-  setVal('docContratante',      row.contratante_doc);
-  setVal('contatoContratante',  row.contratante_contato ?? row.responsavel);
-  setVal('telefoneContratante', row.contratante_tel ?? row.contratante_telefone);
-  setVal('emailContratante',    row.contratante_email);
-  setVal('cepContratante',      (row.contratante_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || row.contratante_cep);
-  splitAddressToForm('Contratante', row.contratante_endereco);
+  // ===== Etapa 3 — CONTRATANTE =====
+  set('nomeContratante',    pick(row, ['contratante_nome','contratante','cliente','CLIENTE','ctt_nome','razao_contratante','razaoSocialContratante']));
+  set('docContratante',     pick(row, ['contratante_doc','contratante_cnpj','contratante_cpf','cpfCnpj','cpfCnpjContratante','ctt_cpfCnpj']));
+  set('contatoContratante', pick(row, ['contratante_contato','responsavel','responsavel_obra','ctt_contato']));
+  set('telefoneContratante',pick(row, ['contratante_telefone','contratante_tel','ctt_telefone','telefone_contratante','telefone']));
+  set('emailContratante',   pick(row, ['contratante_email','ctt_email','email_contratante','email']));
 
-  // Etapa 4 (Contratada)
-  setVal('nomeContratada',      row.contratada_nome ?? row.empresa ?? row.contratada);
-  setVal('docContratada',       row.contratada_doc);
-  setVal('contatoContratada',   row.contratada_contato);
-  setVal('telefoneContratada',  row.contratada_tel ?? row.contratada_telefone);
-  setVal('emailContratada',     row.contratada_email);
-  setVal('cepContratada',       (row.contratada_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || row.contratada_cep);
-  splitAddressToForm('Contratada', row.contratada_endereco);
+  // endereço do contratante (string única ou campos separados)
+  const endCtt = pick(row, ['contratante_endereco','endereco_contratante']);
+  if (endCtt) splitAddressToForm('Contratante', endCtt);
+  set('cepContratante',       pick(row, ['contratante_cep','cep_contratante']) || ((endCtt||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '');
+  set('logradouroContratante',pick(row, ['contratante_logradouro','logradouro_contratante']));
+  set('numeroContratante',    pick(row, ['contratante_numero','numero_contratante','nro_contratante']));
+  set('complementoContratante',pick(row,['contratante_complemento','compl_contratante']));
+  set('bairroContratante',    pick(row, ['contratante_bairro','bairro_contratante']));
+  set('cidadeContratante',    pick(row, ['contratante_cidade','cidade_contratante','municipio_contratante']));
+  setSel('ufContratante',     pick(row, ['contratante_uf','uf_contratante']));
 
-  // Etapa 5
-  setVal('clausulas',    row.clausulas ?? row.clausulas_texto);
-  setVal('condicoes',    row.condicoes ?? row.condicoes_texto ?? row.condicoes_pagamento);
-  setVal('valor',        row.valor);
-  setVal('valorExtenso', row.valor_extenso ?? row.valorExtenso);
-  setVal('prazo',        row.prazo_dias ?? row.prazo);
-  setVal('dataExtenso',  row.data_extenso ?? row.dataExtenso);
+  // ===== Etapa 4 — CONTRATADA =====
+  set('nomeContratada',      pick(row, ['contratada_nome','contratada','fornecedor','empresa','cta_nome']));
+  set('docContratada',       pick(row, ['contratada_doc','contratada_cnpj','cta_cpfCnpj']));
+  set('contatoContratada',   pick(row, ['contratada_contato','responsavel_contratada','cta_contato']));
+  set('telefoneContratada',  pick(row, ['contratada_telefone','contratada_tel','cta_telefone']));
+  set('emailContratada',     pick(row, ['contratada_email','cta_email']));
 
-  // Revalida para liberar botões das etapas seguintes
+  const endCta = pick(row, ['contratada_endereco','endereco_contratada']);
+  if (endCta) splitAddressToForm('Contratada', endCta);
+  set('cepContratada',       pick(row, ['contratada_cep','cep_contratada']) || ((endCta||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '');
+  set('logradouroContratada',pick(row, ['contratada_logradouro','logradouro_contratada']));
+  set('numeroContratada',    pick(row, ['contratada_numero','numero_contratada']));
+  set('complementoContratada',pick(row,['contratada_complemento','compl_contratada']));
+  set('bairroContratada',    pick(row, ['contratada_bairro','bairro_contratada']));
+  set('cidadeContratada',    pick(row, ['contratada_cidade','cidade_contratada']));
+  setSel('ufContratada',     pick(row, ['contratada_uf','uf_contratada']));
+
+  // ===== Etapa 5 — Cláusulas, condições, valores =====
+  set('clausulas',    pick(row, ['clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais']));
+  set('condicoes',    pick(row, ['condicoes','condições','condicoes_texto','textoCondicoes','condicoes_pagamento','condicoesGerais']));
+  set('valor',        pick(row, ['valor','valor_total']));
+  set('valorExtenso', pick(row, ['valorExtenso','valor_extenso']));
+  set('prazo',        pick(row, ['prazo','prazo_dias','prazo_execucao']));
+  set('dataExtenso',  pick(row, ['dataExtenso','data_extenso']));
+
+  // validações para liberar botões/estados
   try{ validate2(); }catch(_){}
   try{ validate3(); }catch(_){}
   try{ validate4(); }catch(_){}
   try{ validate5(); }catch(_){}
-}
-// quebra best-effort do endereço salvo
-function splitAddressToForm(prefix, enderecoCompleto){
-  if(!enderecoCompleto) return;
-  const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
-  try{
-    const parts = enderecoCompleto.split(' — ');
-    const p1=(parts[0]||'').split(',');
-    r.logradouro=(p1[0]||'').trim();
-    const p1b=(p1[1]||'').trim().split(' - ');
-    r.numero=(p1b[0]||'').trim();
-    r.complemento=(p1b[1]||'').trim();
-    r.bairro=(parts[1]||'').trim();
-    const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
-    if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
-  }catch(_){}
-  setVal('logradouro'+prefix, r.logradouro);
-  setVal('numero'+prefix,     r.numero);
-  setVal('complemento'+prefix,r.complemento);
-  setVal('bairro'+prefix,     r.bairro);
-  setVal('cidade'+prefix,     r.cidade);
-  setSel('uf'+prefix,         r.uf);
-}
-function focusNext(el){
-  const id = el.getAttribute('data-next');
-  if(!id) return false;
-  const nxt = document.getElementById(id);
-  if(nxt){
-    nxt.focus({ preventScroll: true });
-    // Em iOS às vezes precisa rolar um pouquinho:
-    setTimeout(()=>nxt.scrollIntoView({block:'center', behavior:'smooth'}), 60);
-    return true;
-  }
-  return false;
 }
 
 // Atalho: em qualquer input/textarea com data-next,
