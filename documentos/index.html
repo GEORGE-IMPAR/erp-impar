@@ -1415,7 +1415,7 @@ function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value =
 function fillAllFromRow(row){
   if(!row){ console.warn('[fillAllFromRow] row vazio'); return; }
 
-  // helpers locais (não mexem no resto do seu código)
+  // helpers locais
   const set = (id, v)=>{
     const el = document.getElementById(id);
     if (!el) return;
@@ -1427,6 +1427,10 @@ function fillAllFromRow(row){
     if (!el) return;
     el.value = (v || '');
     if (el.onchange) try{ el.onchange({}); }catch(_){}
+  };
+  const basicAddrMissing = (prefix)=>{
+    const need = ['logradouro','bairro','cidade','uf'];
+    return need.some(k => !(document.getElementById(k+prefix)?.value || '').trim());
   };
 
   // ===== Etapa 2 =====
@@ -1440,16 +1444,28 @@ function fillAllFromRow(row){
   set('telefoneContratante',pick(row, ['contratante_telefone','contratante_tel','ctt_telefone','telefone_contratante','telefone']));
   set('emailContratante',   pick(row, ['contratante_email','ctt_email','email_contratante','email']));
 
-  // endereço do contratante (string única ou campos separados)
   const endCtt = pick(row, ['contratante_endereco','endereco_contratante']);
   if (endCtt) splitAddressToForm('Contratante', endCtt);
-  set('cepContratante',       pick(row, ['contratante_cep','cep_contratante']) || ((endCtt||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '');
+
+  const cepCtt =
+    pick(row, ['contratante_cep','cep_contratante']) ||
+    ((endCtt||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '';
+  set('cepContratante', cepCtt);
+
   set('logradouroContratante',pick(row, ['contratante_logradouro','logradouro_contratante']));
   set('numeroContratante',    pick(row, ['contratante_numero','numero_contratante','nro_contratante']));
   set('complementoContratante',pick(row,['contratante_complemento','compl_contratante']));
   set('bairroContratante',    pick(row, ['contratante_bairro','bairro_contratante']));
   set('cidadeContratante',    pick(row, ['contratante_cidade','cidade_contratante','municipio_contratante']));
   setSel('ufContratante',     pick(row, ['contratante_uf','uf_contratante']));
+
+  // === NOVO: se ainda faltar endereço, dispara o auto-preenchimento pelo CEP ===
+  setTimeout(()=>{
+    const el = document.getElementById('cepContratante');
+    if (el && (onlyDigits(el.value).length===8) && basicAddrMissing('Contratante')){
+      try{ cepOnBlur(el,'Contratante'); }catch(e){ console.warn('cepOnBlur contratante', e); }
+    }
+  }, 30);
 
   // ===== Etapa 4 — CONTRATADA =====
   set('nomeContratada',      pick(row, ['contratada_nome','contratada','fornecedor','empresa','cta_nome']));
@@ -1460,13 +1476,26 @@ function fillAllFromRow(row){
 
   const endCta = pick(row, ['contratada_endereco','endereco_contratada']);
   if (endCta) splitAddressToForm('Contratada', endCta);
-  set('cepContratada',       pick(row, ['contratada_cep','cep_contratada']) || ((endCta||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '');
+
+  const cepCta =
+    pick(row, ['contratada_cep','cep_contratada']) ||
+    ((endCta||'').match(/CEP\s([\d\-]+)/i)||[])[1] || '';
+  set('cepContratada', cepCta);
+
   set('logradouroContratada',pick(row, ['contratada_logradouro','logradouro_contratada']));
   set('numeroContratada',    pick(row, ['contratada_numero','numero_contratada']));
   set('complementoContratada',pick(row,['contratada_complemento','compl_contratada']));
   set('bairroContratada',    pick(row, ['contratada_bairro','bairro_contratada']));
   set('cidadeContratada',    pick(row, ['contratada_cidade','cidade_contratada']));
   setSel('ufContratada',     pick(row, ['contratada_uf','uf_contratada']));
+
+  // === NOVO: auto-preenchimento pelo CEP da contratada, se faltar endereço ===
+  setTimeout(()=>{
+    const el = document.getElementById('cepContratada');
+    if (el && (onlyDigits(el.value).length===8) && basicAddrMissing('Contratada')){
+      try{ cepOnBlur(el,'Contratada'); }catch(e){ console.warn('cepOnBlur contratada', e); }
+    }
+  }, 30);
 
   // ===== Etapa 5 — Cláusulas, condições, valores =====
   set('clausulas',    pick(row, ['clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais']));
@@ -1476,13 +1505,12 @@ function fillAllFromRow(row){
   set('prazo',        pick(row, ['prazo','prazo_dias','prazo_execucao']));
   set('dataExtenso',  pick(row, ['dataExtenso','data_extenso']));
 
-  // validações para liberar botões/estados
+  // libera botões/estados
   try{ validate2(); }catch(_){}
   try{ validate3(); }catch(_){}
   try{ validate4(); }catch(_){}
   try{ validate5(); }catch(_){}
 }
-
 // Atalho: em qualquer input/textarea com data-next,
 // pressionar Enter move para o próximo
 (function armNextKeys(){
