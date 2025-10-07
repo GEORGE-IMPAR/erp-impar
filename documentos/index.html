@@ -72,6 +72,66 @@
 </style>
 
 <script>
+
+// === SHIMS: helpers; deixe isto no topo ===
+(function(){
+  if (typeof window.pick !== 'function'){
+    window.pick = function(o, keys){
+      for (const k of keys){
+        if (!o || !(k in o)) continue;
+        const v = o[k];
+        if (v == null) continue;
+        const s = (typeof v === 'string') ? v.trim() : v;
+        if (s !== '' && s !== '-') return s;
+      }
+      return '';
+    };
+  }
+
+  if (typeof window.setAny !== 'function'){
+    window.setAny = function(ids, v){
+      const val = (v == null ? '' : String(v));
+      for (const id of ids){
+        const el = document.getElementById(id);
+        if (el){
+          el.value = val;
+          try{
+            if (typeof el.oninput === 'function') el.oninput({});
+            el.dispatchEvent(new Event('input', { bubbles:true }));
+          }catch(_){}
+          return true;
+        }
+      }
+      return false;
+    };
+  }
+
+  if (typeof window.splitAddressToForm !== 'function'){
+    window.splitAddressToForm = function(prefix, enderecoCompleto){
+      if(!enderecoCompleto) return;
+      const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+      try{
+        const parts = String(enderecoCompleto).split(' — ');
+        const p1=(parts[0]||'').split(',');
+        r.logradouro=(p1[0]||'').trim();
+        const p1b=(p1[1]||'').trim().split(' - ');
+        r.numero=(p1b[0]||'').trim();
+        r.complemento=(p1b[1]||'').trim();
+        r.bairro=(parts[1]||'').trim();
+        const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+        if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+      }catch(_){}
+      setAny(['logradouro'+prefix], r.logradouro);
+      setAny(['numero'+prefix],     r.numero);
+      setAny(['complemento'+prefix],r.complemento);
+      setAny(['bairro'+prefix],     r.bairro);
+      setAny(['cidade'+prefix],     r.cidade);
+      const ufSel = document.getElementById('uf'+prefix);
+      if (ufSel){ ufSel.value = r.uf || ''; try{ ufSel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){} }
+    };
+  }
+})();
+
 window.__CONSULTA_CFG__ = {
   PDF_PATH_CANDIDATES: ['/pdf/', '/uploads/pdf/', '/pdfs/', '/documentos/pdf/']
 };
