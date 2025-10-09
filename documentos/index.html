@@ -72,6 +72,66 @@
 </style>
 
 <script>
+
+// === SHIMS: helpers; deixe isto no topo ===
+(function(){
+  if (typeof window.pick !== 'function'){
+    window.pick = function(o, keys){
+      for (const k of keys){
+        if (!o || !(k in o)) continue;
+        const v = o[k];
+        if (v == null) continue;
+        const s = (typeof v === 'string') ? v.trim() : v;
+        if (s !== '' && s !== '-') return s;
+      }
+      return '';
+    };
+  }
+
+  if (typeof window.setAny !== 'function'){
+    window.setAny = function(ids, v){
+      const val = (v == null ? '' : String(v));
+      for (const id of ids){
+        const el = document.getElementById(id);
+        if (el){
+          el.value = val;
+          try{
+            if (typeof el.oninput === 'function') el.oninput({});
+            el.dispatchEvent(new Event('input', { bubbles:true }));
+          }catch(_){}
+          return true;
+        }
+      }
+      return false;
+    };
+  }
+
+  if (typeof window.splitAddressToForm !== 'function'){
+    window.splitAddressToForm = function(prefix, enderecoCompleto){
+      if(!enderecoCompleto) return;
+      const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+      try{
+        const parts = String(enderecoCompleto).split(' — ');
+        const p1=(parts[0]||'').split(',');
+        r.logradouro=(p1[0]||'').trim();
+        const p1b=(p1[1]||'').trim().split(' - ');
+        r.numero=(p1b[0]||'').trim();
+        r.complemento=(p1b[1]||'').trim();
+        r.bairro=(parts[1]||'').trim();
+        const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+        if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+      }catch(_){}
+      setAny(['logradouro'+prefix], r.logradouro);
+      setAny(['numero'+prefix],     r.numero);
+      setAny(['complemento'+prefix],r.complemento);
+      setAny(['bairro'+prefix],     r.bairro);
+      setAny(['cidade'+prefix],     r.cidade);
+      const ufSel = document.getElementById('uf'+prefix);
+      if (ufSel){ ufSel.value = r.uf || ''; try{ ufSel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){} }
+    };
+  }
+})();
+
 window.__CONSULTA_CFG__ = {
   PDF_PATH_CANDIDATES: ['/pdf/', '/uploads/pdf/', '/pdfs/', '/documentos/pdf/']
 };
@@ -323,10 +383,10 @@ window.__CONSULTA_CFG__ = {
     <div class="bd">
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
         <div style="flex:1;min-width:220px">
-          <div style="font-size:12px;color:#64748b;margin-bottom:6px">Código (opcional)</div>
-          <input id="consCodigo" class="input" placeholder="Ex.: AC00025">
-          <div class="hint">Digite o código do projeto.</p>
-<p></div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:6px">Código (opcional)</div>
+        <input id="consCodigo" class="input" placeholder="Ex.: AC00025">
+        <div class="hint">Digite o código do projeto.</div>
+      </div>
         </div>
         <button class="btn primary" id="btnBuscar">Buscar</button>
       </div>
@@ -489,8 +549,82 @@ function goTo(step){
 function addrOk(prefix){return ['logradouro','numero','bairro','cidade','uf'].every(k => document.getElementById(k+prefix).value.trim());}
 function validate1(){const v=document.getElementById('codigo').value.trim(),b=document.getElementById('bar1');if(v){b.classList.remove('disabled');b.classList.add('enabled');}else{b.classList.add('disabled');b.classList.remove('enabled');}updateStepper(1);}
 function validate2(){const s=document.getElementById('servico').value.trim(),e=document.getElementById('endereco').value.trim(),b=document.getElementById('bar2');if(s&&e){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(3);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
-function validate3(){const d=document.getElementById('docContratante').value,t=document.getElementById('telefoneContratante').value,m=document.getElementById('emailContratante').value.trim(),cep=document.getElementById('cepContratante').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratanteErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratanteErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratanteErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratante','contatoContratante'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratante');const b=document.getElementById('bar3');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(4);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
-function validate4(){const d=document.getElementById('docContratada').value,t=document.getElementById('telefoneContratada').value,m=document.getElementById('emailContratada').value.trim(),cep=document.getElementById('cepContratada').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratadaErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratadaErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratadaErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratada','contatoContratada'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratada');const b=document.getElementById('bar4');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(5);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
+function validate3(){
+  const d    = document.getElementById('docContratante').value;
+  const t    = document.getElementById('telefoneContratante').value;
+  const m    = document.getElementById('emailContratante').value.trim();
+  const cep  = document.getElementById('cepContratante').value.trim();
+
+  const docOk   = (onlyDigits(d).length===11 && isValidCPF(d)) ||
+                  (onlyDigits(d).length===14 && isValidCNPJ(d));
+  const telOk   = onlyDigits(t).length===11;
+  const emailOk = isValidEmail(m);
+
+  const cepDigits        = onlyDigits(cep);
+  const cepValidOrEmpty  = (cepDigits.length===0 || cepDigits.length===8);
+
+  // mensagens de erro
+  document.getElementById('emailContratanteErr')
+    .classList.toggle('hidden', emailOk || m.length===0);
+  document.getElementById('telContratanteErr')
+    .classList.toggle('hidden', telOk || onlyDigits(t).length===0);
+  // CEP: só mostra erro se houver algo digitado e estiver inválido
+  document.getElementById('cepContratanteErr')
+    .classList.toggle('hidden', cepValidOrEmpty);
+
+  // ✅ CEP não é mais obrigatório; se vazio, segue
+  const ok = ['nomeContratante','contatoContratante']
+              .every(id => document.getElementById(id).value.trim())
+            && docOk && telOk && emailOk
+            && addrOk('Contratante')
+            && cepValidOrEmpty;
+
+  const b = document.getElementById('bar3');
+  if (ok){
+    b.classList.remove('disabled'); b.classList.add('enabled');
+    b.onclick = ()=>goTo(4);
+  }else{
+    b.classList.add('disabled'); b.classList.remove('enabled');
+    b.onclick = noop;
+  }
+}
+function validate4(){
+  const d    = document.getElementById('docContratada').value;
+  const t    = document.getElementById('telefoneContratada').value;
+  const m    = document.getElementById('emailContratada').value.trim();
+  const cep  = document.getElementById('cepContratada').value.trim();
+
+  const docOk   = (onlyDigits(d).length===11 && isValidCPF(d)) ||
+                  (onlyDigits(d).length===14 && isValidCNPJ(d));
+  const telOk   = onlyDigits(t).length===11;
+  const emailOk = isValidEmail(m);
+
+  const cepDigits        = onlyDigits(cep);
+  const cepValidOrEmpty  = (cepDigits.length===0 || cepDigits.length===8);
+
+  document.getElementById('emailContratadaErr')
+    .classList.toggle('hidden', emailOk || m.length===0);
+  document.getElementById('telContratadaErr')
+    .classList.toggle('hidden', telOk || onlyDigits(t).length===0);
+  document.getElementById('cepContratadaErr')
+    .classList.toggle('hidden', cepValidOrEmpty);
+
+  // ✅ CEP opcional aqui também
+  const ok = ['nomeContratada','contatoContratada']
+              .every(id => document.getElementById(id).value.trim())
+            && docOk && telOk && emailOk
+            && addrOk('Contratada')
+            && cepValidOrEmpty;
+
+  const b = document.getElementById('bar4');
+  if (ok){
+    b.classList.remove('disabled'); b.classList.add('enabled');
+    b.onclick = ()=>goTo(5);
+  }else{
+    b.classList.add('disabled'); b.classList.remove('enabled');
+    b.onclick = noop;
+  }
+}
 function isValidCurrencyInput(){return /R\$\s\d{1,3}(\.\d{3})*,\d{2}$/.test(document.getElementById('valor').value);}
 function validate5(){
   setValorExtenso();
@@ -564,6 +698,63 @@ function loadLogoForPdf(){
     };
     fr.readAsDataURL(file);
   });
+}
+
+async function preloadLogoFromRow(row){
+  try{
+    const apiBase = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').replace(/\/list\.php.*/, '');
+    let url = (row.logo_url || row.logoUrl || row.LOGO_URL || '');
+
+    if (!url){
+      const file = row.logo || row.logo_file || row.logoFile || '';
+      if (file){
+        // tenta caminhos comuns no mesmo backend do list.php
+        const base = apiBase ? apiBase.replace(/\/+$/,'') : '';
+        const candidates = [
+          `${base}/logos/${encodeURIComponent(file)}`,
+          `${base}/uploads/${encodeURIComponent(file)}`,
+          `${base}/img/${encodeURIComponent(file)}`
+        ].filter(Boolean);
+        // escolhe o 1º que responder
+        for (const c of candidates){
+          try{
+            const head = await fetch(c, {method:'HEAD'});
+            if (head.ok || head.status === 405){ url = c; break; }
+          }catch(_){}
+        }
+      }
+    }
+    if (!url) return false;
+
+    const resp = await fetch(url);
+    if (!resp.ok) return false;
+
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    const dataUrl = await new Promise(res => { reader.onload = () => res(reader.result); reader.readAsDataURL(blob); });
+
+    // descobre tamanho para PDF
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+
+    const maxW = 110;
+    const ratio = img.naturalWidth ? (maxW / img.naturalWidth) : 1;
+    const w = Math.min(maxW, img.naturalWidth) * (img.naturalWidth ? ratio : 1);
+    const h = img.naturalHeight ? (img.naturalHeight * (w / (img.naturalWidth||w))) : 40;
+
+    // popula cache usado pelo PDF
+    __logoCached = { url: dataUrl, w, h, fmt: dataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG' };
+
+    // mostra nomezinho no UI
+    const info = document.getElementById('logoInfo');
+    if (info){
+      const nice = (row.logo || row.logo_file || row.logoFile || row.logo_url || 'logo');
+      info.textContent = 'Logo carregado: ' + String(nice).split('/').pop();
+    }
+    return true;
+  }catch(_){
+    return false;
+  }
 }
 
 /* PDF */
@@ -1078,13 +1269,14 @@ function showAction_old(row){
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
+
   if (!rows || !rows.length){
     tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
+
   let html = '';
   for (const row of rows){
-    const rowData = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
     const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
     const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
     const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
@@ -1093,10 +1285,11 @@ function renderRows(tbodyId, rows){
     const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
     const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
     const href = pdfHrefFromRow(row);
+
     html += `
       <tr>
         <td>${fmtDate(dt) || '—'}</td>
-        <td>${cod ? `<a href="#" class="code-link" data-row="${rowData}" onclick='showAction(JSON.parse(this.dataset.row));return false;'>${cod}</a>` : '—'}</td>
+        <td>${cod || '—'}</td>
         <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
         <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
         <td>${serv || '—'}</td>
@@ -1105,8 +1298,35 @@ function renderRows(tbodyId, rows){
     `;
   }
   tb.innerHTML = html;
-}
 
+  // Clique na linha: só preenche o código e fecha a consulta. Sem confirmação aqui.
+  const trs = tb.querySelectorAll('tr');
+  trs.forEach((tr)=>{
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', (ev)=>{
+      if (ev.target.closest('a')) return; // deixa o link PDF funcionar
+
+      const codeCell = tr.cells && tr.cells[1];
+      const code = (codeCell ? codeCell.textContent : '').trim();
+      if (!code) return;
+
+      const inp = document.getElementById('codigo');
+      if (inp){
+        inp.value = code;
+        inp.dispatchEvent(new Event('input', { bubbles:true })); // habilita "Continuar"
+      }
+      ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
+        const el = document.getElementById(id);
+        if (el) el.textContent = code;
+      });
+
+      const modal = document.getElementById('consultaModal');
+      if (modal) modal.style.display = 'none';
+
+      // Nada de confirmar/atualizar aqui.
+    }, { passive:true });
+  });
+}
 
 function renderConsMsgInline(msg){
   const tb=document.getElementById('consBodyInline');
@@ -1262,80 +1482,417 @@ function clearLocal(){
 async function proceedFromStep1(codigo){
   const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
   if(!LIST_URL || !SAVE_TOKEN){ goTo(2); return; }
+
   try{
-    const j    = await fetchConsulta(codigo);     // POST com token no corpo
+    const j    = await fetchConsulta(codigo);       // POST com token no corpo
     const rows = (j && j.rows) ? j.rows : [];
+
     if(rows.length === 0){ goTo(2); return; }
-    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
-    if (exact) { openDupeModal(exact); } else { goTo(2); }
+
+    const norm  = s => String(s||'').trim().toUpperCase();
+    const exact = rows.find(r => norm(r.codigo) === norm(codigo));
+
+    if (exact){
+      openDupeModal(exact);                         // ⚠️ só aqui mostramos a escolha Atualizar / PDF
+    } else {
+      goTo(2);
+    }
   }catch(e){
     console.error(e);
     goTo(2);
   }
 }
 
+/* ===== Modal de Duplicidade (Atualizar / PDF) ===== */
 let __dupeRow = null;
+
 function openDupeModal(row){
   __dupeRow = row || null;
-  const el = document.getElementById('dupeModal');
+  const el   = document.getElementById('dupeModal');
   const info = document.getElementById('dupeInfo');
-  if(info){ info.textContent = `Código: ${row.codigo || '-'} • Obra: ${row.contratante_nome || '-'}`; }
+  if (info){
+    info.textContent = `Código: ${row?.codigo || '-'} • Obra: ${row?.contratante_nome || '-'}`;
+  }
   el.style.display = 'flex';
 }
-function closeDupeModal(){ document.getElementById('dupeModal').style.display='none'; }
-document.getElementById('btnDupCancel').onclick = () => { closeDupeModal(); };
-document.getElementById('btnDupPrint').onclick = () => {
-  if(!__dupeRow){ closeDupeModal(); return; }
-  openPdfSmart(__dupeRow); closeDupeModal();
-};
-document.getElementById('btnDupUpdate').onclick = () => {
-  if(!__dupeRow){ closeDupeModal(); return; }
-  fillAllFromRow(__dupeRow); closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
-};
 
-function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
-function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.onchange) try{ el.onchange({}); }catch(_){} } }
-
-function fillAllFromRow(row){
-  // Etapa 2
-  setVal('servico',       row.servico);
-  setVal('endereco',      row.endereco_obra);
-
-  // Etapa 3 (Contratante)
-  setVal('nomeContratante',     row.contratante_nome);
-  setVal('docContratante',      row.contratante_doc);
-  setVal('contatoContratante',  row.contratante_contato);
-  setVal('telefoneContratante', row.contratante_tel);
-  setVal('emailContratante',    row.contratante_email);
-  setVal('cepContratante',      (row.contratante_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
-  splitAddressToForm('Contratante', row.contratante_endereco);
-
-  // Etapa 4 (Contratada)
-  setVal('nomeContratada',      row.contratada_nome);
-  setVal('docContratada',       row.contratada_doc);
-  setVal('contatoContratada',   row.contratada_contato);
-  setVal('telefoneContratada',  row.contratada_tel);
-  setVal('emailContratada',     row.contratada_email);
-  setVal('cepContratada',       (row.contratada_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
-  splitAddressToForm('Contratada', row.contratada_endereco);
-
-  // Etapa 5
-  setVal('valor',        row.valor);
-  setVal('valorExtenso', row.valor_extenso);
-  setVal('prazo',        row.prazo_dias);
-  setVal('dataExtenso',  row.data_extenso)
-
-  
-// Etapa 5 — textos (cláusulas / condições)
-setVal('clausulas', row.clausulas || row.clausulas_texto || row.textoClausulas || row.clausulas_gerais || '');
-setVal('condicoes', row.condicoes || row.condicoes_pagamento || row.condicoes_texto || row.textoCondicoes || row.condicoesGerais || '');
-;
-
-  try { validate2(); } catch(_){}
-  try { validate3(); } catch(_){}
-  try { validate4(); } catch(_){}
-  try { validate5(); } catch(_){}
+function closeDupeModal(){
+  const el = document.getElementById('dupeModal');
+  if (el) el.style.display = 'none';
 }
+
+/* Botões do modal */
+document.getElementById('btnDupCancel').onclick = () => {
+  closeDupeModal();
+};
+
+document.getElementById('btnDupPrint').onclick = () => {
+  if (!__dupeRow){ closeDupeModal(); return; }
+  try { openPdfSmart(__dupeRow); } catch(e){ console.error(e); }
+  closeDupeModal();
+};
+
+document.getElementById('btnDupUpdate').onclick = () => {
+  if (!__dupeRow){ closeDupeModal(); return; }
+
+  // 1) Preenche o campo "CÓDIGO" e atualiza os badges
+  const code = (__dupeRow.codigo || '').toString().trim();
+  const inp  = document.getElementById('codigo');
+  if (inp){
+    inp.value = code;
+    // dispara "input" para habilitar o botão Continuar
+    try { inp.dispatchEvent(new Event('input', { bubbles:true })); } catch(_) {}
+  }
+  ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.textContent = code || '—';
+  });
+
+  // 2) Preenche TODOS os campos com a linha encontrada
+  try { fillAllFromRow(__dupeRow); } catch(e){ console.error('fillAllFromRow falhou:', e); }
+
+  // 3) Tenta carregar o LOGO, se houver
+  try { preloadLogoFromRow(__dupeRow); } catch(e){ console.warn('preloadLogoFromRow:', e); }
+
+  // 4) Fecha o modal e navega pra etapa 2
+  closeDupeModal();
+  try { goTo(2); } catch(_) {}
+
+  // 5) Roda validações (mantém o que já estava validando os botões)
+  try{ validate2(); }catch(_){}
+  try{ validate3(); }catch(_){}
+  try{ validate4(); }catch(_){}
+  try{ validate5(); }catch(_){}
+
+  // 6) Feedback rápido
+  try { showToast('Dados carregados do cadastro existente'); } catch(_) {}
+};
+
+  // ===== Etapa 1
+  setIf('codigo', pick(['codigo','code','Código','CODIGO']));
+
+  // ===== Etapa 2
+  setIf('servico',  pick(['servico','Serviço','SERVIÇO','descricao','Descrição','objeto','OBJETO','escopo','descricao_servico']));
+  setIf('endereco', pick(['endereco','endereco_obra','enderecoObra','obra_endereco_resumo']));
+
+  // ===== Etapa 3 — CONTRATANTE
+  setIf('nomeContratante',       pick(['contratante_nome','contratante','CLIENTE','cliente','cta_cliente','ctt_nome','razao_contratante','razaoSocialContratante']));
+  setIf('docContratante',        pick(['contratante_doc','contratante_cnpj','contratante_cpf','cpfCnpj','cpfCnpjContratante','ctt_cpfCnpj']));
+  setIf('contatoContratante',    pick(['contratante_contato','responsavel','responsavel_obra','ctt_contato']));
+  setIf('telefoneContratante',   pick(['contratante_telefone','contratante_tel','ctt_telefone','telefone_contratante','telefone']));
+  setIf('emailContratante',      pick(['contratante_email','ctt_email','email_contratante','email']));
+
+  // endereço por campos (NÃO chamamos ViaCEP aqui)
+  setIf('cepContratante',         pick(['contratante_cep','cep_contratante']));
+  setIf('logradouroContratante',  pick(['contratante_logradouro','logradouro_contratante']));
+  setIf('numeroContratante',      pick(['contratante_numero','numero_contratante','nro_contratante']));
+  setIf('complementoContratante', pick(['contratante_complemento','compl_contratante']));
+  setIf('bairroContratante',      pick(['contratante_bairro','bairro_contratante']));
+  setIf('cidadeContratante',      pick(['contratante_cidade','cidade_contratante','municipio_contratante']));
+  (function(){
+    const uf = pick(['contratante_uf','uf_contratante']);
+    const sel = document.getElementById('ufContratante');
+    if (sel){ sel.value = uf || ''; try{ sel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
+    }
+  })();
+
+  // endereço como string única (sem sobrescrever número/complemento)
+  (function(){
+    const endTxt = pick(['contratante_endereco','endereco_contratante']);
+    if (!endTxt) return;
+    try{
+      // usa seu mesmo padrão "logradouro, numero - compl — bairro — cidade/UF — CEP 00000-000"
+      const parts = String(endTxt).split(' — ');
+      const p1=(parts[0]||'').split(',');
+      const log=(p1[0]||'').trim();
+      const bai=(parts[1]||'').trim();
+      const m  =(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+      if ((document.getElementById('logradouroContratante')?.value||'').trim()==='') setIf('logradouroContratante', log);
+      if ((document.getElementById('bairroContratante')?.value||'').trim()==='')     setIf('bairroContratante', bai);
+      if (m){
+        if ((document.getElementById('cidadeContratante')?.value||'').trim()==='')   setIf('cidadeContratante', m[1].trim());
+        const ufSel=document.getElementById('ufContratante');
+        if (ufSel && !ufSel.value){ ufSel.value=m[2].trim(); ufSel.dispatchEvent(new Event('change',{bubbles:true})); }
+      }
+      const mCep = endTxt.match(/CEP\s*([\d\-]+)/i);
+      if (mCep && (document.getElementById('cepContratante')?.value||'')==='') setIf('cepContratante', mCep[1]);
+    }catch(_){}
+  })();
+
+  // ===== Etapa 4 — CONTRATADA
+  setIf('nomeContratada',       pick(['contratada_nome','contratada','fornecedor','empresa','cta_nome']));
+  setIf('docContratada',        pick(['contratada_doc','contratada_cnpj','cta_cpfCnpj']));
+  setIf('contatoContratada',    pick(['contratada_contato','responsavel_contratada','cta_contato']));
+  setIf('telefoneContratada',   pick(['contratada_telefone','contratada_tel','cta_telefone']));
+  setIf('emailContratada',      pick(['contratada_email','cta_email']));
+
+  setIf('cepContratada',         pick(['contratada_cep','cep_contratada']));
+  setIf('logradouroContratada',  pick(['contratada_logradouro','logradouro_contratada']));
+  setIf('numeroContratada',      pick(['contratada_numero','numero_contratada']));
+  setIf('complementoContratada', pick(['contratada_complemento','compl_contratada']));
+  setIf('bairroContratada',      pick(['contratada_bairro','bairro_contratada']));
+  setIf('cidadeContratada',      pick(['contratada_cidade','cidade_contratada']));
+  (function(){
+    const uf = pick(['contratada_uf','uf_contratada']);
+    const sel = document.getElementById('ufContratada');
+    if (sel){ sel.value = uf || ''; try{ sel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
+    }
+  })();
+
+  (function(){
+    const endTxt = pick(['contratada_endereco','endereco_contratada']);
+    if (!endTxt) return;
+    try{
+      const parts = String(endTxt).split(' — ');
+      const p1=(parts[0]||'').split(',');
+      const log=(p1[0]||'').trim();
+      const bai=(parts[1]||'').trim();
+      const m  =(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+      if ((document.getElementById('logradouroContratada')?.value||'').trim()==='') setIf('logradouroContratada', log);
+      if ((document.getElementById('bairroContratada')?.value||'').trim()==='')     setIf('bairroContratada', bai);
+      if (m){
+        if ((document.getElementById('cidadeContratada')?.value||'').trim()==='')   setIf('cidadeContratada', m[1].trim());
+        const ufSel=document.getElementById('ufContratada');
+        if (ufSel && !ufSel.value){ ufSel.value=m[2].trim(); ufSel.dispatchEvent(new Event('change',{bubbles:true})); }
+      }
+      const mCep = endTxt.match(/CEP\s*([\d\-]+)/i);
+      if (mCep && (document.getElementById('cepContratada')?.value||'')==='') setIf('cepContratada', mCep[1]);
+    }catch(_){}
+  })();
+
+  // ===== Etapa 5
+  setIf('clausulas',    pick(['clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais']));
+  setIf('condicoes',    pick(['condicoes','condições','condicoes_texto','textoCondicoes','condicoes_pagamento','condicoesGerais']));
+  setIf('valor',        pick(['valor','valor_total']));
+  setIf('valorExtenso', pick(['valorExtenso','valor_extenso']));
+  setIf('prazo',        pick(['prazo','prazo_dias','prazo_execucao']));
+  setIf('dataExtenso',  pick(['dataExtenso','data_extenso']));
+
+  // ===== Logo (mantido)
+  try{ if (typeof preloadLogoFromRow === 'function') preloadLogoFromRow(row); }catch(_){}
+
+  // ===== validações para liberar botões =====
+  try{ validate2(); }catch(_){}
+  try{ validate3(); }catch(_){}
+  try{ validate4(); }catch(_){}
+  try{ validate5(); }catch(_){}
+
+  console.log('[fillAllFromRow] preenchimento concluído.');
+}; // fecha APENAS a window.fillAllFromRow
+
+// ===== Init =====
+updateStepper(1);
+validate1();
+
+// === SHIMS: só cria se estiver ausente ===
+(function(){
+  if (typeof window.pick !== 'function'){
+    window.pick = function(o, keys){
+      for (const k of keys){
+        if (!o || !(k in o)) continue;
+        const v = o[k];
+        if (v == null) continue;
+        const s = (typeof v === 'string') ? v.trim() : v;
+        if (s !== '' && s !== '-') return s;
+      }
+      return '';
+    };
+  }
+
+  if (typeof window.setAny !== 'function'){
+    window.setAny = function(ids, v){
+      const val = (v == null ? '' : String(v));
+      for (const id of ids){
+        const el = document.getElementById(id);
+        if (el){
+          el.value = val;
+          try{
+            if (typeof el.oninput === 'function') el.oninput({});
+            // dispara evento para validadores que escutam 'input'
+            el.dispatchEvent(new Event('input', { bubbles:true }));
+          }catch(_){}
+          return true;
+        }
+      }
+      return false;
+    };
+  }
+
+  if (typeof window.splitAddressToForm !== 'function'){
+    // versão mínima, só se a sua não existir
+    window.splitAddressToForm = function(prefix, enderecoCompleto){
+      if(!enderecoCompleto) return;
+      const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+      try{
+        const parts = String(enderecoCompleto).split(' — ');
+        const p1=(parts[0]||'').split(',');
+        r.logradouro=(p1[0]||'').trim();
+        const p1b=(p1[1]||'').trim().split(' - ');
+        r.numero=(p1b[0]||'').trim();
+        r.complemento=(p1b[1]||'').trim();
+        r.bairro=(parts[1]||'').trim();
+        const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+        if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+      }catch(_){}
+      setAny(['logradouro'+prefix], r.logradouro);
+      setAny(['numero'+prefix],     r.numero);
+      setAny(['complemento'+prefix],r.complemento);
+      setAny(['bairro'+prefix],     r.bairro);
+      setAny(['cidade'+prefix],     r.cidade);
+      const ufSel = document.getElementById('uf'+prefix);
+      if (ufSel){ ufSel.value = r.uf || ''; try{ ufSel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){} }
+    };
+  }
+})();
+
+// === FILL: versão com auto-CEP (não mexe no NÚMERO) ===
+window.fillAllFromRow = function(row){
+  if(!row){
+    console.warn('[fillAllFromRow] row vazio');
+    return;
+  }
+  console.log('[fillAllFromRow] linha recebida:', row);
+
+  // helpers locais
+  const digits = s => String(s||'').replace(/\D+/g,'');
+
+  function autoFetchCepIfNeeded(prefix){
+    try{
+      const cepEl = document.getElementById('cep'+prefix);
+      const logEl = document.getElementById('logradouro'+prefix);
+      const baiEl = document.getElementById('bairro'+prefix);
+      const cidEl = document.getElementById('cidade'+prefix);
+      const ufEl  = document.getElementById('uf'+prefix);
+
+      if (!cepEl) return;
+
+      const need =
+        (!logEl || !logEl.value) ||
+        (!baiEl || !baiEl.value) ||
+        (!cidEl || !cidEl.value) ||
+        (!ufEl  || !ufEl.value);
+
+      const d = digits(cepEl.value);
+      if (need && d.length === 8 && typeof cepOnBlur === 'function'){
+        // usa sua rotina (ViaCEP) e aciona validações
+        cepOnBlur(cepEl, prefix);
+      }
+    }catch(_){}
+  }
+
+  // ===== Código (etapa 1)
+  setAny(['codigo'], pick(row, ['codigo','code','Código','CODIGO']));
+
+  // ===== Etapa 2
+  setAny(['servico'],  pick(row, [
+    'servico','Serviço','SERVIÇO','descricao','Descrição','objeto','OBJETO','escopo','descricao_servico'
+  ]));
+  setAny(['endereco'], pick(row, ['endereco','endereco_obra','enderecoObra','obra_endereco_resumo']));
+
+  // ===== Etapa 3 — CONTRATANTE
+  setAny(['nomeContratante'], pick(row, [
+    'contratante_nome','contratante','CLIENTE','cliente','cta_cliente','ctt_nome','razao_contratante','razaoSocialContratante'
+  ]));
+  setAny(['docContratante'],  pick(row, [
+    'contratante_doc','contratante_cnpj','contratante_cpf','cpfCnpj','cpfCnpjContratante','ctt_cpfCnpj'
+  ]));
+  setAny(['contatoContratante'], pick(row, [
+    'contratante_contato','responsavel','responsavel_obra','ctt_contato'
+  ]));
+  setAny(['telefoneContratante'], pick(row, [
+    'contratante_telefone','contratante_tel','ctt_telefone','telefone_contratante','telefone'
+  ]));
+  setAny(['emailContratante'], pick(row, [
+    'contratante_email','ctt_email','email_contratante','email'
+  ]));
+
+  // Endereço do CONTRATANTE por campos
+  setAny(['cepContratante'],         pick(row, ['contratante_cep','cep_contratante']));
+  setAny(['logradouroContratante'],  pick(row, ['contratante_logradouro','logradouro_contratante']));
+  setAny(['numeroContratante'],      pick(row, ['contratante_numero','numero_contratante','nro_contratante']));
+  setAny(['complementoContratante'], pick(row, ['contratante_complemento','compl_contratante']));
+  setAny(['bairroContratante'],      pick(row, ['contratante_bairro','bairro_contratante']));
+  setAny(['cidadeContratante'],      pick(row, ['contratante_cidade','cidade_contratante','municipio_contratante']));
+  (function(){
+    const uf = pick(row, ['contratante_uf','uf_contratante']);
+    const sel = document.getElementById('ufContratante');
+    if (sel){
+      sel.value = uf || '';
+      try{ sel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
+    }
+  })();
+
+  // Endereço do CONTRATANTE como string única (mantém número/complemento)
+  const endCtt = pick(row, ['contratante_endereco','endereco_contratante']);
+  if (endCtt) splitAddressToForm('Contratante', endCtt);
+  const cepCttTxt = (endCtt||'').match(/CEP\s*([\d\-]+)/i)?.[1] || '';
+  if (cepCttTxt) setAny(['cepContratante'], cepCttTxt);
+  autoFetchCepIfNeeded('Contratante');
+
+  // ===== Etapa 4 — CONTRATADA
+  setAny(['nomeContratada'], pick(row, [
+    'contratada_nome','contratada','fornecedor','empresa','cta_nome'
+  ]));
+  setAny(['docContratada'],  pick(row, [
+    'contratada_doc','contratada_cnpj','cta_cpfCnpj'
+  ]));
+  setAny(['contatoContratada'], pick(row, [
+    'contratada_contato','responsavel_contratada','cta_contato'
+  ]));
+  setAny(['telefoneContratada'], pick(row, [
+    'contratada_telefone','contratada_tel','cta_telefone'
+  ]));
+  setAny(['emailContratada'], pick(row, [
+    'contratada_email','cta_email'
+  ]));
+
+  // Endereço da CONTRATADA por campos
+  setAny(['cepContratada'],         pick(row, ['contratada_cep','cep_contratada']));
+  setAny(['logradouroContratada'],  pick(row, ['contratada_logradouro','logradouro_contratada']));
+  setAny(['numeroContratada'],      pick(row, ['contratada_numero','numero_contratada']));
+  setAny(['complementoContratada'], pick(row, ['contratada_complemento','compl_contratada']));
+  setAny(['bairroContratada'],      pick(row, ['contratada_bairro','bairro_contratada']));
+  setAny(['cidadeContratada'],      pick(row, ['contratada_cidade','cidade_contratada']));
+  (function(){
+    const uf = pick(row, ['contratada_uf','uf_contratada']);
+    const sel = document.getElementById('ufContratada');
+    if (sel){
+      sel.value = uf || '';
+      try{ sel.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
+    }
+  })();
+
+  // Endereço da CONTRATADA como string única
+  const endCta = pick(row, ['contratada_endereco','endereco_contratada']);
+  if (endCta) splitAddressToForm('Contratada', endCta);
+  const cepCtaTxt = (endCta||'').match(/CEP\s*([\d\-]+)/i)?.[1] || '';
+  if (cepCtaTxt) setAny(['cepContratada'], cepCtaTxt);
+  autoFetchCepIfNeeded('Contratada');
+
+  // ===== Etapa 5
+  setAny(['clausulas'], pick(row, [
+    'clausulas','Cláusulas','clausulas_texto','textoClausulas','clausulas_gerais'
+  ]));
+  setAny(['condicoes'], pick(row, [
+    'condicoes','condições','condicoes_texto','textoCondicoes','condicoes_pagamento','condicoesGerais'
+  ]));
+  setAny(['valor'],        pick(row, ['valor','valor_total']));
+  setAny(['valorExtenso'], pick(row, ['valorExtenso','valor_extenso']));
+  setAny(['prazo'],        pick(row, ['prazo','prazo_dias','prazo_execucao']));
+  setAny(['dataExtenso'],  pick(row, ['dataExtenso','data_extenso']));
+
+  // logo (se houver)
+  try{ if (typeof preloadLogoFromRow === 'function') preloadLogoFromRow(row); }catch(_){}
+
+  // dispara validações para liberar botões
+  try{ validate2(); }catch(_){}
+  try{ validate3(); }catch(_){}
+  try{ validate4(); }catch(_){}
+  try{ validate5(); }catch(_){}
+
+  console.log('[fillAllFromRow] preenchimento concluído.');
+}; // fecha APENAS a window.fillAllFromRow
+</script>
 
 // quebra best-effort do endereço salvo
 function splitAddressToForm(prefix, enderecoCompleto){
