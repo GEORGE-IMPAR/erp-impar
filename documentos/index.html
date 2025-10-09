@@ -1078,15 +1078,13 @@ function showAction_old(row){
 function renderRows(tbodyId, rows){
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
-
   if (!rows || !rows.length){
     tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
     return;
   }
-
-  // helpers já existentes no seu código: pick, fmtDate, pdfHrefFromRow
   let html = '';
   for (const row of rows){
+    const rowData = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
     const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
     const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
     const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
@@ -1095,11 +1093,10 @@ function renderRows(tbodyId, rows){
     const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
     const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
     const href = pdfHrefFromRow(row);
-
     html += `
       <tr>
         <td>${fmtDate(dt) || '—'}</td>
-        <td>${cod ? `<a href="#" class="code-pick">${cod}</a>` : '—'}</td>
+        <td>${cod ? `<a href="#" class="code-link" data-row="${rowData}" onclick='showAction(JSON.parse(this.dataset.row));return false;'>${cod}</a>` : '—'}</td>
         <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
         <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
         <td>${serv || '—'}</td>
@@ -1108,32 +1105,8 @@ function renderRows(tbodyId, rows){
     `;
   }
   tb.innerHTML = html;
-
-  // Delegação de clique: copiar código, fechar modal e focar "Continuar"
-  if (!tb.__armed){
-    tb.__armed = true;
-    tb.addEventListener('click', function(ev){
-      const a = ev.target.closest('a.code-pick');
-      if (!a) return;
-      ev.preventDefault();
-
-      const code = (a.textContent || '').trim();
-      if (!code) return;
-
-      const inp = document.getElementById('codigo');
-      if (inp){
-        inp.value = code;
-        try { inp.dispatchEvent(new Event('input', { bubbles:true })); } catch(_) {}
-      }
-
-      const modal = document.getElementById('consultaModal');
-      if (modal) modal.style.display = 'none';
-
-      const bar = document.getElementById('bar1');
-      if (bar) setTimeout(() => bar.focus(), 0);
-    });
-  }
 }
+
 
 function renderConsMsgInline(msg){
   const tb=document.getElementById('consBodyInline');
@@ -1415,6 +1388,28 @@ function focusNext(el){
     }
   });
 })();
+
+// ✅ Clique simples na tabela de consulta — apenas copia o código, fecha e foca o botão
+document.addEventListener('click', function(e) {
+  const cell = e.target.closest('td:nth-child(2)'); // segunda coluna (Código)
+  if (!cell || !cell.textContent.trim()) return;
+  const tr = cell.parentElement;
+  if (!tr || !tr.closest('#consultaModal')) return;
+
+  e.preventDefault();
+  const code = cell.textContent.trim();
+  const inp = document.getElementById('codigo');
+  if (inp) {
+    inp.value = code;
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
+  }
+
+  const modal = document.getElementById('consultaModal');
+  if (modal) modal.style.display = 'none';
+
+  const continuar = document.getElementById('bar1');
+  if (continuar) setTimeout(() => continuar.focus(), 0);
+});
 
     // ===== Init =====
     updateStepper(1); validate1();
