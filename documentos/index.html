@@ -1052,18 +1052,33 @@ function closeActionModal(){
   const m = document.getElementById('actionModal');
   if (m) m.style.display='none';
 }
-document.addEventListener('click', function(e){
-  if(e.target && e.target.id==='btnActionCancel') closeActionModal();
-  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
-  if(e.target && e.target.id==='btnActionUpdate'){
-    if(__actionRow){
-      const norm = normalizeRowForFill(__actionRow);
-      try { fillAllFromRow(norm); } catch(err){ console.error(err); }
-      try { closeConsulta(); } catch(_){}
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('a.code-link'); // seus links de CÓDIGO têm essa classe
+    if (!a) return;
+
+    // Evita qualquer handler anterior (ex.: showAction / JSON.parse etc.)
+    e.preventDefault();
+    e.stopPropagation();
+
+    const code = (a.textContent || '').trim();
+    if (!code) return;
+
+    // Preenche o campo principal
+    const inp = document.getElementById('codigo');
+    if (inp) {
+      inp.value = code;
+      // dispare o 'input' para manter sua lógica original de habilitar o botão
+      try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
     }
-    closeActionModal();
-  }
-});
+
+    // Fecha a modal de consulta
+    const modal = document.getElementById('consultaModal');
+    if (modal) modal.style.display = 'none';
+
+    // Garante foco no botão "Continuar" (caso já esteja habilitado pela sua validação)
+    const bar = document.getElementById('bar1');
+    if (bar) setTimeout(() => bar.focus(), 0);
+  }, { capture: true });
 
 // Entry point chamado na célula do código
 function showAction(row){ openActionModal(row); }
@@ -1392,106 +1407,5 @@ function focusNext(el){
     // ===== Init =====
     updateStepper(1); validate1();
   </script>
-
-<!-- ==== PATCH: consulta - clique no código fecha modal, preenche e foca no Continuar ==== -->
-<script>
-(function(){
-  if (typeof window.pick !== 'function'){
-    window.pick = function(row, keys){
-      for (const k of keys){
-        if (row && Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && String(row[k]).trim() !== ''){
-          return row[k];
-        }
-      }
-      return '';
-    };
-  }
-
-  window.__CONS_ROWS__ = window.__CONS_ROWS__ || [];
-
-  window.applyPickedCode = function(code){
-    const codigoInp = document.getElementById('codigo');
-    const bar1      = document.getElementById('bar1');
-    if (codigoInp){
-      codigoInp.value = (code || '').toString().trim();
-      try { codigoInp.dispatchEvent(new Event('input', { bubbles:true })); } catch(_){}
-    }
-    if (bar1){
-      bar1.classList.remove('disabled');
-      bar1.classList.add('enabled');
-      try { bar1.onclick = () => (typeof goTo === 'function' ? goTo(2) : undefined); } catch(_){}
-      setTimeout(() => { try{ bar1.focus({preventScroll:true}); }catch(_){} }, 0);
-    }
-    const m = document.getElementById('consultaModal');
-    if (m) m.style.display = 'none';
-  };
-
-  document.addEventListener('click', function(e){
-    const a = e.target.closest('a.code-link');
-    if (!a) return;
-    e.preventDefault();
-    let row = null;
-    if (a.dataset.index != null && window.__CONS_ROWS__){
-      row = window.__CONS_ROWS__[+a.dataset.index] || null;
-    }
-    if (!row && a.dataset.row){
-      try { row = JSON.parse(a.dataset.row); } catch(_){ row = null; }
-    }
-    const code = row
-      ? (window.pick(row, ['codigo','CODIGO','Código','code']) || a.textContent.trim())
-      : a.textContent.trim();
-    window.applyPickedCode(code);
-  }, {passive:false});
-
-  document.addEventListener('click', function(e){
-    const a = e.target.closest('a.pdf-link');
-    if (!a) return;
-    e.preventDefault();
-    let row = null;
-    if (a.dataset.index != null && window.__CONS_ROWS__){
-      row = window.__CONS_ROWS__[+a.dataset.index] || null;
-    }
-    const url = row ? (row.pdf_url || row.PDF_URL || row.url || row.URL || row.pdf || row.pdf_file || '') : '';
-    if (url) { window.open(url, '_blank', 'noopener'); }
-  }, {passive:false});
-
-  window.showAction = function(maybeRow){
-    let row = maybeRow;
-    if (typeof maybeRow === 'string'){
-      try { row = JSON.parse(maybeRow); } catch(_){ row = null; }
-    }
-    const code = row ? (window.pick(row, ['codigo','CODIGO','Código','code']) || '') : '';
-    if (code) window.applyPickedCode(code);
-  };
-
-  window.renderConsultaPatch = function(tbodyId, rows){
-    window.__CONS_ROWS__ = rows || [];
-    const tb = document.getElementById(tbodyId);
-    if (!tb) return;
-    if (!rows || !rows.length){
-      tb.innerHTML = '<tr><td colspan="3" class="row-muted">Nenhum registro encontrado.</td></tr>';
-      return;
-    }
-    const pick = window.pick;
-    tb.innerHTML = rows.map((row, i) => {
-      const dt   = pick(row, ['data','created_at','createdAt','DATA']);
-      const code = pick(row, ['codigo','CODIGO','Código','code']);
-      const cta  = pick(row, ['contratante','cliente','cta_nome','cta_razao','CONTRATANTE','CLIENTE']);
-      const ctd  = pick(row, ['contratada','fornecedor','ctd_nome','ctd_razao','CONTRATADA','FORNECEDOR']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
-      const srv  = pick(row, ['servico','descricao','objeto','SERVIÇO','SERVICO']);
-      return `
-        <tr>
-          <td>${dt || '-'}</td>
-          <td><a href="#" class="code-link" data-index="${i}">${code || '-'}</a></td>
-          <td>${cta || '-'}</td>
-          <td>${ctd}</td>
-          <td>${srv || '-'}</td>
-          <td><a href="#" class="pdf-link" data-index="${i}">abrir</a></td>
-        </tr>`;
-    }).join('');
-  };
-})();
-</script>
-<!-- ==== /PATCH ==== -->
 </body>
 </html>
