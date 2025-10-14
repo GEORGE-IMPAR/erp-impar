@@ -1645,5 +1645,121 @@ document.addEventListener('click', function(e) {
     // ===== Init =====
     updateStepper(1); validate1();
   </script>
+
+<!-- ====== BOTÃO E SCRIPT: GERAR DOCX (Contrato) ====== -->
+<button id="btnGerarDocx" class="btn-primario" style="margin-left:8px;">Gerar DOCX</button>
+<script>
+(function(){
+  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php'; // ajuste se necessário
+
+  async function gerarDOCXContrato(payload){
+    try{
+      const resp = await fetch(URL_DOCX, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(!resp.ok) throw new Error('Falha ao gerar DOCX');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+      a.download = `CONTRATO_${codigo}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      a.remove();
+    }catch(err){
+      alert('Erro ao gerar DOCX: ' + err.message);
+      console.error(err);
+    }
+  }
+
+  function getVal(sel){const el=document.querySelector(sel);return el?el.value:'';}
+
+  function coletarDadosParaTemplate(){
+    // Tente obter do objeto já usado no PDF, se existir
+    if (window.documentoAtual && typeof window.documentoAtual === 'object') {
+      const r = window.documentoAtual;
+      return {
+        codigo: r.codigo || getVal('#codigo'),
+        servico: r.servico || getVal('#servico'),
+        endereco_obra: r.endereco_obra || getVal('#endereco_obra'),
+        contratante_nome: r.contratante_nome || getVal('#contratante_nome'),
+        contratante_endereco: r.contratante_endereco || getVal('#contratante_endereco'),
+        contratante_doc: r.contratante_doc || getVal('#contratante_doc'),
+        contratante_contato: r.contratante_contato || getVal('#contratante_contato'),
+        contratada_nome: r.contratada_nome || 'ÍMPAR INSTALAÇÕES ELÉTRICAS LTDA',
+        contratada_endereco: r.contratada_endereco || 'Rua Manoel Loureiro, 911 - Barreiros - São José/SC',
+        contratada_doc: r.contratada_doc || 'CNPJ 17.856.186/0001-88',
+        clausulas: r.clausulas || getVal('#clausulas'),
+        prazo_dias: r.prazo_dias || getVal('#prazo_dias'),
+        valor: r.valor || getVal('#valor'),
+        valor_extenso: r.valor_extenso || getVal('#valor_extenso'),
+        condicoes: r.condicoes || getVal('#condicoes'),
+        data_extenso: r.data_extenso || getVal('#data_extenso'),
+        contratante_CNPJ: r.contratante_CNPJ || getVal('#contratante_CNPJ'),
+        contratada_CNPJ: r.contratada_CNPJ || '17.856.186/0001-88'
+      };
+    }
+    // Fallback: ler dos inputs
+    return {
+      codigo: getVal('#codigo'),
+      servico: getVal('#servico'),
+      endereco_obra: getVal('#endereco_obra'),
+      contratante_nome: getVal('#contratante_nome'),
+      contratante_endereco: getVal('#contratante_endereco'),
+      contratante_doc: getVal('#contratante_doc'),
+      contratante_contato: getVal('#contratante_contato'),
+      contratada_nome: 'ÍMPAR INSTALAÇÕES ELÉTRICAS LTDA',
+      contratada_endereco: 'Rua Manoel Loureiro, 911 - Barreiros - São José/SC',
+      contratada_doc: 'CNPJ 17.856.186/0001-88',
+      clausulas: getVal('#clausulas'),
+      prazo_dias: getVal('#prazo_dias'),
+      valor: getVal('#valor'),
+      valor_extenso: getVal('#valor_extenso'),
+      condicoes: getVal('#condicoes'),
+      data_extenso: getVal('#data_extenso'),
+      contratante_CNPJ: getVal('#contratante_CNPJ'),
+      contratada_CNPJ: '17.856.186/0001-88'
+    };
+  }
+
+  const btn = document.getElementById('btnGerarDocx');
+  if (btn) {
+    btn.addEventListener('click', function(){
+      const payload = coletarDadosParaTemplate();
+      gerarDOCXContrato(payload);
+    });
+  }
+
+  // ===== Consulta: adicionar ação global para botões .btn-docx em listas =====
+  document.addEventListener('click', async function(ev){
+    const t = ev.target;
+    if (t && t.classList && t.classList.contains('btn-docx')){
+      const id = t.dataset.id;
+      if (!id) return;
+      try{
+        if (typeof window.carregarRegistroPorId === 'function') {
+          const dados = await window.carregarRegistroPorId(id);
+          const payload = Object.assign({
+            contratada_nome: 'ÍMPAR INSTALAÇÕES ELÉTRICAS LTDA',
+            contratada_endereco: 'Rua Manoel Loureiro, 911 - Barreiros - São José/SC',
+            contratada_doc: 'CNPJ 17.856.186/0001-88',
+            contratada_CNPJ: '17.856.186/0001-88'
+          }, dados);
+          gerarDOCXContrato(payload);
+        } else {
+          alert('Função carregarRegistroPorId(id) não encontrada.');
+        }
+      }catch(e){
+        alert('Erro ao carregar registro: ' + e.message);
+        console.error(e);
+      }
+    }
+  });
+})();
+</script>
 </body>
 </html>
