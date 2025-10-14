@@ -1766,170 +1766,186 @@ document.addEventListener('click', function(e) {
 })();
 </script>
 
-<!-- ===== HOTFIX: DOCX + VIEWER (somente onde precisa) ===== -->
+<!-- ===== HOTFIX ORDEM: primeiro abre a visualização (etapa 5), depois aparece a mensagem ===== -->
 <script>
 (function(){
-  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
-
-  // ===== Helpers =====
-  async function gerarDOCXContrato(payload){
-    const resp = await fetch(URL_DOCX, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
+  // ===== 0) LIMPEZA: remover QUALQUER botão "Gerar DOCX/contrato DOCX" fora do viewer =====
+  function cleanupStrayDocxButtons(root=document){
+    const all = Array.from(root.querySelectorAll('button, a'));
+    all.forEach(el => {
+      const txt = (el.textContent||'').trim().toLowerCase();
+      const insideViewer = !!el.closest('#viewer');
+      if (!insideViewer && (txt === 'gerar docx' || txt === 'gerar contrato' || txt === 'gerar contrato docx')) {
+        el.remove();
+      }
     });
-    if(!resp.ok){
-      const txt = await resp.text();
-      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
-    }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
-    a.download = `CONTRATO_${codigo}.docx`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
-    a.remove();
+    // ids antigos
+    const top = document.getElementById('btnGerarDocxTop'); if (top) top.remove();
   }
+  cleanupStrayDocxButtons();
+  new MutationObserver(() => cleanupStrayDocxButtons()).observe(document.body, {childList:true, subtree:true});
 
-  function mapearParaTemplateDoRegistro(r){
-    const out = {
-      codigo: r.codigo,
-      servico: r.servico,
-      endereco_obra: r.endereco_obra || r.enderecoObra,
-      contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
-      contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
-      contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
-      contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
-      contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
-      contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
-      contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
-      contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
-      contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
-      clausulas: r.clausulas || r.clausulas_texto,
-      prazo_dias: r.prazo_dias || r.prazo,
-      valor: r.valor,
-      valor_extenso: r.valor_extenso || r.valorExtenso,
-      condicoes: r.condicoes || r.condicoes_pagamento,
-      data_extenso: r.data_extenso || r.dataExtenso || r.data
-    };
-    Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
-    return out;
-  }
+  // ===== 1) Click em .codigo-link: ABRE VIEWER PRIMEIRO, só depois mostra modal =====
+  let replayAfterViewerClose = null; // {el, clickEvt}
+  let suppressIntercept = false;
 
   function openViewer(url){
     const viewer = document.getElementById('viewer');
     const frame  = document.getElementById('pdfFrame');
     if (viewer) viewer.style.display = 'flex';
     if (frame)  frame.src = url;
-    // notifica para injetar o botão DOCX
-    setTimeout(ensureDocxButtonInViewer, 50);
-    setTimeout(ensureDocxButtonInViewer, 250);
+    // notifica (se existir) para montar botões do viewer
+    if (typeof window.onViewerOpen === 'function') window.onViewerOpen();
   }
 
   function urlPdfPorCodigo(codigo){
     return 'https://api.erpimpar.com.br/gerador/pdf.php?codigo=' + encodeURIComponent((codigo||'').trim());
   }
 
-  // ===== 1) Remover qualquer botão topo que tenha sobrado (#btnGerarDocxTop) =====
-  function removeTopDocxButton(){
-    const btn = document.getElementById('btnGerarDocxTop');
-    if (btn) btn.remove();
-  }
-  removeTopDocxButton();
-  new MutationObserver(() => removeTopDocxButton()).observe(document.body, {childList:true, subtree:true});
-
-  // ===== 2) Injetar botão "Gerar contrato DOCX" SÓ no viewer =====
-  function getViewerToolbar(){
-    // procura barra baseada nos textos existentes
-    const candidates = Array.from(document.querySelectorAll('#viewer .modal-header, #viewer .toolbar, #viewer header, .pdf-toolbar, .modal-header')).filter(el => {
-      const t = (el.textContent||'').toLowerCase();
-      return t.includes('baixar pdf') && t.includes('fechar');
-    });
-    return candidates[0] || document.querySelector('#viewer .modal-header, #viewer .toolbar');
-  }
-
-  function ensureDocxButtonInViewer(){
-    const bar = getViewerToolbar();
-    if (!bar) return;
-    if (document.getElementById('btnGerarDocxViewer')) { 
-      document.getElementById('btnGerarDocxViewer').textContent='Gerar contrato DOCX';
-      return; 
-    }
-    const anyBtn = bar.querySelector('button, a');
-    const cls = anyBtn ? (anyBtn.className||'btn') : 'btn';
-    const b = document.createElement('button');
-    b.id = 'btnGerarDocxViewer';
-    b.type = 'button';
-    b.className = cls;
-    b.textContent = 'Gerar contrato DOCX';
-    b.addEventListener('click', async () => {
-      try{
-        if (!window.documentoAtual) { alert('Abra um documento primeiro.'); return; }
-        const payload = mapearParaTemplateDoRegistro(window.documentoAtual);
-        await gerarDOCXContrato(payload);
-      } catch(e){ alert('Erro ao gerar DOCX: ' + e.message); console.error(e); }
-    });
-    const fechar = Array.from(bar.querySelectorAll('button, a')).find(x => /fechar/i.test(x.textContent||''));
-    if (fechar && fechar.parentNode) fechar.parentNode.insertBefore(b, fechar); else bar.appendChild(b);
-  }
-
-  // ===== 3) Clicar no código (consulta) abre visualização direto (sem modal) =====
   document.addEventListener('click', async (ev) => {
     const el = ev.target.closest('.codigo-link');
     if (!el) return;
+
+    // se for o "replay" (depois do viewer fechar), não intercepta
+    if (suppressIntercept) return; 
+
     ev.preventDefault();
+    ev.stopImmediatePropagation();
+
     const id = el.dataset.id || el.getAttribute('data-id');
     const codigo = el.dataset.codigo || el.textContent.trim();
-    try {
+
+    try{
+      // Carrega registro para etapa 5, se disponível
       let registro = null;
       if (typeof window.carregarRegistroPorId === 'function' && id) {
         registro = await window.carregarRegistroPorId(id);
       }
       if (!registro && window.documentoAtual && window.documentoAtual.codigo === codigo) registro = window.documentoAtual;
       if (registro) window.documentoAtual = registro;
-      // se você tiver função de preview da etapa 5, use-a; senão, abre por URL
+
+      // Tenta usar a função oficial do preview
       if (typeof window.mostrarPreviewDocumento === 'function') {
         window.mostrarPreviewDocumento(registro);
-        setTimeout(ensureDocxButtonInViewer, 100);
       } else if (typeof window.gerarPreviewPDF === 'function') {
         window.gerarPreviewPDF(registro);
-        setTimeout(ensureDocxButtonInViewer, 100);
       } else {
         openViewer(urlPdfPorCodigo(codigo));
       }
-    } catch(e){
-      console.error(e);
+
+      // Guarda para re-exibir o modal DEPOIS que fechar
+      replayAfterViewerClose = { el };
+    }catch(e){
+      console.error('Erro ao abrir viewer, fallback direto:', e);
       openViewer(urlPdfPorCodigo(codigo));
+      replayAfterViewerClose = { el };
     }
-  });
+  }, true); // captura para garantir prioridade
 
-  // ===== 4) Remover botão "Gerar PDF" dos modais =====
-  function removeGerarPdfFromModals(root=document){
-    root.querySelectorAll('.modal, .swal2-popup, [role="dialog"], .dialog').forEach(modal => {
-      const txt = (modal.textContent||'').toLowerCase();
-      if (txt.includes('o que você deseja fazer?')) {
-        modal.querySelectorAll('button, a').forEach(b => {
-          const t = (b.textContent||'').trim().toLowerCase();
-          if (t === 'gerar pdf') b.remove();
-        });
-      }
-    });
-  }
-  // roda inicialmente e observa mudanças
-  removeGerarPdfFromModals();
-  new MutationObserver(m => removeGerarPdfFromModals()).observe(document.body, {childList:true, subtree:true});
-
-  // ===== 5) Se o viewer abrir/fechar, garante o botão correto =====
+  // ===== 2) Detecta FECHAMENTO do viewer e, então, re-dispara o clique (para abrir o modal) =====
   const viewer = document.getElementById('viewer');
   if (viewer){
     const obs = new MutationObserver(() => {
       const visible = getComputedStyle(viewer).display !== 'none';
-      if (visible) { ensureDocxButtonInViewer(); } 
+      if (!visible && replayAfterViewerClose && replayAfterViewerClose.el){
+        // dispara o clique original SEM interceptar desta vez
+        suppressIntercept = true;
+        try{
+          replayAfterViewerClose.el.click();
+        } finally {
+          suppressIntercept = false;
+          replayAfterViewerClose = null;
+        }
+      }
     });
-    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+    obs.observe(viewer, { attributes:true, attributeFilter:['style','class'] });
+  }
+
+  // ===== 3) Renomeia/injeta botão "Gerar contrato DOCX" somente na barra do viewer =====
+  function ensureDocxButtonInViewer(){
+    const bar = (function(){
+      const candidates = Array.from(document.querySelectorAll('#viewer .modal-header, #viewer .toolbar, #viewer header, .pdf-toolbar, .modal-header'))
+        .filter(el => {
+          const t = (el.textContent||'').toLowerCase();
+          return t.includes('baixar pdf') && t.includes('fechar');
+        });
+      return candidates[0] || document.querySelector('#viewer .modal-header, #viewer .toolbar');
+    })();
+    if (!bar) return;
+
+    let btn = document.getElementById('btnGerarDocxViewer');
+    if (!btn){
+      const anyBtn = bar.querySelector('button, a');
+      const cls = anyBtn ? (anyBtn.className||'btn') : 'btn';
+      btn = document.createElement('button');
+      btn.id = 'btnGerarDocxViewer';
+      btn.type = 'button';
+      btn.className = cls;
+      btn.addEventListener('click', async () => {
+        try{
+          if (!window.documentoAtual || typeof window.documentoAtual !== 'object') {
+            alert('Abra um documento primeiro.');
+            return;
+          }
+          // mapeamento 1:1 com o PDF
+          const r = window.documentoAtual;
+          const payload = {
+            codigo: r.codigo,
+            servico: r.servico,
+            endereco_obra: r.endereco_obra || r.enderecoObra,
+            contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
+            contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
+            contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
+            contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
+            contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
+            contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
+            contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
+            contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
+            contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
+            clausulas: r.clausulas || r.clausulas_texto,
+            prazo_dias: r.prazo_dias || r.prazo,
+            valor: r.valor,
+            valor_extenso: r.valor_extenso || r.valorExtenso,
+            condicoes: r.condicoes || r.condicoes_pagamento,
+            data_extenso: r.data_extenso || r.dataExtenso || r.data
+          };
+          Object.keys(payload).forEach(k => (payload[k]===undefined || payload[k]==='') && delete payload[k]);
+          const resp = await fetch('https://api.erpimpar.com.br/gerador/gerar_docx.php', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(payload)
+          });
+          if(!resp.ok){
+            const txt = await resp.text();
+            throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+          }
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+          a.download = `CONTRATO_${codigo}.docx`;
+          document.body.appendChild(a);
+          a.click();
+          URL.revokeObjectURL(url);
+          a.remove();
+        }catch(e){
+          alert(e.message);
+          console.error(e);
+        }
+      });
+      const fechar = Array.from(bar.querySelectorAll('button, a')).find(x => /fechar/i.test(x.textContent||''));
+      if (fechar && fechar.parentNode) fechar.parentNode.insertBefore(btn, fechar); else bar.appendChild(btn);
+    }
+    btn.textContent = 'Gerar contrato DOCX';
+  }
+
+  // Garante o botão quando o viewer abrir
+  if (typeof window.onViewerOpen === 'function') {
+    const prev = window.onViewerOpen;
+    window.onViewerOpen = function(){ try{ prev(); }catch{} ensureDocxButtonInViewer(); };
+  } else {
+    window.onViewerOpen = ensureDocxButtonInViewer;
   }
 })();
 </script>
