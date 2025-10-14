@@ -326,7 +326,6 @@ window.__CONSULTA_CFG__ = {
     <div class="dot" id="dot4">4</div><div class="line" id="line45"></div>
     <div class="dot" id="dot5">5</div>
 <div class="top-actions">
-    <button class="btn" id="btnGerarDocxTop">Gerar contrato</button>
 
     <button class="btn" onclick="toggleTheme()" id="themeBtn">🌙 Tema</button>
     <button class="btn" onclick="closeWizard()" id="btnFecharTopo">Fechar</button>
@@ -1647,8 +1646,7 @@ document.addEventListener('click', function(e) {
     updateStepper(1); validate1();
   </script>
 
-<!-- ====== INTEGRAÇÃO DOCX (sem defaults) ====== -->
-<button id="btnGerarDocx" class="btn-primario" style="margin-left:8px;">Gerar DOCX</button>
+<!-- ====== INTEGRAÇÃO COMPLETA: DOCX + VIEWER + CONSULTA ====== -->
 <script>
 (function(){
   const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
@@ -1677,138 +1675,24 @@ document.addEventListener('click', function(e) {
 
   function getVal(sel){ const el=document.querySelector(sel); return el?el.value:''; }
 
-  function mapearParaTemplateDoRegistro(r){
-    const out = {
-      codigo: r.codigo,
-      servico: r.servico,
-      endereco_obra: r.endereco_obra,
-
-      contratante_nome: r.contratante_nome,
-      contratante_endereco: r.contratante_endereco,
-      contratante_doc: r.contratante_doc,
-      contratante_contato: r.contratante_contato,
-      contratante_CNPJ: r.contratante_CNPJ,
-
-      contratada_nome: r.contratada_nome,
-      contratada_endereco: r.contratada_endereco,
-      contratada_doc: r.contratada_doc,
-      contratada_CNPJ: r.contratada_CNPJ,
-
-      clausulas: r.clausulas,
-      prazo_dias: r.prazo_dias,
-      valor: r.valor,
-      valor_extenso: r.valor_extenso,
-      condicoes: r.condicoes,
-      data_extenso: r.data_extenso
-    };
-    Object.keys(out).forEach(k => { if (out[k] === undefined) delete out[k]; });
-    return out;
-  }
-
-  function coletarMinimoDoFormulario(){
-    const out = {
-      codigo: getVal('#codigo'),
-      servico: getVal('#servico'),
-      endereco_obra: getVal('#endereco_obra'),
-      contratante_nome: getVal('#contratante_nome'),
-      contratante_endereco: getVal('#contratante_endereco'),
-      contratante_doc: getVal('#contratante_doc'),
-      contratante_contato: getVal('#contratante_contato'),
-      contratante_CNPJ: getVal('#contratante_CNPJ'),
-      contratada_nome: getVal('#contratada_nome'),
-      contratada_endereco: getVal('#contratada_endereco'),
-      contratada_doc: getVal('#contratada_doc'),
-      contratada_CNPJ: getVal('#contratada_CNPJ'),
-      clausulas: getVal('#clausulas'),
-      prazo_dias: getVal('#prazo_dias'),
-      valor: getVal('#valor'),
-      valor_extenso: getVal('#valor_extenso'),
-      condicoes: getVal('#condicoes'),
-      data_extenso: getVal('#data_extenso')
-    };
-    Object.keys(out).forEach(k => { if (out[k] === '') delete out[k]; });
-    return out;
-  }
-
-  document.getElementById('btnGerarDocx')?.addEventListener('click', async () => {
-    try {
-      let payload = null;
-      if (window.documentoAtual && typeof window.documentoAtual === 'object') {
-        payload = mapearParaTemplateDoRegistro(window.documentoAtual);
-      } else {
-        payload = coletarMinimoDoFormulario();
-      }
-      await gerarDOCXContrato(payload);
-    } catch (e) {
-      alert(e.message);
-      console.error(e);
-    }
-  });
-
-  document.addEventListener('click', async (ev) => {
-    const t = ev.target;
-    if (t && t.classList && t.classList.contains('btn-docx')){
-      const id = t.dataset.id;
-      if (!id) return;
-      if (typeof window.carregarRegistroPorId === 'function') {
-        try {
-          const r = await window.carregarRegistroPorId(id);
-          const payload = mapearParaTemplateDoRegistro(r);
-          await gerarDOCXContrato(payload);
-        } catch (e) {
-          alert('Erro ao gerar DOCX: ' + e.message);
-          console.error(e);
-        }
-      } else {
-        alert('Função carregarRegistroPorId(id) não encontrada.');
-      }
-    }
-  });
-})();
-</script>
-
-<script>
-(function(){
-  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
-
-  async function gerarDOCXContrato(payload){
-    const resp = await fetch(URL_DOCX, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    if(!resp.ok){
-      const txt = await resp.text();
-      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
-    }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
-    a.download = `CONTRATO_${codigo}.docx`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
-    a.remove();
-  }
-
-  function getVal(sel){ const el=document.querySelector(sel); return el?el.value:''; }
-
+  // Mapeia SOMENTE dados do registro gravado (mesmos usados no PDF)
   function mapearParaTemplateDoRegistro(r){
     const out = {
       codigo: r.codigo,
       servico: r.servico,
       endereco_obra: r.endereco_obra || r.enderecoObra,
+      // CONTRATANTE
       contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
       contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
       contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
       contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
       contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
+      // CONTRATADA
       contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
       contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
       contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
       contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
+      // demais
       clausulas: r.clausulas || r.clausulas_texto,
       prazo_dias: r.prazo_dias || r.prazo,
       valor: r.valor,
@@ -1820,14 +1704,15 @@ document.addEventListener('click', function(e) {
     return out;
   }
 
+  // Coleta do formulário (se ainda não salvou)
   function coletarDoFormulario(){
     const endereco_obra = getVal('#endereco') || getVal('#endereco_obra');
     const out = {
       codigo: getVal('#codigo'),
       servico: getVal('#servico'),
       endereco_obra,
-      contratante_nome: getVal('#nomeContratante'),
-      contratante_endereco: (()=>{
+      contratante_nome: getVal('#contratante_nome') || getVal('#nomeContratante'),
+      contratante_endereco: getVal('#contratante_endereco') || (()=>{
         const log = getVal('#logradouroContratante'),
               num = getVal('#numeroContratante'),
               comp= getVal('#complementoContratante'),
@@ -1837,11 +1722,11 @@ document.addEventListener('click', function(e) {
               cep = getVal('#cepContratante');
         return log ? `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}` : '';
       })(),
-      contratante_doc: getVal('#docContratante'),
-      contratante_contato: getVal('#contatoContratante'),
-      contratante_CNPJ: getVal('#docContratante'),
-      contratada_nome: getVal('#nomeContratada'),
-      contratada_endereco: (()=>{
+      contratante_doc: getVal('#contratante_doc') || getVal('#docContratante'),
+      contratante_contato: getVal('#contratante_contato') || getVal('#contatoContratante'),
+      contratante_CNPJ: getVal('#contratante_CNPJ') || getVal('#docContratante'),
+      contratada_nome: getVal('#contratada_nome') || getVal('#nomeContratada'),
+      contratada_endereco: getVal('#contratada_endereco') || (()=>{
         const log = getVal('#logradouroContratada'),
               num = getVal('#numeroContratada'),
               comp= getVal('#complementoContratada'),
@@ -1851,22 +1736,39 @@ document.addEventListener('click', function(e) {
               cep = getVal('#cepContratada');
         return log ? `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}` : '';
       })(),
-      contratada_doc: getVal('#docContratada'),
-      contratada_CNPJ: getVal('#docContratada'),
+      contratada_doc: getVal('#contratada_doc') || getVal('#docContratada'),
+      contratada_CNPJ: getVal('#contratada_CNPJ') || getVal('#docContratada'),
       clausulas: getVal('#clausulas'),
-      prazo_dias: getVal('#prazo'),
+      prazo_dias: getVal('#prazo_dias') || getVal('#prazo'),
       valor: getVal('#valor'),
-      valor_extenso: getVal('#valorExtenso'),
+      valor_extenso: getVal('#valor_extenso') || getVal('#valorExtenso'),
       condicoes: getVal('#condicoes'),
-      data_extenso: getVal('#dataExtenso')
+      data_extenso: getVal('#data_extenso') || getVal('#dataExtenso')
     };
     Object.keys(out).forEach(k => out[k]==='' && delete out[k]);
     return out;
   }
 
-  const btnTop = document.getElementById('btnGerarDocxTop');
-  if (btnTop){
-    btnTop.addEventListener('click', async () => {
+  // ============ TOP BAR: adicionar "Gerar contrato DOCX" perto de Tema/Fechar/etc ============
+  function ensureTopBarDocxButton(){
+    // Acha uma barra que tenha "Tema" ou "Fechar"
+    const bars = Array.from(document.querySelectorAll('div,nav,header')).filter(el => {
+      const t = (el.textContent||'').toLowerCase();
+      return t.includes('tema') && t.includes('fechar') || t.includes('limpar dados');
+    });
+    const bar = bars[0];
+    if (!bar) return;
+    if (document.getElementById('btnGerarDocxTop')) return;
+
+    const anyBtn = bar.querySelector('button, a');
+    const cls = anyBtn ? (anyBtn.className||'btn') : 'btn';
+    const b = document.createElement('button');
+    b.id = 'btnGerarDocxTop';
+    b.type = 'button';
+    b.className = cls;
+    b.textContent = 'Gerar contrato DOCX';
+    b.style.marginLeft = '8px';
+    b.addEventListener('click', async () => {
       try{
         let payload;
         if (window.documentoAtual && typeof window.documentoAtual === 'object'){
@@ -1875,33 +1777,123 @@ document.addEventListener('click', function(e) {
           payload = coletarDoFormulario();
         }
         await gerarDOCXContrato(payload);
-      } catch(e){ alert(e.message); console.error(e); }
+      }catch(e){ alert(e.message); console.error(e); }
+    });
+    bar.appendChild(b);
+  }
+
+  // ============ VIEWER: injeta botão "Gerar contrato DOCX" e renomeia se já existir ============
+  function getViewerToolbar(){
+    const candidates = Array.from(document.querySelectorAll('div,header,nav'))
+      .filter(n => {
+        const txt = (n.textContent || '').toLowerCase();
+        return txt.includes('baixar pdf') && txt.includes('fechar');
+      });
+    return candidates[0] || document.querySelector('#viewer .modal-header, #viewer .toolbar, .pdf-toolbar');
+  }
+  function ensureDocxButtonInViewer(){
+    const bar = getViewerToolbar();
+    if (!bar) return;
+    let btn = document.getElementById('btnGerarDocxViewer');
+    if (!btn){
+      const anyBtn = bar.querySelector('button, a');
+      const cls = anyBtn ? (anyBtn.className||'btn') : 'btn';
+      btn = document.createElement('button');
+      btn.id = 'btnGerarDocxViewer';
+      btn.type = 'button';
+      btn.className = cls;
+      btn.addEventListener('click', async () => {
+        try{
+          if (!window.documentoAtual) { alert('Abra um documento primeiro.'); return; }
+          const payload = mapearParaTemplateDoRegistro(window.documentoAtual);
+          await gerarDOCXContrato(payload);
+        } catch(e){ alert('Erro ao gerar DOCX: ' + e.message); console.error(e); }
+      });
+      // inserir antes do "Fechar", se existir
+      const fechar = Array.from(bar.querySelectorAll('button, a')).find(x => /fechar/i.test(x.textContent||''));
+      if (fechar && fechar.parentNode) fechar.parentNode.insertBefore(btn, fechar);
+      else bar.appendChild(btn);
+    }
+    btn.textContent = 'Gerar contrato DOCX';
+  }
+
+  // ============ MODAL DE OPÇÕES: remover "Gerar PDF" (deixa Cancelar / Atualizar) ============
+  function sanitizeEscolhaModal(root=document){
+    const modals = Array.from(root.querySelectorAll('.modal, .swal2-popup, .dialog, .lightbox, [role="dialog"]'));
+    modals.forEach(m => {
+      const t = (m.textContent || '').toLowerCase();
+      if (t.includes('o que você deseja fazer?')) {
+        m.querySelectorAll('button, .btn, a').forEach(b => {
+          const txt = (b.textContent||'').trim().toLowerCase();
+          if (txt === 'gerar pdf') b.remove();
+        });
+      }
     });
   }
 
-  function openExistingPdfByUrl(url){
+  // ============ Clicar no CÓDIGO da consulta: abrir viewer da etapa 5 ============
+  function abrirViewer(url){
     const iframe = document.getElementById('pdfFrame');
-    if (!iframe) { window.open(url, '_blank'); return; }
-    iframe.src = url;
     const viewer = document.getElementById('viewer');
     if (viewer) viewer.style.display = 'flex';
+    if (iframe) iframe.src = url;
+  }
+  function urlPdfPorCodigo(codigo){
+    return 'https://api.erpimpar.com.br/gerador/pdf.php?codigo=' + encodeURIComponent((codigo||'').trim());
+  }
+  function mostrarPreviewComRegistro(registro){
+    if (typeof window.mostrarPreviewDocumento === 'function') { window.mostrarPreviewDocumento(registro); return true; }
+    if (typeof window.gerarPreviewPDF === 'function') { window.gerarPreviewPDF(registro); return true; }
+    return false;
+  }
+  document.addEventListener('click', async (ev) => {
+    const el = ev.target.closest('.codigo-link');
+    if (!el) return;
+    ev.preventDefault();
+    const id = el.dataset.id || el.getAttribute('data-id');
+    const codigo = el.dataset.codigo || el.textContent.trim();
+    try {
+      let registro = null;
+      if (typeof window.carregarRegistroPorId === 'function' && id) {
+        registro = await window.carregarRegistroPorId(id);
+      }
+      if (!registro && window.documentoAtual && window.documentoAtual.codigo === codigo) registro = window.documentoAtual;
+      if (registro) window.documentoAtual = registro; // mantém compatível
+      if (!mostrarPreviewComRegistro(registro || {})) abrirViewer(urlPdfPorCodigo(codigo));
+    } catch(e){
+      console.error(e); abrirViewer(urlPdfPorCodigo(codigo));
+    }
+  });
+
+  // ============ Hooks e Observers ============
+  function onViewerOpen(){
+    setTimeout(ensureDocxButtonInViewer, 50);
+    setTimeout(ensureDocxButtonInViewer, 200);
+    setTimeout(sanitizeEscolhaModal, 50);
+  }
+  function onViewerClose(){
+    setTimeout(sanitizeEscolhaModal, 50);
+  }
+  window.onViewerOpen = onViewerOpen;
+  window.onViewerClose = onViewerClose;
+
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) onViewerOpen(); else onViewerClose();
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
   }
 
-  document.addEventListener('click', (ev)=>{
-    const a = ev.target.closest('.code-link, .pdf-code-link, .codigo-link');
-    if (!a) return;
-    ev.preventDefault();
-    const tr = a.closest('tr');
-    let pdfHref = null;
-    if (tr){
-      const link = tr.querySelector('a.pdf-link, a[href$=".pdf"]');
-      if (link) pdfHref = link.getAttribute('href');
-    }
-    if (!pdfHref && a.dataset && a.dataset.pdf) pdfHref = a.dataset.pdf;
-    if (pdfHref) openExistingPdfByUrl(pdfHref);
+  document.addEventListener('DOMContentLoaded', () => {
+    ensureTopBarDocxButton();
+    // renomeia se já existir
+    const top = document.getElementById('btnGerarDocxTop'); if (top) top.textContent = 'Gerar contrato DOCX';
   });
+
+  // Se seu código já chama uma função ao abrir o viewer, você pode chamar window.onViewerOpen() manualmente.
 })();
 </script>
-
 </body>
 </html>
