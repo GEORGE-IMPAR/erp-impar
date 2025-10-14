@@ -1650,36 +1650,33 @@ document.addEventListener('click', function(e) {
 <button id="btnGerarDocx" class="btn-primario" style="margin-left:8px;">Gerar DOCX</button>
 <script>
 (function(){
-  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php'; // ajuste se necessário
+  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php'; // usa PhpWord se disponível; senão fallback automático
 
   async function gerarDOCXContrato(payload){
-    try{
-      const resp = await fetch(URL_DOCX, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-      });
-      if(!resp.ok) throw new Error('Falha ao gerar DOCX');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
-      a.download = `CONTRATO_${codigo}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(url);
-      a.remove();
-    }catch(err){
-      alert('Erro ao gerar DOCX: ' + err.message);
-      console.error(err);
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.substring(0,200));
     }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
   }
 
   function getVal(sel){const el=document.querySelector(sel);return el?el.value:'';}
 
   function coletarDadosParaTemplate(){
-    // Tente obter do objeto já usado no PDF, se existir
     if (window.documentoAtual && typeof window.documentoAtual === 'object') {
       const r = window.documentoAtual;
       return {
@@ -1703,7 +1700,6 @@ document.addEventListener('click', function(e) {
         contratada_CNPJ: r.contratada_CNPJ || '17.856.186/0001-88'
       };
     }
-    // Fallback: ler dos inputs
     return {
       codigo: getVal('#codigo'),
       servico: getVal('#servico'),
@@ -1726,36 +1722,38 @@ document.addEventListener('click', function(e) {
     };
   }
 
-  const btn = document.getElementById('btnGerarDocx');
-  if (btn) {
-    btn.addEventListener('click', function(){
+  document.getElementById('btnGerarDocx')?.addEventListener('click', async () => {
+    try {
       const payload = coletarDadosParaTemplate();
-      gerarDOCXContrato(payload);
-    });
-  }
+      await gerarDOCXContrato(payload);
+    } catch (e) {
+      alert(e.message);
+      console.error(e);
+    }
+  });
 
-  // ===== Consulta: adicionar ação global para botões .btn-docx em listas =====
-  document.addEventListener('click', async function(ev){
+  // Consulta: botão por item (.btn-docx)
+  document.addEventListener('click', async (ev) => {
     const t = ev.target;
     if (t && t.classList && t.classList.contains('btn-docx')){
       const id = t.dataset.id;
       if (!id) return;
-      try{
-        if (typeof window.carregarRegistroPorId === 'function') {
-          const dados = await window.carregarRegistroPorId(id);
+      if (typeof window.carregarRegistroPorId === 'function') {
+        try {
+          const r = await window.carregarRegistroPorId(id);
           const payload = Object.assign({
             contratada_nome: 'ÍMPAR INSTALAÇÕES ELÉTRICAS LTDA',
             contratada_endereco: 'Rua Manoel Loureiro, 911 - Barreiros - São José/SC',
             contratada_doc: 'CNPJ 17.856.186/0001-88',
             contratada_CNPJ: '17.856.186/0001-88'
-          }, dados);
-          gerarDOCXContrato(payload);
-        } else {
-          alert('Função carregarRegistroPorId(id) não encontrada.');
+          }, r);
+          await gerarDOCXContrato(payload);
+        } catch (e) {
+          alert('Erro ao gerar DOCX: ' + e.message);
+          console.error(e);
         }
-      }catch(e){
-        alert('Erro ao carregar registro: ' + e.message);
-        console.error(e);
+      } else {
+        alert('Função carregarRegistroPorId(id) não encontrada.');
       }
     }
   });
