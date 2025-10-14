@@ -326,7 +326,7 @@ window.__CONSULTA_CFG__ = {
     <div class="dot" id="dot4">4</div><div class="line" id="line45"></div>
     <div class="dot" id="dot5">5</div>
 <div class="top-actions">
-    <button class="btn" id="btnGerarDocxTop">Gerar contrato</button>
+    
 
     <button class="btn" onclick="toggleTheme()" id="themeBtn">🌙 Tema</button>
     <button class="btn" onclick="closeWizard()" id="btnFecharTopo">Fechar</button>
@@ -1648,7 +1648,7 @@ document.addEventListener('click', function(e) {
   </script>
 
 <!-- ====== INTEGRAÇÃO DOCX (sem defaults) ====== -->
-<button id="btnGerarDocx" class="btn-primario" style="margin-left:8px;">Gerar DOCX</button>
+
 <script>
 (function(){
   const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
@@ -1903,5 +1903,116 @@ document.addEventListener('click', function(e) {
 })();
 </script>
 
+
+<!-- Botão "Gerar contrato.docx" somente no viewer -->
+<script>
+(function(){
+  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
+
+  function mapearRegistro(r){
+    if (!r) return {};
+    const out = {
+      codigo: r.codigo,
+      servico: r.servico,
+      endereco_obra: r.endereco_obra || r.enderecoObra,
+      // CONTRATANTE
+      contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
+      contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
+      contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
+      contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
+      contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
+      // CONTRATADA
+      contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
+      contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
+      contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
+      contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
+      // demais
+      clausulas: r.clausulas || r.clausulas_texto,
+      prazo_dias: r.prazo_dias || r.prazo,
+      valor: r.valor,
+      valor_extenso: r.valor_extenso || r.valorExtenso,
+      condicoes: r.condicoes || r.condicoes_pagamento,
+      data_extenso: r.data_extenso || r.dataExtenso || r.data
+    };
+    Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
+    return out;
+  }
+
+  async function gerarDOCX(){
+    if (!window.documentoAtual || typeof window.documentoAtual !== 'object'){
+      alert('Abra um documento primeiro para gerar o contrato.');
+      return;
+    }
+    const payload = mapearRegistro(window.documentoAtual);
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  function getViewerToolbar(){
+    // busca container que contém os botões "Baixar PDF", "Compartilhar" e "Fechar"
+    const candidates = Array.from(document.querySelectorAll('#viewer .modal-header, #viewer .toolbar, #viewer header, .pdf-toolbar, .modal-header')).filter(el=>{
+      const t = (el.textContent||'').toLowerCase();
+      return t.includes('baixar pdf') && t.includes('compartilhar') && t.includes('fechar');
+    });
+    return candidates[0] || document.querySelector('#viewer .modal-header, #viewer .toolbar');
+  }
+
+  function ensureDocxButton(){
+    const bar = getViewerToolbar();
+    if (!bar) return;
+    if (document.getElementById('btnGerarContratoDocx')) return;
+    const anyBtn = bar.querySelector('button, a');
+    const cls = anyBtn ? (anyBtn.className||'btn') : 'btn';
+    const btn = document.createElement('button');
+    btn.id = 'btnGerarContratoDocx';
+    btn.type = 'button';
+    btn.className = cls;
+    btn.textContent = 'Gerar contrato.docx';
+    btn.addEventListener('click', async ()=>{
+      try { await gerarDOCX(); } catch(e){ alert(e.message); console.error(e); }
+    });
+    // inserir antes do "Fechar", se existir
+    const fechar = Array.from(bar.querySelectorAll('button, a')).find(x => /fechar/i.test(x.textContent||''));
+    if (fechar && fechar.parentNode) fechar.parentNode.insertBefore(btn, fechar);
+    else bar.appendChild(btn);
+  }
+
+  function watchViewer(){
+    const viewer = document.getElementById('viewer');
+    if (!viewer) return;
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) {
+        setTimeout(ensureDocxButton, 50);
+        setTimeout(ensureDocxButton, 200);
+      }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    watchViewer();
+    // se o viewer já estiver aberto
+    setTimeout(ensureDocxButton, 100);
+  });
+})();
+</script>
 </body>
 </html>
