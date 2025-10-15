@@ -2391,5 +2391,161 @@ window.addEventListener('DOMContentLoaded', () => {
 })();
 </script>
 
+
+<script>
+// ===== Fluxo do botão "Buscar": quando código em branco, lista TODOS (dedupe 1 por código) =====
+window.addEventListener('DOMContentLoaded', () => {
+  async function fetchAllRows() {
+    const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+    const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
+    if (!LIST_URL || !SAVE_TOKEN) return [];
+    const form = new URLSearchParams();
+    form.set('token', SAVE_TOKEN);
+    // sem "codigo" => backend deve retornar todos
+    const res = await fetch(LIST_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: form
+    });
+    const j = await res.json().catch(()=>({rows:[]}));
+    return Array.isArray(j.rows) ? j.rows : [];
+  }
+
+  async function handleBuscar(btn, tbodyId, inputId, msgInlineId) {
+    try {
+      const input = document.getElementById(inputId);
+      const tbody = document.getElementById(tbodyId);
+      const msgEl = document.getElementById(msgInlineId);
+      const codeRaw = (input && input.value) ? input.value.trim() : '';
+
+      if (!codeRaw) {
+        if (typeof showBusy === 'function') showBusy('Listando todos (sem duplicados)...');
+        const rows = await fetchAllRows();
+        const deduped = (typeof window.dedupeRowsClient === 'function') ? window.dedupeRowsClient(rows) : rows;
+        // limpa mensagem e renderiza
+        if (msgEl) msgEl.textContent = '';
+        if (typeof window.renderRows === 'function') {
+          window.renderRows(tbodyId, deduped);
+        }
+        return; // impede o fluxo original de escrever "Sem código, sem resultados."
+      }
+      // Se houver código, deixa o handler original agir (já com dedupe antes)
+      // nada a fazer aqui
+    } catch(e) {
+      console.warn('handleBuscar erro', e);
+    } finally {
+      if (typeof hideBusy === 'function') hideBusy();
+    }
+  }
+
+  const btnModal  = document.getElementById('btnBuscar');
+  const btnInline = document.getElementById('btnBuscarInline');
+
+  if (btnModal) {
+    const original = btnModal.getAttribute('onclick');
+    btnModal.setAttribute('onclick', '');
+    btnModal.addEventListener('click', async (ev) => {
+      // Executa pré-busca custom quando código vazio (modal)
+      await handleBuscar(btnModal, 'consBody', 'consCodigo', 'consMsg');
+      // Em seguida, chama o original (para caso haja código)
+      if (original) { try { new Function(original).call(btnModal); } catch(e){ console.error(e); } }
+    });
+  }
+
+  if (btnInline) {
+    const original2 = btnInline.getAttribute('onclick');
+    btnInline.setAttribute('onclick', '');
+    btnInline.addEventListener('click', async (ev) => {
+      // Executa pré-busca custom quando código vazio (inline)
+      await handleBuscar(btnInline, 'consBodyInline', 'consCodigoInline', 'consMsgInline');
+      if (original2) { try { new Function(original2).call(btnInline); } catch(e){ console.error(e); } }
+    });
+  }
+});
+</script>
+
+
+<script>
+// ===== Utilidades comuns =====
+function __normCodigo(v){ return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase(); }
+function __stamp(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
+function __pickNewest(arr){
+  return [...arr].sort((a,b)=> (__stamp(b.updated_at||b.created_at||b.data) - __stamp(a.updated_at||a.created_at||a.data)))[0] || arr[0];
+}
+
+// Chama delete.php para dedupe por código (se configurado)
+async function __dedupeByCodigo(codigoRaw) {
+  try {
+    const LIST_URL   = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+    const SAVE_TOKEN = (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
+    if (!LIST_URL || !SAVE_TOKEN) return {ok:false, skipped:true};
+    const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
+    const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
+    if (!delUrl) return {ok:false, skipped:true};
+
+    const body = new URLSearchParams();
+    body.set('token', SAVE_TOKEN);
+    body.set('codigo', String(codigoRaw));
+    body.set('keep', 'newest');
+    const res = await fetch(delUrl, {
+      method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body
+    });
+    const j = await res.json().catch(()=>({}));
+    return j;
+  } catch (e){
+    console.warn('__dedupeByCodigo falhou', e);
+    return {ok:false, error:String(e)};
+  }
+}
+
+// Busca no backend e preenche; se não encontrado, segue para novo cadastro
+async function __doFetchAndFill(codigoRaw) {
+  const fetchFn = (typeof fetchConsulta === 'function') ? fetchConsulta : null;
+  if (!fetchFn) throw new Error('fetchConsulta não disponível');
+  const res = await fetchFn(codigoRaw);
+  const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
+
+  // filtra por código normalizado
+  const key = __normCodigo(codigoRaw);
+  const matches = rows.filter(r => __normCodigo(r.codigo) === key);
+
+  if (matches.length === 0) {
+    // novo cadastro
+    if (typeof goTo === 'function') goTo(2);
+    return {filled:false, reason:'not_found'};
+  }
+
+  const row = matches.length === 1 ? matches[0] : __pickNewest(matches);
+  const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(row) : row;
+  if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
+
+  try {
+    const mirrors = document.querySelectorAll('[id^="codigoVal"]');
+    mirrors.forEach(el => { el.textContent = codigoRaw; });
+  } catch(e){}
+
+  if (typeof goTo === 'function') goTo(2);
+  return {filled:true};
+}
+
+// Handler do botão Continuar da Etapa 1
+async function proceedFromStep1_Dedupe(){
+  const raw = (document.getElementById('codigo')?.value || '').trim();
+  if (!raw) return;
+  try {
+    if (typeof showBusy === 'function') showBusy('Processando código...');
+    // tenta dedupe no servidor (se delete.php estiver ativo)
+    await __dedupeByCodigo(raw);
+    // busca e preenche (ou segue para novo cadastro)
+    await __doFetchAndFill(raw);
+  } catch (e){
+    console.error('proceedFromStep1_Dedupe erro', e);
+    (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
+}
+</script>
+
 </body>
 </html>
