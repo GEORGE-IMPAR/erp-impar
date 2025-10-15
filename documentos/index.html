@@ -2100,5 +2100,66 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+
+<script>
+// Normaliza código: tira espaços e não-alfanuméricos, upper-case
+function normCodigo(v){
+  return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+}
+
+(function(){
+  if (typeof proceedFromStep1 !== 'function') return;
+  const __orig_fetch = (typeof fetchConsulta === 'function') ? fetchConsulta : null;
+
+  window.proceedFromStep1 = function() {
+    const raw = (document.getElementById('codigo')?.value || '').trim();
+    const codigo = normCodigo(raw);
+    if (!codigo) return;
+    try {
+      if (typeof showBusy === 'function') showBusy('Buscando documento pelo código...');
+      const p = __orig_fetch ? __orig_fetch(raw) : Promise.reject(new Error('fetchConsulta não disponível'));
+      Promise.resolve(p).then(res => {
+        const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
+        // Log de apoio no console
+        try {
+          console.log('[consulta] total rows:', rows.length);
+          console.log('[consulta] codes retornados:', rows.map(r => r.codigo));
+        } catch(e){}
+
+        // Filtra por código normalizado
+        const matches = rows.filter(r => normCodigo(r.codigo) === codigo);
+
+        if (matches.length === 0) {
+          (window.toast?.error || window.alert)('Código não encontrado.');
+          return;
+        }
+
+        // Escolhe o mais recente quando houver mais de um
+        function t(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
+        matches.sort((a,b)=> (t(b.updated_at||b.created_at||b.data) - t(a.updated_at||a.created_at||a.data)));
+        const row = matches[0];
+
+        const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(row) : row;
+        if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
+        try {
+          const mirrors = document.querySelectorAll('[id^="codigoVal"]');
+          mirrors.forEach(el => { el.textContent = raw; });
+        } catch(e) {}
+        if (typeof goTo === 'function') goTo(2);
+      }).catch(err => {
+        (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+        console.error(err);
+      }).finally(()=>{
+        if (typeof hideBusy === 'function') hideBusy();
+      });
+    } catch(e){
+      if (typeof hideBusy === 'function') hideBusy();
+      (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+      console.error(e);
+    }
+  };
+})();
+</script>
+
 </body>
 </html>
