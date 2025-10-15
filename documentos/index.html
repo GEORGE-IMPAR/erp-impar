@@ -2612,5 +2612,100 @@ document.addEventListener('click', function(e) {
   document.addEventListener('DOMContentLoaded', ()=> setTimeout(wireViewerUpdate, 200));
 })();
 </script>
+
+<!-- Viewer: "Atualizar informações" chamando o MESMO fluxo do modal (normalizeRowForFill + fillAllFromRow + closeConsulta)
+     e garantindo __actionRow a partir de window.documentoAtual. Sem exibir o modal. -->
+<script>
+(function(){
+  function suppressLegacyMsgs(){
+    const txts = ['o que você deseja fazer?', 'precisa gerar o pdf'];
+    document.querySelectorAll('.modal, .swal2-popup, [role="dialog"], .dialog').forEach(m => {
+      const t = (m.textContent||'').toLowerCase();
+      if (txts.some(x => t.includes(x))) { try{ m.remove(); }catch(e){ m.style.display='none'; } }
+    });
+  }
+  function closeViewer(){
+    const v = document.getElementById('viewer');
+    if (v) v.style.display = 'none';
+  }
+  function focusContinuar(){
+    let btn = document.querySelector('#btnContinuar, #continuar, button[name="continuar"], .btn-continuar');
+    if (!btn){
+      btn = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .find(el => /continuar/i.test((el.textContent || el.value || '').trim()));
+    }
+    if (btn){
+      try { btn.disabled = false; btn.removeAttribute('disabled'); } catch(e){}
+      try { btn.focus(); } catch(e){}
+    }
+  }
+
+  function ensureActionRow(){
+    // Se o modal que criava __actionRow não rodou, garantimos a partir do documento aberto
+    if (!window.__actionRow || typeof window.__actionRow !== 'object'){
+      if (window.documentoAtual && typeof window.documentoAtual === 'object'){
+        window.__actionRow = window.documentoAtual;
+      } else {
+        const code = (document.getElementById('codigo')?.value || '').trim();
+        if (code) window.__actionRow = { codigo: code };
+      }
+    }
+  }
+
+  function runOriginalUpdateFlow(){
+    try {
+      ensureActionRow();
+      if (typeof normalizeRowForFill === 'function' &&
+          typeof fillAllFromRow === 'function' &&
+          window.__actionRow){
+        const norm = normalizeRowForFill(window.__actionRow);
+        fillAllFromRow(norm);
+      }
+      if (typeof closeConsulta === 'function'){ try{ closeConsulta(); }catch(e){} }
+    } catch (e) {
+      console.error('Falha ao atualizar com fluxo original:', e);
+    }
+  }
+
+  function wireViewerUpdate(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    const btn = Array.from(scope.querySelectorAll('button, a'))
+      .find(el => /^atualizar informações$/i.test((el.textContent||'').trim()));
+    if (!btn || btn._wiredModalFlow) return;
+
+    btn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      // Executa o mesmo fluxo do modal, sem abrir o modal
+      runOriginalUpdateFlow();
+      // Fecha viewer e não deixa mensagens antigas aparecerem
+      closeViewer();
+      setTimeout(suppressLegacyMsgs, 30);
+      setTimeout(suppressLegacyMsgs, 200);
+      // Habilita/FOCO no Continuar
+      focusContinuar();
+    });
+    btn._wiredModalFlow = true;
+  }
+
+  // Toda vez que o viewer abrir, definimos __actionRow (se faltar) e conectamos o botão
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible){
+        ensureActionRow();
+        setTimeout(wireViewerUpdate, 30);
+        setTimeout(wireViewerUpdate, 150);
+      }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+  document.addEventListener('DOMContentLoaded', ()=>{
+    ensureActionRow();
+    setTimeout(wireViewerUpdate, 200);
+  });
+})();
+</script>
 </body>
 </html>
