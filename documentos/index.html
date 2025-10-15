@@ -1904,110 +1904,110 @@ document.addEventListener('click', function(e) {
 </script>
 
 
-<!-- Botão "Gerar contrato.docx" ao lado de Baixar PDF (com fallback de dados do formulário) -->
+<!-- FIX: Geração DOCX com todas as variáveis do template preenchidas (somente se tiver valor) -->
 <script>
 (function(){
   const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
 
-  function val(id){ const el=document.getElementById(id); return el? (el.value||'').trim() : ''; }
-  function endereco(prefix){
-    const log=val('logradouro'+prefix), num=val('numero'+prefix), comp=val('complemento'+prefix),
-          bai=val('bairro'+prefix), cid=val('cidade'+prefix), uf=val('uf'+prefix), cep=val('cep'+prefix);
-    if (!log && !cid) return '';
-    let base = log ? (log + (num? ', '+num:'')) : '';
-    if (comp) base += ' - ' + comp;
+  // Lista de variáveis esperadas no template
+  const VARS = [
+    'codigo','servico','endereco_obra',
+    'contratante_nome','contratante_endereco','contratante_CNPJ','contratante_contato',
+    'contratada_nome','contratada_endereco','contratada_CNPJ',
+    'clausulas','prazo_dias','valor','valor_extenso','condicoes','data_extenso'
+  ];
+
+  // Helpers
+  function gv(sel){ const el=document.querySelector(sel); return el ? (('value' in el?el.value:el.textContent)||'').trim() : ''; }
+  function gvid(id){ const el=document.getElementById(id); return el ? (('value' in el?el.value:el.textContent)||'').trim() : ''; }
+  function enderecoByPrefix(prefix){ // Contratante / Contratada
+    const p = prefix;
+    const parts = [];
+    const log = gvid('logradouro'+p) || gv('[name="logradouro'+p+'"]');
+    const num = gvid('numero'+p) || gv('[name="numero'+p+'"]');
+    const comp= gvid('complemento'+p) || gv('[name="complemento'+p+'"]');
+    const bai = gvid('bairro'+p) || gv('[name="bairro'+p+'"]');
+    const cid = gvid('cidade'+p) || gv('[name="cidade'+p+'"]');
+    const uf  = gvid('uf'+p) || gv('[name="uf'+p+'"]');
+    const cep = gvid('cep'+p) || gv('[name="cep'+p+'"]');
+    if (log) parts.push(log + (num? ', '+num:''));
+    if (comp) parts.push(comp);
     const tail = [bai, (cid && uf? cid+'/'+uf : cid||''), (cep? 'CEP '+cep:'')].filter(Boolean).join(' — ');
-    if (tail) base = base ? (base + ' — ' + tail) : tail;
-    return base;
+    if (tail) parts.push(tail);
+    return parts.join(' — ');
   }
 
-  function montarPayload(){
-    // 1) preferir o mesmo objeto usado na visualização, se existir
-    if (window.documentoAtual && typeof window.documentoAtual === 'object'){
-      const r = window.documentoAtual;
-      const out = {
-        codigo: r.codigo,
-        servico: r.servico,
-        endereco_obra: r.endereco_obra || r.enderecoObra,
-        contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
-        contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
-        contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
-        contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
-        contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
-        contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
-        contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
-        contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
-        contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
-        clausulas: r.clausulas || r.clausulas_texto,
-        prazo_dias: r.prazo_dias || r.prazo,
-        valor: r.valor,
-        valor_extenso: r.valor_extenso || r.valorExtenso,
-        condicoes: r.condicoes || r.condicoes_pagamento,
-        data_extenso: r.data_extenso || r.dataExtenso || r.data
-      };
-      Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
-      return out;
+  function fromResumo(label){
+    // tenta ler no resumo (viewer) algo como "CONTRATANTE" etc.
+    const viewer = document.getElementById('viewer');
+    if (!viewer) return '';
+    const t = (viewer.textContent||'').replace(/\s+/g,' ').trim();
+    const rx = new RegExp(label+'\\s*:\\s*([^\\n\\r]+)','i');
+    const m = t.match(rx);
+    return m ? m[1].trim() : '';
+  }
+
+  function buildPayload(){
+    const r = (window.documentoAtual && typeof window.documentoAtual==='object') ? window.documentoAtual : null;
+
+    // Mapeadores por variável
+    const getters = {
+      codigo: ()=> (r && (r.codigo)) || gvid('codigo'),
+      servico: ()=> (r && (r.servico)) || gvid('servico'),
+      endereco_obra: ()=> (r && (r.endereco_obra || r.enderecoObra)) || gvid('endereco') || gvid('endereco_obra') || fromResumo('Endere\u00e7o da obra'),
+      contratante_nome: ()=> (r && (r.contratante_nome || (r.contratante&&r.contratante.nome))) || gvid('nomeContratante') || gvid('contratante_nome') || fromResumo('CONTRATANTE\\s*Nome'),
+      contratante_endereco: ()=> (r && (r.contratante_endereco || (r.contratante&&r.contratante.endereco))) || gvid('contratante_endereco') || enderecoByPrefix('Contratante'),
+      contratante_CNPJ: ()=> (r && (r.contratante_CNPJ || (r.contratante&&r.contratante.cpfCnpj))) || gvid('contratante_CNPJ') || gvid('docContratante'),
+      contratante_contato: ()=> (r && (r.contratante_contato || (r.contratante&&r.contratante.contato))) || gvid('contratante_contato') || gvid('contatoContratante'),
+      contratada_nome: ()=> (r && (r.contratada_nome || (r.contratada&&r.contratada.nome))) || gvid('contratada_nome') || gvid('nomeContratada') || fromResumo('CONTRATADA\\s*Nome'),
+      contratada_endereco: ()=> (r && (r.contratada_endereco || (r.contratada&&r.contratada.endereco))) || gvid('contratada_endereco') || enderecoByPrefix('Contratada'),
+      contratada_CNPJ: ()=> (r && (r.contratada_CNPJ || (r.contratada&&r.contratada.cpfCnpj))) || gvid('contratada_CNPJ') || gvid('docContratada'),
+      clausulas: ()=> (r && (r.clausulas || r.clausulas_texto)) || gvid('clausulas') || fromResumo('Condi\u00e7\u00f5es do objeto|OBJETO'),
+      prazo_dias: ()=> (r && (r.prazo_dias || r.prazo)) || gvid('prazo_dias') || gvid('prazo'),
+      valor: ()=> (r && r.valor) || gvid('valor') || fromResumo('Valor'),
+      valor_extenso: ()=> (r && (r.valor_extenso || r.valorExtenso)) || gvid('valor_extenso') || gvid('valorExtenso'),
+      condicoes: ()=> (r && (r.condicoes || r.condicoes_pagamento)) || gvid('condicoes'),
+      data_extenso: ()=> (r && (r.data_extenso || r.dataExtenso || r.data)) || gvid('data_extenso') || gvid('dataExtenso')
+    };
+
+    const payload = {};
+    VARS.forEach(k => {
+      try {
+        const v = (getters[k] && getters[k]()) || '';
+        if (v !== undefined && v !== null && String(v).trim() !== '') payload[k] = String(v).trim();
+      } catch(e){ /* ignora */ }
+    });
+
+    console.debug('[DOCX payload]', payload);
+    return payload;
+  }
+
+  async function gerarDOCX(){
+    const payload = buildPayload();
+    if (!payload.codigo){ alert('Código não encontrado para gerar o contrato.'); return; }
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
     }
-
-    // 2) fallback: colher exatamente do formulário da tela (mesmo usado no PDF)
-    return (function(){
-      return {
-        codigo: val('codigo'),
-        servico: val('servico'),
-        endereco_obra: val('endereco') || val('endereco_obra'),
-        // CONTRATANTE (prefixo Contratante)
-        contratante_nome: val('nomeContratante') || val('contratante_nome'),
-        contratante_endereco: val('contratante_endereco') || endereco('Contratante'),
-        contratante_doc: val('docContratante') || val('contratante_doc'),
-        contratante_contato: val('contatoContratante') || val('contratante_contato'),
-        contratante_CNPJ: val('docContratante') || val('contratante_CNPJ'),
-        // CONTRATADA (prefixo Contratada)
-        contratada_nome: val('nomeContratada') || val('contratada_nome'),
-        contratada_endereco: val('contratada_endereco') || endereco('Contratada'),
-        contratada_doc: val('docContratada') || val('contratada_doc'),
-        contratada_CNPJ: val('docContratada') || val('contratada_CNPJ'),
-        // demais
-        clausulas: val('clausulas'),
-        prazo_dias: val('prazo') || val('prazo_dias'),
-        valor: val('valor'),
-        valor_extenso: val('valorExtenso') || val('valor_extenso'),
-        condicoes: val('condicoes'),
-        data_extenso: val('dataExtenso') || val('data_extenso')
-      };
-    })();
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
   }
 
-  async function gerarContratoDocx(){
-    const payload = montarPayload();
-    try{
-      const resp = await fetch(URL_DOCX, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(payload)
-      });
-      if (!resp.ok){
-        const txt = await resp.text();
-        throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
-      }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
-      a.download = `CONTRATO_${codigo}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(url);
-      a.remove();
-    }catch(e){
-      alert(e.message);
-      console.error(e);
-    }
-  }
-
-  function insertButtonNextToBaixarPDF(){
-    const pdfBtn = Array.from(document.querySelectorAll('#viewer button, #viewer a'))
-      .find(el => /baixar\s*pdf/i.test((el.textContent||'').trim()));
+  function placeBtnNextToBaixarPDF(){
+    const pdfBtn = Array.from(document.querySelectorAll('#viewer button, #viewer a')).find(el => /baixar\s*pdf/i.test((el.textContent||'').trim()));
     if (!pdfBtn) return;
     if (document.getElementById('btnGerarContratoDocx')) return;
     const btn = document.createElement('button');
@@ -2016,23 +2016,22 @@ document.addEventListener('click', function(e) {
     btn.className = pdfBtn.className || 'btn';
     btn.style.marginLeft = '8px';
     btn.textContent = 'Gerar contrato.docx';
-    btn.addEventListener('click', gerarContratoDocx);
+    btn.addEventListener('click', ()=>gerarDOCX().catch(e=>{alert(e.message); console.error(e);}));
     pdfBtn.parentNode.insertBefore(btn, pdfBtn.nextSibling);
   }
 
-  // Observa a abertura do viewer
+  // Observa abertura do viewer
   (function watchViewer(){
     const viewer = document.getElementById('viewer');
     if (!viewer) return;
     const obs = new MutationObserver(()=>{
       const visible = getComputedStyle(viewer).display !== 'none';
-      if (visible) { setTimeout(insertButtonNextToBaixarPDF, 30); setTimeout(insertButtonNextToBaixarPDF, 200); }
+      if (visible) { setTimeout(placeBtnNextToBaixarPDF, 30); setTimeout(placeBtnNextToBaixarPDF, 200); }
     });
     obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
   })();
 
-  // Caso já esteja aberto
-  document.addEventListener('DOMContentLoaded', ()=> setTimeout(insertButtonNextToBaixarPDF, 200));
+  document.addEventListener('DOMContentLoaded', ()=> setTimeout(placeBtnNextToBaixarPDF, 200));
 })();
 </script>
 </body>
