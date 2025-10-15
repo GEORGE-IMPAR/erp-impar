@@ -1647,47 +1647,60 @@ document.addEventListener('click', function(e) {
   </script>
 
 <script>
+// Versão "resolve terça": força o MESMO caminho da modal, sem exibir modal
 async function proceedFromStep1(codigo){
   try{
     codigo = (codigo || '').toString().trim();
     if (!codigo){ if (typeof goTo==='function') goTo(2); return; }
 
-    var LIST_URL  = (window.apiPatch && window.apiPatch.LIST_URL)  || window.LIST_URL  || '';
-    var SAVE_TOKEN= (window.apiPatch && window.apiPatch.SAVE_TOKEN)|| window.SAVE_TOKEN|| '';
-
-    if(!LIST_URL || !SAVE_TOKEN){ if (typeof goTo==='function') goTo(2); return; }
-
-    var resp;
+    // 1) Busca usando a MESMA função da consulta
+    let resp;
     if (typeof fetchConsulta === 'function'){
       resp = await fetchConsulta(codigo);
     } else {
+      // fallback opcional, caso a função não exista
+      const LIST_URL   = (window.apiPatch && apiPatch.LIST_URL)   || window.LIST_URL  || '';
+      const SAVE_TOKEN = (window.apiPatch && apiPatch.SAVE_TOKEN) || window.SAVE_TOKEN|| '';
+      if (!LIST_URL || !SAVE_TOKEN){ if (typeof goTo==='function') goTo(2); return; }
       resp = await fetch(LIST_URL, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ token: SAVE_TOKEN, codigo: codigo })
-      }).then(r=>r.ok?r.json():Promise.reject(new Error('Falha na busca')));
-    }
-    var rows = (resp && resp.rows) ? resp.rows : [];
-
-    var exact = rows.find(r => String(r.codigo||'').toUpperCase() === codigo.toUpperCase());
-
-    if (exact){
-      try { if (typeof fillAllFromRow === 'function') fillAllFromRow(exact); } catch(e){ console.error(e); }
-      try { if (typeof closeConsulta === 'function') closeConsulta(); } catch(_){}
-      if (typeof goTo==='function') goTo(2);
-      return;
+        body: JSON.stringify({ token: SAVE_TOKEN, codigo })
+      }).then(r => r.ok ? r.json() : Promise.reject(new Error('Falha na busca')));
     }
 
-    if (rows.length){
-      try { if (typeof fillAllFromRow === 'function') fillAllFromRow(rows[0]); } catch(e){ console.error(e); }
-      try { if (typeof closeConsulta === 'function') closeConsulta(); } catch(_){}
-      if (typeof goTo==='function') goTo(2);
-      return;
+    const rows = (resp && resp.rows) ? resp.rows : [];
+    if (!rows.length){ if (typeof goTo==='function') goTo(2); return; }
+
+    // 2) Escolhe a linha (match exato ou primeira)
+    const row = rows.find(r => String(r.codigo||'').toUpperCase() === codigo.toUpperCase()) || rows[0];
+
+    // 3) Força o MESMO caminho da modal: popula __actionRow igual ao openActionModal e executa os handlers
+    if (row){
+      try {
+        if (typeof openActionModal === 'function') {
+          openActionModal(row); // garante __actionRow exatamente como no clique do código
+        } else {
+          window.__actionRow = row;
+        }
+
+        // Executa a mesma atualização da modal (sem mostrar a janela)
+        if (typeof normalizeRowForFill === 'function' && typeof fillAllFromRow === 'function' && window.__actionRow){
+          const norm = normalizeRowForFill(window.__actionRow);
+          fillAllFromRow(norm);
+        }
+        if (typeof closeActionModal === 'function') { try{ closeActionModal(); }catch(e){} }
+        if (typeof closeConsulta === 'function')     { try{ closeConsulta(); }catch(e){} }
+      } catch(e){
+        console.error('Fluxo da modal (forçado) falhou:', e);
+      }
     }
 
+    // 4) Vai para etapa 2
     if (typeof goTo==='function') goTo(2);
+
   }catch(e){
-    console.error('proceedFromStep1 falhou:', e);
+    console.error('proceedFromStep1 (terça) falhou:', e);
     if (typeof goTo==='function') goTo(2);
   }
 }
