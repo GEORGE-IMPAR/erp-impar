@@ -1904,148 +1904,136 @@ document.addEventListener('click', function(e) {
 </script>
 
 
-<!-- Botão "Gerar contrato.docx" AO LADO do "Baixar PDF" no viewer -->
+<!-- Botão "Gerar contrato.docx" ao lado de Baixar PDF (com fallback de dados do formulário) -->
 <script>
 (function(){
   const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
 
-  function mapearRegistro(r){
-    if (!r) return {};
-    const out = {
-      codigo: r.codigo,
-      servico: r.servico,
-      endereco_obra: r.endereco_obra || r.enderecoObra,
-      contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
-      contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
-      contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
-      contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
-      contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
-      contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
-      contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
-      contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
-      contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
-      clausulas: r.clausulas || r.clausulas_texto,
-      prazo_dias: r.prazo_dias || r.prazo,
-      valor: r.valor,
-      valor_extenso: r.valor_extenso || r.valorExtenso,
-      condicoes: r.condicoes || r.condicoes_pagamento,
-      data_extenso: r.data_extenso || r.dataExtenso || r.data
-    };
-    Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
-    return out;
+  function val(id){ const el=document.getElementById(id); return el? (el.value||'').trim() : ''; }
+  function endereco(prefix){
+    const log=val('logradouro'+prefix), num=val('numero'+prefix), comp=val('complemento'+prefix),
+          bai=val('bairro'+prefix), cid=val('cidade'+prefix), uf=val('uf'+prefix), cep=val('cep'+prefix);
+    if (!log && !cid) return '';
+    let base = log ? (log + (num? ', '+num:'')) : '';
+    if (comp) base += ' - ' + comp;
+    const tail = [bai, (cid && uf? cid+'/'+uf : cid||''), (cep? 'CEP '+cep:'')].filter(Boolean).join(' — ');
+    if (tail) base = base ? (base + ' — ' + tail) : tail;
+    return base;
   }
 
-  async function gerarDOCX(){
-    if (!window.documentoAtual || typeof window.documentoAtual !== 'object'){
-      alert('Abra um documento primeiro para gerar o contrato.');
-      return;
+  function montarPayload(){
+    // 1) preferir o mesmo objeto usado na visualização, se existir
+    if (window.documentoAtual && typeof window.documentoAtual === 'object'){
+      const r = window.documentoAtual;
+      const out = {
+        codigo: r.codigo,
+        servico: r.servico,
+        endereco_obra: r.endereco_obra || r.enderecoObra,
+        contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
+        contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
+        contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
+        contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
+        contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
+        contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
+        contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
+        contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
+        contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
+        clausulas: r.clausulas || r.clausulas_texto,
+        prazo_dias: r.prazo_dias || r.prazo,
+        valor: r.valor,
+        valor_extenso: r.valor_extenso || r.valorExtenso,
+        condicoes: r.condicoes || r.condicoes_pagamento,
+        data_extenso: r.data_extenso || r.dataExtenso || r.data
+      };
+      Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
+      return out;
     }
-    const payload = mapearRegistro(window.documentoAtual);
-    const resp = await fetch(URL_DOCX, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    if (!resp.ok){
-      const txt = await resp.text();
-      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
-    }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
-    a.download = `CONTRATO_${codigo}.docx`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
-    a.remove();
+
+    // 2) fallback: colher exatamente do formulário da tela (mesmo usado no PDF)
+    return (function(){
+      return {
+        codigo: val('codigo'),
+        servico: val('servico'),
+        endereco_obra: val('endereco') || val('endereco_obra'),
+        // CONTRATANTE (prefixo Contratante)
+        contratante_nome: val('nomeContratante') || val('contratante_nome'),
+        contratante_endereco: val('contratante_endereco') || endereco('Contratante'),
+        contratante_doc: val('docContratante') || val('contratante_doc'),
+        contratante_contato: val('contatoContratante') || val('contratante_contato'),
+        contratante_CNPJ: val('docContratante') || val('contratante_CNPJ'),
+        // CONTRATADA (prefixo Contratada)
+        contratada_nome: val('nomeContratada') || val('contratada_nome'),
+        contratada_endereco: val('contratada_endereco') || endereco('Contratada'),
+        contratada_doc: val('docContratada') || val('contratada_doc'),
+        contratada_CNPJ: val('docContratada') || val('contratada_CNPJ'),
+        // demais
+        clausulas: val('clausulas'),
+        prazo_dias: val('prazo') || val('prazo_dias'),
+        valor: val('valor'),
+        valor_extenso: val('valorExtenso') || val('valor_extenso'),
+        condicoes: val('condicoes'),
+        data_extenso: val('dataExtenso') || val('data_extenso')
+      };
+    })();
   }
 
-  function ensureBtnNextToBaixarPDF(){
-    // procura o botão "Baixar PDF" dentro do viewer
+  async function gerarContratoDocx(){
+    const payload = montarPayload();
+    try{
+      const resp = await fetch(URL_DOCX, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok){
+        const txt = await resp.text();
+        throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+      a.download = `CONTRATO_${codigo}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      a.remove();
+    }catch(e){
+      alert(e.message);
+      console.error(e);
+    }
+  }
+
+  function insertButtonNextToBaixarPDF(){
     const pdfBtn = Array.from(document.querySelectorAll('#viewer button, #viewer a'))
       .find(el => /baixar\s*pdf/i.test((el.textContent||'').trim()));
     if (!pdfBtn) return;
     if (document.getElementById('btnGerarContratoDocx')) return;
-
     const btn = document.createElement('button');
     btn.id = 'btnGerarContratoDocx';
     btn.type = 'button';
-    // herda a classe do "Baixar PDF" para ficar idêntico
     btn.className = pdfBtn.className || 'btn';
     btn.style.marginLeft = '8px';
     btn.textContent = 'Gerar contrato.docx';
-    btn.addEventListener('click', async ()=>{
-      try { await gerarDOCX(); } catch(e){ alert(e.message); console.error(e); }
-    });
-
-    // insere logo depois do "Baixar PDF"
-    if (pdfBtn.parentNode) {
-      pdfBtn.parentNode.insertBefore(btn, pdfBtn.nextSibling);
-    }
+    btn.addEventListener('click', gerarContratoDocx);
+    pdfBtn.parentNode.insertBefore(btn, pdfBtn.nextSibling);
   }
 
-  // Observa o abrir do viewer
+  // Observa a abertura do viewer
   (function watchViewer(){
     const viewer = document.getElementById('viewer');
     if (!viewer) return;
     const obs = new MutationObserver(()=>{
       const visible = getComputedStyle(viewer).display !== 'none';
-      if (visible) {
-        setTimeout(ensureBtnNextToBaixarPDF, 30);
-        setTimeout(ensureBtnNextToBaixarPDF, 200);
-      }
+      if (visible) { setTimeout(insertButtonNextToBaixarPDF, 30); setTimeout(insertButtonNextToBaixarPDF, 200); }
     });
     obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
   })();
 
-  // Caso o viewer já esteja aberto no load
-  document.addEventListener('DOMContentLoaded', ()=>{
-    setTimeout(ensureBtnNextToBaixarPDF, 200);
-  });
+  // Caso já esteja aberto
+  document.addEventListener('DOMContentLoaded', ()=> setTimeout(insertButtonNextToBaixarPDF, 200));
 })();
-
-(function(){
-  // se sua visualização é aberta com mostrarPreviewDocumento(registro)
-  if (typeof window.mostrarPreviewDocumento === 'function') {
-    const _orig = window.mostrarPreviewDocumento;
-    window.mostrarPreviewDocumento = function(registro){
-      try { window.documentoAtual = registro; } catch(e){}
-      return _orig.apply(this, arguments);
-    };
-  }
-
-  // se sua visualização é aberta com gerarPreviewPDF(registro)
-  if (typeof window.gerarPreviewPDF === 'function') {
-    const _orig2 = window.gerarPreviewPDF;
-    window.gerarPreviewPDF = function(registro){
-      try { window.documentoAtual = registro; } catch(e){}
-      return _orig2.apply(this, arguments);
-    };
-  }
-})();
-
-(function(){
-  // se sua visualização é aberta com mostrarPreviewDocumento(registro)
-  if (typeof window.mostrarPreviewDocumento === 'function') {
-    const _orig = window.mostrarPreviewDocumento;
-    window.mostrarPreviewDocumento = function(registro){
-      try { window.documentoAtual = registro; } catch(e){}
-      return _orig.apply(this, arguments);
-    };
-  }
-
-  // se sua visualização é aberta com gerarPreviewPDF(registro)
-  if (typeof window.gerarPreviewPDF === 'function') {
-    const _orig2 = window.gerarPreviewPDF;
-    window.gerarPreviewPDF = function(registro){
-      try { window.documentoAtual = registro; } catch(e){}
-      return _orig2.apply(this, arguments);
-    };
-  }
-})();
-
 </script>
 </body>
 </html>
