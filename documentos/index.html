@@ -2139,5 +2139,145 @@ document.addEventListener('click', function(e) {
   document.addEventListener('DOMContentLoaded', () => setTimeout(onViewerOpen, 200));
 })();
 </script>
+
+<!-- Patch: renomear "Compartilhar" -> "Atualizar informações" no viewer -->
+<script>
+(function(){
+  function renameShareToUpdate(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    const btns = scope.querySelectorAll('button, a');
+    btns.forEach(el => {
+      const txt = (el.textContent || '').trim();
+      if (/^compartilhar$/i.test(txt)) {
+        el.textContent = 'Atualizar informações';
+        // title/aria-label também, se existir
+        if (el.title && /compartilhar/i.test(el.title)) el.title = 'Atualizar informações';
+        if (el.getAttribute('aria-label') && /compartilhar/i.test(el.getAttribute('aria-label'))) {
+          el.setAttribute('aria-label', 'Atualizar informações');
+        }
+      }
+    });
+  }
+
+  // Rodar quando o viewer abrir e quando o DOM carregar
+  document.addEventListener('DOMContentLoaded', () => setTimeout(renameShareToUpdate, 150));
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) { setTimeout(renameShareToUpdate, 30); setTimeout(renameShareToUpdate, 200); }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+})();
+</script>
+
+<!-- Ação do botão "Atualizar informações" na visualização -->
+<script>
+(function(){
+  function setVal(id, val){
+    if (val === undefined || val === null) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    if ('value' in el) el.value = val;
+    else el.textContent = val;
+  }
+
+  function fillIfExists(map){
+    Object.keys(map).forEach(id => setVal(id, map[id]));
+  }
+
+  function carregarCamposDaEtapa1ComRegistro(reg){
+    if (!reg || typeof reg !== 'object') return;
+
+    // Básicos
+    fillIfExists({
+      'codigo': reg.codigo,
+      'servico': reg.servico,
+      'endereco': reg.endereco_obra || reg.enderecoObra || reg.endereco
+    });
+
+    // CONTRATANTE
+    const cte = reg.contratante || {};
+    fillIfExists({
+      'nomeContratante': reg.contratante_nome || cte.nome,
+      'docContratante': reg.contratante_CNPJ || reg.contratante_doc || cte.cpfCnpj,
+      'contatoContratante': reg.contratante_contato || cte.contato,
+      'contratante_endereco': reg.contratante_endereco || cte.endereco
+    });
+
+    // CONTRATADA
+    const cda = reg.contratada || {};
+    fillIfExists({
+      'nomeContratada': reg.contratada_nome || cda.nome,
+      'docContratada': reg.contratada_CNPJ || reg.contratada_doc || cda.cpfCnpj,
+      'contratada_endereco': reg.contratada_endereco || cda.endereco
+    });
+
+    // Demais campos comuns à visualização
+    fillIfExists({
+      'clausulas': reg.clausulas || reg.clausulas_texto,
+      'prazo': reg.prazo_dias || reg.prazo,
+      'valor': reg.valor,
+      'valorExtenso': reg.valor_extenso || reg.valorExtenso,
+      'condicoes': reg.condicoes || reg.condicoes_pagamento,
+      'dataExtenso': reg.data_extenso || reg.dataExtenso || reg.data
+    });
+  }
+
+  function fecharViewer(){
+    const viewer = document.getElementById('viewer');
+    if (viewer) viewer.style.display = 'none';
+  }
+
+  function habilitarEFocusContinuar(){
+    // Procura por possíveis seletores do botão "Continuar"
+    let btn = document.querySelector('#btnContinuar, #continuar, button[name="continuar"], .btn-continuar');
+    if (!btn){
+      // Fallback por texto
+      btn = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .find(el => /continuar/i.test((el.textContent || el.value || '').trim()));
+    }
+    if (btn){
+      try { btn.disabled = false; } catch(e){}
+      try { btn.removeAttribute('disabled'); } catch(e){}
+      try { btn.focus(); } catch(e){}
+    }
+  }
+
+  function onClickAtualizarInformacoes(ev){
+    ev.preventDefault();
+    // Identifica o registro da visualização (mesmo usado para o PDF)
+    const reg = (window.documentoAtual && typeof window.documentoAtual === 'object') ? window.documentoAtual : null;
+    carregarCamposDaEtapa1ComRegistro(reg);
+    fecharViewer();
+    habilitarEFocusContinuar();
+  }
+
+  function wireUpdateButton(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    // encontra o botão que foi renomeado para "Atualizar informações"
+    const btn = Array.from(scope.querySelectorAll('button, a'))
+      .find(el => /^atualizar informações$/i.test((el.textContent||'').trim()));
+    if (btn && !btn._wiredAtualizar){
+      btn.addEventListener('click', onClickAtualizarInformacoes);
+      btn._wiredAtualizar = true;
+    }
+  }
+
+  // Aciona quando o viewer abre
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) { setTimeout(wireUpdateButton, 30); setTimeout(wireUpdateButton, 150); }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+  document.addEventListener('DOMContentLoaded', ()=> setTimeout(wireUpdateButton, 200));
+})();
+</script>
 </body>
 </html>
