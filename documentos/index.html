@@ -2387,133 +2387,163 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 
 
-<!-- === v2.3 Adapter: usa o MESMO objeto do PDF (documentoAtual) sem alterar o fluxo === -->
+<script type="application/json" id="mapa_template_para_dom">{
+  "codigo": "#codigo",
+  "servico": "#servico",
+  "endereco": "#endereco",
+  "nomeContratante": "#nomeContratante",
+  "logradouroContratante": "#logradouroContratante",
+  "docContratante": "#docContratante",
+  "contatoContratante": "#contatoContratante",
+  "nomeContratada": "#nomeContratada",
+  "logradouroContratada": "#logradouroContratada",
+  "docContratada": "#docContratada",
+  "clausulas": "#clausulas",
+  "prazo": "#prazo",
+  "valor": "#valor",
+  "valorExtenso": "#valorExtenso",
+  "condicoes": "#condicoes",
+  "dataExtenso": "#dataExtenso"
+}</script>
+
+
 <script>
 (function(){
-  // 1) Captura qualquer atribuição ao objeto usado pelo PDF
-  if (!('documentoAtual' in window)) {
-    var __docStore = null;
+  // Utils
+  function _val(sel){
+    var el = document.querySelector(sel);
+    if (!el) return '';
+    if (typeof el.value !== 'undefined') return (el.value||'').trim();
+    return (el.textContent||'').trim();
+  }
+  function _readMap(){
+    var tag = document.getElementById('mapa_template_para_dom');
+    if (!tag) return {};
+    try { return JSON.parse(tag.textContent); } catch(_){ return {}; }
+  }
+  function _composeFromMap(){
+    var mapa = _readMap();
+    var out = {};
+    for (var k in mapa){
+      if (!Object.prototype.hasOwnProperty.call(mapa,k)) continue;
+      out[k] = _val(mapa[k]);
+    }
+    // Aliases usuais
+    out.endereco_obra = out.endereco;
+    out.valor_extenso = out.valorExtenso || out.valor_extenso || '';
+    return out;
+  }
+  function _store(json){
+    window.__dadosVisualizacao = json;
+    try { localStorage.setItem('__dadosVisualizacao', JSON.stringify(json)); } catch(_){}
+  }
+  function _loadStored(){
+    if (window.__dadosVisualizacao) return window.__dadosVisualizacao;
     try {
-      Object.defineProperty(window, 'documentoAtual', {
-        configurable: true,
-        enumerable: false,
-        set: function(v){ __docStore = v; window.__docxData = v; },
-        get: function(){ return __docStore; }
-      });
-    } catch(_) {}
-  } else {
-    try { window.__docxData = window.documentoAtual; } catch(_) {}
+      var s = localStorage.getItem('__dadosVisualizacao');
+      if (s) return JSON.parse(s);
+    } catch(_){}
+    return null;
   }
 
-  // 2) Helper para pegar campos de forma resiliente (flat ou aninhado)
-  function pick(obj){
-    for (var i=1;i<arguments.length;i++){
-      var k = arguments[i];
-      if (obj && typeof obj==='object' && obj[k]!=null && obj[k]!==undefined && obj[k]!== '') return obj[k];
+  // Public: to be called by the visualization flow (but we also auto-detect)
+  function capturarVariaveisDaVisualizacao(){
+    if (typeof showBusy==='function') showBusy('Gravando informações…');
+    var data = _composeFromMap();
+    _store(data);
+    if (typeof hideBusy==='function') hideBusy();
+    if (typeof showToast==='function') showToast('Informações da visualização gravadas.');
+  }
+  window.capturarVariaveisDaVisualizacao = capturarVariaveisDaVisualizacao;
+
+  // Auto-capture heuristic: watch for fields appearing and being filled
+  var _autoDone = false;
+  function _readyToCapture(){
+    var mapa = _readMap();
+    var filled = 0, total = 0;
+    for (var k in mapa){
+      if (!Object.prototype.hasOwnProperty.call(mapa,k)) continue;
+      total++;
+      var v = _val(mapa[k]);
+      if (v) filled++;
     }
-    return '';
+    // Consider ready if at least half of expected fields are present/filled
+    return total > 0 && filled >= Math.ceil(total/2);
   }
-  function joinAddrFlat(o, prefix){
-    var l = []; // rua, num, compl
-    var log = pick(o, 'logradouro'+prefix, 'logradouro_'+prefix, 'rua'+prefix, 'endereco'+prefix);
-    var num = pick(o, 'numero'+prefix, 'numero_'+prefix);
-    var comp = pick(o, 'complemento'+prefix, 'complemento_'+prefix);
-    if (log) l.push(String(log));
-    if (num) l.push(String(num));
-    if (comp) l.push(String(comp));
-    var linha1 = l.join(', ');
-    var linha2 = [];
-    var bai = pick(o, 'bairro'+prefix, 'bairro_'+prefix);
-    var cid = pick(o, 'cidade'+prefix, 'cidade_'+prefix);
-    var uf  = pick(o, 'uf'+prefix, 'uf_'+prefix, 'estado'+prefix);
-    var cep = pick(o, 'cep'+prefix, 'cep_'+prefix);
-    if (bai) linha2.push(String(bai));
-    var ciduf='';
-    if (cid || uf){ ciduf = (cid||'') + '/' + (uf||''); linha2.push(ciduf); }
-    if (cep) linha2.push('CEP '+String(cep));
-    var base = linha1;
-    if (linha2.length) base += (base?' — ':'') + linha2.join(' — ');
-    return base;
+  function _autoTry(){
+    if (_autoDone) return;
+    if (_readyToCapture()){
+      capturarVariaveisDaVisualizacao();
+      _autoDone = true;
+    }
   }
+  document.addEventListener('DOMContentLoaded', function(){
+    // try shortly after load, and a few times later as viewer initializes
+    setTimeout(_autoTry, 400);
+    setTimeout(_autoTry, 1200);
+    setTimeout(_autoTry, 2500);
+    var iv = setInterval(function(){
+      if (_autoDone) { clearInterval(iv); return; }
+      _autoTry();
+    }, 2000);
+  });
 
-  function normalizarPayload(d){
-    var p = {};
-    // chaves principais (tentando flat e nested)
-    p.codigo = pick(d, 'codigo', 'projeto', 'id') || 'DOC';
-    p.servico = pick(d, 'servico', 'descricao_servico', 'descricao');
-    p.endereco = pick(d, 'endereco', 'endereco_obra', 'obra_endereco');
-    if (!p.endereco) p.endereco = joinAddrFlat(d, 'Obra');
-
-    p.valor = pick(d, 'valor', 'valor_total', 'preco');
-    p.valorExtenso = pick(d, 'valorExtenso', 'valor_extenso', 'valor_por_extenso');
-    p.prazo = pick(d, 'prazo', 'prazo_dias');
-    p.dataExtenso = pick(d, 'dataExtenso', 'data_extenso');
-
-    p.clausulas = pick(d, 'clausulas', 'texto_clausulas');
-    p.condicoes = pick(d, 'condicoes', 'condicoes_pagamento', 'condicoes_gerais');
-
-    // contratante
-    p.nomeContratante = pick(d, 'contratante_nome', 'nomeContratante', 'contratanteNome');
-    p.docContratante  = pick(d, 'contratante_CNPJ', 'contratante_cnpj', 'docContratante');
-    p.contatoContratante = pick(d, 'contratante_contato', 'contatoContratante');
-    p.logradouroContratante = pick(d, 'contratante_endereco', 'logradouroContratante');
-    if (!p.logradouroContratante) p.logradouroContratante = joinAddrFlat(d, 'Contratante');
-
-    // contratada
-    p.nomeContratada  = pick(d, 'contratada_nome', 'nomeContratada', 'contratadaNome');
-    p.docContratada   = pick(d, 'contratada_CNPJ', 'contratada_cnpj', 'docContratada');
-    p.contatoContratada = pick(d, 'contratada_contato', 'contatoContratada');
-    p.logradouroContratada = pick(d, 'contratada_endereco', 'logradouroContratada');
-    if (!p.logradouroContratada) p.logradouroContratada = joinAddrFlat(d, 'Contratada');
-
-    // aliases esperados no PHP / template
-    p.endereco_obra = p.endereco;
-    p.valor_extenso = p.valorExtenso;
-    return p;
-  }
-
-  // 3) Geração do DOCX usando o objeto do PDF (ou fallback)
-  function gerarContratoViaPDFData(){
-    var d = window.__docxData || window.documentoAtual || null;
-    if (!d){
-      alert('Ainda não há dados do documento. Abra o resumo (etapa do PDF) e tente novamente.');
+  // DOCX generator using stored JSON
+  function gerarContratoDoJSON(){
+    var dados = _loadStored();
+    if (!dados){
+      // fall back to reading live
+      dados = _composeFromMap();
+      _store(dados);
+    }
+    if (!dados || !dados.servico){
+      alert('Dados da visualização não encontrados. Abra a visualização antes de gerar o contrato.');
       return;
     }
-    var payload = normalizarPayload(d);
-    if (!payload.servico){
-      alert('Dados do serviço ausentes no documento. Verifique as informações.');
-      return;
-    }
+    if (typeof showBusy==='function') showBusy('Processando…');
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/gerador/gerar_docx.php', true);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.responseType = 'blob';
     xhr.onload = function(){
-      if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
-      var blob = xhr.response;
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = 'Contrato-' + (payload.codigo||'documento') + '.docx';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
+      try {
+        if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
+        var blob = xhr.response;
+        var url  = window.URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'Contrato-' + (dados.codigo || 'documento') + '.docx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function(){ window.URL.revokeObjectURL(url); }, 1200);
+        if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
+      } finally {
+        if (typeof hideBusy==='function') hideBusy();
+      }
     };
-    xhr.onerror = function(){ alert('Erro de rede ao gerar contrato.'); };
-    xhr.send(JSON.stringify(payload));
+    xhr.onerror = function(){
+      if (typeof hideBusy==='function') hideBusy();
+      alert('Erro de rede ao gerar contrato.');
+    };
+    xhr.send(JSON.stringify(dados));
   }
+  window.gerarContratoDoJSON = gerarContratoDoJSON;
 
-  // 4) Força o botão a usar somente esta função (sem mexer no restante do sistema)
+  // Bind ao botão existente, sem deixar handlers antigos dispararem
   document.addEventListener('DOMContentLoaded', function(){
     var b = document.getElementById('btnGerarDocx');
     if (!b) return;
-    try { b.onclick = null; b.removeAttribute('onclick'); } catch(_){}
+    try { b.onclick=null; b.removeAttribute('onclick'); } catch(_){}
     b.addEventListener('click', function(ev){
       try{ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }catch(_){}
-      gerarContratoViaPDFData();
+      gerarContratoDoJSON();
       return false;
     }, true);
   });
 })();
 </script>
 
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão Commit 3.0 – Atualizado em 15/10/2025</div>
 </body>
 </html>
