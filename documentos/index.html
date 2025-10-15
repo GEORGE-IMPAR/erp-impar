@@ -2062,5 +2062,82 @@ document.addEventListener('click', function(e) {
   document.addEventListener('DOMContentLoaded', () => setTimeout(enablePdfButtons, 200));
 })();
 </script>
+
+<!-- Patch: remover "Baixar PDF" do viewer e garantir "Gerar contrato.docx", "Compartilhar" e "Fechar" -->
+<script>
+(function(){
+  // Remove botões/links com texto "Baixar PDF" no viewer
+  function removeBaixarPDF(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    const elems = Array.from(scope.querySelectorAll('button, a'));
+    elems.forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      if (txt === 'baixar pdf') {
+        el.remove();
+      }
+    });
+  }
+
+  // Garante botão "Gerar contrato.docx" sem depender do Baixar PDF
+  function ensureDocxButton(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    if (document.getElementById('btnGerarContratoDocx')) return;
+
+    // tenta achar a barra pela presença de "Compartilhar" e "Fechar"
+    let bar = Array.from(scope.querySelectorAll('div, header, nav')).find(el => {
+      const t = (el.textContent || '').toLowerCase();
+      return t.includes('compartilhar') && t.includes('fechar');
+    });
+    bar = bar || scope.querySelector('.modal-header, .toolbar, .pdf-toolbar') || scope;
+
+    // tenta herdar classe de botões existentes
+    const refBtn = bar.querySelector('button, a');
+    const cls = refBtn ? (refBtn.className || 'btn') : 'btn';
+
+    const btn = document.createElement('button');
+    btn.id = 'btnGerarContratoDocx';
+    btn.type = 'button';
+    btn.className = cls;
+    btn.textContent = 'Gerar contrato.docx';
+    btn.style.marginLeft = '8px';
+
+    // handler já existe no arquivo base (geraDOCXComViewer ou gerarContratoDocx)
+    const handler = (window.gerarDOCXComViewer || window.gerarContratoDocx || null);
+    btn.addEventListener('click', async () => {
+      try {
+        if (typeof handler === 'function') await handler();
+      } catch(e){
+        alert(e.message || 'Erro ao gerar DOCX');
+        console.error(e);
+      }
+    });
+
+    // inserir antes do "Fechar", se existir; senão, append
+    const fechar = Array.from(bar.querySelectorAll('button, a')).find(x => /fechar/i.test((x.textContent||'')));
+    if (fechar && fechar.parentNode) fechar.parentNode.insertBefore(btn, fechar);
+    else bar.appendChild(btn);
+  }
+
+  function onViewerOpen(){
+    // ordem: remove Baixar PDF, depois injeta DOCX
+    setTimeout(removeBaixarPDF, 10);
+    setTimeout(ensureDocxButton, 30);
+    setTimeout(ensureDocxButton, 200);
+  }
+
+  // Observa o abrir/fechar do viewer
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) onViewerOpen();
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+  document.addEventListener('DOMContentLoaded', () => setTimeout(onViewerOpen, 200));
+})();
+</script>
 </body>
 </html>
