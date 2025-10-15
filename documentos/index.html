@@ -2707,5 +2707,89 @@ document.addEventListener('click', function(e) {
   });
 })();
 </script>
+
+<!-- Hook: ao clicar em "Continuar", carregar dados pelo CÓDIGO (se houver) e preencher, depois deixa seguir para etapa 2 -->
+<script>
+(function(){
+  // Loading mínimo (se já existir, reaproveita)
+  function ensureLoading(){
+    if (document.getElementById('loadingOverlay')) return;
+    const s = document.createElement('style');
+    s.textContent = `#loadingOverlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:9999}
+    #loadingOverlay .box{background:#fff;padding:16px 20px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center}
+    #loadingOverlay .spin{width:22px;height:22px;border:3px solid #ddd;border-top-color:#555;border-radius:50%;animation:spin .9s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}`;
+    document.head.appendChild(s);
+    const ov=document.createElement('div');
+    ov.id='loadingOverlay';
+    ov.innerHTML='<div class="box"><div class="spin"></div><span>Carregando…</span></div>';
+    document.body.appendChild(ov);
+  }
+  function showLoading(){ ensureLoading(); const el=document.getElementById('loadingOverlay'); if (el) el.style.display='flex'; }
+  function hideLoading(){ const el=document.getElementById('loadingOverlay'); if (el) el.style.display='none'; }
+
+  async function carregarPorCodigo(code){
+    if (!code) return null;
+    if (typeof window.carregarRegistroPorCodigo === 'function') {
+      return await window.carregarRegistroPorCodigo(code);
+    }
+    if (typeof window.buscarPorCodigo === 'function') {
+      return await window.buscarPorCodigo(code);
+    }
+    if (typeof window.carregarRegistroPorId === 'function') {
+      try { return await window.carregarRegistroPorId(code); } catch(e){}
+    }
+    return null;
+  }
+
+  async function preencherViaFluxoOriginal(row){
+    if (!row) return;
+    if (typeof window.normalizeRowForFill === 'function' && typeof window.fillAllFromRow === 'function'){
+      const norm = window.normalizeRowForFill(row);
+      try { window.fillAllFromRow(norm); } catch(e){ console.error(e); }
+    }
+  }
+
+  function wireContinuar(){
+    // pega o botão "Continuar" (diversos seletores suportados)
+    let btn = document.querySelector('#btnContinuar, #continuar, button[name="continuar"], .btn-continuar');
+    if (!btn){
+      btn = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .find(el => /continuar/i.test((el.textContent || el.value || '').trim()));
+    }
+    if (!btn || btn._wiredLoadOnClick) return;
+
+    // listener em capture para rodar antes do handler padrão, sem bloquear
+    btn.addEventListener('click', async (ev)=>{
+      try{
+        const code = (document.getElementById('codigo')?.value || '').trim();
+        if (!code) return; // nada para carregar
+        showLoading();
+        let row = null;
+        try {
+          row = await carregarPorCodigo(code);
+          if (row && typeof row==='object'){
+            window.__actionRow = row;
+            window.documentoAtual = row;
+            await preencherViaFluxoOriginal(row);
+          }
+        } finally {
+          hideLoading();
+        }
+      }catch(e){ console.error('Auto-carregar por código falhou:', e); }
+      // não chamamos preventDefault: deixa o fluxo normal avançar para etapa 2
+    }, true);
+
+    btn._wiredLoadOnClick = true;
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    wireContinuar();
+    // tentativa extra caso o botão seja recriado depois
+    setTimeout(wireContinuar, 500);
+    setTimeout(wireContinuar, 1500);
+  });
+})();
+</script>
 </body>
 </html>
