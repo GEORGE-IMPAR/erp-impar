@@ -1936,10 +1936,40 @@ document.addEventListener('click', function(e) {
   }
 
   async function gerarDOCX(){
-    if (!window.documentoAtual || typeof window.documentoAtual !== 'object'){
-      alert('Abra um documento primeiro para gerar o contrato.');
-      return;
+  try {
+    let payload;
+    if (window.documentoAtual && typeof window.documentoAtual === 'object'){
+      payload = mapearRegistro(window.documentoAtual);
+    } else if (typeof coletarDoFormulario === 'function') {
+      payload = coletarDoFormulario();
+    } else {
+      payload = {}; // mínimo, para não travar
     }
+
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const codigo = (payload && (payload.codigo || payload.CODIGO || payload.code)) || 'CONTRATO';
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch(e){
+    alert(e.message || 'Falha ao gerar DOCX.');
+    console.error(e);
+  }
+}
     const payload = mapearRegistro(window.documentoAtual);
     const resp = await fetch(URL_DOCX, {
       method: 'POST',
@@ -2006,385 +2036,5 @@ document.addEventListener('click', function(e) {
   });
 })();
 </script>
-
-<script>
-function proceedFromStep1() {
-  const codigo = (document.getElementById('codigo')?.value || '').trim();
-  if (!codigo) return;
-  try {
-    if (typeof showBusy === 'function') showBusy('Buscando documento pelo código...');
-    const _fetch = (typeof fetchConsulta === 'function') ? fetchConsulta(codigo) : Promise.reject(new Error('fetchConsulta não disponível'));
-    Promise.resolve(_fetch).then((res) => {
-      const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
-      if (rows.length === 1) {
-        const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(rows[0]) : rows[0];
-        if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
-        try {
-          const mirrors = document.querySelectorAll('[id^="codigoVal"]');
-          mirrors.forEach(el => { el.textContent = codigo; });
-        } catch(e) {}
-        if (typeof goTo === 'function') goTo(2);
-      } else if (rows.length === 0) {
-        (window.toast?.error || window.alert)('Código não encontrado.');
-      } else {
-        (window.toast?.error || window.alert)('Mais de um documento com esse código.');
-      }
-    }).catch((err) => {
-      (window.toast?.error || window.alert)('Falha ao buscar o documento.');
-      console.error(err);
-    }).finally(() => {
-      if (typeof hideBusy === 'function') hideBusy();
-    });
-  } catch (err) {
-    if (typeof hideBusy === 'function') hideBusy();
-    (window.toast?.error || window.alert)('Falha ao buscar o documento.');
-    console.error(err);
-  }
-}
-</script>
-
-
-<script>
-// Chama delete.php para deduplicar por CÓDIGO antes de carregar o documento
-async function dedupeByCodigo(codigo) {
-  const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
-  const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
-  if (!LIST_URL || !SAVE_TOKEN || !codigo) return {ok:false, skipped:true};
-
-  // base da API a partir do list.php
-  const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
-  const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
-
-  if (!delUrl) return {ok:false, skipped:true};
-
-  const body = new URLSearchParams();
-  body.set('token', SAVE_TOKEN);
-  body.set('codigo', String(codigo));
-  body.set('keep', 'newest'); // manter o mais recente
-
-  try {
-    const res = await fetch(delUrl, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body
-    });
-    const json = await res.json().catch(()=>({}));
-    return json;
-  } catch (e) {
-    console.warn('dedupeByCodigo falhou', e);
-    return {ok:false, error:String(e)};
-  }
-}
-
-// Mantém a função original e cria um wrapper que roda o dedupe antes
-const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
-
-function proceedFromStep1_Dedupe(){ return proceedFromStep1(); }
-function proceedFromStep1_Trator(){ return proceedFromStep1(); } catch (e) {
-    console.warn('Erro no dedupe:', e);
-  } finally {
-    if (typeof hideBusy === 'function') hideBusy();
-  }
-  if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
-}
-
-// Redireciona o botão para o wrapper (sem mexer no HTML)
-window.addEventListener('DOMContentLoaded', () => {
-  const btn = document.getElementById('bar1');
-  if (btn) btn.setAttribute('onclick', 'proceedFromStep1_Dedupe()');
-});
-</script>
-
-
-<script>
-// Normaliza código: tira espaços e não-alfanuméricos, upper-case
-function normCodigo(v){
-  return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
-}
-
-(function(){
-  if (typeof proceedFromStep1 !== 'function') return;
-  const __orig_fetch = (typeof fetchConsulta === 'function') ? fetchConsulta : null;
-
-  window.proceedFromStep1 = function() {
-    const raw = (document.getElementById('codigo')?.value || '').trim();
-    const codigo = normCodigo(raw);
-    if (!codigo) return;
-    try {
-      if (typeof showBusy === 'function') showBusy('Buscando documento pelo código...');
-      const p = __orig_fetch ? __orig_fetch(raw) : Promise.reject(new Error('fetchConsulta não disponível'));
-      Promise.resolve(p).then(res => {
-        const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
-        // Log de apoio no console
-        try {
-          console.log('[consulta] total rows:', rows.length);
-          console.log('[consulta] codes retornados:', rows.map(r => r.codigo));
-        } catch(e){}
-
-        // Filtra por código normalizado
-        const matches = rows.filter(r => normCodigo(r.codigo) === codigo);
-
-        if (matches.length === 0) {
-          /* código não encontrado: seguir para novo cadastro */ if (typeof goTo === 'function') goTo(2); return;
-        }
-
-        // Escolhe o mais recente quando houver mais de um
-        function t(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
-        matches.sort((a,b)=> (t(b.updated_at||b.created_at||b.data) - t(a.updated_at||a.created_at||a.data)));
-        const row = matches[0];
-
-        const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(row) : row;
-        if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
-        try {
-          const mirrors = document.querySelectorAll('[id^="codigoVal"]');
-          mirrors.forEach(el => { el.textContent = raw; });
-        } catch(e) {}
-        if (typeof goTo === 'function') goTo(2);
-      }).catch(err => {
-        (window.toast?.error || window.alert)('Falha ao buscar o documento.');
-        console.error(err);
-      }).finally(()=>{
-        if (typeof hideBusy === 'function') hideBusy();
-      });
-    } catch(e){
-      if (typeof hideBusy === 'function') hideBusy();
-      (window.toast?.error || window.alert)('Falha ao buscar o documento.');
-      console.error(e);
-    }
-  };
-})();
-</script>
-
-
-<script>
-// --------- DEDUPE GLOBAL AO ABRIR CONSULTA ---------
-async function dedupeAllByCodigo() {
-  const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
-  const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
-  if (!LIST_URL || !SAVE_TOKEN) return {ok:false, skipped:true};
-
-  const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
-  const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
-  if (!delUrl) return {ok:false, skipped:true};
-
-  // Busca todos os registros
-  const form = new URLSearchParams();
-  form.set('token', SAVE_TOKEN);
-  // sem codigo => lista completa
-  const res = await fetch(LIST_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
-  const j = await res.json().catch(()=>({rows:[]}));
-  const rows = Array.isArray(j.rows) ? j.rows : [];
-  // Agrupa por codigo (normalizado)
-  const norm = v => String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
-  const groups = new Map();
-  for (const r of rows) {
-    const c = norm(r.codigo);
-    if (!c) continue;
-    if (!groups.has(c)) groups[c] = [];
-    (groups[c] || groups.set(c, [])).push(r);
-  }
-  // Para cada codigo com mais de 1, chama delete.php (keep=newest)
-  let affected = 0;
-  for (const [code, arr] of Object.entries(groups)) {
-    if (!Array.isArray(arr) || arr.length <= 1) continue;
-    affected++;
-    const body = new URLSearchParams();
-    body.set('token', SAVE_TOKEN);
-    body.set('codigo', code);
-    body.set('keep', 'newest');
-    try {
-      await fetch(delUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
-    } catch(e) {
-      console.warn('dedupe codigo falhou', code, e);
-    }
-  }
-  return {ok:true, affected};
-}
-
-// Envolve a abertura do modal de consulta (ou o clique do botão "Consulta") para rodar dedupe antes
-(function(){
-  // Tenta interceptar a função do botão de Consulta (se houver)
-  const openers = [];
-  // Caso exista uma função showConsultaModal() ou similar, você pode adaptar aqui.
-  // Como fallback, ligamos no botão #btnConsulta (se existir) e no botão que abre o modal (#openConsulta, etc.).
-  window.addEventListener('DOMContentLoaded', () => {
-    const candidates = [
-      document.getElementById('btnConsulta'),
-      document.querySelector('[data-open="consulta"]'),
-      document.getElementById('openConsulta'),
-      document.querySelector('button.consulta'),
-      document.querySelector('#consultaModalButton')
-    ].filter(Boolean);
-
-    candidates.forEach(btn => {
-      const originalOnClick = btn.getAttribute('onclick');
-      btn.setAttribute('onclick', '');
-      btn.addEventListener('click', async (ev) => {
-        try {
-          if (typeof showBusy === 'function') showBusy('Eliminando duplicados...');
-          await dedupeAllByCodigo();
-        } catch(e) {
-          console.warn('dedupeAllByCodigo erro', e);
-        } finally {
-          if (typeof hideBusy === 'function') hideBusy();
-        }
-        // Reexecuta o handler original, se havia
-        if (originalOnClick) {
-          try { new Function(originalOnClick).call(btn); } catch(e){ console.error(e); }
-        }
-      });
-    });
-  });
-})();
-</script>
-
-
-<script>
-// Dedupe antes do "Buscar" na Consulta (modal e inline)
-window.addEventListener('DOMContentLoaded', () => {
-  const hookButton = (btn) => {
-    if (!btn) return;
-    const original = btn.getAttribute('onclick');
-    btn.setAttribute('onclick', '');
-    btn.addEventListener('click', async (ev) => {
-      try {
-        if (typeof showBusy === 'function') showBusy('Eliminando duplicados...');
-        // Tenta localizar o input de código relacionado a este botão
-        let input = null;
-        // Busca por ids conhecidos
-        input = document.getElementById('consCodigo') || document.getElementById('consCodigoInline');
-        // Se não achou, tenta subir DOM e achar input[type=text] mais próximo
-        if (!input) {
-          const container = btn.closest('form, .modal, .screen, body');
-          if (container) {
-            input = container.querySelector('input[type="text"], input[type="search"]');
-          }
-        }
-        const raw = (input && input.value) ? String(input.value).trim() : '';
-        if (raw) {
-          // Dedupe somente daquele código (mantém o mais recente)
-          await dedupeByCodigo(raw);
-        } else {
-          // Se nenhum código digitado, faz um dedupe global rápido
-          if (typeof dedupeAllByCodigo === 'function') {
-            await dedupeAllByCodigo();
-          }
-        }
-      } catch (e) {
-        console.warn('dedupe antes do buscar falhou', e);
-      } finally {
-        if (typeof hideBusy === 'function') hideBusy();
-      }
-      // Executa o handler original do botão
-      if (original) {
-        try { new Function(original).call(btn); } catch (e) { console.error(e); }
-      }
-    });
-  };
-
-  hookButton(document.getElementById('btnBuscar'));        // botão no modal
-  hookButton(document.getElementById('btnBuscarInline'));  // botão inline na etapa 1
-});
-</script>
-
-
-<script>
-// ------- DEDUPE NO CLIENTE ANTES DE RENDERIZAR AS LINHAS -------
-(function(){
-  // normaliza código para agrupar variações (maiúsculas e sem símbolos)
-  function normCodigo(v){ return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase(); }
-  function stamp(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
-  function pickNewest(arr){
-    return [...arr].sort((a,b)=> (stamp(b.updated_at||b.created_at||b.data) - stamp(a.updated_at||a.created_at||a.data)))[0] || arr[0];
-  }
-  function dedupeRowsClient(rows){
-    if (!Array.isArray(rows)) return [];
-    const groups = new Map();
-    for (const r of rows){
-      const key = normCodigo(r.codigo);
-      if (!key) continue;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(r);
-    }
-    const out = [];
-    for (const [key, arr] of groups.entries()){
-      if (arr.length === 1){ out.push(arr[0]); continue; }
-      out.push(pickNewest(arr));
-    }
-    // mantém ordem aproximada por data desc para visualização consistente
-    out.sort((a,b)=> (stamp(b.updated_at||b.created_at||b.data) - stamp(a.updated_at||a.created_at||a.data)));
-    return out;
-  }
-
-  // Envolve renderRows para aplicar dedupe automaticamente
-  const __renderRows = window.renderRows;
-  window.renderRows = function(tbodyId, rows){
-    try {
-      rows = dedupeRowsClient(rows);
-    } catch(e){ console.warn('dedupeRowsClient erro', e); }
-    return __renderRows ? __renderRows(tbodyId, rows) : null;
-  };
-
-  // Mensagem inline quando código não encontrado segue igual;
-  // se quiser, poderia também dedupe no j.rows antes de checar length >0.
-})();
-</script>
-
-
-<script>
-// ===== Dedupe robusto (1 linha por CÓDIGO) =====
-(function(){
-  function normCodigo(v){ return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase(); }
-  function stamp(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
-  function pickNewest(arr){
-    return [...arr].sort((a,b)=> (stamp(b.updated_at||b.created_at||b.data) - stamp(a.updated_at||a.created_at||a.data)))[0] || arr[0];
-  }
-  window.dedupeRowsClient = function(rows){
-    if (!Array.isArray(rows)) return [];
-    const out = [];
-    const groups = new Map();
-    for (const r of rows){
-      const key = normCodigo(r && r.codigo);
-      if (!key) {
-        // Sem código: mantém na lista (não remove)
-        out.push(r);
-        continue;
-      }
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(r);
-    }
-    for (const [key, arr] of groups.entries()){
-      out.push(arr.length === 1 ? arr[0] : pickNewest(arr));
-    }
-    // Ordena por data desc apenas para apresentação
-    out.sort((a,b)=> (stamp((b&&b.updated_at)||(b&&b.created_at)||(b&&b.data)) - stamp((a&&a.updated_at)||(a&&a.created_at)||(a&&a.data))));
-    // Se por algum motivo zerar, garante fallback para os originais
-    if (out.length === 0 && rows.length > 0) return rows;
-    return out;
-  };
-
-  // Hooka o renderRows QUANDO ele existir (para não quebrar a página)
-  (function hookRenderRowsSafely(attempt=0){
-    const MAX_ATTEMPTS = 60; // ~6s
-    if (typeof window.renderRows === 'function'){
-      const __orig = window.renderRows;
-      if (!__orig.__dedupe_hooked){
-        window.renderRows = function(tbodyId, rows){
-          try { rows = window.dedupeRowsClient(rows); } catch(e){ console.warn('dedupeRowsClient erro', e); }
-          return __orig.call(this, tbodyId, rows);
-        };
-        window.renderRows.__dedupe_hooked = true;
-      }
-      return;
-    }
-    if (attempt < MAX_ATTEMPTS) {
-      setTimeout(()=>hookRenderRowsSafely(attempt+1), 100);
-    } else {
-      console.warn('renderRows não encontrado para dedupe.');
-    }
-  })();
-})();
-</script>
-
 </body>
 </html>
