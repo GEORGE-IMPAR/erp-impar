@@ -2526,5 +2526,91 @@ document.addEventListener('click', function(e) {
   });
 })();
 </script>
+
+<!-- Wire viewer "Atualizar informações" to original update flow (normalizeRowForFill + fillAllFromRow) -->
+<script>
+(function(){
+  function suppressLegacyMsgs(){
+    const texts = ['o que você deseja fazer?','precisa gerar o pdf'];
+    document.querySelectorAll('.modal, .swal2-popup, [role="dialog"], .dialog').forEach(m => {
+      const t = (m.textContent||'').toLowerCase();
+      if (texts.some(x => t.includes(x))) { try{m.remove();}catch(e){ m.style.display='none'; } }
+    });
+  }
+  function focusContinuar(){
+    let btn = document.querySelector('#btnContinuar, #continuar, button[name="continuar"], .btn-continuar');
+    if (!btn){
+      btn = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .find(el => /continuar/i.test((el.textContent || el.value || '').trim()));
+    }
+    if (btn){
+      try { btn.disabled = false; btn.removeAttribute('disabled'); } catch(e){}
+      try { btn.focus(); } catch(e){}
+    }
+  }
+  function closeViewer(){
+    const v = document.getElementById('viewer');
+    if (v) v.style.display='none';
+  }
+
+  function wireViewerUpdate(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    const btn = Array.from(scope.querySelectorAll('button, a'))
+      .find(el => /^atualizar informações$/i.test((el.textContent||'').trim()));
+    if (!btn || btn._viewerUpdateWired) return;
+
+    btn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      suppressLegacyMsgs();
+
+      // Compose the "row" exactly like the modal flow expects
+      var row = null;
+      if (window.__actionRow && typeof window.__actionRow==='object'){
+        row = window.__actionRow;
+      } else if (window.documentoAtual && typeof window.documentoAtual==='object'){
+        row = window.documentoAtual;
+      } else {
+        // last resort: minimal row with code from etapa 1
+        var codeInput = document.getElementById('codigo');
+        row = { codigo: codeInput ? codeInput.value : '' };
+      }
+
+      try {
+        // Chama o fluxo oficial do modal, sem abrir o modal:
+        if (typeof normalizeRowForFill === 'function' && typeof fillAllFromRow === 'function'){
+          var norm = normalizeRowForFill(row);
+          fillAllFromRow(norm);
+        }
+        // Encerra consulta/fecha telas auxiliares, se existir:
+        if (typeof closeConsulta === 'function') { try{ closeConsulta(); }catch(e){} }
+      } catch(e){
+        console.error('Atualização via viewer falhou:', e);
+      }
+
+      // Fecha viewer e destaca Continuar
+      closeViewer();
+      focusContinuar();
+
+      // Evita qualquer modal tardio
+      setTimeout(suppressLegacyMsgs, 50);
+      setTimeout(suppressLegacyMsgs, 200);
+    });
+
+    btn._viewerUpdateWired = true;
+  }
+
+  // Ao abrir a visualização, conecta
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) { setTimeout(wireViewerUpdate, 30); setTimeout(wireViewerUpdate, 150); }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+  document.addEventListener('DOMContentLoaded', ()=> setTimeout(wireViewerUpdate, 200));
+})();
+</script>
 </body>
 </html>
