@@ -2160,5 +2160,88 @@ function normCodigo(v){
 })();
 </script>
 
+
+<script>
+// --------- DEDUPE GLOBAL AO ABRIR CONSULTA ---------
+async function dedupeAllByCodigo() {
+  const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+  const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
+  if (!LIST_URL || !SAVE_TOKEN) return {ok:false, skipped:true};
+
+  const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
+  const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
+  if (!delUrl) return {ok:false, skipped:true};
+
+  // Busca todos os registros
+  const form = new URLSearchParams();
+  form.set('token', SAVE_TOKEN);
+  // sem codigo => lista completa
+  const res = await fetch(LIST_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
+  const j = await res.json().catch(()=>({rows:[]}));
+  const rows = Array.isArray(j.rows) ? j.rows : [];
+  // Agrupa por codigo (normalizado)
+  const norm = v => String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  const groups = new Map();
+  for (const r of rows) {
+    const c = norm(r.codigo);
+    if (!c) continue;
+    if (!groups.has(c)) groups[c] = [];
+    (groups[c] || groups.set(c, [])).push(r);
+  }
+  // Para cada codigo com mais de 1, chama delete.php (keep=newest)
+  let affected = 0;
+  for (const [code, arr] of Object.entries(groups)) {
+    if (!Array.isArray(arr) || arr.length <= 1) continue;
+    affected++;
+    const body = new URLSearchParams();
+    body.set('token', SAVE_TOKEN);
+    body.set('codigo', code);
+    body.set('keep', 'newest');
+    try {
+      await fetch(delUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+    } catch(e) {
+      console.warn('dedupe codigo falhou', code, e);
+    }
+  }
+  return {ok:true, affected};
+}
+
+// Envolve a abertura do modal de consulta (ou o clique do botão "Consulta") para rodar dedupe antes
+(function(){
+  // Tenta interceptar a função do botão de Consulta (se houver)
+  const openers = [];
+  // Caso exista uma função showConsultaModal() ou similar, você pode adaptar aqui.
+  // Como fallback, ligamos no botão #btnConsulta (se existir) e no botão que abre o modal (#openConsulta, etc.).
+  window.addEventListener('DOMContentLoaded', () => {
+    const candidates = [
+      document.getElementById('btnConsulta'),
+      document.querySelector('[data-open="consulta"]'),
+      document.getElementById('openConsulta'),
+      document.querySelector('button.consulta'),
+      document.querySelector('#consultaModalButton')
+    ].filter(Boolean);
+
+    candidates.forEach(btn => {
+      const originalOnClick = btn.getAttribute('onclick');
+      btn.setAttribute('onclick', '');
+      btn.addEventListener('click', async (ev) => {
+        try {
+          if (typeof showBusy === 'function') showBusy('Eliminando duplicados...');
+          await dedupeAllByCodigo();
+        } catch(e) {
+          console.warn('dedupeAllByCodigo erro', e);
+        } finally {
+          if (typeof hideBusy === 'function') hideBusy();
+        }
+        // Reexecuta o handler original, se havia
+        if (originalOnClick) {
+          try { new Function(originalOnClick).call(btn); } catch(e){ console.error(e); }
+        }
+      });
+    });
+  });
+})();
+</script>
+
 </body>
 </html>
