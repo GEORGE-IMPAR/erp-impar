@@ -2326,5 +2326,205 @@ document.addEventListener('click', function(e) {
   }, true);
 })();
 </script>
+
+<!-- Auto-carregar por CÓDIGO + ação completa do "Atualizar informações" com loading -->
+<script>
+(function(){
+  // ====== Loading overlay (mínimo e isolado) ======
+  function ensureLoading(){
+    if (document.getElementById('loadingOverlay')) return;
+    const s = document.createElement('style');
+    s.textContent = `
+      #loadingOverlay{
+        position: fixed; inset: 0; background: rgba(0,0,0,.35);
+        display:none; align-items:center; justify-content:center; z-index: 9999;
+      }
+      #loadingOverlay .box{
+        background:#fff; padding:16px 20px; border-radius:10px; font-family:inherit;
+        box-shadow: 0 10px 30px rgba(0,0,0,.25);
+        display:flex; align-items:center; gap:12px;
+      }
+      #loadingOverlay .spin{
+        width:22px; height:22px; border:3px solid #ddd; border-top-color:#555; border-radius:50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin{ to{ transform: rotate(360deg);} }
+    `;
+    document.head.appendChild(s);
+    const ov = document.createElement('div');
+    ov.id = 'loadingOverlay';
+    ov.innerHTML = '<div class="box"><div class="spin"></div><span>Carregando…</span></div>';
+    document.body.appendChild(ov);
+  }
+  function showLoading(){ ensureLoading(); document.getElementById('loadingOverlay').style.display='flex'; }
+  function hideLoading(){ const ov=document.getElementById('loadingOverlay'); if (ov) ov.style.display='none'; }
+
+  // ====== Supressão de mensagens indesejadas ======
+  function suppressMsgs(){
+    const texts = ['o que você deseja fazer?','precisa gerar o pdf'];
+    document.querySelectorAll('.modal, .swal2-popup, [role="dialog"], .dialog').forEach(m => {
+      const t = (m.textContent||'').toLowerCase();
+      if (texts.some(x => t.includes(x))) { try{m.remove();}catch(e){ m.style.display='none'; } }
+    });
+  }
+
+  // ====== Helpers de form ======
+  function setVal(id,val){
+    if (val===undefined || val===null) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    if ('value' in el) el.value = val; else el.textContent = val;
+  }
+  function fillIfExists(map){ Object.keys(map).forEach(id => setVal(id, map[id])); }
+
+  function preencherCamposDeTodasEtapas(reg){
+    if (!reg || typeof reg!=='object') return;
+    // Etapa 1 (básicos)
+    fillIfExists({
+      'codigo': reg.codigo,
+      'servico': reg.servico,
+      'endereco': reg.endereco_obra || reg.enderecoObra || reg.endereco
+    });
+    // Contratante
+    const cte = reg.contratante || {};
+    fillIfExists({
+      'nomeContratante': reg.contratante_nome || cte.nome,
+      'docContratante': reg.contratante_CNPJ || reg.contratante_doc || cte.cpfCnpj,
+      'contatoContratante': reg.contratante_contato || cte.contato,
+      'contratante_endereco': reg.contratante_endereco || cte.endereco
+    });
+    // Contratada
+    const cda = reg.contratada || {};
+    fillIfExists({
+      'nomeContratada': reg.contratada_nome || cda.nome,
+      'docContratada': reg.contratada_CNPJ || reg.contratada_doc || cda.cpfCnpj,
+      'contratada_endereco': reg.contratada_endereco || cda.endereco
+    });
+    // Demais campos comuns
+    fillIfExists({
+      'clausulas': reg.clausulas || reg.clausulas_texto,
+      'prazo': reg.prazo_dias || reg.prazo,
+      'valor': reg.valor,
+      'valorExtenso': reg.valor_extenso || reg.valorExtenso,
+      'condicoes': reg.condicoes || reg.condicoes_pagamento,
+      'dataExtenso': reg.data_extenso || reg.dataExtenso || reg.data
+    });
+  }
+
+  function habilitarEFocusContinuar(){
+    let btn = document.querySelector('#btnContinuar, #continuar, button[name="continuar"], .btn-continuar');
+    if (!btn){
+      btn = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'))
+        .find(el => /continuar/i.test((el.textContent || el.value || '').trim()));
+    }
+    if (btn){
+      try { btn.disabled = false; btn.removeAttribute('disabled'); } catch(e){}
+      try { btn.focus(); } catch(e){}
+    }
+  }
+
+  // ====== Carregar documento por CÓDIGO (usa funções existentes se houver) ======
+  async function carregarDocumentoPorCodigo(codigo){
+    if (!codigo) return null;
+    // 1) Funções conhecidas do app
+    if (typeof window.carregarRegistroPorCodigo === 'function'){
+      return await window.carregarRegistroPorCodigo(codigo);
+    }
+    if (typeof window.buscarPorCodigo === 'function'){
+      return await window.buscarPorCodigo(codigo);
+    }
+    if (typeof window.carregarRegistroPorId === 'function'){
+      // alguns apps usam o próprio código como id
+      try { return await window.carregarRegistroPorId(codigo); } catch(e){}
+    }
+    // 2) Se não existir API conhecida, retornamos null (nada de chamadas externas aqui)
+    return null;
+  }
+
+  // ====== Fluxo principal acionado pelo botão "Atualizar informações" ======
+  function wireUpdateButton(){
+    const scope = document.getElementById('viewer');
+    if (!scope) return;
+    const btn = Array.from(scope.querySelectorAll('button, a'))
+      .find(el => /^atualizar informações$/i.test((el.textContent||'').trim()));
+    if (btn && !btn._wiredAtualizarLoad){
+      btn.addEventListener('click', async (ev)=>{
+        ev.preventDefault();
+        suppressMsgs(); // evita mensagens antigas
+        // define código no form a partir do documento da visualização, se houver
+        const reg = (window.documentoAtual && typeof window.documentoAtual==='object') ? window.documentoAtual : null;
+        if (reg && reg.codigo) setVal('codigo', reg.codigo);
+
+        // fecha o viewer
+        const viewer = document.getElementById('viewer');
+        if (viewer) viewer.style.display='none';
+
+        // Mostra "Carregando…" e busca os dados completos pelo código do form
+        const codigo = (document.getElementById('codigo')?.value || '').trim();
+        showLoading();
+        try{
+          const dados = await carregarDocumentoPorCodigo(codigo);
+          if (dados && typeof dados==='object'){
+            window.documentoAtual = dados;           // mantemos como estado atual
+            preencherCamposDeTodasEtapas(dados);     // preenche todos os campos
+          } else if (reg) {
+            // fallback: ao menos preenche com o que estava no viewer
+            window.documentoAtual = reg;
+            preencherCamposDeTodasEtapas(reg);
+          }
+        } finally {
+          hideLoading();
+        }
+
+        // habilita e foca "Continuar"
+        habilitarEFocusContinuar();
+        // suprime qualquer modal tardio
+        setTimeout(suppressMsgs, 50);
+        setTimeout(suppressMsgs, 250);
+      });
+      btn._wiredAtualizarLoad = true;
+    }
+  }
+
+  // ====== Auto-load quando o CÓDIGO for preenchido manualmente ======
+  function wireCodigoAutoLoad(){
+    const input = document.getElementById('codigo');
+    if (!input || input._wiredCodigoAutoLoad) return;
+    const trigger = async () => {
+      const code = (input.value||'').trim();
+      if (!code) return;
+      showLoading();
+      try{
+        const dados = await carregarDocumentoPorCodigo(code);
+        if (dados && typeof dados==='object'){
+          window.documentoAtual = dados;
+          preencherCamposDeTodasEtapas(dados);
+        }
+      } finally {
+        hideLoading();
+      }
+    };
+    input.addEventListener('change', trigger);
+    input.addEventListener('blur', trigger);
+    input.addEventListener('keyup', (e)=>{ if (e.key==='Enter') trigger(); });
+    input._wiredCodigoAutoLoad = true;
+  }
+
+  // Observa o viewer abrir para conectar o botão renomeado
+  const viewer = document.getElementById('viewer');
+  if (viewer){
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) { setTimeout(wireUpdateButton, 30); setTimeout(wireUpdateButton, 150); }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    wireCodigoAutoLoad();
+    setTimeout(wireUpdateButton, 200);
+  });
+})();
+</script>
 </body>
 </html>
