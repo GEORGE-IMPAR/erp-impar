@@ -2079,12 +2079,6 @@ async function dedupeByCodigo(codigo) {
 // Mantém a função original e cria um wrapper que roda o dedupe antes
 const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
 
-function proceedFromStep1_Dedupe(){ return proceedFromStep1(); }
-function proceedFromStep1_Trator(){ return proceedFromStep1(); } catch (e) {
-    console.warn('Erro no dedupe:', e);
-  } finally {
-    if (typeof hideBusy === 'function') hideBusy();
-  }
   if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
 }
 
@@ -2387,7 +2381,39 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 
 
-<!-- === v2.0 CLEAN: Gerar DOCX sem depender do PDF === -->
+<!-- === HOTFIX proceedFromStep1 wrapper (sem erro de sintaxe) === -->
+<script>
+(function(){
+  var __orig_proceedFromStep1 = (typeof window.proceedFromStep1 === 'function') ? window.proceedFromStep1 : function(){};
+
+  window.proceedFromStep1_Dedupe = function(){
+    try {
+      return __orig_proceedFromStep1();
+    } catch(e){
+      try { console.warn('Erro no dedupe:', e); } catch(_){}
+    } finally {
+      if (typeof window.hideBusy === 'function') window.hideBusy();
+    }
+  };
+
+  window.proceedFromStep1_Trator = window.proceedFromStep1_Dedupe;
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var btn = document.getElementById('bar1');
+    if (btn){
+      try { btn.onclick = null; btn.removeAttribute('onclick'); } catch(_){}
+      btn.addEventListener('click', function(ev){
+        try { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); } catch(_){}
+        window.proceedFromStep1_Dedupe();
+        return false;
+      }, true);
+    }
+  });
+})();
+</script>
+
+
+<!-- === DOCX v2.0 (independente do PDF) + override do botão === -->
 <script>
 function _gv(id){ var el=document.getElementById(id); return el ? (el.value||'').trim() : ''; }
 function _num(v){ v=(v||'').toString().replace(/\./g,'').replace(',','.'); var n=parseFloat(v); return isNaN(n)?0:n; }
@@ -2479,10 +2505,13 @@ function gerarContratoV20(){
 }
 document.addEventListener('DOMContentLoaded',function(){
   var b=document.getElementById('btnGerarDocx');
-  if(b){ b.onclick=null; b.removeAttribute('onclick'); b.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); gerarContratoV20(); return false; }, true); }
+  if(b){
+    try{ b.onclick=null; b.removeAttribute('onclick'); }catch(_){}
+    b.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); gerarContratoV20(); return false; }, true);
+  }
 });
 </script>
 
-<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão 2.0 – Atualizado em 15/10/2025</div>
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão 2.1 – Atualizado em 15/10/2025</div>
 </body>
 </html>
