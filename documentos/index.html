@@ -1904,7 +1904,7 @@ document.addEventListener('click', function(e) {
 </script>
 
 
-<!-- Botão "Gerar contrato.docx" somente no viewer -->
+<!-- Botão "Gerar contrato.docx" AO LADO do "Baixar PDF" no viewer -->
 <script>
 (function(){
   const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
@@ -1915,18 +1915,15 @@ document.addEventListener('click', function(e) {
       codigo: r.codigo,
       servico: r.servico,
       endereco_obra: r.endereco_obra || r.enderecoObra,
-      // CONTRATANTE
       contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
       contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
       contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
       contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
       contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
-      // CONTRATADA
       contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
       contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
       contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
       contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
-      // demais
       clausulas: r.clausulas || r.clausulas_texto,
       prazo_dias: r.prazo_dias || r.prazo,
       valor: r.valor,
@@ -1965,52 +1962,47 @@ document.addEventListener('click', function(e) {
     a.remove();
   }
 
-  function getViewerToolbar(){
-    // busca container que contém os botões "Baixar PDF", "Compartilhar" e "Fechar"
-    const candidates = Array.from(document.querySelectorAll('#viewer .modal-header, #viewer .toolbar, #viewer header, .pdf-toolbar, .modal-header')).filter(el=>{
-      const t = (el.textContent||'').toLowerCase();
-      return t.includes('baixar pdf') && t.includes('compartilhar') && t.includes('fechar');
-    });
-    return candidates[0] || document.querySelector('#viewer .modal-header, #viewer .toolbar');
-  }
-
-  function ensureDocxButton(){
-    const bar = getViewerToolbar();
-    if (!bar) return;
+  function ensureBtnNextToBaixarPDF(){
+    // procura o botão "Baixar PDF" dentro do viewer
+    const pdfBtn = Array.from(document.querySelectorAll('#viewer button, #viewer a'))
+      .find(el => /baixar\s*pdf/i.test((el.textContent||'').trim()));
+    if (!pdfBtn) return;
     if (document.getElementById('btnGerarContratoDocx')) return;
-    const anyBtn = bar.querySelector('button, a');
-    const cls = anyBtn ? (anyBtn.className||'btn') : 'btn';
+
     const btn = document.createElement('button');
     btn.id = 'btnGerarContratoDocx';
     btn.type = 'button';
-    btn.className = cls;
+    // herda a classe do "Baixar PDF" para ficar idêntico
+    btn.className = pdfBtn.className || 'btn';
+    btn.style.marginLeft = '8px';
     btn.textContent = 'Gerar contrato.docx';
     btn.addEventListener('click', async ()=>{
       try { await gerarDOCX(); } catch(e){ alert(e.message); console.error(e); }
     });
-    // inserir antes do "Fechar", se existir
-    const fechar = Array.from(bar.querySelectorAll('button, a')).find(x => /fechar/i.test(x.textContent||''));
-    if (fechar && fechar.parentNode) fechar.parentNode.insertBefore(btn, fechar);
-    else bar.appendChild(btn);
+
+    // insere logo depois do "Baixar PDF"
+    if (pdfBtn.parentNode) {
+      pdfBtn.parentNode.insertBefore(btn, pdfBtn.nextSibling);
+    }
   }
 
-  function watchViewer(){
+  // Observa o abrir do viewer
+  (function watchViewer(){
     const viewer = document.getElementById('viewer');
     if (!viewer) return;
     const obs = new MutationObserver(()=>{
       const visible = getComputedStyle(viewer).display !== 'none';
       if (visible) {
-        setTimeout(ensureDocxButton, 50);
-        setTimeout(ensureDocxButton, 200);
+        setTimeout(ensureBtnNextToBaixarPDF, 30);
+        setTimeout(ensureBtnNextToBaixarPDF, 200);
       }
     });
     obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
-  }
+  })();
 
+  // Caso o viewer já esteja aberto no load
   document.addEventListener('DOMContentLoaded', ()=>{
-    watchViewer();
-    // se o viewer já estiver aberto
-    setTimeout(ensureDocxButton, 100);
+    setTimeout(ensureBtnNextToBaixarPDF, 200);
   });
 })();
 </script>
