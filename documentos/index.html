@@ -2576,6 +2576,45 @@ window.addEventListener('DOMContentLoaded', () => {
     if (cnt === 0) ov.style.display = 'none';
   };
 })();
+
+// Intercepta QUALQUER clique no botão "Gerar contrato.docx" e bloqueia handlers antigos
+(function(){
+  function ehBotaoDocx(el){
+    if (!el) return false;
+    // sobe até o botão/elemento clicável
+    while (el && el !== document.body) {
+      var tag = (el.tagName || '').toLowerCase();
+      if (tag === 'button' || tag === 'a' || el.hasAttribute('role')) {
+        var t = (el.innerText || el.textContent || '').trim().toLowerCase();
+        if (t.indexOf('gerar contrato.docx') !== -1 || t.indexOf('gerar contrato') !== -1) return el;
+      }
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  // captura (true) garante que rodamos ANTES dos handlers antigos
+  document.addEventListener('click', function(ev){
+    var alvo = ehBotaoDocx(ev.target);
+    if (!alvo) return; // não é o botão
+
+    try { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); } catch(_) {}
+
+    // garante que temos o JSON; se não tiver, tenta capturar agora a partir da visualização
+    if (!window.__dadosVisualizacao && typeof capturarVariaveisDaVisualizacao === 'function'){
+      try { capturarVariaveisDaVisualizacao(); } catch(_){}
+    }
+
+    // chama SOMENTE o nosso gerador
+    if (typeof gerarContratoDoJSON === 'function'){
+      gerarContratoDoJSON();
+    } else {
+      alert('Rotina do contrato não carregada.');
+    }
+    return false;
+  }, true);
+})();
+
 </script>
 
 </body>
