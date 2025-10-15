@@ -2279,5 +2279,52 @@ document.addEventListener('click', function(e) {
   document.addEventListener('DOMContentLoaded', ()=> setTimeout(wireUpdateButton, 200));
 })();
 </script>
+
+<!-- Remoção da mensagem "O que você deseja fazer?" após atualizar pela visualização -->
+<script>
+(function(){
+  // Ativa supressão do modal por alguns segundos
+  window._suppressEscolhaModalOnce = function(){
+    let active = true;
+    const deadline = Date.now() + 6000; // 6s de guarda
+    
+    function sweep(){
+      if (!active) return;
+      const modals = document.querySelectorAll('.modal, .swal2-popup, [role="dialog"], .dialog');
+      modals.forEach(m => {
+        const txt = (m.textContent || '').toLowerCase();
+        if (txt.includes('o que você deseja fazer?')) {
+          // remove a mensagem para não reaparecer
+          try { m.remove(); } catch(e){ m.style.display='none'; }
+        }
+      });
+      if (Date.now() > deadline) active = false;
+    }
+
+    // Vários passes + observer para pegar abertura assíncrona
+    sweep();
+    setTimeout(sweep, 50);
+    setTimeout(sweep, 150);
+    setTimeout(sweep, 400);
+    setTimeout(sweep, 1000);
+    const obs = new MutationObserver(sweep);
+    obs.observe(document.body, {childList:true, subtree:true});
+    setTimeout(()=>{ active=false; try{obs.disconnect();}catch(e){}; }, 6500);
+  };
+
+  // Integra com o handler do botão "Atualizar informações" já injetado
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target && ev.target.closest('#viewer button, #viewer a');
+    if (!btn) return;
+    const label = (btn.textContent || '').trim().toLowerCase();
+    if (label === 'atualizar informações') {
+      // aciona a supressão do modal antes de fechar a visualização
+      if (typeof window._suppressEscolhaModalOnce === 'function') {
+        window._suppressEscolhaModalOnce();
+      }
+    }
+  }, true);
+})();
+</script>
 </body>
 </html>
