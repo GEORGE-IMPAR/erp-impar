@@ -1936,7 +1936,7 @@ document.addEventListener('click', function(e) {
   }
 
   async function gerarDOCX(){
-    // checagem removida para permitir geração direta do DOCX
+    /* guarda removida: podemos gerar direto */
     const payload = mapearRegistro(window.documentoAtual);
     const resp = await fetch(URL_DOCX, {
       method: 'POST',
@@ -2383,11 +2383,9 @@ window.addEventListener('DOMContentLoaded', () => {
 })();
 </script>
 
-<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão 1.5 – Atualizado em 15/10/2025</div>
 
-<!-- ==== Mapa integrado + Loader DOCX (Opção A inline) ==== -->
-<script type="application/json" id="mapa_campos">
-{
+<!-- === Mapa de campos (inline, sem dependências externas) === -->
+<script type="application/json" id="mapa_campos">{
   "codigo": "#codigo",
   "servico": "#servico",
   "endereco": "#endereco",
@@ -2404,68 +2402,73 @@ window.addEventListener('DOMContentLoaded', () => {
   "valorExtenso": "#valorExtenso",
   "condicoes": "#condicoes",
   "dataExtenso": "#dataExtenso"
-}
-</script>
+}</script>
 
 <script>
-(function(){
-  function pegarValor(selector){
-    const el = document.querySelector(selector);
-    if(!el) return '';
-    if ('value' in el) return (el.value||'').trim();
-    return (el.textContent||'').trim();
-  }
-  function lerMapaInline(){
-    const tag = document.getElementById('mapa_campos');
-    if(!tag) throw new Error('Mapa de campos não encontrado');
-    return JSON.parse(tag.textContent);
-  }
-  async function gerarContratoViaMapa(){
-    try{
-      if (typeof showBusy==='function') showBusy('Processando…');
-      const mapa = lerMapaInline();
-      const payload = {};
-      for (const [placeholder, selector] of Object.entries(mapa)){
-        payload[placeholder] = pegarValor(selector);
-      }
-      if(!payload.codigo) payload.codigo = 'DOC';
-      if(!payload.servico){
-        alert('Preencha o campo Serviço antes de gerar o contrato.');
-        return;
-      }
-      const resp = await fetch('/api/gerador/gerar_docx.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-      });
-      if(!resp.ok) throw new Error('Falha ao gerar contrato (.docx)');
-      const blob = await resp.blob();
-      const url  = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Contrato-${payload.codigo}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 1500);
-      if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
-    } catch(e){
-      console.error(e);
-      alert('Erro ao gerar contrato. Verifique os dados.');
-    } finally {
-      if (typeof hideBusy==='function') hideBusy();
+function __pegarValor(sel){
+  var el = document.querySelector(sel);
+  if(!el) return '';
+  if (typeof el.value !== 'undefined') return (el.value || '').trim();
+  return (el.textContent || '').trim();
+}
+function __lerMapa(){
+  var tag = document.getElementById('mapa_campos');
+  if(!tag) { throw new Error('Mapa de campos não encontrado'); }
+  return JSON.parse(tag.textContent);
+}
+function gerarContratoViaMapa(){
+  try {
+    if (typeof showBusy === 'function') showBusy('Processando…');
+    var mapa = __lerMapa();
+    var payload = {};
+    for (var key in mapa){
+      if (!Object.prototype.hasOwnProperty.call(mapa, key)) continue;
+      payload[key] = __pegarValor(mapa[key]);
     }
+    if(!payload.codigo){ payload.codigo = 'DOC'; }
+    if(!payload.servico){
+      alert('Preencha o campo Serviço antes de gerar o contrato.');
+      return;
+    }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/gerador/gerar_docx.php', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.responseType = 'blob';
+    xhr.onload = function(){
+      try {
+        if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
+        var blob = xhr.response;
+        var url = window.URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'Contrato-' + (payload.codigo || 'documento') + '.docx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function(){ window.URL.revokeObjectURL(url); }, 1500);
+        if (typeof showToast === 'function') showToast('✅ Contrato gerado com sucesso!');
+      } finally {
+        if (typeof hideBusy === 'function') hideBusy();
+      }
+    };
+    xhr.onerror = function(){
+      if (typeof hideBusy === 'function') hideBusy();
+      alert('Erro de rede ao gerar contrato.');
+    };
+    xhr.send(JSON.stringify(payload));
+  } catch (e){
+    if (typeof hideBusy === 'function') hideBusy();
+    console.error(e);
+    alert('Erro ao gerar contrato. Verifique os dados.');
   }
-  // Amarra o botão único existente
-  window.addEventListener('DOMContentLoaded', function(){
-    const b = document.getElementById('btnGerarDocx');
-    if (b){ b.onclick = gerarContratoViaMapa; }
-  });
-  // Exponho global para compatibilidade, se o HTML chamar via onclick
-  window.gerarContratoViaMapa = gerarContratoViaMapa;
-})();
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var b = document.getElementById('btnGerarDocx');
+  if (b){ b.onclick = gerarContratoViaMapa; }
+});
 </script>
-<!-- ==== /Mapa inline ==== -->
+<!-- === /Mapa de campos === -->
 
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão 1.6 – Atualizado em 15/10/2025</div>
 </body>
 </html>
