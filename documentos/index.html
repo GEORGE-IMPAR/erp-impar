@@ -2077,16 +2077,16 @@ async function dedupeByCodigo(codigo) {
 }
 
 // Mantém a função original e cria um wrapper que roda o dedupe antes
-const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
 
-function proceedFromStep1_Dedupe(){ return proceedFromStep1(); }
-function proceedFromStep1_Trator(){ return proceedFromStep1(); } catch (e) {
-    console.warn('Erro no dedupe:', e);
-  } finally {
-    if (typeof hideBusy === 'function') hideBusy();
-  }
-  if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
-}
+(function(){
+  var __orig = (typeof window.proceedFromStep1==='function') ? window.proceedFromStep1 : function(){};
+  window.proceedFromStep1_Dedupe = function(){
+    try { return __orig(); }
+    catch(e){ try{ console.warn('Erro no dedupe:', e); }catch(_){} }
+    finally{ if (typeof window.hideBusy==='function') window.hideBusy(); }
+  };
+  window.proceedFromStep1_Trator = window.proceedFromStep1_Dedupe;
+})();
 
 // Redireciona o botão para o wrapper (sem mexer no HTML)
 window.addEventListener('DOMContentLoaded', () => {
@@ -2448,7 +2448,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Public: to be called by the visualization flow (but we also auto-detect)
   function capturarVariaveisDaVisualizacao(){
-    if (typeof showBusy==='function') showBusy('Gravando informações…');
+    if (typeof showBusy==='function') showBusy('Processando… Montando tabela de contratos');
     var data = _composeFromMap();
     _store(data);
     if (typeof hideBusy==='function') hideBusy();
@@ -2500,7 +2500,7 @@ window.addEventListener('DOMContentLoaded', () => {
       alert('Dados da visualização não encontrados. Abra a visualização antes de gerar o contrato.');
       return;
     }
-    if (typeof showBusy==='function') showBusy('Processando…');
+    if (typeof showBusy==='function') showBusy('Gerando contrato…');
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/gerador/gerar_docx.php', true);
     xhr.setRequestHeader('Content-Type', 'application/json');
@@ -2545,5 +2545,38 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão Commit 3.0 – Atualizado em 15/10/2025</div>
+
+<!-- Busy overlay (Processando...) -->
+<style>
+#busyOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:999999;}
+#busyOverlay .busy-card{background:#0a0a0a;color:#fff;padding:18px 22px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);display:flex;align-items:center;gap:12px;font:14px/1.35 Arial,Helvetica,sans-serif;min-width:280px;justify-content:center;}
+#busyOverlay .spinner{width:26px;height:26px;border:3px solid #fff;border-right-color:transparent;border-radius:50%;animation:busySpin .9s linear infinite;}
+@keyframes busySpin{to{transform:rotate(360deg)}}
+</style>
+<div id="busyOverlay" aria-live="polite" aria-busy="true">
+  <div class="busy-card">
+    <div class="spinner" role="status" aria-label="Carregando"></div>
+    <div id="busyText">Processando…</div>
+  </div>
+</div>
+<script>
+(function(){
+  var cnt = 0;
+  window.showBusy = function(text){
+    var ov = document.getElementById('busyOverlay');
+    var tx = document.getElementById('busyText');
+    if (!ov || !tx) return;
+    if (text) tx.textContent = text;
+    cnt++; ov.style.display = 'flex';
+  };
+  window.hideBusy = function(){
+    var ov = document.getElementById('busyOverlay');
+    if (!ov) return;
+    cnt = Math.max(0, cnt-1);
+    if (cnt === 0) ov.style.display = 'none';
+  };
+})();
+</script>
+
 </body>
 </html>
