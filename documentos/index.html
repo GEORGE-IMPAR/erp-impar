@@ -306,11 +306,6 @@ window.__CONSULTA_CFG__ = {
   }
 }
 </style>
-<style>
-.busy{background:rgba(0,0,0,.60)!important;}
-.busy .panel{background:#000!important;color:#fff!important;border:1px solid #222!important;box-shadow:0 10px 30px rgba(0,0,0,.5)!important}
-.spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.25)!important;border-top-color:#fff!important;border-radius:50%;animation:spin 1s linear infinite}
-</style>
 </head>
 <body>
 
@@ -2388,51 +2383,89 @@ window.addEventListener('DOMContentLoaded', () => {
 })();
 </script>
 
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão 1.5 – Atualizado em 15/10/2025</div>
+
+<!-- ==== Mapa integrado + Loader DOCX (Opção A inline) ==== -->
+<script type="application/json" id="mapa_campos">
+{
+  "codigo": "#codigo",
+  "servico": "#servico",
+  "endereco": "#endereco",
+  "nomeContratante": "#nomeContratante",
+  "logradouroContratante": "#logradouroContratante",
+  "docContratante": "#docContratante",
+  "contatoContratante": "#contatoContratante",
+  "nomeContratada": "#nomeContratada",
+  "logradouroContratada": "#logradouroContratada",
+  "docContratada": "#docContratada",
+  "clausulas": "#clausulas",
+  "prazo": "#prazo",
+  "valor": "#valor",
+  "valorExtenso": "#valorExtenso",
+  "condicoes": "#condicoes",
+  "dataExtenso": "#dataExtenso"
+}
+</script>
 
 <script>
 (function(){
-  function getVal(id){ var el=document.getElementById(id); return el ? (el.value||'').trim() : ''; }
-  function joinAddr(prefix){
-    var log=getVal('logradouro'+prefix), num=getVal('numero'+prefix), comp=getVal('complemento'+prefix),
-        bai=getVal('bairro'+prefix), cid=getVal('cidade'+prefix), uf=getVal('uf'+prefix), cep=getVal('cep'+prefix);
-    var base=(log?log:'')+(num?(', '+num):'')+(comp?(' - '+comp):''); 
-    base+=' — '+(bai||'')+' — '+(cid||'')+'/'+(uf||'')+' — CEP '+(cep||'');
-    return base.trim();
+  function pegarValor(selector){
+    const el = document.querySelector(selector);
+    if(!el) return '';
+    if ('value' in el) return (el.value||'').trim();
+    return (el.textContent||'').trim();
   }
-  function coletarPayload(){
-    var p={
-      codigo:getVal('codigo'), servico:getVal('servico'), endereco:getVal('endereco'),
-      valor:getVal('valor'), valorExtenso:getVal('valorExtenso'), prazo:getVal('prazo'),
-      dataExtenso:getVal('dataExtenso'), clausulas:getVal('clausulas'), condicoes:getVal('condicoes'),
-      contratante_nome:getVal('nomeContratante'), contratante_CNPJ:getVal('docContratante'),
-      contratante_endereco:joinAddr('Contratante'), contratante_contato:getVal('contatoContratante'),
-      contratante_telefone:getVal('telefoneContratante'), contratante_email:getVal('emailContratante'),
-      contratada_nome:getVal('nomeContratada'), contratada_CNPJ:getVal('docContratada'),
-      contratada_endereco:joinAddr('Contratada'), contratada_contato:getVal('contatoContratada'),
-      contratada_telefone:getVal('telefoneContratada'), contratada_email:getVal('emailContratada')
-    };
-    p.endereco_obra=p.endereco; p.valor_extenso=p.valorExtenso; p.prazo_dias=p.prazo;
-    if(!p.codigo) p.codigo='DOC';
-    return p;
+  function lerMapaInline(){
+    const tag = document.getElementById('mapa_campos');
+    if(!tag) throw new Error('Mapa de campos não encontrado');
+    return JSON.parse(tag.textContent);
   }
-  async function gerarContratoDocx(){
+  async function gerarContratoViaMapa(){
     try{
       if (typeof showBusy==='function') showBusy('Processando…');
-      var dados=coletarPayload();
-      if(!dados.codigo || !dados.servico){ alert('Preencha ao menos o Código e o Serviço antes de gerar o contrato.'); return; }
-      const resp=await fetch('/api/gerador/gerar_docx.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)});
+      const mapa = lerMapaInline();
+      const payload = {};
+      for (const [placeholder, selector] of Object.entries(mapa)){
+        payload[placeholder] = pegarValor(selector);
+      }
+      if(!payload.codigo) payload.codigo = 'DOC';
+      if(!payload.servico){
+        alert('Preencha o campo Serviço antes de gerar o contrato.');
+        return;
+      }
+      const resp = await fetch('/api/gerador/gerar_docx.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
       if(!resp.ok) throw new Error('Falha ao gerar contrato (.docx)');
-      const blob=await resp.blob(); const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download=`Contrato-${dados.codigo}.docx`; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1500);
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Contrato-${payload.codigo}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1500);
       if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
-    }catch(e){ console.error(e); alert('Erro ao gerar contrato. Verifique os dados.'); }
-    finally{ if (typeof hideBusy==='function') hideBusy(); }
+    } catch(e){
+      console.error(e);
+      alert('Erro ao gerar contrato. Verifique os dados.');
+    } finally {
+      if (typeof hideBusy==='function') hideBusy();
+    }
   }
-  window.addEventListener('DOMContentLoaded',function(){ var b=document.getElementById('btnGerarDocx'); if(b){ b.onclick=gerarContratoDocx; } });
+  // Amarra o botão único existente
+  window.addEventListener('DOMContentLoaded', function(){
+    const b = document.getElementById('btnGerarDocx');
+    if (b){ b.onclick = gerarContratoViaMapa; }
+  });
+  // Exponho global para compatibilidade, se o HTML chamar via onclick
+  window.gerarContratoViaMapa = gerarContratoViaMapa;
 })();
 </script>
+<!-- ==== /Mapa inline ==== -->
 
-<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#111;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.85;z-index:9999;">Versão 1.4 – Atualizado em 15/10/2025</div>
 </body>
 </html>
