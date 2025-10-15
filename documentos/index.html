@@ -2079,6 +2079,12 @@ async function dedupeByCodigo(codigo) {
 // Mantém a função original e cria um wrapper que roda o dedupe antes
 const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
 
+function proceedFromStep1_Dedupe(){ return proceedFromStep1(); }
+function proceedFromStep1_Trator(){ return proceedFromStep1(); } catch (e) {
+    console.warn('Erro no dedupe:', e);
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
   if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
 }
 
@@ -2381,137 +2387,133 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 
 
-<!-- === HOTFIX proceedFromStep1 wrapper (sem erro de sintaxe) === -->
+<!-- === v2.3 Adapter: usa o MESMO objeto do PDF (documentoAtual) sem alterar o fluxo === -->
 <script>
 (function(){
-  var __orig_proceedFromStep1 = (typeof window.proceedFromStep1 === 'function') ? window.proceedFromStep1 : function(){};
-
-  window.proceedFromStep1_Dedupe = function(){
+  // 1) Captura qualquer atribuição ao objeto usado pelo PDF
+  if (!('documentoAtual' in window)) {
+    var __docStore = null;
     try {
-      return __orig_proceedFromStep1();
-    } catch(e){
-      try { console.warn('Erro no dedupe:', e); } catch(_){}
-    } finally {
-      if (typeof window.hideBusy === 'function') window.hideBusy();
+      Object.defineProperty(window, 'documentoAtual', {
+        configurable: true,
+        enumerable: false,
+        set: function(v){ __docStore = v; window.__docxData = v; },
+        get: function(){ return __docStore; }
+      });
+    } catch(_) {}
+  } else {
+    try { window.__docxData = window.documentoAtual; } catch(_) {}
+  }
+
+  // 2) Helper para pegar campos de forma resiliente (flat ou aninhado)
+  function pick(obj){
+    for (var i=1;i<arguments.length;i++){
+      var k = arguments[i];
+      if (obj && typeof obj==='object' && obj[k]!=null && obj[k]!==undefined && obj[k]!== '') return obj[k];
     }
-  };
+    return '';
+  }
+  function joinAddrFlat(o, prefix){
+    var l = []; // rua, num, compl
+    var log = pick(o, 'logradouro'+prefix, 'logradouro_'+prefix, 'rua'+prefix, 'endereco'+prefix);
+    var num = pick(o, 'numero'+prefix, 'numero_'+prefix);
+    var comp = pick(o, 'complemento'+prefix, 'complemento_'+prefix);
+    if (log) l.push(String(log));
+    if (num) l.push(String(num));
+    if (comp) l.push(String(comp));
+    var linha1 = l.join(', ');
+    var linha2 = [];
+    var bai = pick(o, 'bairro'+prefix, 'bairro_'+prefix);
+    var cid = pick(o, 'cidade'+prefix, 'cidade_'+prefix);
+    var uf  = pick(o, 'uf'+prefix, 'uf_'+prefix, 'estado'+prefix);
+    var cep = pick(o, 'cep'+prefix, 'cep_'+prefix);
+    if (bai) linha2.push(String(bai));
+    var ciduf='';
+    if (cid || uf){ ciduf = (cid||'') + '/' + (uf||''); linha2.push(ciduf); }
+    if (cep) linha2.push('CEP '+String(cep));
+    var base = linha1;
+    if (linha2.length) base += (base?' — ':'') + linha2.join(' — ');
+    return base;
+  }
 
-  window.proceedFromStep1_Trator = window.proceedFromStep1_Dedupe;
+  function normalizarPayload(d){
+    var p = {};
+    // chaves principais (tentando flat e nested)
+    p.codigo = pick(d, 'codigo', 'projeto', 'id') || 'DOC';
+    p.servico = pick(d, 'servico', 'descricao_servico', 'descricao');
+    p.endereco = pick(d, 'endereco', 'endereco_obra', 'obra_endereco');
+    if (!p.endereco) p.endereco = joinAddrFlat(d, 'Obra');
 
+    p.valor = pick(d, 'valor', 'valor_total', 'preco');
+    p.valorExtenso = pick(d, 'valorExtenso', 'valor_extenso', 'valor_por_extenso');
+    p.prazo = pick(d, 'prazo', 'prazo_dias');
+    p.dataExtenso = pick(d, 'dataExtenso', 'data_extenso');
+
+    p.clausulas = pick(d, 'clausulas', 'texto_clausulas');
+    p.condicoes = pick(d, 'condicoes', 'condicoes_pagamento', 'condicoes_gerais');
+
+    // contratante
+    p.nomeContratante = pick(d, 'contratante_nome', 'nomeContratante', 'contratanteNome');
+    p.docContratante  = pick(d, 'contratante_CNPJ', 'contratante_cnpj', 'docContratante');
+    p.contatoContratante = pick(d, 'contratante_contato', 'contatoContratante');
+    p.logradouroContratante = pick(d, 'contratante_endereco', 'logradouroContratante');
+    if (!p.logradouroContratante) p.logradouroContratante = joinAddrFlat(d, 'Contratante');
+
+    // contratada
+    p.nomeContratada  = pick(d, 'contratada_nome', 'nomeContratada', 'contratadaNome');
+    p.docContratada   = pick(d, 'contratada_CNPJ', 'contratada_cnpj', 'docContratada');
+    p.contatoContratada = pick(d, 'contratada_contato', 'contatoContratada');
+    p.logradouroContratada = pick(d, 'contratada_endereco', 'logradouroContratada');
+    if (!p.logradouroContratada) p.logradouroContratada = joinAddrFlat(d, 'Contratada');
+
+    // aliases esperados no PHP / template
+    p.endereco_obra = p.endereco;
+    p.valor_extenso = p.valorExtenso;
+    return p;
+  }
+
+  // 3) Geração do DOCX usando o objeto do PDF (ou fallback)
+  function gerarContratoViaPDFData(){
+    var d = window.__docxData || window.documentoAtual || null;
+    if (!d){
+      alert('Ainda não há dados do documento. Abra o resumo (etapa do PDF) e tente novamente.');
+      return;
+    }
+    var payload = normalizarPayload(d);
+    if (!payload.servico){
+      alert('Dados do serviço ausentes no documento. Verifique as informações.');
+      return;
+    }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/gerador/gerar_docx.php', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.responseType = 'blob';
+    xhr.onload = function(){
+      if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
+      var blob = xhr.response;
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'Contrato-' + (payload.codigo||'documento') + '.docx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
+    };
+    xhr.onerror = function(){ alert('Erro de rede ao gerar contrato.'); };
+    xhr.send(JSON.stringify(payload));
+  }
+
+  // 4) Força o botão a usar somente esta função (sem mexer no restante do sistema)
   document.addEventListener('DOMContentLoaded', function(){
-    var btn = document.getElementById('bar1');
-    if (btn){
-      try { btn.onclick = null; btn.removeAttribute('onclick'); } catch(_){}
-      btn.addEventListener('click', function(ev){
-        try { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); } catch(_){}
-        window.proceedFromStep1_Dedupe();
-        return false;
-      }, true);
-    }
+    var b = document.getElementById('btnGerarDocx');
+    if (!b) return;
+    try { b.onclick = null; b.removeAttribute('onclick'); } catch(_){}
+    b.addEventListener('click', function(ev){
+      try{ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }catch(_){}
+      gerarContratoViaPDFData();
+      return false;
+    }, true);
   });
 })();
 </script>
 
-
-<!-- === DOCX v2.0 (independente do PDF) + override do botão === -->
-<script>
-function _gv(id){ var el=document.getElementById(id); return el ? (el.value||'').trim() : ''; }
-function _num(v){ v=(v||'').toString().replace(/\./g,'').replace(',','.'); var n=parseFloat(v); return isNaN(n)?0:n; }
-function _joinAddr(prefix){
-  var log=_gv('logradouro'+prefix), num=_gv('numero'+prefix), comp=_gv('complemento'+prefix);
-  var bai=_gv('bairro'+prefix), cid=_gv('cidade'+prefix), uf=_gv('uf'+prefix), cep=_gv('cep'+prefix);
-  var linha1 = (log||'') + (num?(', '+num):'') + (comp?(' - '+comp):'');
-  var linha2 = (bai||'') + ' — ' + (cid||'') + '/' + (uf||'') + ' — CEP ' + (cep||'');
-  return (linha1 && linha2) ? (linha1 + ' — ' + linha2) : (linha1 || linha2);
-}
-function _valorPorExtensoBR(valor){
-  function inteiroParaExtenso(n){
-    var u=['','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
-    var d=['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
-    var c=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
-    function ext(n){
-      n=Number(n);
-      if(n===0) return 'zero';
-      if(n===100) return 'cem';
-      var s='';
-      if(n>99){ s+=c[Math.floor(n/100)]; n%=100; if(n) s+=' e '; }
-      if(n>19){ s+=d[Math.floor(n/10)]; n%=10; if(n) s+=' e '; }
-      if(n>0 && n<20){ s+=u[n]; }
-      return s;
-    }
-    return ext(n);
-  }
-  function milhar(n){ if(n===0) return ''; if(n===1) return 'mil'; return inteiroParaExtenso(n)+' mil'; }
-  var v = Math.round(_num(valor)*100);
-  var reais = Math.floor(v/100);
-  var cent = v%100;
-  var t='';
-  if(reais===0){ t='zero real'; }
-  else{
-    var partes=[];
-    var bi = Math.floor(reais/1000000000); var ri = reais%1000000000;
-    var mi = Math.floor(ri/1000000); ri%=1000000;
-    var mil = Math.floor(ri/1000); var un = ri%1000;
-    if(bi) partes.push(inteiroParaExtenso(bi)+' bilhão'+(bi>1?'s':''));
-    if(mi) partes.push(inteiroParaExtenso(mi)+' milhão'+(mi>1?'s':''));
-    if(mil) partes.push(milhar(mil));
-    if(un)  partes.push(inteiroParaExtenso(un));
-    t = partes.join(' ');
-    t += (reais===1)?' real':' reais';
-  }
-  if(cent){ t += ' e ' + inteiroParaExtenso(cent) + (cent===1?' centavo':' centavos'); }
-  return t;
-}
-function _dataPorExtensoISO(iso){
-  var meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-  var d = iso ? new Date(iso) : new Date();
-  if (isNaN(d.getTime())) d = new Date();
-  return d.getDate() + ' de ' + meses[d.getMonth()] + ' de ' + d.getFullYear();
-}
-function _payloadComoPDF(){
-  var p={};
-  p.codigo = _gv('codigo') || 'DOC';
-  p.servico = _gv('servico');
-  p.endereco = _gv('endereco'); if(!p.endereco) p.endereco=_joinAddr('Obra');
-  p.valor = _gv('valor');
-  p.valorExtenso = _gv('valorExtenso') || _valorPorExtensoBR(p.valor);
-  p.prazo = _gv('prazo'); p.prazo_dias=p.prazo;
-  p.dataExtenso = _gv('dataExtenso') || _dataPorExtensoISO(_gv('data'));
-  p.clausulas = _gv('clausulas'); p.condicoes=_gv('condicoes');
-  p.nomeContratante=_gv('nomeContratante'); p.docContratante=_gv('docContratante'); p.contatoContratante=_gv('contatoContratante');
-  p.logradouroContratante=_gv('logradouroContratante')||_joinAddr('Contratante');
-  p.nomeContratada=_gv('nomeContratada'); p.docContratada=_gv('docContratada'); p.contatoContratada=_gv('contatoContratada');
-  p.logradouroContratada=_gv('logradouroContratada')||_joinAddr('Contratada');
-  p.endereco_obra=p.endereco; p.valor_extenso=p.valorExtenso;
-  return p;
-}
-function gerarContratoV20(){
-  if (typeof showBusy==='function') showBusy('Processando…');
-  var dados=_payloadComoPDF();
-  if(!dados.servico){ if (typeof hideBusy==='function') hideBusy(); alert('Preencha o campo Serviço antes de gerar o contrato.'); return; }
-  var xhr=new XMLHttpRequest();
-  xhr.open('POST','/api/gerador/gerar_docx.php',true);
-  xhr.setRequestHeader('Content-Type','application/json');
-  xhr.responseType='blob';
-  xhr.onload=function(){ try{
-    if(xhr.status!==200){ alert('Falha ao gerar contrato (.docx)'); return; }
-    var blob=xhr.response; var url=URL.createObjectURL(blob);
-    var a=document.createElement('a'); a.href=url; a.download='Contrato-'+(dados.codigo||'documento')+'.docx';
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},1500);
-    if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
-  } finally { if (typeof hideBusy==='function') hideBusy(); } };
-  xhr.onerror=function(){ if (typeof hideBusy==='function') hideBusy(); alert('Erro de rede ao gerar contrato.'); };
-  xhr.send(JSON.stringify(dados));
-}
-document.addEventListener('DOMContentLoaded',function(){
-  var b=document.getElementById('btnGerarDocx');
-  if(b){
-    try{ b.onclick=null; b.removeAttribute('onclick'); }catch(_){}
-    b.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); gerarContratoV20(); return false; }, true);
-  }
-});
-</script>
-
-<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão 2.1 – Atualizado em 15/10/2025</div>
 </body>
 </html>
