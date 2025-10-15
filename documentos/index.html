@@ -1646,64 +1646,149 @@ document.addEventListener('click', function(e) {
     updateStepper(1); validate1();
   </script>
 
+<!-- Cambalacho: simula abrir consulta, clicar no código e apertar "Atualizar informações" da modal -->
 <script>
-// Versão "resolve terça": força o MESMO caminho da modal, sem exibir modal
-async function proceedFromStep1(codigo){
-  try{
-    codigo = (codigo || '').toString().trim();
-    if (!codigo){ if (typeof goTo==='function') goTo(2); return; }
+(function(){
+  function q(sel, root){ return (root||document).querySelector(sel); }
+  function qa(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
+  function visible(el){ if(!el) return false; const s=getComputedStyle(el); return s.display!=='none' && s.visibility!=='hidden' && s.opacity!=='0'; }
 
-    // 1) Busca usando a MESMA função da consulta
-    let resp;
-    if (typeof fetchConsulta === 'function'){
-      resp = await fetchConsulta(codigo);
-    } else {
-      // fallback opcional, caso a função não exista
-      const LIST_URL   = (window.apiPatch && apiPatch.LIST_URL)   || window.LIST_URL  || '';
-      const SAVE_TOKEN = (window.apiPatch && apiPatch.SAVE_TOKEN) || window.SAVE_TOKEN|| '';
-      if (!LIST_URL || !SAVE_TOKEN){ if (typeof goTo==='function') goTo(2); return; }
-      resp = await fetch(LIST_URL, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ token: SAVE_TOKEN, codigo })
-      }).then(r => r.ok ? r.json() : Promise.reject(new Error('Falha na busca')));
-    }
+  async function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-    const rows = (resp && resp.rows) ? resp.rows : [];
-    if (!rows.length){ if (typeof goTo==='function') goTo(2); return; }
-
-    // 2) Escolhe a linha (match exato ou primeira)
-    const row = rows.find(r => String(r.codigo||'').toUpperCase() === codigo.toUpperCase()) || rows[0];
-
-    // 3) Força o MESMO caminho da modal: popula __actionRow igual ao openActionModal e executa os handlers
-    if (row){
-      try {
-        if (typeof openActionModal === 'function') {
-          openActionModal(row); // garante __actionRow exatamente como no clique do código
-        } else {
-          window.__actionRow = row;
-        }
-
-        // Executa a mesma atualização da modal (sem mostrar a janela)
-        if (typeof normalizeRowForFill === 'function' && typeof fillAllFromRow === 'function' && window.__actionRow){
-          const norm = normalizeRowForFill(window.__actionRow);
-          fillAllFromRow(norm);
-        }
-        if (typeof closeActionModal === 'function') { try{ closeActionModal(); }catch(e){} }
-        if (typeof closeConsulta === 'function')     { try{ closeConsulta(); }catch(e){} }
-      } catch(e){
-        console.error('Fluxo da modal (forçado) falhou:', e);
-      }
-    }
-
-    // 4) Vai para etapa 2
-    if (typeof goTo==='function') goTo(2);
-
-  }catch(e){
-    console.error('proceedFromStep1 (terça) falhou:', e);
-    if (typeof goTo==='function') goTo(2);
+  async function openConsultaUI(codigo){
+    // tenta chamar função se existir
+    if (typeof window.openConsulta === 'function'){ try{ window.openConsulta(); }catch(e){} }
+    // senão tenta clicar no botão "Pesquisar documentos cadastrados"
+    const btnSearch = qa('button, a').find(b => /pesquisar documentos cadastrados/i.test((b.textContent||'').trim()));
+    if (btnSearch){ btnSearch.click(); }
+    // preenche o input de filtro da consulta se existir
+    const inp = qa('input[type="search"], input[type="text"], input').find(i => /ex:\s*ac/i.test(i.placeholder||''));
+    if (inp){ inp.value = codigo; inp.dispatchEvent(new Event('input', {bubbles:true})); inp.dispatchEvent(new Event('change', {bubbles:true})); }
   }
-}
+
+  function findCodeLink(codigo){
+    const links = qa('a.code-link, a, .code-link');
+    const target = links.find(a => String((a.textContent||'').trim()).toUpperCase() === String(codigo).toUpperCase());
+    return target || null;
+  }
+
+  async function waitForCodeLink(codigo, timeout=5000){
+    const t0 = Date.now();
+    while(Date.now()-t0 < timeout){
+      const a = findCodeLink(codigo);
+      if (a) return a;
+      await sleep(120);
+    }
+    return null;
+  }
+
+  async function waitForActionModal(timeout=5000){
+    const t0 = Date.now();
+    while(Date.now()-t0 < timeout){
+      const m = q('#actionModal');
+      if (m && visible(m)) return m;
+      await sleep(120);
+    }
+    return null;
+  }
+
+  async function clickAtualizarNaModal(){
+    const btn = q('#btnActionUpdate') || qa('#actionModal button, #actionModal a').find(el=>/atualizar informações/i.test((el.textContent||'').trim()));
+    if (btn){ btn.click(); return true; }
+    return false;
+  }
+
+  // fluxo principal do "cambalacho"
+  async function cambalachoContinuar(codigo){
+    try{ window.__overlayUtils && __overlayUtils.showOverlay("Acessando fonte de dados.."); }catch(e){}
+    try{
+      // 1) abre consulta/resultado
+      await openConsultaUI(codigo);
+      // 2) espera o link do código
+      const link = await waitForCodeLink(codigo, 6000);
+      if (!link) throw new Error('Não achei o link do código na consulta.');
+      // 3) clica no código (abre a modal e popula __actionRow)
+      link.click();
+      // 4) espera a modal
+      const modal = await waitForActionModal(6000);
+      if (!modal) throw new Error('Não apareceu a modal de ação.');
+      // 5) clica em "Atualizar informações" na modal
+      const ok = await clickAtualizarNaModal();
+      if (!ok) throw new Error('Não encontrei o botão "Atualizar informações".');
+      // 6) segue para etapa 2
+      try{ window.__overlayUtils && __overlayUtils.hideOverlayMin(2000); }catch(e){}
+      if (typeof window.goTo === \'function\'){ window.goTo(2); }
+    }catch(e){
+      console.error('[Cambalacho] Falhou:', e);
+      // fallback: tenta fluxo direto (caso exista)
+      if (typeof window.proceedFromStep1 === 'function'){
+        try { await window.proceedFromStep1(codigo); return; } catch(_e){}
+      }
+      // último recurso: avança assim mesmo
+      try{ window.__overlayUtils && __overlayUtils.hideOverlayMin(2000); }catch(e){}
+      if (typeof window.goTo === \'function\'){ window.goTo(2); }
+    }
+  }
+
+  function wireContinuarCambalacho(){
+    let btn = q('#btnContinuar, #continuar, button[name="continuar"], .btn-continuar') ||
+              qa('button, a, input[type="button"], input[type="submit"]').find(el => /continuar/i.test((el.textContent||el.value||'').trim()));
+    if (!btn || btn._wiredCambalacho) return;
+    btn.addEventListener('click', function(ev){
+      const codigo = (q('#codigo') && q('#codigo').value || '').trim();
+      if (!codigo) return; // deixa seguir normal
+      // roda o cambalacho em paralelo e deixa o fluxo normal continuar
+      cambalachoContinuar(codigo);
+    }, true); // capture para começar cedo
+    btn._wiredCambalacho = true;
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    wireContinuarCambalacho();
+    setTimeout(wireContinuarCambalacho, 600);
+    setTimeout(wireContinuarCambalacho, 1500);
+  });
+})();
+</script>
+
+<!-- Overlay de processamento: "Acessando fonte de dados.." com roda girando -->
+<script>
+(function(){
+  function ensureOverlay(){
+    if (document.getElementById('loadingOverlay')) return;
+    const css = document.createElement('style');
+    css.textContent = `
+      #loadingOverlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:9999}
+      #loadingOverlay .box{background:#fff;padding:16px 22px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;font-family:inherit}
+      #loadingOverlay .spin{width:22px;height:22px;border:3px solid #ddd;border-top-color:#555;border-radius:50%;animation:spin .9s linear infinite}
+      #loadingOverlay .msg{font-size:14px;color:#111827}
+      @keyframes spin{to{transform:rotate(360deg)}}
+    `;
+    document.head.appendChild(css);
+    const ov = document.createElement('div');
+    ov.id = 'loadingOverlay';
+    ov.innerHTML = '<div class="box"><div class="spin"></div><span class="msg">Acessando fonte de dados..</span></div>';
+    document.body.appendChild(ov);
+  }
+  function showOverlay(msg){
+    ensureOverlay();
+    const el = document.getElementById('loadingOverlay');
+    const span = el.querySelector('.msg');
+    if (msg) span.textContent = msg;
+    el.style.display = 'flex';
+    window.__overlayStart = Date.now();
+  }
+  function hideOverlayMin(minMs){
+    const el = document.getElementById('loadingOverlay');
+    if (!el) return;
+    const elapsed = Date.now() - (window.__overlayStart || Date.now());
+    const wait = Math.max(0, (minMs||0) - elapsed);
+    setTimeout(()=>{ el.style.display='none'; }, wait);
+  }
+
+  // expõe utilitários para o script do cambalacho
+  window.__overlayUtils = { showOverlay, hideOverlayMin };
+})();
 </script>
 </body>
 </html>
