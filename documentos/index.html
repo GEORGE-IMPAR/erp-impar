@@ -2335,5 +2335,61 @@ window.addEventListener('DOMContentLoaded', () => {
 })();
 </script>
 
+
+<script>
+// ===== Dedupe robusto (1 linha por CÓDIGO) =====
+(function(){
+  function normCodigo(v){ return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase(); }
+  function stamp(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
+  function pickNewest(arr){
+    return [...arr].sort((a,b)=> (stamp(b.updated_at||b.created_at||b.data) - stamp(a.updated_at||a.created_at||a.data)))[0] || arr[0];
+  }
+  window.dedupeRowsClient = function(rows){
+    if (!Array.isArray(rows)) return [];
+    const out = [];
+    const groups = new Map();
+    for (const r of rows){
+      const key = normCodigo(r && r.codigo);
+      if (!key) {
+        // Sem código: mantém na lista (não remove)
+        out.push(r);
+        continue;
+      }
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    for (const [key, arr] of groups.entries()){
+      out.push(arr.length === 1 ? arr[0] : pickNewest(arr));
+    }
+    // Ordena por data desc apenas para apresentação
+    out.sort((a,b)=> (stamp((b&&b.updated_at)||(b&&b.created_at)||(b&&b.data)) - stamp((a&&a.updated_at)||(a&&a.created_at)||(a&&a.data))));
+    // Se por algum motivo zerar, garante fallback para os originais
+    if (out.length === 0 && rows.length > 0) return rows;
+    return out;
+  };
+
+  // Hooka o renderRows QUANDO ele existir (para não quebrar a página)
+  (function hookRenderRowsSafely(attempt=0){
+    const MAX_ATTEMPTS = 60; // ~6s
+    if (typeof window.renderRows === 'function'){
+      const __orig = window.renderRows;
+      if (!__orig.__dedupe_hooked){
+        window.renderRows = function(tbodyId, rows){
+          try { rows = window.dedupeRowsClient(rows); } catch(e){ console.warn('dedupeRowsClient erro', e); }
+          return __orig.call(this, tbodyId, rows);
+        };
+        window.renderRows.__dedupe_hooked = true;
+      }
+      return;
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      setTimeout(()=>hookRenderRowsSafely(attempt+1), 100);
+    } else {
+      console.warn('renderRows não encontrado para dedupe.');
+    }
+  })();
+})();
+</script>
+
 </body>
 </html>
