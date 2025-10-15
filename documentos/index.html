@@ -2006,5 +2006,53 @@ document.addEventListener('click', function(e) {
   });
 })();
 </script>
+
+<script>
+/**
+ * Fluxo do botão Continuar na Etapa 1:
+ * - Lê #codigo
+ * - Consulta backend (LIST_URL) filtrando pelo código
+ * - Se achar 1 registro: normaliza, preenche TUDO (1–5) e avança para a Etapa 2
+ * - Se não achar: apenas informa e mantém na Etapa 1
+ */
+async function continueFromStep1() {
+  const codigoEl = document.getElementById('codigo');
+  const codigo = (codigoEl && codigoEl.value ? codigoEl.value : '').trim();
+  if (!codigo) {
+    // mantém a validação atual: não avança sem código
+    return;
+  }
+  try {
+    if (typeof showBusy === 'function') showBusy('Buscando documento pelo código...');
+    // Usa a mesma função já usada na Consulta
+    const res = await (typeof fetchConsulta === 'function' ? fetchConsulta(codigo) : Promise.reject(new Error('fetchConsulta não disponível')));
+    const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
+
+    if (rows.length === 1) {
+      const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(rows[0]) : rows[0];
+      if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
+
+      // Espelha o código em elementos de mirror (se existirem)
+      try {
+        const mirrors = document.querySelectorAll('[id^="codigoVal"]');
+        mirrors.forEach(el => { el.textContent = codigo; });
+      } catch (e) {}
+
+      // Avança para a Etapa 2
+      if (typeof goTo === 'function') goTo(2);
+    } else if (rows.length === 0) {
+      (window.toast?.error || window.alert)('Código não encontrado.');
+    } else {
+      (window.toast?.error || window.alert)('Mais de um documento com esse código.');
+    }
+  } catch (err) {
+    (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+    console.error(err);
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
+}
+</script>
+
 </body>
 </html>
