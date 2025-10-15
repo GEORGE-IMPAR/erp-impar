@@ -2292,5 +2292,48 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+
+<script>
+// ------- DEDUPE NO CLIENTE ANTES DE RENDERIZAR AS LINHAS -------
+(function(){
+  // normaliza código para agrupar variações (maiúsculas e sem símbolos)
+  function normCodigo(v){ return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase(); }
+  function stamp(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
+  function pickNewest(arr){
+    return [...arr].sort((a,b)=> (stamp(b.updated_at||b.created_at||b.data) - stamp(a.updated_at||a.created_at||a.data)))[0] || arr[0];
+  }
+  function dedupeRowsClient(rows){
+    if (!Array.isArray(rows)) return [];
+    const groups = new Map();
+    for (const r of rows){
+      const key = normCodigo(r.codigo);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    const out = [];
+    for (const [key, arr] of groups.entries()){
+      if (arr.length === 1){ out.push(arr[0]); continue; }
+      out.push(pickNewest(arr));
+    }
+    // mantém ordem aproximada por data desc para visualização consistente
+    out.sort((a,b)=> (stamp(b.updated_at||b.created_at||b.data) - stamp(a.updated_at||a.created_at||a.data)));
+    return out;
+  }
+
+  // Envolve renderRows para aplicar dedupe automaticamente
+  const __renderRows = window.renderRows;
+  window.renderRows = function(tbodyId, rows){
+    try {
+      rows = dedupeRowsClient(rows);
+    } catch(e){ console.warn('dedupeRowsClient erro', e); }
+    return __renderRows ? __renderRows(tbodyId, rows) : null;
+  };
+
+  // Mensagem inline quando código não encontrado segue igual;
+  // se quiser, poderia também dedupe no j.rows antes de checar length >0.
+})();
+</script>
+
 </body>
 </html>
