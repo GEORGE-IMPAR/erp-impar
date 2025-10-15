@@ -2243,5 +2243,54 @@ async function dedupeAllByCodigo() {
 })();
 </script>
 
+
+<script>
+// Dedupe antes do "Buscar" na Consulta (modal e inline)
+window.addEventListener('DOMContentLoaded', () => {
+  const hookButton = (btn) => {
+    if (!btn) return;
+    const original = btn.getAttribute('onclick');
+    btn.setAttribute('onclick', '');
+    btn.addEventListener('click', async (ev) => {
+      try {
+        if (typeof showBusy === 'function') showBusy('Eliminando duplicados...');
+        // Tenta localizar o input de código relacionado a este botão
+        let input = null;
+        // Busca por ids conhecidos
+        input = document.getElementById('consCodigo') || document.getElementById('consCodigoInline');
+        // Se não achou, tenta subir DOM e achar input[type=text] mais próximo
+        if (!input) {
+          const container = btn.closest('form, .modal, .screen, body');
+          if (container) {
+            input = container.querySelector('input[type="text"], input[type="search"]');
+          }
+        }
+        const raw = (input && input.value) ? String(input.value).trim() : '';
+        if (raw) {
+          // Dedupe somente daquele código (mantém o mais recente)
+          await dedupeByCodigo(raw);
+        } else {
+          // Se nenhum código digitado, faz um dedupe global rápido
+          if (typeof dedupeAllByCodigo === 'function') {
+            await dedupeAllByCodigo();
+          }
+        }
+      } catch (e) {
+        console.warn('dedupe antes do buscar falhou', e);
+      } finally {
+        if (typeof hideBusy === 'function') hideBusy();
+      }
+      // Executa o handler original do botão
+      if (original) {
+        try { new Function(original).call(btn); } catch (e) { console.error(e); }
+      }
+    });
+  };
+
+  hookButton(document.getElementById('btnBuscar'));        // botão no modal
+  hookButton(document.getElementById('btnBuscarInline'));  // botão inline na etapa 1
+});
+</script>
+
 </body>
 </html>
