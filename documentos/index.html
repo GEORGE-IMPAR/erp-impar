@@ -2043,5 +2043,62 @@ function proceedFromStep1() {
 }
 </script>
 
+
+<script>
+// Chama delete.php para deduplicar por CÓDIGO antes de carregar o documento
+async function dedupeByCodigo(codigo) {
+  const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+  const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
+  if (!LIST_URL || !SAVE_TOKEN || !codigo) return {ok:false, skipped:true};
+
+  // base da API a partir do list.php
+  const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
+  const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
+
+  if (!delUrl) return {ok:false, skipped:true};
+
+  const body = new URLSearchParams();
+  body.set('token', SAVE_TOKEN);
+  body.set('codigo', String(codigo));
+  body.set('keep', 'newest'); // manter o mais recente
+
+  try {
+    const res = await fetch(delUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body
+    });
+    const json = await res.json().catch(()=>({}));
+    return json;
+  } catch (e) {
+    console.warn('dedupeByCodigo falhou', e);
+    return {ok:false, error:String(e)};
+  }
+}
+
+// Mantém a função original e cria um wrapper que roda o dedupe antes
+const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
+
+async function proceedFromStep1_Dedupe() {
+  const codigo = (document.getElementById('codigo')?.value || '').trim();
+  if (!codigo) return;
+  try {
+    if (typeof showBusy === 'function') showBusy('Dedupe por código...');
+    await dedupeByCodigo(codigo);
+  } catch (e) {
+    console.warn('Erro no dedupe:', e);
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
+  if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
+}
+
+// Redireciona o botão para o wrapper (sem mexer no HTML)
+window.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('bar1');
+  if (btn) btn.setAttribute('onclick', 'proceedFromStep1_Dedupe()');
+});
+</script>
+
 </body>
 </html>
