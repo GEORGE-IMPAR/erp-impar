@@ -2321,13 +2321,196 @@ function __afterPdfSavedGenerateExcel(dados) {
   try { gerarExcelDoMesmoConteudo(dados, nomeBase); } catch(e){ console.error(e); }
 }
 
-// Troca apenas os textos visuais de PDF -> EXCEL (não altera funções internas)
-document.addEventListener('DOMContentLoaded', () => {
-  const swap = (el) => { el.textContent = el.textContent.replace(/PDF/gi, 'EXCEL'); };
-  document.querySelectorAll('button, .hint, .hd, .bd, .ft, label, .btn').forEach(el => {
-    if (el && /PDF/i.test(el.textContent || '')) swap(el);
-  });
+</script>
+
+
+<script>
+// Util: tenta construir o mesmo objeto 'dados' usado no PDF
+function __collectDadosForExcel() {
+  let dados = (window.__lastSave && window.__lastSave.dados) || null;
+  const candidates = ['__buildDados','buildDados','getDados','getFormData','collectDados','coletarDados'];
+  for (const fn of candidates) {
+    try {
+      if (!dados && typeof window[fn] === 'function') {
+        const maybe = window[fn]();
+        if (maybe && typeof maybe === 'object') dados = maybe;
+      }
+    } catch(err) {}
+  }
+  if (!dados) { // Fallback leve
+    dados = {};
+    const form = document.querySelector('form') || document.body;
+    form.querySelectorAll('input, textarea, select').forEach(el => {
+      const name = el.name || el.id || '';
+      if (!name) return;
+      let val = (el.type === 'checkbox') ? el.checked : el.value;
+      dados[name] = val;
+    });
+    dados.contratante = dados.contratante || {};
+    dados.contratada  = dados.contratada  || {};
+    dados.operador    = dados.operador    || {};
+  }
+  return dados;
+}
+
+// Nome base padrão
+function __nomeBaseFromDados(dados) {
+  const codigo = dados.codigo || dados["código"] || (document.querySelector('[name="codigo"], #codigo')?.value) || 'DOC';
+  const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
+  return `${codigo}_${ymd}`;
+}
+
+// Intercepta cliques em: (A) botão "Gerar PDF" OU "Gerar EXCEL"; (B) ícone/seta de download na visualização
+document.addEventListener('click', function(e){
+  const path = e.composedPath ? e.composedPath() : [e.target];
+
+  function isGenerateButton(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (!/button/i.test(el.tagName)) return false;
+    const txt = (el.textContent || '').trim();
+    return /Gerar\s*(PDF|EXCEL)/i.test(txt);
+  }
+
+  function isDownloadIcon(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const txt = (el.getAttribute('title') || el.getAttribute('aria-label') || el.textContent || '').trim();
+    if (/Baixar|Download/i.test(txt)) return true;
+    const cls = el.className || '';
+    if (/(fa-download|icon-download|download)/i.test(cls)) return true;
+    if (el.dataset && (el.dataset.action === 'download' || el.dataset.icon === 'download')) return true;
+    // Também pega <a download> dentro da visualização
+    if (el.tagName === 'A' && el.hasAttribute('download')) return true;
+    return false;
+  }
+
+  const targetEl = path.find(el => isGenerateButton(el) || isDownloadIcon(el));
+  if (!targetEl) return;
+
+  // Impede os handlers de PDF
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+  // Gera Excel a partir dos mesmos dados
+  const dados = __collectDadosForExcel();
+  const nomeBase = __nomeBaseFromDados(dados);
+  try {
+    gerarExcelDoMesmoConteudo(dados, nomeBase);
+  } catch(err) {
+    console.error('Falha ao gerar Excel:', err);
+  }
+}, true); // capture
+</script>
+
+
+<script>
+// === LABELS: trocar todo "PDF" visível por "EXCEL" (apenas front-end) ===
+function __swapPdfToExcelInNode(root){
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  const toChange = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const t = node.nodeValue;
+    if (t && /PDF/i.test(t)) toChange.push(node);
+  }
+  toChange.forEach(n => n.nodeValue = n.nodeValue.replace(/PDF/gi, 'EXCEL'));
+}
+function __swapAllPdfLabels(){
+  __swapPdfToExcelInNode(document.body);
+}
+document.addEventListener('DOMContentLoaded', __swapAllPdfLabels);
+
+// Observa mudanças dinâmicas (ex.: tela de consulta) e mantém labels como EXCEL
+const __mo = new MutationObserver(mutations => {
+  for (const m of mutations){
+    if (m.type === 'childList') {
+      m.addedNodes && m.addedNodes.forEach(n => {
+        if (n.nodeType === 1) __swapPdfToExcelInNode(n);
+      });
+    } else if (m.type === 'characterData') {
+      if (/PDF/i.test(m.target.nodeValue || '')) {
+        m.target.nodeValue = m.target.nodeValue.replace(/PDF/gi,'EXCEL');
+      }
+    }
+  }
 });
+document.addEventListener('DOMContentLoaded', ()=>{
+  __mo.observe(document.body, {childList:true, subtree:true, characterData:true});
+});
+
+// === AÇÕES: abrir/baixar EXCEL quando links/botões "PDF" forem clicados ===
+
+// Reutiliza coletores existentes (não altera funções atuais)
+function __collectDadosForExcel() {
+  let dados = (window.__lastSave && window.__lastSave.dados) || null;
+  const candidates = ['__buildDados','buildDados','getDados','getFormData','collectDados','coletarDados'];
+  for (const fn of candidates) {
+    try {
+      if (!dados && typeof window[fn] === 'function') {
+        const maybe = window[fn]();
+        if (maybe && typeof maybe === 'object') dados = maybe;
+      }
+    } catch(err) {}
+  }
+  if (!dados) { // fallback leve: coleta do formulário atual
+    dados = {};
+    const form = document.querySelector('form') || document.body;
+    form.querySelectorAll('input, textarea, select').forEach(el => {
+      const name = el.name || el.id || '';
+      if (!name) return;
+      let val = (el.type === 'checkbox') ? el.checked : el.value;
+      dados[name] = val;
+    });
+    dados.contratante = dados.contratante || {};
+    dados.contratada  = dados.contratada  || {};
+    dados.operador    = dados.operador    || {};
+  }
+  return dados;
+}
+function __nomeBaseFromDados(dados) {
+  const codigo = dados.codigo || dados["código"] || (document.querySelector('[name="codigo"], #codigo')?.value) || 'DOC';
+  const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
+  return `${codigo}_${ymd}`;
+}
+
+// Intercepta cliques em:
+// 1) Botões que contenham "Gerar PDF/EXCEL"
+// 2) Ícones/setas/links de download (inclui <a download> e href terminando com .pdf)
+// 3) Links na consulta que exibem/contêm "pdf" no texto ou URL
+document.addEventListener('click', function(e){
+  const path = e.composedPath ? e.composedPath() : [e.target];
+  const el = path.find(node => {
+    if (!node || node.nodeType !== 1) return false;
+    // Botões
+    if (/button/i.test(node.tagName) && /(Gerar\s*(PDF|EXCEL)|Baixar\s*(PDF|EXCEL))/i.test((node.textContent||'').trim())) return true;
+    // Links/ícones de download
+    const href = node.getAttribute && node.getAttribute('href');
+    const txt  = (node.getAttribute && (node.getAttribute('title') || node.getAttribute('aria-label'))) || node.textContent || '';
+    const cls  = node.className || '';
+    if (href && /\.pdf(\?|#|$)/i.test(href)) return true;
+    if (/Baixar|Download|baixar|download/i.test(txt)) return true;
+    if (/(fa-download|icon-download|download)/i.test(cls)) return true;
+    if (node.tagName === 'A' && node.hasAttribute('download')) return true;
+    // Dentro de containers clicáveis
+    return false;
+  });
+  if (!el) return;
+
+  // Impede handlers antigos que imprimem/baixam PDF
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+  // Gera Excel
+  const dados = __collectDadosForExcel();
+  const nomeBase = __nomeBaseFromDados(dados);
+  try {
+    gerarExcelDoMesmoConteudo(dados, nomeBase);
+  } catch(err) {
+    console.error('Falha ao gerar Excel:', err);
+  }
+}, true);
 </script>
 
 </body>
