@@ -2387,23 +2387,63 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>
 
 
-<!-- v4.4: captura JSON do save.php e geração direta do DOCX -->
+<style>
+#busyOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:999999;}
+#busyOverlay .busy-card{background:#0a0a0a;color:#fff;padding:18px 22px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);display:flex;align-items:center;gap:12px;font:14px/1.35 Arial,Helvetica,sans-serif;min-width:280px;justify-content:center;}
+#busyOverlay .spinner{width:26px;height:26px;border:3px solid #fff;border-right-color:transparent;border-radius:50%;animation:busySpin .9s linear infinite;}
+@keyframes busySpin{to{transform:rotate(360deg)}}
+</style>
+<div id="busyOverlay" aria-live="polite" aria-busy="true">
+  <div class="busy-card">
+    <div class="spinner" role="status" aria-label="Carregando"></div>
+    <div id="busyText">Processando…</div>
+  </div>
+</div>
 <script>
 (function(){
-  function looksSave(url){ try{ return /\/save\.php(\?|$)/i.test(String(url)); }catch(_){ return false; } }
+  var cnt=0;
+  window.showBusy=function(text){
+    var ov=document.getElementById('busyOverlay');
+    var tx=document.getElementById('busyText');
+    if (!ov||!tx) return;
+    if (text) tx.textContent=text;
+    cnt++; ov.style.display='flex';
+  };
+  window.hideBusy=function(){
+    var ov=document.getElementById('busyOverlay');
+    if (!ov) return;
+    cnt=Math.max(0,cnt-1);
+    if (cnt===0) ov.style.display='none';
+  };
+})();
+</script>
+
+
+<script>
+(function(){
+  function okjson(x){ try{ return JSON.parse(String(x)); }catch(_){ return null; } }
+  function isSaveUrl(url){ try{ return /\/save\.php(\?|$)/i.test(String(url)); } catch(_){ return false; } }
+  function toast(m){ try{ if (window.showToast) showToast(m); else console.log(m);}catch(_){} }
+
+  // fetch
   const _fetch = window.fetch;
   window.fetch = function(url, opts){
     try{
-      if (opts && String((opts.method||'')).toUpperCase()==='POST' && looksSave(url) && opts.body){
-        try{
-          window.__dadosVisualizacao = JSON.parse(String(opts.body));
-          localStorage.setItem('__dadosVisualizacao', JSON.stringify(window.__dadosVisualizacao));
-          console.log('[CAPTURA] JSON via fetch/save.php:', window.__dadosVisualizacao);
-        }catch(e){ console.warn('CAPTURA fetch body não-JSON', e); }
+      var m = String((opts&&opts.method)||'').toUpperCase();
+      if (m==='POST' && opts && opts.body && isSaveUrl(url)){
+        var j = okjson(opts.body);
+        if (j){
+          window.__dadosVisualizacao = j;
+          try{ localStorage.setItem('__dadosVisualizacao', JSON.stringify(j)); }catch(_){}
+          console.log('[v4.5] Capturado JSON (fetch/save.php):', j);
+          setTimeout(gerarContratoDoJSON, 40);
+        }
       }
-    }catch(_){}
+    }catch(e){ console.warn('[v4.5] fetch hook erro', e); }
     return _fetch.apply(this, arguments);
   };
+
+  // XHR
   const _open = XMLHttpRequest.prototype.open;
   const _send = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url){
@@ -2413,61 +2453,101 @@ window.addEventListener('DOMContentLoaded', () => {
   XMLHttpRequest.prototype.send = function(body){
     try{
       if (this.__cap_url && /\/save\.php(\?|$)/i.test(String(this.__cap_url)) && body){
-        const s = (typeof body === 'string') ? body : body.toString();
-        try{
-          window.__dadosVisualizacao = JSON.parse(s);
-          localStorage.setItem('__dadosVisualizacao', s);
-          console.log('[CAPTURA] JSON via XHR/save.php:', window.__dadosVisualizacao);
-        }catch(e){ console.warn('CAPTURA XHR body não-JSON', e); }
+        var s = (typeof body==='string') ? body : body.toString();
+        var j = okjson(s);
+        if (j){
+          window.__dadosVisualizacao = j;
+          try{ localStorage.setItem('__dadosVisualizacao', JSON.stringify(j)); }catch(_){}
+          console.log('[v4.5] Capturado JSON (XHR/save.php):', j);
+          setTimeout(gerarContratoDoJSON, 40);
+        }
       }
-    }catch(_){}
+    }catch(e){ console.warn('[v4.5] XHR hook erro', e); }
     return _send.apply(this, arguments);
   };
 
-  if (typeof window.gerarContratoDoJSON !== 'function'){
-    window.gerarContratoDoJSON = function(){
-      var d = window.__dadosVisualizacao || null;
-      if (!d || !d.servico){
-        try{ d = JSON.parse(localStorage.getItem('__dadosVisualizacao')||'null'); }catch(_){}
-      }
-      if (!d || !d.servico){
-        alert('Sem dados capturados. Gere/abra a visualização (PDF) primeiro.');
-        return;
-      }
-      if (typeof showBusy==='function') showBusy('Gerando contrato…');
-      var xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/gerador/gerar_docx.php', true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.responseType = 'blob';
-      xhr.onload = function(){
-        try{
-          if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
-          var blob = xhr.response, url = URL.createObjectURL(blob);
-          var a = document.createElement('a'); a.href = url; a.download = 'Contrato-' + (d.codigo||'documento') + '.docx';
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
-          if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
-        } finally { if (typeof hideBusy==='function') hideBusy(); }
-      };
-      xhr.onerror = function(){ if (typeof hideBusy==='function') hideBusy(); alert('Erro de rede ao gerar contrato.'); };
-      xhr.send(JSON.stringify(d));
+  window.gerarContratoDoJSON = function(){
+    var d = window.__dadosVisualizacao || okjson(localStorage.getItem('__dadosVisualizacao')||'null');
+    if (!d || !d.servico){
+      alert('Sem dados capturados. Execute o passo de salvar/visualizar primeiro.');
+      return;
+    }
+    showBusy('Gerando contrato (.docx)…');
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST','/api/gerador/gerar_docx.php',true);
+    xhr.setRequestHeader('Content-Type','application/json');
+    xhr.responseType='blob';
+    xhr.onload=function(){
+      try{
+        if (xhr.status!==200){ alert('Falha ao gerar contrato (.docx)'); return; }
+        var blob=xhr.response, url=URL.createObjectURL(blob);
+        var a=document.createElement('a'); a.href=url; a.download='Contrato-'+(d.codigo||'documento')+'.docx';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function(){ URL.revokeObjectURL(url); },1200);
+        toast('✅ Contrato gerado (modo contrato total).');
+      } finally { hideBusy(); }
     };
+    xhr.onerror=function(){ hideBusy(); alert('Erro de rede ao gerar contrato.'); };
+    xhr.send(JSON.stringify(d));
+  };
+
+  // Bloquear abertura de PDF e redirecionar para contrato
+  const _openWin = window.open;
+  window.open = function(url, name, specs){
+    try{
+      if (url && /\.pdf(\?|$)/i.test(String(url))){
+        console.warn('[v4.5] Bloqueado window.open(PDF) -> gerando contrato.');
+        gerarContratoDoJSON();
+        return { close:function(){}, document:{} };
+      }
+    }catch(_){}
+    return _openWin ? _openWin.apply(this, arguments) : null;
+  };
+  const _set = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'src')?.set;
+  if (_set){
+    Object.defineProperty(HTMLIFrameElement.prototype,'src',{
+      set:function(v){
+        if (v && /\.pdf(\?|$)/i.test(String(v))){
+          console.warn('[v4.5] Bloqueado iframe.src=PDF -> gerando contrato.');
+          gerarContratoDoJSON();
+          return;
+        }
+        return _set.call(this, v);
+      }
+    });
   }
 
+  // Renomeia e amarra botões relacionados a PDF
+  function swapPdfButtons(){
+    document.querySelectorAll('button, a, [role="button"]').forEach(function(n){
+      var t=(n.innerText||n.textContent||n.getAttribute('title')||n.getAttribute('aria-label')||'').toLowerCase();
+      if (t.match(/(baixar|gerar|visualizar|abrir)\s+pdf/)){
+        n.innerText='Gerar Contrato .docx';
+        n.setAttribute('aria-label','Gerar Contrato .docx');
+        n.title='Gerar Contrato .docx';
+        try{ n.onclick=null; n.removeAttribute('onclick'); }catch(_){}
+        n.addEventListener('click', function(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} gerarContratoDoJSON(); return false; }, true);
+      }
+    });
+  }
+  function boot(){ swapPdfButtons(); }
+  document.addEventListener('DOMContentLoaded', boot);
+  setTimeout(boot, 400); setTimeout(boot, 1200); setTimeout(boot, 2500);
+  try{ new MutationObserver(boot).observe(document.body, {childList:true, subtree:true}); }catch(_){}
+
+  // Botão alternativo
   (function ensureBtn(){
     if (document.getElementById('btnGerarDocxFallback')) return;
-    var b = document.createElement('button');
-    b.id = 'btnGerarDocxFallback';
-    b.textContent = 'Gerar Contrato .docx (alternativo)';
-    b.style.position='fixed'; b.style.right='12px'; b.style.top='12px'; b.style.zIndex=99999;
-    b.style.background='#0b3a6f'; b.style.color='#fff'; b.style.padding='8px 12px';
-    b.style.border='0'; b.style.borderRadius='8px'; b.style.boxShadow='0 2px 8px rgba(0,0,0,.2)';
-    b.onclick = function(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){ } window.gerarContratoDoJSON(); return false; };
+    var b=document.createElement('button');
+    b.id='btnGerarDocxFallback';
+    b.textContent='Gerar Contrato .docx (alternativo)';
+    b.style.cssText='position:fixed;right:12px;top:12px;z-index:999999;background:#0b3a6f;color:#fff;padding:8px 12px;border:0;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    b.onclick=function(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){ } gerarContratoDoJSON(); return false; };
     document.body.appendChild(b);
   })();
 })();
 </script>
-<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.92;z-index:9999;">Versão Commit 4.4 – Atualizado em 15/10/2025</div>
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.92;z-index:9999;">Versão Commit 4.5 — Modo Contrato Total (16/10/2025)</div>
 
 </body>
 </html>
