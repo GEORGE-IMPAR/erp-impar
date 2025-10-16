@@ -306,6 +306,7 @@ window.__CONSULTA_CFG__ = {
   }
 }
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -911,6 +912,7 @@ async function finalizeStep5(){
   const res  = await saveDocumentWithPdf(blob);
 
   if (res && res.ok) {
+    try{ if (window.__lastSave && window.__lastSave.dados) { __afterPdfSavedGenerateExcel(window.__lastSave.dados); } }catch(e){ console.error(e); }
     showToast('Documento cadastrado com sucesso!');
     setTimeout(() => {
       document.getElementById('successModal').style.display = 'flex';
@@ -988,7 +990,7 @@ async function saveDocumentWithPdf(pdfBlob){
       console.warn('[index] tentativa duplicada detectada (4s) — ignorado');
       return { ok:false, reason:'local-dupe-guard' };
     }
-    window.__lastSave = { sig, at: now };
+    window.__lastSave = { sig, at: now, dados };
     // -----------------------------------------------------
 
     // chamada ÚNICA: usa o patch e PASSA "dados"
@@ -2241,6 +2243,86 @@ async function dedupeAllByCodigo() {
     });
   });
 })();
+</script>
+
+
+<script>
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF
+function gerarExcelDoMesmoConteudo(dados, nomeBase) {
+  const wsData = [];
+  const ctt = dados.contratante || {}, cta = dados.contratada || {}, op = dados.operador || {};
+
+  wsData.push(["Resumo do Documento",""]);
+  wsData.push(["Operador", [op.nome || "", op["e-mail"] || ""].filter(Boolean).join(" ")]);
+  wsData.push(["Código do Projeto", dados.codigo || dados["código"] || ""]);
+  wsData.push(["Serviço", dados.servico || ""]);
+  wsData.push(["Endereço da obra", dados.enderecoObra || dados.enderecoobra || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONTRATANTE",""]);
+  wsData.push(["Nome", ctt.nome || ""]);
+  wsData.push(["CPF/CNPJ", ctt.cpfCnpj || ctt.cpfcnpj || ""]);
+  wsData.push(["Endereço", ctt.endereco || ""]);
+  wsData.push(["Contato", ctt.contato || ""]);
+  wsData.push(["Telefone", ctt.telefone || ""]);
+  wsData.push(["E-mail", ctt["e-mail"] || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONTRATADA",""]);
+  wsData.push(["Nome", cta.nome || ""]);
+  wsData.push(["CPF/CNPJ", cta.cpfCnpj || cta.cpfcnpj || ""]);
+  wsData.push(["Endereço", cta.endereco || ""]);
+  wsData.push(["Contato", cta.contato || ""]);
+  wsData.push(["Telefone", cta.telefone || ""]);
+  wsData.push(["E-mail", cta["e-mail"] || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONDIÇÕES",""]);
+  wsData.push(["Valor", dados.valor || ""]);
+  wsData.push(["Valor (extenso)", dados.valorExtenso || dados.valorextenso || ""]);
+  wsData.push(["Prazo", dados.prazo || ""]);
+  wsData.push(["Data", dados.dataExtenso || dados.dataextenso || ""]);
+  wsData.push(["Condições de pagamento", (dados.condicoes || dados.condicoespagamento || "")]);
+  wsData.push(["",""]);
+
+  wsData.push(["Cláusulas", (dados.clausulas || "")]);
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:40},{wch:90}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Documento");
+  const ab = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const fn = (nomeBase || 'DOC') + ".xlsx";
+  downloadBlob(blob, fn);
+}
+
+// Hook simples chamado após salvamento OK (PDF no servidor, Excel para o usuário)
+function __afterPdfSavedGenerateExcel(dados) {
+  const base = (typeof dados.codigo !== 'undefined' ? dados.codigo : (dados["código"]||"DOC"));
+  const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
+  const nomeBase = (base || 'DOC') + "_" + ymd;
+  try { gerarExcelDoMesmoConteudo(dados, nomeBase); } catch(e){ console.error(e); }
+}
+
+// Troca apenas os textos visuais de PDF -> EXCEL (não altera funções internas)
+document.addEventListener('DOMContentLoaded', () => {
+  const swap = (el) => { el.textContent = el.textContent.replace(/PDF/gi, 'EXCEL'); };
+  document.querySelectorAll('button, .hint, .hd, .bd, .ft, label, .btn').forEach(el => {
+    if (el && /PDF/i.test(el.textContent || '')) swap(el);
+  });
+});
 </script>
 
 </body>
