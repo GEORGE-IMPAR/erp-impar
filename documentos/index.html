@@ -2259,17 +2259,46 @@ function downloadBlob(blob, filename) {
 }
 
 // Gera Excel a partir do MESMO objeto 'dados' usado para o PDF
+
+// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF (sem misturar contratante/contratada)
 function gerarExcelDoMesmoConteudo(dados, nomeBase) {
   const wsData = [];
-  const ctt = dados.contratante || {}, cta = dados.contratada || {}, op = dados.operador || {};
 
-  
-  const pickEmail = (o)=> (o && (o["e-mail"] || o["email"] || o["e_mail"] || o["mail"] || o["Email"] || o["E-mail"])) || "";
-  const opEmail  = pickEmail(op);
-  const cttEmail = pickEmail(ctt);
-  const ctaEmail = pickEmail(cta);
-wsData.push(["Resumo do Documento",""]);
-  wsData.push(["Operador", [op.nome || "", opEmail].filter(Boolean).join(" ")]);
+  // Helper: extrai parte (contratante/contratada) sem herdar do outro
+  function pick(obj, k){ return (obj && (obj[k] ?? obj[k.toLowerCase()] ?? obj[k.toUpperCase()])) || ""; }
+  function getEmail(o){
+    return (o && (o["e-mail"] || o["email"] || o["e_mail"] || o["mail"] || o["Email"] || o["E-mail"])) || "";
+  }
+  function party(dados, key, prefix){
+    const nest = (dados && dados[key]) && typeof dados[key]==='object' ? dados[key] : {};
+    // tenta também chaves planas com prefixo (contratante_nome, contratada_endereco, etc.)
+    const flat = {};
+    const fields = {nome:'nome', doc:['cpfCnpj','cpfcnpj'], end:'endereco', contato:'contato', tel:'telefone', mail:['e-mail','email','e_mail','mail']};
+    flat.nome    = dados[prefix+'_nome'] ?? "";
+    flat.doc     = dados[prefix+'_cpfCnpj'] ?? dados[prefix+'_cpfcnpj'] ?? "";
+    flat.end     = dados[prefix+'_endereco'] ?? "";
+    flat.contato = dados[prefix+'_contato'] ?? "";
+    flat.tel     = dados[prefix+'_telefone'] ?? "";
+    flat.mail    = dados[prefix+'_e-mail'] ?? dados[prefix+'_email'] ?? dados[prefix+'_e_mail'] ?? dados[prefix+'_mail'] ?? "";
+
+    const o = {};
+    o.nome     = pick(nest,'nome') || flat.nome;
+    o.cpfcnpj  = pick(nest,'cpfCnpj') || pick(nest,'cpfcnpj') || flat.doc;
+    o.endereco = pick(nest,'endereco') || flat.end;
+    o.contato  = pick(nest,'contato') || flat.contato;
+    o.telefone = pick(nest,'telefone') || flat.tel;
+    o.email    = getEmail(nest) || flat.mail;
+    return o;
+  }
+
+  const op = (dados && dados.operador) && typeof dados.operador==='object' ? dados.operador : {};
+  const operEmail = getEmail(op);
+
+  const ctt = party(dados,'contratante','contratante');
+  const cta = party(dados,'contratada','contratada');
+
+  wsData.push(["Resumo do Documento",""]);
+  wsData.push(["Operador", [op.nome || "", operEmail].filter(Boolean).join(" ")]);
   wsData.push(["Código do Projeto", dados.codigo || dados["código"] || ""]);
   wsData.push(["Serviço", dados.servico || ""]);
   wsData.push(["Endereço da obra", dados.enderecoObra || dados.enderecoobra || ""]);
@@ -2277,20 +2306,20 @@ wsData.push(["Resumo do Documento",""]);
 
   wsData.push(["CONTRATANTE",""]);
   wsData.push(["Nome", ctt.nome || ""]);
-  wsData.push(["CPF/CNPJ", ctt.cpfCnpj || ctt.cpfcnpj || ""]);
+  wsData.push(["CPF/CNPJ", ctt.cpfcnpj || ""]);
   wsData.push(["Endereço", ctt.endereco || ""]);
   wsData.push(["Contato", ctt.contato || ""]);
   wsData.push(["Telefone", ctt.telefone || ""]);
-  wsData.push(["E-mail", cttEmail]);
+  wsData.push(["E-mail", ctt.email || ""]);
   wsData.push(["",""]);
 
   wsData.push(["CONTRATADA",""]);
   wsData.push(["Nome", cta.nome || ""]);
-  wsData.push(["CPF/CNPJ", cta.cpfCnpj || cta.cpfcnpj || ""]);
+  wsData.push(["CPF/CNPJ", cta.cpfcnpj || ""]);
   wsData.push(["Endereço", cta.endereco || ""]);
   wsData.push(["Contato", cta.contato || ""]);
   wsData.push(["Telefone", cta.telefone || ""]);
-  wsData.push(["E-mail", ctaEmail]);
+  wsData.push(["E-mail", cta.email || ""]);
   wsData.push(["",""]);
 
   wsData.push(["CONDIÇÕES",""]);
@@ -2312,6 +2341,7 @@ wsData.push(["Resumo do Documento",""]);
   const fn = (nomeBase || 'DOC') + ".xlsx";
   downloadBlob(blob, fn);
 }
+
 
 // Hook simples chamado após salvamento OK (PDF no servidor, Excel para o usuário)
 function __afterPdfSavedGenerateExcel(dados) {
