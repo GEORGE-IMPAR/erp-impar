@@ -2372,6 +2372,42 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   })();
 })();
+
+// Suprime só o alerta legado e chama nosso gerador
+(function(){
+  function hookAlert(win){
+    try {
+      var _origAlert = win.alert;
+      win.alert = function(msg){
+        var txt = (msg||'')+'';
+        if (txt.indexOf('Abra um documento primeiro para gerar o contrato') !== -1) {
+          // usa nosso JSON e gera o DOCX
+          if (typeof window.gerarContratoDoJSON === 'function') {
+            try { window.gerarContratoDoJSON(); } catch(_){}
+            return; // não mostra o alerta
+          }
+        }
+        // fallback: alerta normal
+        try { return _origAlert.apply(this, arguments); } catch(_){ /* ignore */ }
+      };
+    } catch(_){}
+  }
+
+  // Top window
+  hookAlert(window);
+
+  // Também dentro do iframe do viewer
+  function hookIframe(){
+    var f = document.getElementById('pdfFrame') || document.querySelector('iframe#pdfFrame, iframe[name="pdfFrame"], iframe');
+    if (!f || !f.contentWindow) return;
+    hookAlert(f.contentWindow);
+  }
+  window.addEventListener('load', hookIframe);
+  setTimeout(hookIframe, 500);
+  setTimeout(hookIframe, 1500);
+  setTimeout(hookIframe, 3000);
+})();
+
 </script>
 
 </body>
