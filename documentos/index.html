@@ -912,6 +912,7 @@ async function finalizeStep5(){
   const res  = await saveDocumentWithPdf(blob);
 
   if (res && res.ok) {
+    try{ if (window.__lastSave && window.__lastSave.dados) { __afterPdfSavedGenerateExcel(window.__lastSave.dados); } }catch(e){ console.error(e); }
     showToast('Documento cadastrado com sucesso!');
     setTimeout(() => {
       document.getElementById('successModal').style.display = 'flex';
@@ -989,7 +990,7 @@ async function saveDocumentWithPdf(pdfBlob){
       console.warn('[index] tentativa duplicada detectada (4s) — ignorado');
       return { ok:false, reason:'local-dupe-guard' };
     }
-    window.__lastSave = { sig, at: now };
+    window.__lastSave = { sig, at: now, dados };
     // -----------------------------------------------------
 
     // chamada ÚNICA: usa o patch e PASSA "dados"
@@ -2245,208 +2246,119 @@ async function dedupeAllByCodigo() {
 </script>
 
 
-<!-- ===== EXCEL FRONTEND PATCH (inline) — backend intocado ===== -->
 <script>
-(function(){
-  document.addEventListener('DOMContentLoaded', function(){
-    try{
-      var qs=new URLSearchParams(location.search);
-      var base=(window.__ERP_VERSION__||qs.get('versao')||'excel-ui');
-      var build=(window.__ERP_BUILD__||qs.get('build')||Date.now().toString().slice(-5));
-      var el=document.getElementById('erp-version-badge');
-      if(!el){ el=document.createElement('div'); el.id='erp-version-badge'; document.body.appendChild(el); }
-      el.style.cssText='position:fixed;right:10px;bottom:8px;padding:4px 8px;border-radius:6px;font-size:12px;color:#fff;background:rgba(0,0,0,.55);z-index:99999;pointer-events:none';
-      el.textContent=base+'-'+build;
-    }catch(e){}
-  });
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
-  function dl(blob,name){ var url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url); }
-  function np(p){ p=p||{}; return {nome:p.nome||'', cpfcnpj:p.cpfCnpj||p.cpfcnpj||'', endereco:p.endereco||'', contato:p.contato||'', telefone:p.telefone||'', email:p['e-mail']||p.email||''}; }
-  function buildWS(d){
-    var ctt=np(d.contratante), cta=np(d.contratada), op=d.operador||{};
-    var rows=[
-      ['Resumo do Documento',''],
-      ['Operador', [op.nome||'', op['e-mail']||op.email||''].filter(Boolean).join(' ')],
-      ['Código do Projeto', d.codigo||d['código']||''],
-      ['Serviço', d.servico||''],
-      ['Endereço da Obra', d.enderecoObra||d.enderecoobra||''],
-      ['',''],
-      ['CONTRATANTE',''],
-      ['Nome', ctt.nome],['CPF/CNPJ', ctt.cpfcnpj],['Endereço', ctt.endereco],['Contato', ctt.contato],['Telefone', ctt.telefone],['E-mail', ctt.email],
-      ['',''],
-      ['CONTRATADA',''],
-      ['Nome', cta.nome],['CPF/CNPJ', cta.cpfcnpj],['Endereço', cta.endereco],['Contato', cta.contato],['Telefone', cta.telefone],['E-mail', cta.email],
-      ['',''],
-      ['CONDIÇÕES',''],
-      ['Valor', d.valor||''],['Valor (extenso)', d.valorExtenso||d.valorextenso||''],['Prazo', d.prazo||''],['Data', d.dataExtenso||d.dataextenso||''],['Condições de pagamento', d.condicoes||d.condicoespagamento||''],
-      ['',''],
-      ['Cláusulas', d.clausulas||'']
-    ];
-    var ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:40},{wch:110}]; return ws;
+// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF
+
+// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF (sem misturar contratante/contratada)
+function gerarExcelDoMesmoConteudo(dados, nomeBase) {
+  const wsData = [];
+
+  // Helper: extrai parte (contratante/contratada) sem herdar do outro
+  function pick(obj, k){ return (obj && (obj[k] ?? obj[k.toLowerCase()] ?? obj[k.toUpperCase()])) || ""; }
+  function getEmail(o){
+    return (o && (o["e-mail"] || o["email"] || o["e_mail"] || o["mail"] || o["Email"] || o["E-mail"])) || "";
   }
-  function nomeBase(d){
-    var ymd=new Date().toISOString().slice(0,10).replaceAll('-','');
-    var cod=(d&&(d.codigo||d['código']))||(document.getElementById('codigo')&&document.getElementById('codigo').value)||'DOC';
-    return (cod||'DOC')+'_'+ymd+'.xlsx';
+  function party(dados, key, prefix){
+    const nest = (dados && dados[key]) && typeof dados[key]==='object' ? dados[key] : {};
+    // tenta também chaves planas com prefixo (contratante_nome, contratada_endereco, etc.)
+    const flat = {};
+    const fields = {nome:'nome', doc:['cpfCnpj','cpfcnpj'], end:'endereco', contato:'contato', tel:'telefone', mail:['e-mail','email','e_mail','mail']};
+    flat.nome    = dados[prefix+'_nome'] ?? "";
+    flat.doc     = dados[prefix+'_cpfCnpj'] ?? dados[prefix+'_cpfcnpj'] ?? "";
+    flat.end     = dados[prefix+'_endereco'] ?? "";
+    flat.contato = dados[prefix+'_contato'] ?? "";
+    flat.tel     = dados[prefix+'_telefone'] ?? "";
+    flat.mail    = dados[prefix+'_e-mail'] ?? dados[prefix+'_email'] ?? dados[prefix+'_e_mail'] ?? dados[prefix+'_mail'] ?? "";
+
+    const o = {};
+    o.nome     = pick(nest,'nome') || flat.nome;
+    o.cpfcnpj  = pick(nest,'cpfCnpj') || pick(nest,'cpfcnpj') || flat.doc;
+    o.endereco = pick(nest,'endereco') || flat.end;
+    o.contato  = pick(nest,'contato') || flat.contato;
+    o.telefone = pick(nest,'telefone') || flat.tel;
+    o.email    = getEmail(nest) || flat.mail;
+    return o;
   }
-  async function dadosPreferidos(codigo){
-    if (window.__lastSave && window.__lastSave.dados) return window.__lastSave.dados;
-    var fns=['__buildDados','buildDados','getDados','collectDados','collectData','coletarDados'];
-    for (var i=0;i<fns.length;i++){ try{ if(typeof window[fns[i]]==='function'){ var r=window[fns[i]](); if (r&&typeof r==='object') return r; } }catch(e){} }
-    try{
-      if (typeof window.getApiBaseFromPatch==='function' && codigo){
-        var base=window.getApiBaseFromPatch(); if (base){
-          var q='?code='+encodeURIComponent(codigo)+'&limit=1&full=1';
-          var r=await fetch(base+q, {credentials:'same-origin', headers:{'Accept':'application/json'}});
-          if (r.ok){
-            var j=await r.json();
-            var row=Array.isArray(j)?j[0]:(j.rows&&j.rows[0])||(j.items&&j.items[0])||(j.data&&j.data[0]);
-            if (row && (row.dados||row.data||row.payload)) return (row.dados||row.data||row.payload);
-          }
-        }
-      }
-    }catch(e){}
-    var form=document.querySelector('form')||document.body, d={};
-    form.querySelectorAll('input,select,textarea').forEach(function(el){
-      var k=el.name||el.id; if(!k) return; d[k]=(el.type==='checkbox')?el.checked:el.value;
-    });
-    d.contratante=d.contratante||{}; d.contratada=d.contratada||{}; d.operador=d.operador||{};
-    if (codigo && !d.codigo) d.codigo=codigo;
-    return d;
-  }
-  async function baixarExcel(d){ var wb=XLSX.utils.book_new(), ws=buildWS(d||{}); XLSX.utils.book_append_sheet(wb, ws, 'Documento'); var ab=XLSX.write(wb,{bookType:'xlsx',type:'array'}); dl(new Blob([ab],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), nomeBase(d||{})); }
 
-  function swapPdfToExcel(root){
-    if(!root) return;
-    var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null), nodes=[];
-    while(w.nextNode()){ var n=w.currentNode; if(n.nodeValue && /PDF/i.test(n.nodeValue)) nodes.push(n); }
-    nodes.forEach(function(n){ n.nodeValue = n.nodeValue.replace(/PDF/gi,'EXCEL'); });
-  }
-  document.addEventListener('DOMContentLoaded', function(){
-    swapPdfToExcel(document.body);
-    new MutationObserver(function(muts){
-      muts.forEach(function(m){
-        if(m.type==='childList'){ m.addedNodes&&m.addedNodes.forEach(function(n){ if(n.nodeType===1) swapPdfToExcel(n); }); }
-        else if(m.type==='characterData'){ if(/PDF/i.test(m.target.nodeValue||'')) m.target.nodeValue=m.target.nodeValue.replace(/PDF/gi,'EXCEL'); }
-      });
-    }).observe(document.body,{childList:true,subtree:true,characterData:true});
+  const op = (dados && dados.operador) && typeof dados.operador==='object' ? dados.operador : {};
+  const operEmail = getEmail(op);
+
+  const ctt = party(dados,'contratante','contratante');
+  const cta = party(dados,'contratada','contratada');
+
+  wsData.push(["Resumo do Documento",""]);
+  wsData.push(["Operador", [op.nome || "", operEmail].filter(Boolean).join(" ")]);
+  wsData.push(["Código do Projeto", dados.codigo || dados["código"] || ""]);
+  wsData.push(["Serviço", dados.servico || ""]);
+  wsData.push(["Endereço da obra", dados.enderecoObra || dados.enderecoobra || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONTRATANTE",""]);
+  wsData.push(["Nome", ctt.nome || ""]);
+  wsData.push(["CPF/CNPJ", ctt.cpfcnpj || ""]);
+  wsData.push(["Endereço", ctt.endereco || ""]);
+  wsData.push(["Contato", ctt.contato || ""]);
+  wsData.push(["Telefone", ctt.telefone || ""]);
+  wsData.push(["E-mail", ctt.email || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONTRATADA",""]);
+  wsData.push(["Nome", cta.nome || ""]);
+  wsData.push(["CPF/CNPJ", cta.cpfcnpj || ""]);
+  wsData.push(["Endereço", cta.endereco || ""]);
+  wsData.push(["Contato", cta.contato || ""]);
+  wsData.push(["Telefone", cta.telefone || ""]);
+  wsData.push(["E-mail", cta.email || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONDIÇÕES",""]);
+  wsData.push(["Valor", dados.valor || ""]);
+  wsData.push(["Valor (extenso)", dados.valorExtenso || dados.valorextenso || ""]);
+  wsData.push(["Prazo", dados.prazo || ""]);
+  wsData.push(["Data", dados.dataExtenso || dados.dataextenso || ""]);
+  wsData.push(["Condições de pagamento", (dados.condicoes || dados.condicoespagamento || "")]);
+  wsData.push(["",""]);
+
+  wsData.push(["Cláusulas", (dados.clausulas || "")]);
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:40},{wch:90}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Documento");
+  const ab = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const fn = (nomeBase || 'DOC') + ".xlsx";
+  downloadBlob(blob, fn);
+}
+
+
+// Hook simples chamado após salvamento OK (PDF no servidor, Excel para o usuário)
+function __afterPdfSavedGenerateExcel(dados) {
+  const base = (typeof dados.codigo !== 'undefined' ? dados.codigo : (dados["código"]||"DOC"));
+  const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
+  const nomeBase = (base || 'DOC') + "_" + ymd;
+  try { gerarExcelDoMesmoConteudo(dados, nomeBase); } catch(e){ console.error(e); }
+}
+
+// Troca apenas os textos visuais de PDF -> EXCEL (não altera funções internas)
+document.addEventListener('DOMContentLoaded', () => {
+  const swap = (el) => { el.textContent = el.textContent.replace(/PDF/gi, 'EXCEL'); };
+  document.querySelectorAll('button, .hint, .hd, .bd, .ft, label, .btn').forEach(el => {
+    if (el && /PDF/i.test(el.textContent || '')) swap(el);
   });
-
-  document.addEventListener('DOMContentLoaded', function(){
-    var modal=document.getElementById('consultaModal'); if(!modal) return;
-    new MutationObserver(function(){
-      if(getComputedStyle(modal).display!=='none'){
-        var ths=modal.querySelectorAll('thead th');
-        if(ths.length){ var last=ths[ths.length-1]; if(/pdf/i.test(last.textContent||'')) last.textContent=last.textContent.replace(/pdf/gi,'EXCEL'); }
-      }
-    }).observe(modal,{attributes:true,attributeFilter:['style']});
-    modal.addEventListener('click', async function(ev){
-      var a=ev.target.closest('a'); if(!a) return;
-      var td=a.closest('td'), tr=a.closest('tr'); if(!td||!tr) return;
-      var ths=modal.querySelectorAll('thead th'); if (td.cellIndex!==ths.length-1) return;
-      ev.preventDefault(); ev.stopImmediatePropagation();
-      var codeEl=tr.querySelector('td:nth-child(2) a, td:nth-child(2)');
-      var codigo=(codeEl && codeEl.textContent||'').trim();
-      var d=await dadosPreferidos(codigo); await baixarExcel(d);
-    }, true);
-  });
-
-  document.addEventListener('DOMContentLoaded', function(){
-    function hideTop(){
-      document.querySelectorAll('button, a').forEach(function(el){
-        var t=(el.textContent||'').trim();
-        if(/^Baixar\s*PDF$/i.test(t)||/^Gerar\s*contrato\.docx$/i.test(t)||/^Compartilhar$/i.test(t)){
-          el.style.display='none';
-        }
-      });
-      if(!document.getElementById('btnBaixarExcelTop')){
-        var bar=document.body;
-        var wrap=document.createElement('div');
-        wrap.style.cssText='display:flex;justify-content:flex-end;gap:.5rem;padding:.5rem .75rem';
-        wrap.innerHTML='<button id="btnBaixarExcelTop" style="padding:.45rem .85rem;border:1px solid #ddd;border-radius:.5rem;background:#f7f7f7;cursor:pointer">Baixar Excel</button>';
-        bar.insertBefore(wrap, bar.firstChild);
-        document.getElementById('btnBaixarExcelTop').addEventListener('click', async function(ev){
-          ev.preventDefault(); ev.stopImmediatePropagation();
-          var d=await dadosPreferidos(); await baixarExcel(d);
-        }, true);
-      }
-    }
-    hideTop();
-
-    var iframe=document.querySelector('iframe#pdfFrame, iframe[src*="pdf.php"]');
-    if(iframe){
-      function inside(){
-        try{
-          var doc=iframe.contentDocument||iframe.contentWindow?.document; if(!doc) return;
-          var tb=doc.querySelector('[role="toolbar"], .toolbar, .viewerToolbar'); if(tb) tb.style.display='none';
-          var viewer=doc.querySelector('#viewer, canvas, .pdfViewer'); if(viewer) viewer.style.display='none';
-          doc.querySelectorAll('button,a').forEach(function(el){
-            var title=(el.getAttribute('title')||'')+' '+(el.getAttribute('aria-label')||'')+' '+(el.textContent||'');
-            if (/(download|baixar)/i.test(title) && !el.__xl){
-              el.__xl=true;
-              el.addEventListener('click', async function(ev){
-                ev.preventDefault(); ev.stopImmediatePropagation();
-                var d=await dadosPreferidos(); await baixarExcel(d);
-              }, true);
-            }
-          });
-          if(!doc.getElementById('excelPreviewHost')){
-            var host=doc.createElement('div'); host.id='excelPreviewHost';
-            host.style.cssText='position:absolute; inset:56px 16px 16px 16px; overflow:auto; background:#fff; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,.12); padding:8px; font:14px sans-serif';
-            doc.body.appendChild(host);
-            (async function(){
-              var dados=await window.parent.dadosPreferidos();
-              function row(k,v){ return '<tr><th>'+k+'</th><td>'+String(v||'')+'</td></tr>'; }
-              function pp(p){ p=p||{}; return {nome:p.nome||'',cpfcnpj:p.cpfCnpj||p.cpfcnpj||'',endereco:p.endereco||'',contato:p.contato||'',telefone:p.telefone||'',email:p['e-mail']||p.email||''}; }
-              var ctt=pp(dados.contratante), cta=pp(dados.contratada);
-              var html=[
-                '<style>.xprev table{width:100%;border-collapse:collapse}.xprev th,.xprev td{border:1px solid #e2e2e2;padding:.45rem .6rem;vertical-align:top}.xprev th{background:#f3f6fa;text-align:left;width:260px}</style>',
-                '<div class="xprev"><table>',
-                row('Operador',(dados.operador?.nome||"")+' '+(dados.operador?.email||dados.operador?.["e-mail"]||"")),
-                row('Código do Projeto',dados.codigo||dados['código']||''), row('Serviço',dados.servico||''), row('Endereço da Obra',dados.enderecoObra||dados.enderecoobra||''),
-                '<tr><th colspan="2">CONTRATANTE</th></tr>',
-                row('Nome',ctt.nome),row('CPF/CNPJ',ctt.cpfcnpj),row('Endereço',ctt.endereco),row('Contato',ctt.contato),row('Telefone',ctt.telefone),row('E-mail',ctt.email),
-                '<tr><th colspan="2">CONTRATADA</th></tr>',
-                row('Nome',cta.nome),row('CPF/CNPJ',cta.cpfcnpj),row('Endereço',cta.endereco),row('Contato',cta.contato),row('Telefone',cta.telefone),row('E-mail',cta.email),
-                '<tr><th colspan="2">CONDIÇÕES</th></tr>',
-                row('Valor',dados.valor||''),row('Valor (extenso)',dados.valorExtenso||dados.valorextenso||''),row('Prazo',dados.prazo||''),row('Data',dados.dataExtenso||dados.dataextenso||''),row('Condições de pagamento',dados.condicoes||dados.condicoespagamento||''),
-                row('Cláusulas',dados.clausulas||''),
-                '</table></div>'
-              ].join('');
-              host.innerHTML=html;
-            })();
-          }
-        }catch(e){}
-      }
-      if (iframe.contentDocument?.readyState==='complete') inside(); else iframe.addEventListener('load', inside);
-    }
-  });
-
-  document.addEventListener('DOMContentLoaded', function(){
-    new MutationObserver(function(){
-      document.querySelectorAll('.modal,[role="dialog"],.dialog').forEach(function(dlg){
-        dlg.querySelectorAll('*').forEach(function(n){
-          if(n.firstChild && n.firstChild.nodeType===3 && /PDF/i.test(n.firstChild.nodeValue||'')){
-            n.firstChild.nodeValue=n.firstChild.nodeValue.replace(/PDF/gi,'EXCEL');
-          }
-        });
-        ['Gerar PDF','Gerar EXCEL','Visualizar documento','Baixar EXCEL'].forEach(function(lbl){
-          var btn=[].slice.call(dlg.querySelectorAll('button,a')).find(function(el){ return new RegExp('^'+lbl+'$','i').test((el.textContent||'').trim()); });
-          if(btn && !btn.__xl){
-            btn.__xl=true; btn.textContent='Baixar EXCEL';
-            btn.addEventListener('click', async function(ev){
-              ev.preventDefault(); ev.stopImmediatePropagation();
-              var d=await dadosPreferidos(); await baixarExcel(d);
-              var close=[].slice.call(dlg.querySelectorAll('button,a')).find(function(el){ return /Fechar/i.test((el.textContent||'').trim()); });
-              if(close) close.click();
-            }, true);
-          }
-        });
-      });
-    }).observe(document.body,{childList:true,subtree:true,characterData:true});
-  });
-})();
+});
 </script>
-<!-- ===== /EXCEL FRONTEND PATCH ===== -->
+
 </body>
 </html>
