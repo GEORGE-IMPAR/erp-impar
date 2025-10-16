@@ -306,7 +306,6 @@ window.__CONSULTA_CFG__ = {
   }
 }
 </style>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -2245,259 +2244,21 @@ async function dedupeAllByCodigo() {
 </script>
 
 
-<!-- === FRONTEND EXCEL PATCH (somente UI; backend intacto) === -->
+<!-- BEGIN: EXCEL FRONTEND PATCH (no backend changes) -->
 <script>
+
+// == excel_ui_patch.js (front-only; backend intact) ==
 (function(){
-  /* ========== Troca visual de labels PDF->EXCEL (sem tocar handlers) ========== */
-  function swapPdfToExcelNode(root){
-    if (!root) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-    const nodes = [];
-    while (walker.nextNode()){
-      const n = walker.currentNode;
-      if (n.nodeValue && /PDF/i.test(n.nodeValue)) nodes.push(n);
-    }
-    nodes.forEach(n => n.nodeValue = n.nodeValue.replace(/PDF/gi,'EXCEL'));
-  }
-  document.addEventListener('DOMContentLoaded', function(){
-    swapPdfToExcelNode(document.body);
-    // Observa novas inserções (consulta, dialogs, viewer toolbars, etc.)
-    new MutationObserver(muts => {
-      for (const m of muts){
-        if (m.type === 'childList'){
-          m.addedNodes && m.addedNodes.forEach(n => {
-            if (n.nodeType === 1) swapPdfToExcelNode(n);
-          });
-        } else if (m.type === 'characterData'){
-          if (/PDF/i.test(m.target.nodeValue||'')) {
-            m.target.nodeValue = m.target.nodeValue.replace(/PDF/gi,'EXCEL');
-          }
-        }
-      }
-    }).observe(document.body, {childList:true, subtree:true, characterData:true});
-  });
-
-  /* ========== Helpers Excel ========== */
-  function downloadBlob(blob, filename){
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  }
-  function normalizeParty(d){
-    const o = d && typeof d==='object' ? d : {};
-    return {
-      nome: o.nome || '',
-      cpfcnpj: o.cpfCnpj || o.cpfcnpj || '',
-      endereco: o.endereco || '',
-      contato: o.contato || '',
-      telefone: o.telefone || '',
-      email: o['e-mail'] || o.email || ''
-    };
-  }
-  function gerarExcelCompleto(dados, nomeBase){
-    try{
-      const ctt = normalizeParty(dados.contratante);
-      const cta = normalizeParty(dados.contratada);
-      const op  = normalizeParty(dados.operador);
-      const wsData = [];
-      wsData.push(['Resumo do Documento','']);
-      wsData.push(['Operador', [dados?.operador?.nome||'', dados?.operador?.['e-mail']||dados?.operador?.email||''].filter(Boolean).join(' ')]);
-      wsData.push(['Código do Projeto', dados.codigo || dados['código'] || '']);
-      wsData.push(['Serviço', dados.servico || '']);
-      wsData.push(['Endereço da Obra', dados.enderecoObra || dados.enderecoobra || '']);
-      wsData.push(['', '']);
-
-      wsData.push(['CONTRATANTE','']);
-      wsData.push(['Nome', ctt.nome]);
-      wsData.push(['CPF/CNPJ', ctt.cpfcnpj]);
-      wsData.push(['Endereço', ctt.endereco]);
-      wsData.push(['Contato', ctt.contato]);
-      wsData.push(['Telefone', ctt.telefone]);
-      wsData.push(['E-mail', ctt.email]);
-      wsData.push(['', '']);
-
-      wsData.push(['CONTRATADA','']);
-      wsData.push(['Nome', cta.nome]);
-      wsData.push(['CPF/CNPJ', cta.cpfcnpj]);
-      wsData.push(['Endereço', cta.endereco]);
-      wsData.push(['Contato', cta.contato]);
-      wsData.push(['Telefone', cta.telefone]);
-      wsData.push(['E-mail', cta.email]);
-      wsData.push(['', '']);
-
-      wsData.push(['CONDIÇÕES','']);
-      wsData.push(['Valor', dados.valor || '']);
-      wsData.push(['Valor (extenso)', dados.valorExtenso || dados.valorextenso || '']);
-      wsData.push(['Prazo', dados.prazo || '']);
-      wsData.push(['Data', dados.dataExtenso || dados.dataextenso || '']);
-      wsData.push(['Condições de pagamento', (dados.condicoes || dados.condicoespagamento || '')]);
-      wsData.push(['', '']);
-
-      wsData.push(['Cláusulas', (dados.clausulas || '')]);
-
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-      ws['!cols'] = [{wch:40},{wch:90}];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Documento');
-      const ab = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-      downloadBlob(new Blob([ab], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), (nomeBase||'DOC') + '.xlsx');
-    }catch(e){ console.error('Excel error', e); }
-  }
-  function guessNomeBase(dados){
-    const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
-    const cod = (dados && (dados.codigo || dados['código'])) || (document.getElementById('codigo')?.value) || 'DOC';
-    return (cod||'DOC') + '_' + ymd;
-  }
-  async function getDadosPreferidos(codigo){
-    // 1) se houver dados em memória do último save, use
-    if (window.__lastSave && window.__lastSave.dados) return window.__lastSave.dados;
-    // 2) tente coletores existentes sem alterar nada
-    const fns = ['__buildDados','buildDados','getDados','collectDados','collectData','coletarDados'];
-    for (const fn of fns){
-      try{
-        if (typeof window[fn] === 'function'){
-          const d = window[fn]();
-          if (d && typeof d === 'object') return d;
-        }
-      }catch(e){}
-    }
-    // 3) como fallback, se for da Consulta e tiver URL da linha (PDF), tente buscar JSON usando endpoints já existentes (sem criar novos)
-    try{
-      if (typeof window.getApiBaseFromPatch === 'function'){
-        const base = window.getApiBaseFromPatch();
-        if (base && codigo){
-          const q = `?code=${encodeURIComponent(codigo)}&limit=1&full=1`;
-          const r = await fetch(base+q, {credentials:'same-origin', headers:{'Accept':'application/json'}});
-          if (r.ok){
-            const j = await r.json();
-            const row = Array.isArray(j) ? j[0] : (j.rows?.[0] || j.items?.[0] || j.data?.[0]);
-            if (row && (row.dados || row.data || row.payload)) return (row.dados || row.data || row.payload);
-          }
-        }
-      }
-    }catch(e){}
-    // 4) fallback final: varre o formulário atual (mantém tudo funcionando)
-    const form = document.querySelector('form') || document.body;
-    const dados = {};
-    form.querySelectorAll('input,select,textarea').forEach(el=>{
-      const name = el.name || el.id || '';
-      if (!name) return;
-      let val = (el.type==='checkbox') ? el.checked : el.value;
-      dados[name] = val;
-    });
-    // estrutura mínima esperada
-    dados.contratante = dados.contratante || {};
-    dados.contratada  = dados.contratada  || {};
-    dados.operador    = dados.operador    || {};
-    return dados;
+  // Load SheetJS dynamically if not present
+  function ensureSheetJS(cb){
+    if (window.XLSX) return cb();
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=cb; document.head.appendChild(s);
   }
 
-  /* ========== Consulta (Etapa 1): última coluna -> abre Excel ========== */
-  document.addEventListener('DOMContentLoaded', function(){
-    const modal = document.getElementById('consultaModal');
-    if (!modal) return;
-    // Label da última coluna
-    const mo = new MutationObserver(()=>{
-      if (getComputedStyle(modal).display !== 'none'){
-        const ths = modal.querySelectorAll('thead th');
-        if (ths.length){
-          const last = ths[ths.length-1];
-          if (/pdf/i.test(last.textContent||'')) last.textContent = last.textContent.replace(/pdf/gi,'EXCEL');
-        }
-      }
-    });
-    mo.observe(modal, {attributes:true, attributeFilter:['style']});
-
-    // Clique no "abrir" da última coluna: gera Excel com dados completos
-    modal.addEventListener('click', async function(ev){
-      const a = ev.target.closest('a'); if (!a) return;
-      const td = a.closest('td'), tr = a.closest('tr'); if (!td || !tr) return;
-      const ths = modal.querySelectorAll('thead th');
-      if (td.cellIndex !== ths.length-1) return; // só última coluna
-
-      ev.preventDefault(); ev.stopPropagation();
-
-      // código da linha
-      const codeEl = tr.querySelector('td:nth-child(2) a, td:nth-child(2)');
-      const codigo = (codeEl && codeEl.textContent || '').trim();
-
-      const dados = await getDadosPreferidos(codigo);
-      const nomeBase = guessNomeBase(dados || {codigo});
-      gerarExcelCompleto(dados || {codigo}, nomeBase);
-    }, true);
-  });
-
-  /* ========== Visualizador (iframe pdf.php): mudar labels e baixar Excel ========== */
-  function hookViewer(){
-    const iframe = document.querySelector('iframe#pdfFrame, iframe[src*="pdf.php"]');
-    if (!iframe) return;
-    function applyInside(){
-      try{
-        const doc = iframe.contentDocument || iframe.contentWindow?.document; if (!doc) return;
-        doc.querySelectorAll('button,a').forEach(el=>{
-          const txt = (el.textContent||'').trim();
-          if (/^Baixar\s*PDF$/i.test(txt)) el.textContent = txt.replace(/PDF/gi,'EXCEL');
-        });
-        // clique "Baixar EXCEL" vira geração Excel (sem bloquear outros botões)
-        doc.querySelectorAll('button,a').forEach(el=>{
-          if (el.__xl) return;
-          const txt = (el.textContent||'').trim();
-          const title = (el.getAttribute('title')||'') + ' ' + (el.getAttribute('aria-label')||'');
-          if (/Baixar\s*EXCEL/i.test(txt) || /(download|baixar)/i.test(title)){
-            el.__xl = true;
-            el.addEventListener('click', async function(ev){
-              // intercepta só se for o botão explícito de baixar; os demais deixam fluir
-              if (/Baixar\s*EXCEL/i.test((el.textContent||'').trim())){
-                ev.preventDefault(); ev.stopPropagation();
-                const dados = await getDadosPreferidos();
-                const nomeBase = guessNomeBase(dados);
-                gerarExcelCompleto(dados, nomeBase);
-              }
-            }, true);
-          }
-        });
-        new MutationObserver(()=>applyInside()).observe(doc.body, {childList:true, subtree:true, characterData:true});
-      }catch(e){}
-    }
-    if (iframe.contentDocument?.readyState === 'complete') applyInside(); else iframe.addEventListener('load', applyInside);
-  }
-  document.addEventListener('DOMContentLoaded', hookViewer);
-
-  /* ========== Etapa 5: diálogo de sucesso -> rótulos EXCEL e botão baixa Excel ========== */
-  document.addEventListener('DOMContentLoaded', function(){
-    const mo = new MutationObserver(()=>{
-      document.querySelectorAll('.modal,[role="dialog"],.dialog').forEach(dlg=>{
-        const text = (dlg.textContent||'').trim();
-        if (!/Documento cadastrado com sucesso!/i.test(text)) return;
-        // Texto: PDF -> EXCEL
-        dlg.querySelectorAll('*').forEach(n=>{
-          if (n.firstChild && n.firstChild.nodeType===3 && /PDF/i.test(n.firstChild.nodeValue||'')){
-            n.firstChild.nodeValue = n.firstChild.nodeValue.replace(/PDF/gi,'EXCEL');
-          }
-        });
-        // Botão Visualizar -> Baixar EXCEL
-        const btn = Array.from(dlg.querySelectorAll('button,a')).find(el => /Visualizar documento/i.test((el.textContent||'').trim()));
-        if (btn && !btn.__xl){
-          btn.__xl = true;
-          btn.textContent = 'Baixar EXCEL';
-          btn.addEventListener('click', async function(ev){
-            ev.preventDefault(); ev.stopPropagation();
-            const dados = await getDadosPreferidos();
-            const nomeBase = guessNomeBase(dados);
-            gerarExcelCompleto(dados, nomeBase);
-            const close = Array.from(dlg.querySelectorAll('button,a')).find(el => /Fechar/i.test((el.textContent||'').trim()));
-            if (close) close.click();
-          }, true);
-        }
-      });
-    });
-    mo.observe(document.body, {childList:true, subtree:true, characterData:true});
-  });
-
-  /* ========== Versionador (flex) ========== */
-  document.addEventListener('DOMContentLoaded', function(){
+  // Version badge
+  function versionBadge(){
     try{
       var qs=new URLSearchParams(location.search);
       var base=(window.__ERP_VERSION__||qs.get('versao')||'excel-ui');
@@ -2507,11 +2268,204 @@ async function dedupeAllByCodigo() {
       el.style.cssText='position:fixed;right:10px;bottom:8px;padding:4px 8px;border-radius:6px;font-size:12px;line-height:1;color:#fff;background:rgba(0,0,0,.55);z-index:99999;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.2)';
       el.textContent=base+'-'+build;
     }catch(e){}
+  }
+
+  // Helpers Excel
+  function dl(blob, name){
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download=name;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+  function normParty(p){
+    p=p||{}; return {
+      nome:p.nome||'',
+      cpfcnpj:p.cpfCnpj||p.cpfcnpj||'',
+      endereco:p.endereco||'',
+      contato:p.contato||'',
+      telefone:p.telefone||'',
+      email:p['e-mail']||p.email||''
+    };
+  }
+  function buildWorksheetFromDados(d){
+    var ctt=normParty(d.contratante), cta=normParty(d.contratada), op=d.operador||{};
+    var rows=[
+      ['Resumo do Documento',''],
+      ['Operador', [op.nome||'', op['e-mail']||op.email||''].filter(Boolean).join(' ')],
+      ['Código do Projeto', d.codigo||d['código']||''],
+      ['Serviço', d.servico||''],
+      ['Endereço da Obra', d.enderecoObra||d.enderecoobra||''],
+      ['',''],
+      ['CONTRATANTE',''],
+      ['Nome', ctt.nome],['CPF/CNPJ', ctt.cpfcnpj],['Endereço', ctt.endereco],['Contato', ctt.contato],['Telefone', ctt.telefone],['E-mail', ctt.email],
+      ['',''],
+      ['CONTRATADA',''],
+      ['Nome', cta.nome],['CPF/CNPJ', cta.cpfcnpj],['Endereço', cta.endereco],['Contato', cta.contato],['Telefone', cta.telefone],['E-mail', cta.email],
+      ['',''],
+      ['CONDIÇÕES',''],
+      ['Valor', d.valor||''],['Valor (extenso)', d.valorExtenso||d.valorextenso||''],['Prazo', d.prazo||''],['Data', d.dataExtenso||d.dataextenso||''],['Condições de pagamento', d.condicoes||d.condicoespagamento||''],
+      ['',''],
+      ['Cláusulas', d.clausulas||'']
+    ];
+    var ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:40},{wch:110}]; return ws;
+  }
+  function guessNomeBase(d){
+    var ymd=new Date().toISOString().slice(0,10).replaceAll('-','');
+    var cod=(d && (d.codigo||d['código'])) || (document.getElementById('codigo') && document.getElementById('codigo').value) || 'DOC';
+    return (cod||'DOC') + '_' + ymd + '.xlsx';
+  }
+  function collectPreferencial(codigo){
+    // 1) últimos dados salvos
+    if (window.__lastSave && window.__lastSave.dados) return Promise.resolve(window.__lastSave.dados);
+    // 2) coletores já existentes
+    var fns=['__buildDados','buildDados','getDados','collectDados','collectData','coletarDados'];
+    for (var i=0;i<fns.length;i++){
+      try{ if (typeof window[fns[i]]==='function'){ var d=window[fns[i]](); if (d&&typeof d==='object') return Promise.resolve(d); } }catch(e){}
+    }
+    // 3) coletar do formulário atual como fallback
+    var form=document.querySelector('form') || document.body, dados={};
+    Array.prototype.forEach.call(form.querySelectorAll('input,select,textarea'), function(el){
+      var k=el.name||el.id; if(!k) return;
+      dados[k]=(el.type==='checkbox') ? el.checked : el.value;
+    });
+    dados.contratante=dados.contratante||{}; dados.contratada=dados.contratada||{}; dados.operador=dados.operador||{};
+    if (codigo && !dados.codigo) dados.codigo=codigo;
+    return Promise.resolve(dados);
+  }
+  function gerarExcel(dados){
+    var wb=XLSX.utils.book_new();
+    var ws=buildWorksheetFromDados(dados||{});
+    XLSX.utils.book_append_sheet(wb, ws, 'Documento');
+    var ab=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    dl(new Blob([ab],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), guessNomeBase(dados||{}));
+  }
+
+  // Troca visual de "PDF" -> "EXCEL"
+  function swapPdfToExcelNode(root){
+    if (!root) return;
+    var walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var nodes=[]; while(walker.nextNode()){ var n=walker.currentNode; if (n.nodeValue && /PDF/i.test(n.nodeValue)) nodes.push(n); }
+    nodes.forEach(function(n){ n.nodeValue = n.nodeValue.replace(/PDF/gi,'EXCEL'); });
+  }
+
+  // Consulta (última coluna abre Excel)
+  function hookConsulta(){
+    var modal=document.getElementById('consultaModal'); if(!modal) return;
+    new MutationObserver(function(){
+      if (getComputedStyle(modal).display!=='none'){
+        var ths=modal.querySelectorAll('thead th');
+        if (ths.length){ var last=ths[ths.length-1]; if (/pdf/i.test(last.textContent||'')) last.textContent = last.textContent.replace(/pdf/gi,'EXCEL'); }
+      }
+    }).observe(modal,{attributes:true,attributeFilter:['style']});
+    modal.addEventListener('click', function(ev){
+      var a=ev.target.closest('a'); if(!a) return;
+      var td=a.closest('td'), tr=a.closest('tr'); if(!td||!tr) return;
+      var ths=modal.querySelectorAll('thead th'); if (td.cellIndex!==ths.length-1) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var codeEl=tr.querySelector('td:nth-child(2) a, td:nth-child(2)');
+      var codigo=(codeEl && codeEl.textContent||'').trim();
+      ensureSheetJS(function(){ collectPreferencial(codigo).then(gerarExcel); });
+    }, true);
+  }
+
+  // Visualização: esconder PDF viewer/toolbars e mostrar prévia Excel + botão único
+  function hookViewer(){
+    var iframe=document.querySelector('iframe#pdfFrame, iframe[src*="pdf.php"]');
+    if (!iframe) return;
+    function inside(){
+      try{
+        var doc=iframe.contentDocument||iframe.contentWindow?.document; if(!doc) return;
+        // Esconde toolbar
+        var tb=doc.querySelector('[role="toolbar"], .toolbar, .viewerToolbar'); if (tb) tb.style.display='none';
+        // Oculta viewer/canvas
+        var viewer = doc.querySelector('#viewer, canvas, .pdfViewer'); if (viewer) viewer.style.visibility='hidden';
+        // Insere pré-visualização estilo planilha
+        if (!doc.getElementById('excelPreviewHost')){
+          var host=doc.createElement('div'); host.id='excelPreviewHost';
+          host.style.cssText='position:absolute; inset:56px 16px 16px 16px; overflow:auto; background:#fff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.12); padding:8px;';
+          doc.body.appendChild(host);
+          ensureSheetJS(function(){
+            collectPreferencial().then(function(dados){
+              function row(k,v){ return '<tr><th>'+k+'</th><td>'+String(v||'')+'</td></tr>'; }
+              function np(p){ p=p||{}; return {nome:p.nome||'', cpfcnpj:p.cpfCnpj||p.cpfcnpj||'', endereco:p.endereco||'', contato:p.contato||'', telefone:p.telefone||'', email:p['e-mail']||p.email||''}; }
+              var ctt=np(dados.contratante), cta=np(dados.contratada);
+              var html=[
+                '<style>.excel-preview{background:#fff;border-radius:.5rem;margin:.5rem;padding:.75rem;box-shadow:0 2px 6px rgba(0,0,0,.12)}',
+                '.excel-preview table{width:100%;border-collapse:collapse;table-layout:fixed}',
+                '.excel-preview th,.excel-preview td{border:1px solid #e2e2e2;padding:.4rem .5rem;vertical-align:top;word-wrap:break-word}',
+                '.excel-preview th{background:#f3f6fa;text-align:left;width:260px}</style>',
+                '<div class="excel-preview"><table>',
+                row('Operador', (dados.operador?.nome||"")+' '+(dados.operador?.email||dados.operador?.["e-mail"]||"")),
+                row('Código do Projeto', dados.codigo||dados['código']||''),
+                row('Serviço', dados.servico||''),
+                row('Endereço da Obra', dados.enderecoObra||dados.enderecoobra||''),
+                '<tr><th colspan="2">CONTRATANTE</th></tr>',
+                row('Nome', ctt.nome),row('CPF/CNPJ', ctt.cpfcnpj),row('Endereço', ctt.endereco),row('Contato', ctt.contato),row('Telefone', ctt.telefone),row('E-mail', ctt.email),
+                '<tr><th colspan="2">CONTRATADA</th></tr>',
+                row('Nome', cta.nome),row('CPF/CNPJ', cta.cpfcnpj),row('Endereço', cta.endereco),row('Contato', cta.contato),row('Telefone', cta.telefone),row('E-mail', cta.email),
+                '<tr><th colspan="2">CONDIÇÕES</th></tr>',
+                row('Valor', dados.valor||''),row('Valor (extenso)', dados.valorExtenso||dados.valorextenso||''),row('Prazo', dados.prazo||''),row('Data', dados.dataExtenso||dados.dataextenso||''),row('Condições de pagamento', dados.condicoes||dados.condicoespagamento||''),
+                row('Cláusulas', dados.clausulas||''),
+                '</table></div>'
+              ].join('');
+              host.innerHTML=html;
+            });
+          });
+        }
+      }catch(e){}
+    }
+    if (iframe.contentDocument?.readyState==='complete') inside(); else iframe.addEventListener('load', inside);
+  }
+
+  // Esconder botões PDF/DOCX/Compartilhar e adicionar "Baixar Excel"
+  function hookTopButtons(){
+    function run(){
+      // Esconde supostos botões (se existirem)
+      document.querySelectorAll('button, a').forEach(function(el){
+        var t=(el.textContent||'').trim();
+        if (/^Baixar\s*PDF$/i.test(t) || /^Gerar\s*contrato\.docx$/i.test(t) || /^Compartilhar$/i.test(t)){
+          el.style.display='none';
+        }
+      });
+      // Insere botão "Baixar Excel" se não houver
+      if (!document.getElementById('btnBaixarExcelTop')){
+        var bar = document.querySelector('div:has(> iframe[src*="pdf.php"])') || document.body;
+        var wrap=document.createElement('div');
+        wrap.className='excel-toolbar';
+        wrap.innerHTML='<button class="btn" id="btnBaixarExcelTop">Baixar Excel</button>';
+        document.body.insertBefore(wrap, document.body.firstChild);
+        document.getElementById('btnBaixarExcelTop').addEventListener('click', function(){
+          ensureSheetJS(function(){ collectPreferencial().then(gerarExcel); });
+        });
+      }
+    }
+    run();
+  }
+
+  // Troca visual PDF->EXCEL global
+  function swapLabelsGlobal(){
+    swapPdfToExcelNode(document.body);
+    new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        if (m.type==='childList'){
+          m.addedNodes && m.addedNodes.forEach(function(n){ if (n.nodeType===1) swapPdfToExcelNode(n); });
+        } else if (m.type==='characterData'){
+          if (/PDF/i.test(m.target.nodeValue||'')) m.target.nodeValue = m.target.nodeValue.replace(/PDF/gi,'EXCEL');
+        }
+      });
+    }).observe(document.body,{childList:true,subtree:true,characterData:true});
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    versionBadge();
+    swapLabelsGlobal();
+    hookConsulta();
+    hookTopButtons();
+    hookViewer();
   });
 })();
+
 </script>
-<style>@media print{#erp-version-badge{display:none!important}}</style>
-<!-- === /FRONTEND EXCEL PATCH === -->
+<!-- END: EXCEL FRONTEND PATCH -->
 
 </body>
 </html>
