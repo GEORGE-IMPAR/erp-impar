@@ -2076,6 +2076,18 @@ async function dedupeByCodigo(codigo) {
   }
 }
 
+// Mantém a função original e cria um wrapper que roda o dedupe antes
+const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
+
+function proceedFromStep1_Dedupe(){ return proceedFromStep1(); }
+function proceedFromStep1_Trator(){ return proceedFromStep1(); } catch (e) {
+    console.warn('Erro no dedupe:', e);
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
+  if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
+}
+
 // Redireciona o botão para o wrapper (sem mexer no HTML)
 window.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('bar1');
@@ -2372,176 +2384,90 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   })();
 })();
+</script>
 
-// Suprime só o alerta legado e chama nosso gerador
+
+<!-- v4.4: captura JSON do save.php e geração direta do DOCX -->
+<script>
 (function(){
-  function hookAlert(win){
-    try {
-      var _origAlert = win.alert;
-      win.alert = function(msg){
-        var txt = (msg||'')+'';
-        if (txt.indexOf('Abra um documento primeiro para gerar o contrato') !== -1) {
-          // usa nosso JSON e gera o DOCX
-          if (typeof window.gerarContratoDoJSON === 'function') {
-            try { window.gerarContratoDoJSON(); } catch(_){}
-            return; // não mostra o alerta
-          }
-        }
-        // fallback: alerta normal
-        try { return _origAlert.apply(this, arguments); } catch(_){ /* ignore */ }
-      };
-    } catch(_){}
-  }
-
-  // Top window
-  hookAlert(window);
-
-  // Também dentro do iframe do viewer
-  function hookIframe(){
-    var f = document.getElementById('pdfFrame') || document.querySelector('iframe#pdfFrame, iframe[name="pdfFrame"], iframe');
-    if (!f || !f.contentWindow) return;
-    hookAlert(f.contentWindow);
-  }
-  window.addEventListener('load', hookIframe);
-  setTimeout(hookIframe, 500);
-  setTimeout(hookIframe, 1500);
-  setTimeout(hookIframe, 3000);
-})();
-
-// Re-hool em QUALQUER iframe de viewer que aparecer (inclusive na etapa 5)
-(function(){
-  function temJSON(){ return !!window.__dadosVisualizacao; }
-  function garantirJSON(){ 
-    if (!temJSON() && typeof window.capturarVariaveisDaVisualizacao==='function'){
-      try{ window.capturarVariaveisDaVisualizacao(); }catch(_){}
-    }
-  }
-  function gerar(){
-    garantirJSON();
-    if (typeof window.gerarContratoDoJSON==='function'){ window.gerarContratoDoJSON(); }
-  }
-
-  function hookAlert(win){
-    try{
-      const orig = win.alert;
-      win.alert = function(msg){
-        msg = (msg||'')+'';
-        if (msg.indexOf('Abra um documento primeiro para gerar o contrato') !== -1){
-          try{ gerar(); }catch(_){}
-          return; // suprime alerta legado
-        }
-        return orig.apply(this, arguments);
-      };
-    }catch(_){}
-  }
-
-  function ehBotaoDocx(el, doc){
-    while (el && el !== doc.body){
-      const t = (el.innerText||el.textContent||'').trim().toLowerCase();
-      const tag = (el.tagName||'').toLowerCase();
-      if ((tag==='button' || tag==='a' || el.hasAttribute('role')) &&
-          (t.indexOf('gerar contrato.docx')!==-1 || t.indexOf('gerar contrato')!==-1)){
-        return true;
-      }
-      el = el.parentNode;
-    }
-    return false;
-  }
-
-  function bindNoIframe(frame){
-    if (!frame || frame.__hookedDocx) return;
-    const w = frame.contentWindow, d = frame.contentDocument;
-    if (!w || !d) return;
-
-    // 1) suprime o alerta legado do viewer
-    hookAlert(w);
-
-    // 2) intercepta o clique no botão do viewer (antes dos handlers antigos)
-    function onClick(ev){
-      if (ehBotaoDocx(ev.target, d)){
-        try{ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }catch(_){}
-        gerar();
-        return false;
-      }
-    }
-    d.addEventListener('click', onClick, true);
-
-    // 3) tenta limpar onclick antigos nos botões candidatos
-    d.querySelectorAll('button, a').forEach(function(btn){
-      const t = (btn.innerText||btn.textContent||'').trim().toLowerCase();
-      if (t.indexOf('gerar contrato')!==-1){
-        try{ btn.onclick=null; btn.removeAttribute('onclick'); }catch(_){}
-      }
-    });
-
-    // 4) se o viewer recriar a UI, reamarrar
-    try{
-      const mo = new w.MutationObserver(function(){ d.removeEventListener('click', onClick, true); d.addEventListener('click', onClick, true); });
-      mo.observe(d.documentElement, {childList:true, subtree:true});
-    }catch(_){}
-
-    frame.__hookedDocx = true;
-  }
-
-  function scanIframes(){
-    document.querySelectorAll('iframe').forEach(function(f){
-      try{
-        // só amarrar se já estiver carregado
-        if (f.contentWindow && f.contentDocument) bindNoIframe(f);
-        f.addEventListener('load', function(){ bindNoIframe(f); });
-      }catch(_){}
-    });
-  }
-
-  // etapas diferentes recriam o viewer -> observar o body
-  const moMain = new MutationObserver(scanIframes);
-  moMain.observe(document.body, {childList:true, subtree:true});
-
-  // tentativas iniciais e depois de navegar para etapa 5
-  window.addEventListener('load', scanIframes);
-  setTimeout(scanIframes, 400);
-  setTimeout(scanIframes, 1200);
-  setTimeout(scanIframes, 2500);
-})();
-
-/* Modo Seguro: bloqueia delete.php para testes */
-const SAFE_DEDUPE = true;
-(function(){
-  function isDeleteUrl(url){
-    try { return SAFE_DEDUPE && /\/delete\.php(\?|$)/i.test(String(url)); }
-    catch(_) { return false; }
-  }
-  // fetch
+  function looksSave(url){ try{ return /\/save\.php(\?|$)/i.test(String(url)); }catch(_){ return false; } }
   const _fetch = window.fetch;
   window.fetch = function(url, opts){
-    if (isDeleteUrl(url)){
-      console.warn('[SAFE_DEDUPE] Bloqueado fetch -> delete.php', url);
-      alert('Modo seguro: limpeza desativada (delete.php bloqueado).');
-      return Promise.resolve(new Response(
-        JSON.stringify({ok:true, skipped:true}),
-        {status:200, headers:{'Content-Type':'application/json'}}
-      ));
-    }
+    try{
+      if (opts && String((opts.method||'')).toUpperCase()==='POST' && looksSave(url) && opts.body){
+        try{
+          window.__dadosVisualizacao = JSON.parse(String(opts.body));
+          localStorage.setItem('__dadosVisualizacao', JSON.stringify(window.__dadosVisualizacao));
+          console.log('[CAPTURA] JSON via fetch/save.php:', window.__dadosVisualizacao);
+        }catch(e){ console.warn('CAPTURA fetch body não-JSON', e); }
+      }
+    }catch(_){}
     return _fetch.apply(this, arguments);
   };
-  // XHR
   const _open = XMLHttpRequest.prototype.open;
   const _send = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url){
-    this.__blockDelete = isDeleteUrl(url);
+    this.__cap_url = url;
     return _open.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function(body){
-    if (this.__blockDelete){
-      console.warn('[SAFE_DEDUPE] Bloqueado XHR -> delete.php');
-      try { this.onload && this.onload.call(this); } catch(_){}
-      return;
-    }
+    try{
+      if (this.__cap_url && /\/save\.php(\?|$)/i.test(String(this.__cap_url)) && body){
+        const s = (typeof body === 'string') ? body : body.toString();
+        try{
+          window.__dadosVisualizacao = JSON.parse(s);
+          localStorage.setItem('__dadosVisualizacao', s);
+          console.log('[CAPTURA] JSON via XHR/save.php:', window.__dadosVisualizacao);
+        }catch(e){ console.warn('CAPTURA XHR body não-JSON', e); }
+      }
+    }catch(_){}
     return _send.apply(this, arguments);
   };
-})();
 
+  if (typeof window.gerarContratoDoJSON !== 'function'){
+    window.gerarContratoDoJSON = function(){
+      var d = window.__dadosVisualizacao || null;
+      if (!d || !d.servico){
+        try{ d = JSON.parse(localStorage.getItem('__dadosVisualizacao')||'null'); }catch(_){}
+      }
+      if (!d || !d.servico){
+        alert('Sem dados capturados. Gere/abra a visualização (PDF) primeiro.');
+        return;
+      }
+      if (typeof showBusy==='function') showBusy('Gerando contrato…');
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/gerador/gerar_docx.php', true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.responseType = 'blob';
+      xhr.onload = function(){
+        try{
+          if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
+          var blob = xhr.response, url = URL.createObjectURL(blob);
+          var a = document.createElement('a'); a.href = url; a.download = 'Contrato-' + (d.codigo||'documento') + '.docx';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
+          if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
+        } finally { if (typeof hideBusy==='function') hideBusy(); }
+      };
+      xhr.onerror = function(){ if (typeof hideBusy==='function') hideBusy(); alert('Erro de rede ao gerar contrato.'); };
+      xhr.send(JSON.stringify(d));
+    };
+  }
+
+  (function ensureBtn(){
+    if (document.getElementById('btnGerarDocxFallback')) return;
+    var b = document.createElement('button');
+    b.id = 'btnGerarDocxFallback';
+    b.textContent = 'Gerar Contrato .docx (alternativo)';
+    b.style.position='fixed'; b.style.right='12px'; b.style.top='12px'; b.style.zIndex=99999;
+    b.style.background='#0b3a6f'; b.style.color='#fff'; b.style.padding='8px 12px';
+    b.style.border='0'; b.style.borderRadius='8px'; b.style.boxShadow='0 2px 8px rgba(0,0,0,.2)';
+    b.onclick = function(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){ } window.gerarContratoDoJSON(); return false; };
+    document.body.appendChild(b);
+  })();
+})();
 </script>
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.92;z-index:9999;">Versão Commit 4.4 – Atualizado em 15/10/2025</div>
 
 </body>
 </html>
