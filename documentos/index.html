@@ -306,7 +306,6 @@ window.__CONSULTA_CFG__ = {
   }
 }
 </style>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -912,7 +911,6 @@ async function finalizeStep5(){
   const res  = await saveDocumentWithPdf(blob);
 
   if (res && res.ok) {
-    try{ if (window.__lastSave && window.__lastSave.dados) { __afterPdfSavedGenerateExcel(window.__lastSave.dados); } }catch(e){ console.error(e); }
     showToast('Documento cadastrado com sucesso!');
     setTimeout(() => {
       document.getElementById('successModal').style.display = 'flex';
@@ -990,7 +988,7 @@ async function saveDocumentWithPdf(pdfBlob){
       console.warn('[index] tentativa duplicada detectada (4s) — ignorado');
       return { ok:false, reason:'local-dupe-guard' };
     }
-    window.__lastSave = { sig, at: now, dados };
+    window.__lastSave = { sig, at: now };
     // -----------------------------------------------------
 
     // chamada ÚNICA: usa o patch e PASSA "dados"
@@ -2247,116 +2245,12 @@ async function dedupeAllByCodigo() {
 
 
 <script>
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF
-
-// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF (sem misturar contratante/contratada)
-function gerarExcelDoMesmoConteudo(dados, nomeBase) {
-  const wsData = [];
-
-  // Helper: extrai parte (contratante/contratada) sem herdar do outro
-  function pick(obj, k){ return (obj && (obj[k] ?? obj[k.toLowerCase()] ?? obj[k.toUpperCase()])) || ""; }
-  function getEmail(o){
-    return (o && (o["e-mail"] || o["email"] || o["e_mail"] || o["mail"] || o["Email"] || o["E-mail"])) || "";
+// Habilita o botão "Pesquisar documentos cadastrados" da Etapa 1 (wire-only, sem mudar lógica)
+document.addEventListener('DOMContentLoaded', function(){
+  var btn = document.getElementById('openConsultaBtn');
+  if (btn && typeof window.openConsulta === 'function') {
+    btn.addEventListener('click', window.openConsulta);
   }
-  function party(dados, key, prefix){
-    const nest = (dados && dados[key]) && typeof dados[key]==='object' ? dados[key] : {};
-    // tenta também chaves planas com prefixo (contratante_nome, contratada_endereco, etc.)
-    const flat = {};
-    const fields = {nome:'nome', doc:['cpfCnpj','cpfcnpj'], end:'endereco', contato:'contato', tel:'telefone', mail:['e-mail','email','e_mail','mail']};
-    flat.nome    = dados[prefix+'_nome'] ?? "";
-    flat.doc     = dados[prefix+'_cpfCnpj'] ?? dados[prefix+'_cpfcnpj'] ?? "";
-    flat.end     = dados[prefix+'_endereco'] ?? "";
-    flat.contato = dados[prefix+'_contato'] ?? "";
-    flat.tel     = dados[prefix+'_telefone'] ?? "";
-    flat.mail    = dados[prefix+'_e-mail'] ?? dados[prefix+'_email'] ?? dados[prefix+'_e_mail'] ?? dados[prefix+'_mail'] ?? "";
-
-    const o = {};
-    o.nome     = pick(nest,'nome') || flat.nome;
-    o.cpfcnpj  = pick(nest,'cpfCnpj') || pick(nest,'cpfcnpj') || flat.doc;
-    o.endereco = pick(nest,'endereco') || flat.end;
-    o.contato  = pick(nest,'contato') || flat.contato;
-    o.telefone = pick(nest,'telefone') || flat.tel;
-    o.email    = getEmail(nest) || flat.mail;
-    return o;
-  }
-
-  const op = (dados && dados.operador) && typeof dados.operador==='object' ? dados.operador : {};
-  const operEmail = getEmail(op);
-
-  const ctt = party(dados,'contratante','contratante');
-  const cta = party(dados,'contratada','contratada');
-
-  wsData.push(["Resumo do Documento",""]);
-  wsData.push(["Operador", [op.nome || "", operEmail].filter(Boolean).join(" ")]);
-  wsData.push(["Código do Projeto", dados.codigo || dados["código"] || ""]);
-  wsData.push(["Serviço", dados.servico || ""]);
-  wsData.push(["Endereço da obra", dados.enderecoObra || dados.enderecoobra || ""]);
-  wsData.push(["",""]);
-
-  wsData.push(["CONTRATANTE",""]);
-  wsData.push(["Nome", ctt.nome || ""]);
-  wsData.push(["CPF/CNPJ", ctt.cpfcnpj || ""]);
-  wsData.push(["Endereço", ctt.endereco || ""]);
-  wsData.push(["Contato", ctt.contato || ""]);
-  wsData.push(["Telefone", ctt.telefone || ""]);
-  wsData.push(["E-mail", ctt.email || ""]);
-  wsData.push(["",""]);
-
-  wsData.push(["CONTRATADA",""]);
-  wsData.push(["Nome", cta.nome || ""]);
-  wsData.push(["CPF/CNPJ", cta.cpfcnpj || ""]);
-  wsData.push(["Endereço", cta.endereco || ""]);
-  wsData.push(["Contato", cta.contato || ""]);
-  wsData.push(["Telefone", cta.telefone || ""]);
-  wsData.push(["E-mail", cta.email || ""]);
-  wsData.push(["",""]);
-
-  wsData.push(["CONDIÇÕES",""]);
-  wsData.push(["Valor", dados.valor || ""]);
-  wsData.push(["Valor (extenso)", dados.valorExtenso || dados.valorextenso || ""]);
-  wsData.push(["Prazo", dados.prazo || ""]);
-  wsData.push(["Data", dados.dataExtenso || dados.dataextenso || ""]);
-  wsData.push(["Condições de pagamento", (dados.condicoes || dados.condicoespagamento || "")]);
-  wsData.push(["",""]);
-
-  wsData.push(["Cláusulas", (dados.clausulas || "")]);
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{wch:40},{wch:90}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Documento");
-  const ab = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  const blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const fn = (nomeBase || 'DOC') + ".xlsx";
-  downloadBlob(blob, fn);
-}
-
-
-// Hook simples chamado após salvamento OK (PDF no servidor, Excel para o usuário)
-function __afterPdfSavedGenerateExcel(dados) {
-  const base = (typeof dados.codigo !== 'undefined' ? dados.codigo : (dados["código"]||"DOC"));
-  const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
-  const nomeBase = (base || 'DOC') + "_" + ymd;
-  try { gerarExcelDoMesmoConteudo(dados, nomeBase); } catch(e){ console.error(e); }
-}
-
-// Troca apenas os textos visuais de PDF -> EXCEL (não altera funções internas)
-document.addEventListener('DOMContentLoaded', () => {
-  const swap = (el) => { el.textContent = el.textContent.replace(/PDF/gi, 'EXCEL'); };
-  document.querySelectorAll('button, .hint, .hd, .bd, .ft, label, .btn').forEach(el => {
-    if (el && /PDF/i.test(el.textContent || '')) swap(el);
-  });
 });
 </script>
 
