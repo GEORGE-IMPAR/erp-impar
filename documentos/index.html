@@ -2408,6 +2408,102 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(hookIframe, 3000);
 })();
 
+// Re-hool em QUALQUER iframe de viewer que aparecer (inclusive na etapa 5)
+(function(){
+  function temJSON(){ return !!window.__dadosVisualizacao; }
+  function garantirJSON(){ 
+    if (!temJSON() && typeof window.capturarVariaveisDaVisualizacao==='function'){
+      try{ window.capturarVariaveisDaVisualizacao(); }catch(_){}
+    }
+  }
+  function gerar(){
+    garantirJSON();
+    if (typeof window.gerarContratoDoJSON==='function'){ window.gerarContratoDoJSON(); }
+  }
+
+  function hookAlert(win){
+    try{
+      const orig = win.alert;
+      win.alert = function(msg){
+        msg = (msg||'')+'';
+        if (msg.indexOf('Abra um documento primeiro para gerar o contrato') !== -1){
+          try{ gerar(); }catch(_){}
+          return; // suprime alerta legado
+        }
+        return orig.apply(this, arguments);
+      };
+    }catch(_){}
+  }
+
+  function ehBotaoDocx(el, doc){
+    while (el && el !== doc.body){
+      const t = (el.innerText||el.textContent||'').trim().toLowerCase();
+      const tag = (el.tagName||'').toLowerCase();
+      if ((tag==='button' || tag==='a' || el.hasAttribute('role')) &&
+          (t.indexOf('gerar contrato.docx')!==-1 || t.indexOf('gerar contrato')!==-1)){
+        return true;
+      }
+      el = el.parentNode;
+    }
+    return false;
+  }
+
+  function bindNoIframe(frame){
+    if (!frame || frame.__hookedDocx) return;
+    const w = frame.contentWindow, d = frame.contentDocument;
+    if (!w || !d) return;
+
+    // 1) suprime o alerta legado do viewer
+    hookAlert(w);
+
+    // 2) intercepta o clique no botão do viewer (antes dos handlers antigos)
+    function onClick(ev){
+      if (ehBotaoDocx(ev.target, d)){
+        try{ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }catch(_){}
+        gerar();
+        return false;
+      }
+    }
+    d.addEventListener('click', onClick, true);
+
+    // 3) tenta limpar onclick antigos nos botões candidatos
+    d.querySelectorAll('button, a').forEach(function(btn){
+      const t = (btn.innerText||btn.textContent||'').trim().toLowerCase();
+      if (t.indexOf('gerar contrato')!==-1){
+        try{ btn.onclick=null; btn.removeAttribute('onclick'); }catch(_){}
+      }
+    });
+
+    // 4) se o viewer recriar a UI, reamarrar
+    try{
+      const mo = new w.MutationObserver(function(){ d.removeEventListener('click', onClick, true); d.addEventListener('click', onClick, true); });
+      mo.observe(d.documentElement, {childList:true, subtree:true});
+    }catch(_){}
+
+    frame.__hookedDocx = true;
+  }
+
+  function scanIframes(){
+    document.querySelectorAll('iframe').forEach(function(f){
+      try{
+        // só amarrar se já estiver carregado
+        if (f.contentWindow && f.contentDocument) bindNoIframe(f);
+        f.addEventListener('load', function(){ bindNoIframe(f); });
+      }catch(_){}
+    });
+  }
+
+  // etapas diferentes recriam o viewer -> observar o body
+  const moMain = new MutationObserver(scanIframes);
+  moMain.observe(document.body, {childList:true, subtree:true});
+
+  // tentativas iniciais e depois de navegar para etapa 5
+  window.addEventListener('load', scanIframes);
+  setTimeout(scanIframes, 400);
+  setTimeout(scanIframes, 1200);
+  setTimeout(scanIframes, 2500);
+})();
+
 </script>
 
 </body>
