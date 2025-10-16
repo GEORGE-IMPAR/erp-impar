@@ -2077,16 +2077,16 @@ async function dedupeByCodigo(codigo) {
 }
 
 // Mantém a função original e cria um wrapper que roda o dedupe antes
+const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
 
-(function(){
-  var __orig = (typeof window.proceedFromStep1==='function') ? window.proceedFromStep1 : function(){};
-  window.proceedFromStep1_Dedupe = function(){
-    try { return __orig(); }
-    catch(e){ try{ console.warn('Erro no dedupe:', e); }catch(_){} }
-    finally{ if (typeof window.hideBusy==='function') window.hideBusy(); }
-  };
-  window.proceedFromStep1_Trator = window.proceedFromStep1_Dedupe;
-})();
+function proceedFromStep1_Dedupe(){ return proceedFromStep1(); }
+function proceedFromStep1_Trator(){ return proceedFromStep1(); } catch (e) {
+    console.warn('Erro no dedupe:', e);
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
+  if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
+}
 
 // Redireciona o botão para o wrapper (sem mexer no HTML)
 window.addEventListener('DOMContentLoaded', () => {
@@ -2407,146 +2407,7 @@ window.addEventListener('DOMContentLoaded', () => {
 }</script>
 
 
-<script>
-(function(){
-  // Utils
-  function _val(sel){
-    var el = document.querySelector(sel);
-    if (!el) return '';
-    if (typeof el.value !== 'undefined') return (el.value||'').trim();
-    return (el.textContent||'').trim();
-  }
-  function _readMap(){
-    var tag = document.getElementById('mapa_template_para_dom');
-    if (!tag) return {};
-    try { return JSON.parse(tag.textContent); } catch(_){ return {}; }
-  }
-  function _composeFromMap(){
-    var mapa = _readMap();
-    var out = {};
-    for (var k in mapa){
-      if (!Object.prototype.hasOwnProperty.call(mapa,k)) continue;
-      out[k] = _val(mapa[k]);
-    }
-    // Aliases usuais
-    out.endereco_obra = out.endereco;
-    out.valor_extenso = out.valorExtenso || out.valor_extenso || '';
-    return out;
-  }
-  function _store(json){
-    window.__dadosVisualizacao = json;
-    try { localStorage.setItem('__dadosVisualizacao', JSON.stringify(json)); } catch(_){}
-  }
-  function _loadStored(){
-    if (window.__dadosVisualizacao) return window.__dadosVisualizacao;
-    try {
-      var s = localStorage.getItem('__dadosVisualizacao');
-      if (s) return JSON.parse(s);
-    } catch(_){}
-    return null;
-  }
-
-  // Public: to be called by the visualization flow (but we also auto-detect)
-  function capturarVariaveisDaVisualizacao(){
-    if (typeof showBusy==='function') showBusy('Processando… Montando tabela de contratos');
-    var data = _composeFromMap();
-    _store(data);
-    if (typeof hideBusy==='function') hideBusy();
-    if (typeof showToast==='function') showToast('Informações da visualização gravadas.');
-  }
-  window.capturarVariaveisDaVisualizacao = capturarVariaveisDaVisualizacao;
-
-  // Auto-capture heuristic: watch for fields appearing and being filled
-  var _autoDone = false;
-  function _readyToCapture(){
-    var mapa = _readMap();
-    var filled = 0, total = 0;
-    for (var k in mapa){
-      if (!Object.prototype.hasOwnProperty.call(mapa,k)) continue;
-      total++;
-      var v = _val(mapa[k]);
-      if (v) filled++;
-    }
-    // Consider ready if at least half of expected fields are present/filled
-    return total > 0 && filled >= Math.ceil(total/2);
-  }
-  function _autoTry(){
-    if (_autoDone) return;
-    if (_readyToCapture()){
-      capturarVariaveisDaVisualizacao();
-      _autoDone = true;
-    }
-  }
-  document.addEventListener('DOMContentLoaded', function(){
-    // try shortly after load, and a few times later as viewer initializes
-    setTimeout(_autoTry, 400);
-    setTimeout(_autoTry, 1200);
-    setTimeout(_autoTry, 2500);
-    var iv = setInterval(function(){
-      if (_autoDone) { clearInterval(iv); return; }
-      _autoTry();
-    }, 2000);
-  });
-
-  // DOCX generator using stored JSON
-  function gerarContratoDoJSON(){
-    var dados = _loadStored();
-    if (!dados){
-      // fall back to reading live
-      dados = _composeFromMap();
-      _store(dados);
-    }
-    if (!dados || !dados.servico){
-      alert('Dados da visualização não encontrados. Abra a visualização antes de gerar o contrato.');
-      return;
-    }
-    if (typeof showBusy==='function') showBusy('Gerando contrato…');
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/gerador/gerar_docx.php', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.responseType = 'blob';
-    xhr.onload = function(){
-      try {
-        if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
-        var blob = xhr.response;
-        var url  = window.URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'Contrato-' + (dados.codigo || 'documento') + '.docx';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function(){ window.URL.revokeObjectURL(url); }, 1200);
-        if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
-      } finally {
-        if (typeof hideBusy==='function') hideBusy();
-      }
-    };
-    xhr.onerror = function(){
-      if (typeof hideBusy==='function') hideBusy();
-      alert('Erro de rede ao gerar contrato.');
-    };
-    xhr.send(JSON.stringify(dados));
-  }
-  window.gerarContratoDoJSON = gerarContratoDoJSON;
-
-  // Bind ao botão existente, sem deixar handlers antigos dispararem
-  document.addEventListener('DOMContentLoaded', function(){
-    var b = document.getElementById('btnGerarDocx');
-    if (!b) return;
-    try { b.onclick=null; b.removeAttribute('onclick'); } catch(_){}
-    b.addEventListener('click', function(ev){
-      try{ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }catch(_){}
-      gerarContratoDoJSON();
-      return false;
-    }, true);
-  });
-})();
-</script>
-
-<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão Commit 3.0 – Atualizado em 15/10/2025</div>
-
-<!-- Busy overlay (Processando...) -->
+<!-- Busy overlay -->
 <style>
 #busyOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:999999;}
 #busyOverlay .busy-card{background:#0a0a0a;color:#fff;padding:18px 22px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);display:flex;align-items:center;gap:12px;font:14px/1.35 Arial,Helvetica,sans-serif;min-width:280px;justify-content:center;}
@@ -2576,46 +2437,167 @@ window.addEventListener('DOMContentLoaded', () => {
     if (cnt === 0) ov.style.display = 'none';
   };
 })();
+</script>
 
-// Intercepta QUALQUER clique no botão "Gerar contrato.docx" e bloqueia handlers antigos
+
+<script>
 (function(){
-  function ehBotaoDocx(el){
-    if (!el) return false;
-    // sobe até o botão/elemento clicável
-    while (el && el !== document.body) {
-      var tag = (el.tagName || '').toLowerCase();
-      if (tag === 'button' || tag === 'a' || el.hasAttribute('role')) {
-        var t = (el.innerText || el.textContent || '').trim().toLowerCase();
-        if (t.indexOf('gerar contrato.docx') !== -1 || t.indexOf('gerar contrato') !== -1) return el;
-      }
-      el = el.parentNode;
+  function _val(sel){
+    var el = document.querySelector(sel);
+    if (!el) return '';
+    if (typeof el.value !== 'undefined') return (el.value||'').trim();
+    return (el.textContent||'').trim();
+  }
+  function _readMap(){
+    var tag = document.getElementById('mapa_template_para_dom');
+    if (!tag) return {};
+    try { return JSON.parse(tag.textContent); } catch(_){ return {}; }
+  }
+  function _composeFromMap(){
+    var mapa = _readMap();
+    var out = {};
+    for (var k in mapa){
+      if (!Object.prototype.hasOwnProperty.call(mapa,k)) continue;
+      out[k] = _val(mapa[k]);
     }
+    out.endereco_obra = out.endereco;
+    out.valor_extenso = out.valorExtenso || out.valor_extenso || '';
+    return out;
+  }
+  function _store(json){
+    window.__dadosVisualizacao = json;
+    try { localStorage.setItem('__dadosVisualizacao', JSON.stringify(json)); } catch(_){}
+  }
+  function _loadStored(){
+    if (window.__dadosVisualizacao) return window.__dadosVisualizacao;
+    try {
+      var s = localStorage.getItem('__dadosVisualizacao');
+      if (s) return JSON.parse(s);
+    } catch(_){}
     return null;
   }
 
-  // captura (true) garante que rodamos ANTES dos handlers antigos
-  document.addEventListener('click', function(ev){
-    var alvo = ehBotaoDocx(ev.target);
-    if (!alvo) return; // não é o botão
+  function capturarVariaveisDaVisualizacao(){
+    showBusy('Processando… Montando tabela de contratos');
+    var data = _composeFromMap();
+    _store(data);
+    hideBusy();
+    if (typeof showToast==='function') showToast('Informações da visualização gravadas.');
+  }
+  window.capturarVariaveisDaVisualizacao = capturarVariaveisDaVisualizacao;
 
-    try { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); } catch(_) {}
+  function _autoTry(){
+    try {
+      var mapa = _readMap(), total=0, filled=0;
+      for (var k in mapa){ if (!Object.prototype.hasOwnProperty.call(mapa,k)) continue; total++; if (_val(mapa[k])) filled++; }
+      if (total>0 && filled>=Math.ceil(total/2)) { capturarVariaveisDaVisualizacao(); return true; }
+    } catch(_){}
+    return false;
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    setTimeout(_autoTry, 500);
+    setTimeout(_autoTry, 1500);
+    var iv = setInterval(function(){ if (_autoTry()) clearInterval(iv); }, 2000);
+  });
 
-    // garante que temos o JSON; se não tiver, tenta capturar agora a partir da visualização
-    if (!window.__dadosVisualizacao && typeof capturarVariaveisDaVisualizacao === 'function'){
-      try { capturarVariaveisDaVisualizacao(); } catch(_){}
+  function gerarContratoDoJSON(){
+    var dados = _loadStored() || _composeFromMap();
+    _store(dados);
+    if (!dados || !dados.servico){
+      alert('Dados da visualização não encontrados. Abra a visualização antes de gerar o contrato.');
+      return;
     }
+    showBusy('Gerando contrato…');
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/gerador/gerar_docx.php', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.responseType = 'blob';
+    xhr.onload = function(){
+      try{
+        if (xhr.status !== 200){ alert('Falha ao gerar contrato (.docx)'); return; }
+        var blob = xhr.response, url = URL.createObjectURL(blob);
+        var a = document.createElement('a'); a.href = url; a.download = 'Contrato-' + (dados.codigo||'documento') + '.docx';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 1200);
+        if (typeof showToast==='function') showToast('✅ Contrato gerado com sucesso!');
+      } finally { hideBusy(); }
+    };
+    xhr.onerror = function(){ hideBusy(); alert('Erro de rede ao gerar contrato.'); };
+    xhr.send(JSON.stringify(dados));
+  }
+  window.gerarContratoDoJSON = gerarContratoDoJSON;
+})();
+</script>
 
-    // chama SOMENTE o nosso gerador
-    if (typeof gerarContratoDoJSON === 'function'){
-      gerarContratoDoJSON();
+
+<script>
+(function(){
+  function temJSON(){ return !!(window.__dadosVisualizacao); }
+  function garantirJSON(){
+    if (!temJSON() && typeof window.capturarVariaveisDaVisualizacao === 'function'){
+      try { window.capturarVariaveisDaVisualizacao(); }catch(_){}
+    }
+  }
+  function chamarGerador(){
+    garantirJSON();
+    if (typeof window.gerarContratoDoJSON === 'function'){
+      window.gerarContratoDoJSON();
     } else {
       alert('Rotina do contrato não carregada.');
     }
-    return false;
-  }, true);
-})();
+  }
+  function hookNoIframe(){
+    var frame = document.getElementById('pdfFrame') || document.querySelector('iframe#pdfFrame, iframe[name="pdfFrame"], iframe');
+    if (!frame || !frame.contentWindow || !frame.contentDocument) return;
 
+    var iw = frame.contentWindow;
+    var idoc = frame.contentDocument;
+
+    function ehBotaoDocx(el){
+      if (!el) return false;
+      while (el && el !== idoc.body){
+        var tag = (el.tagName||'').toLowerCase();
+        if (tag === 'button' || tag === 'a' || el.hasAttribute('role')){
+          var t = (el.innerText || el.textContent || '').trim().toLowerCase();
+          if (t.indexOf('gerar contrato.docx') !== -1 || t.indexOf('gerar contrato') !== -1) return el;
+        }
+        el = el.parentNode;
+      }
+      return null;
+    }
+    function interceptar(ev){
+      var alvo = ehBotaoDocx(ev.target);
+      if (!alvo) return;
+      try { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); }catch(_){}
+      chamarGerador();
+      return false;
+    }
+    function bind(){
+      Array.prototype.forEach.call(idoc.querySelectorAll('button, a'), function(btn){
+        var t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+        if (t.indexOf('gerar contrato') !== -1){
+          try { btn.onclick = null; btn.removeAttribute('onclick'); }catch(_){}
+        }
+      });
+      idoc.addEventListener('click', interceptar, true);
+    }
+    bind();
+    try{
+      var mo = new iw.MutationObserver(function(){ bind(); });
+      mo.observe(idoc.documentElement, { childList:true, subtree:true });
+    }catch(_){}
+    var tentativas = 0, iv = iw.setInterval(function(){ bind(); if (++tentativas > 10) iw.clearInterval(iv); }, 700);
+  }
+  function tentarHook(){ try { hookNoIframe(); }catch(_){ } }
+  window.addEventListener('load', tentarHook);
+  var f = document.getElementById('pdfFrame') || document.querySelector('iframe#pdfFrame, iframe[name="pdfFrame"], iframe');
+  if (f) f.addEventListener('load', tentarHook);
+  setTimeout(tentarHook, 800);
+  setTimeout(tentarHook, 1600);
+  setTimeout(tentarHook, 3000);
+})();
 </script>
 
+<div id="versionador" style="position:fixed;right:12px;bottom:10px;background:#0b3a6f;color:#fff;font:12px Arial;padding:6px 10px;border-radius:6px;opacity:.90;z-index:9999;">Versão Commit 4.0 – Atualizado em 15/10/2025</div>
 </body>
 </html>
