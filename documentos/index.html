@@ -306,6 +306,7 @@ window.__CONSULTA_CFG__ = {
   }
 }
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -2277,6 +2278,126 @@ document.addEventListener('DOMContentLoaded', function(){
     el.textContent = versao;
     document.body.appendChild(el);
   }catch(e){ console.error('version badge error', e); }
+});
+</script>
+
+
+<script>
+function __downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Gera Excel a partir de um objeto minimal 'dados' (somente front)
+function __geraExcelBasico(dados, nomeBase) {
+  try {
+    const wsData = [];
+    const ctt = dados.contratante||{}, cta = dados.contratada||{}, op = dados.operador||{};
+    wsData.push(["Resumo do Documento",""]);
+    wsData.push(["Código do Projeto", dados.codigo || ""]);
+    wsData.push(["Serviço", dados.servico || ""]);
+    wsData.push(["",""]);
+    wsData.push(["CONTRATANTE",""]);
+    wsData.push(["Nome", ctt.nome || ""]);
+    wsData.push(["CPF/CNPJ", ctt.cpfcnpj || ""]);
+    wsData.push(["",""]);
+    wsData.push(["CONTRATADA",""]);
+    wsData.push(["Nome", cta.nome || ""]);
+    wsData.push(["CPF/CNPJ", cta.cpfcnpj || ""]);
+    wsData.push(["",""]);
+    wsData.push(["Observação","Planilha gerada a partir da Consulta (front-end)."]);
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:40},{wch:90}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Documento");
+    const ab = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    __downloadBlob(new Blob([ab], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), (nomeBase||'DOC')+'.xlsx');
+  } catch(e){ console.error('Excel error', e); }
+}
+
+// Consulta: trocar label "PDF" -> "EXCEL" e interceptar cliques no link da última coluna
+document.addEventListener('DOMContentLoaded', function(){
+  const modal = document.getElementById('consultaModal');
+  if (!modal) return;
+
+  // Quando a modal abrir (display:flex), ajusta o cabeçalho
+  const obs = new MutationObserver(() => {
+    if (getComputedStyle(modal).display !== 'none') {
+      // Troca cabeçalho da última coluna para EXCEL
+      try {
+        const ths = modal.querySelectorAll('thead th');
+        if (ths && ths.length) {
+          const last = ths[ths.length-1];
+          if (/pdf/i.test((last.textContent||''))) last.textContent = last.textContent.replace(/pdf/gi,'EXCEL');
+        }
+      } catch(e){}
+    }
+  });
+  obs.observe(modal, {attributes:true, attributeFilter:['style'], subtree:false});
+
+  // Intercepta cliques no link "abrir" da última coluna para baixar Excel
+  modal.addEventListener('click', function(ev){
+    const a = ev.target.closest('a');
+    if (!a) return;
+    const cell = a.closest('td');
+    const row  = a.closest('tr');
+    const headThs = modal.querySelectorAll('thead th');
+    const isLastCol = cell && cell.cellIndex === headThs.length-1;
+    if (!isLastCol) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    // Constrói dados mínimos a partir das células visíveis
+    const tds = row ? row.querySelectorAll('td') : [];
+    const obj = {};
+    obj.data    = tds[0]?.innerText.trim() || '';
+    obj.codigo  = (row.querySelector('a')?.innerText.trim()) || tds[1]?.innerText.trim() || '';
+    obj.contratante = { nome: tds[2]?.innerText.split('\n')[0].trim() || '' };
+    obj.contratada  = { nome: tds[3]?.innerText.split('\n')[0].trim() || '' };
+    obj.servico = tds[4]?.innerText.trim() || '';
+    const nomeBase = obj.codigo ? (obj.codigo + '_' + new Date().toISOString().slice(0,10).replaceAll('-','')) : 'DOC';
+
+    __geraExcelBasico(obj, nomeBase);
+  }, true);
+});
+
+// Botão de download (seta para baixo) deve baixar Excel
+document.addEventListener('click', function(e){
+  const el = e.target.closest('a,button');
+  if (!el) return;
+  const title = (el.getAttribute('title')||'') + ' ' + (el.getAttribute('aria-label')||'');
+  if (/(download|baixar)/i.test(title)) {
+    e.preventDefault(); e.stopPropagation();
+    try {
+      const dados = window.__lastSave && window.__lastSave.dados ? window.__lastSave.dados : {};
+      const nomeBase = (dados.codigo || 'DOC') + '_' + new Date().toISOString().slice(0,10).replaceAll('-','');
+      __geraExcelBasico(dados, nomeBase);
+    } catch(err){ console.error(err); }
+  }
+}, true);
+
+// Remove mensagem "O que você deseja fazer?" ao fechar o visualizador
+document.addEventListener('DOMContentLoaded', function(){
+  document.addEventListener('click', function(e){
+    const el = e.target.closest('[data-close-viewer], .viewer .close, .modal .close, [aria-label="Fechar"]');
+    if (!el) return;
+    setTimeout(() => {
+      // Remove qualquer toast/dialog com esse texto
+      document.querySelectorAll('div,span,p').forEach(node => {
+        const t = (node.textContent||'').trim();
+        if (/^O que você deseja fazer\?/i.test(t)) {
+          node.remove();
+        }
+      });
+    }, 50);
+  }, true);
 });
 </script>
 
