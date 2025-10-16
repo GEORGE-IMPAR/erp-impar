@@ -2504,6 +2504,43 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(scanIframes, 2500);
 })();
 
+/* Modo Seguro: bloqueia delete.php para testes */
+const SAFE_DEDUPE = true;
+(function(){
+  function isDeleteUrl(url){
+    try { return SAFE_DEDUPE && /\/delete\.php(\?|$)/i.test(String(url)); }
+    catch(_) { return false; }
+  }
+  // fetch
+  const _fetch = window.fetch;
+  window.fetch = function(url, opts){
+    if (isDeleteUrl(url)){
+      console.warn('[SAFE_DEDUPE] Bloqueado fetch -> delete.php', url);
+      alert('Modo seguro: limpeza desativada (delete.php bloqueado).');
+      return Promise.resolve(new Response(
+        JSON.stringify({ok:true, skipped:true}),
+        {status:200, headers:{'Content-Type':'application/json'}}
+      ));
+    }
+    return _fetch.apply(this, arguments);
+  };
+  // XHR
+  const _open = XMLHttpRequest.prototype.open;
+  const _send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url){
+    this.__blockDelete = isDeleteUrl(url);
+    return _open.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function(body){
+    if (this.__blockDelete){
+      console.warn('[SAFE_DEDUPE] Bloqueado XHR -> delete.php');
+      try { this.onload && this.onload.call(this); } catch(_){}
+      return;
+    }
+    return _send.apply(this, arguments);
+  };
+})();
+
 </script>
 
 </body>
