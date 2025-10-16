@@ -306,6 +306,7 @@ window.__CONSULTA_CFG__ = {
   }
 }
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -2242,6 +2243,224 @@ async function dedupeAllByCodigo() {
   });
 })();
 </script>
+
+
+<!-- === EXCEL FRONTEND PATCH (labels + download Excel, sem alterar backend) === -->
+<script>
+/* ===== Versionador flexível ===== */
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    var qs=new URLSearchParams(location.search);
+    var base=(window.__ERP_VERSION__||qs.get('versao')||'excel-ui');
+    var build=(window.__ERP_BUILD__||qs.get('build')||Date.now().toString().slice(-5));
+    var el=document.getElementById('erp-version-badge');
+    if(!el){ el=document.createElement('div'); el.id='erp-version-badge'; document.body.appendChild(el); }
+    el.style.cssText='position:fixed;right:10px;bottom:8px;padding:4px 8px;border-radius:6px;font-size:12px;line-height:1;color:#fff;background:rgba(0,0,0,.55);z-index:99999;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.2)';
+    el.textContent = base + '-' + build;
+  }catch(e){}
+});
+
+/* ===== Helpers Excel ===== */
+function __downloadBlob(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+function __geraExcelBasico(dados, nomeBase){
+  try{
+    const ctt=dados.contratante||{}, cta=dados.contratada||{}, op=dados.operador||{};
+    const wsData=[
+      ["Resumo do Documento",""],
+      ["Operador", [op.nome||"", op["e-mail"]||op.email||""].filter(Boolean).join(" ")],
+      ["Código do Projeto", dados.codigo||""],
+      ["Serviço", dados.servico||""],
+      ["" , ""],
+      ["CONTRATANTE",""],
+      ["Nome", ctt.nome||""],
+      ["CPF/CNPJ", ctt.cpfCnpj||ctt.cpfcnpj||""],
+      ["Endereço", ctt.endereco||""],
+      ["Contato", ctt.contato||""],
+      ["Telefone", ctt.telefone||""],
+      ["E-mail", ctt["e-mail"]||ctt.email||""],
+      ["" , ""],
+      ["CONTRATADA",""],
+      ["Nome", cta.nome||""],
+      ["CPF/CNPJ", cta.cpfCnpj||cta.cpfcnpj||""],
+      ["Endereço", cta.endereco||""],
+      ["Contato", cta.contato||""],
+      ["Telefone", cta.telefone||""],
+      ["E-mail", cta["e-mail"]||cta.email||""],
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData); ws['!cols']=[{wch:40},{wch:90}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Documento");
+    const ab=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    __downloadBlob(new Blob([ab],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),(nomeBase||'DOC')+'.xlsx');
+  }catch(e){ console.error(e); }
+}
+function __nomeBaseExcel(){
+  const dados=(window.__lastSave && window.__lastSave.dados)||{};
+  const codigo=dados.codigo || (document.getElementById('codigo')?.value) || 'DOC';
+  const ymd=new Date().toISOString().slice(0,10).replaceAll('-','');
+  return {dados, nomeBase:`${codigo}_${ymd}`};
+}
+
+/* ===== Não alterar regras: apenas "fios" necessários ===== */
+document.addEventListener('DOMContentLoaded',function(){
+  // 1) Etapa 1: botão pesquisar -> openConsulta (wire-only)
+  var btn=document.getElementById('openConsultaBtn');
+  if(btn && typeof window.openConsulta==='function' && !btn.__wired){
+    btn.__wired=true; btn.addEventListener('click', window.openConsulta);
+  }
+  // openConsulta defensiva (não quebra se campo não existir)
+  try {
+    var srcOpen = (window.openConsulta||'').toString();
+    if (srcOpen && srcOpen.indexOf('consCodigo')>-1 && !window.__patchedOpenConsulta) {
+      window.__patchedOpenConsulta = true;
+      var originalOpen = window.openConsulta;
+      window.openConsulta = function(){
+        try{
+          const el=document.getElementById('consultaModal');
+          const inp=document.getElementById('consCodigo') || document.getElementById('consCodigoInline');
+          const code=(document.getElementById('codigo')?.value||'').trim();
+          if (inp) inp.value = code;
+          if (el) el.style.display='flex';
+        }catch(e){}
+      };
+    }
+  } catch(e){}
+});
+
+/* ===== Consulta: última coluna -> label EXCEL e download Excel ===== */
+document.addEventListener('DOMContentLoaded',function(){
+  const modal=document.getElementById('consultaModal'); if(!modal) return;
+
+  // Troca de label da última coluna quando a modal abre
+  const obs=new MutationObserver(()=>{
+    if(getComputedStyle(modal).display!=='none'){
+      const ths=modal.querySelectorAll('thead th');
+      if(ths.length){
+        const last=ths[ths.length-1];
+        if(/pdf/i.test(last.textContent||'')) last.textContent=last.textContent.replace(/pdf/gi,'EXCEL');
+      }
+    }
+  });
+  obs.observe(modal,{attributes:true,attributeFilter:['style']});
+
+  // Clique "abrir" da última coluna -> Excel (front)
+  modal.addEventListener('click',function(ev){
+    const a=ev.target.closest('a'); if(!a) return;
+    const td=a.closest('td'), tr=a.closest('tr'); if(!td||!tr) return;
+    const ths=modal.querySelectorAll('thead th');
+    const lastIdx=ths.length-1;
+    if(td.cellIndex!==lastIdx) return; // só última coluna
+    ev.preventDefault(); ev.stopPropagation();
+
+    const tds=tr.querySelectorAll('td');
+    const codigo=(tr.querySelector('td:nth-child(2) a, td:nth-child(2)')?.textContent||'').trim();
+    const {dados,nomeBase}=__nomeBaseExcel();
+    // Se não tiver dados completos em memória, monta a partir da linha (resumo)
+    const base = Object.keys(dados||{}).length ? dados : {
+      codigo: codigo,
+      contratante:{ nome:(tds[2]?.innerText.split('\n')[0].trim()||'') },
+      contratada:{  nome:(tds[3]?.innerText.split('\n')[0].trim()||'') },
+      servico: (tds[4]?.innerText.trim()||'')
+    };
+    __geraExcelBasico(base, nomeBase);
+  }, true);
+});
+
+/* ===== Visualizador (iframe pdf.php): labels -> EXCEL e baixar Excel ===== */
+function __hookPdfViewerToolbar(){
+  const iframe=document.querySelector('iframe#pdfFrame, iframe[src*="pdf.php"]'); if(!iframe) return;
+  function applyInside(){
+    try{
+      const doc=iframe.contentDocument || iframe.contentWindow?.document; if(!doc) return;
+      // Troca labels específicos
+      doc.querySelectorAll('button,a').forEach(el=>{
+        const t=(el.textContent||'').trim();
+        if(/^Baixar\s*PDF$/i.test(t)) el.textContent=t.replace(/PDF/gi,'EXCEL');
+        if(/^Gerar\s*contrato\.docx$/i.test(t)) el.textContent='Gerar EXCEL';
+      });
+      // Clique -> Excel
+      const attach=(el)=>{ if(el.__xl) return; el.__xl=true;
+        el.addEventListener('click',function(ev){
+          const t=(el.textContent||'').trim();
+          const title=(el.getAttribute('title')||'')+' '+(el.getAttribute('aria-label')||'');
+          if(/Baixar\s*EXCEL/i.test(t) || /(download|baixar)/i.test(title)){
+            ev.preventDefault(); ev.stopPropagation();
+            const p=window.parent; if(!p) return;
+            const ctx=p.__nomeBaseExcel ? p.__nomeBaseExcel() : {dados:{},nomeBase:'DOC'};
+            (p.__geraExcelBasico||function(){})(ctx.dados, ctx.nomeBase);
+          }
+        }, true);
+      };
+      doc.querySelectorAll('button,a').forEach(attach);
+      const mo=new MutationObserver(()=>applyInside());
+      mo.observe(doc.body,{childList:true,subtree:true,characterData:true});
+    }catch(e){}
+  }
+  if(iframe.contentDocument?.readyState==='complete'){ applyInside(); } else { iframe.addEventListener('load', applyInside); }
+}
+document.addEventListener('DOMContentLoaded', __hookPdfViewerToolbar);
+
+/* ===== Etapa 5: diálogo de sucesso -> falar EXCEL e baixar Excel ===== */
+document.addEventListener('DOMContentLoaded',function(){
+  const mo=new MutationObserver(()=>{
+    document.querySelectorAll('.modal,[role="dialog"],.dialog').forEach(dlg=>{
+      const txt=(dlg.textContent||'').trim();
+      if(/Documento cadastrado com sucesso!/i.test(txt)){
+        // PDF -> EXCEL (somente textos)
+        dlg.querySelectorAll('*').forEach(n=>{
+          if(n.firstChild && n.firstChild.nodeType===3 && /PDF/i.test(n.firstChild.nodeValue||'')){
+            n.firstChild.nodeValue=n.firstChild.nodeValue.replace(/PDF/gi,'EXCEL');
+          }
+        });
+        // Botão "Visualizar documento" => "Baixar EXCEL" + ação Excel
+        const btn=[...dlg.querySelectorAll('button,a')].find(el=>/Visualizar documento/i.test((el.textContent||'').trim()));
+        if(btn && !btn.__xl){
+          btn.__xl=true; btn.textContent='Baixar EXCEL';
+          btn.addEventListener('click',function(ev){
+            ev.preventDefault(); ev.stopPropagation();
+            const {dados,nomeBase}=__nomeBaseExcel();
+            __geraExcelBasico(dados, nomeBase);
+            const close=[...dlg.querySelectorAll('button,a')].find(el=>/Fechar/i.test((el.textContent||'').trim()));
+            if(close) close.click();
+          }, true);
+        }
+      }
+    });
+  });
+  mo.observe(document.body,{childList:true,subtree:true,characterData:true});
+});
+
+/* ===== Remove somente o popup "O que você deseja fazer?" da Etapa 1 ===== */
+(function(){
+  try{
+    var noop=function(){};
+    Object.defineProperty(window,'showAction',{
+      configurable:true,
+      get:function(){ return noop; },
+      set:function(){ /* ignora redefinições */ }
+    });
+  }catch(e){}
+})();
+document.addEventListener('DOMContentLoaded',function(){
+  function kill(){
+    document.querySelectorAll('body *').forEach(n=>{
+      const t=(n.textContent||'').trim();
+      if(/^O que você deseja fazer\?/i.test(t)){
+        const dlg=n.closest('.modal,[role="dialog"],.dialog,.swal2-container,.swal2-shown')||n;
+        if(dlg&&dlg.parentNode) dlg.parentNode.removeChild(dlg);
+        document.querySelectorAll('.modal-backdrop,.swal2-container,.swal2-shown,[data-backdrop]').forEach(b=>b.remove());
+      }
+    });
+  }
+  kill(); const mo=new MutationObserver(()=>kill());
+  mo.observe(document.body,{childList:true,subtree:true});
+});
+</script>
+<style>@media print{#erp-version-badge{display:none!important}}</style>
+<!-- === /EXCEL FRONTEND PATCH === -->
 
 </body>
 </html>
