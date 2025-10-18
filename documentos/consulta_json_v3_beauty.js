@@ -1,8 +1,8 @@
-/* consulta_json_v3_beauty_brand_fixclose_loader.js
-   - UI moderna (azul‑marinho), modais novos (lista + decisão)
-   - FixClose: suprime qualquer modal legado ao abrir/fechar
-   - Loader preto com borda branca, texto branco e spinner
-   - RISCO ZERO: usa apenas #searchJsonBtn e não altera rotinas existentes
+/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
+   - UI moderna azul‑marinho (lista + decisão)
+   - Suprime qualquer modal legado ao abrir/fechar (FixClose)
+   - Loader preto “Processando... aguarde...” com borda e texto brancos
+   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antigas
 */
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
@@ -56,7 +56,7 @@
       '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
 
       /* Loader preto com borda branca e texto branco */
-      '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.75)}',
+      '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
       '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
       '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
       '.cj-loader-text{font-weight:800;letter-spacing:.2px;color:#fff}'
@@ -96,12 +96,12 @@
       fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
     };
 
-    // Gerar contrato com loader
+    // Gerar contrato com loader (CAMINHO ABSOLUTO CORRIGIDO)
     q('cj_btn_gerar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
       if(!code){ hideAll(); return; }
       lback.style.display='flex'; // mostra loader
-      fetch('/api/gerador/make_contract.php?codigo='+encodeURIComponent(code))
+      fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
         .then(function(r){ return r.json(); })
         .then(function(j){
           lback.style.display='none';
