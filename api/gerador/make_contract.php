@@ -4,6 +4,10 @@
 // Uso: /api/gerador/make_contract.php?codigo=AC05225
 // Saída: {"ok":true,"file":"CONTRATO_AC05225_Cliente X.docx","url":"/api/storage/docs/CONTRATO_AC05225_Cliente X.docx"}
 
+require_once __DIR__ . '/vendor/autoload.php';
+
+use PhpOffice\PhpWord\TemplateProcessor;
+
 header('Content-Type: application/json; charset=utf-8');
 
 // ====================== CONFIG ======================
