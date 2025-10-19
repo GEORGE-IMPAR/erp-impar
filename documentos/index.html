@@ -306,8 +306,22 @@ window.__CONSULTA_CFG__ = {
 #openConsultaBtn{display:none!important;visibility:hidden!important;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<style>.version-badge{position:fixed;right:10px;bottom:10px;z-index:200;background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font:12px/1.2 Arial,Helvetica,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.25)}</style></head>
+<style>.version-badge{position:fixed;right:10px;bottom:10px;z-index:200;background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font:12px/1.2 Arial,Helvetica,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.25)}</style>
+<style>
+#busy{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:99999}
+#busy .box{display:flex;align-items:center;gap:18px;padding:14px 18px;border:2px solid #fff;border-radius:12px;color:#fff;background:#000;font:600 20px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+#busy .spin{width:34px;height:34px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#successModal,#openConsultaBtn,#consultaInline{display:none!important;visibility:hidden!important;opacity:0!important}
+</style>
+
+</head>
 <body>
+
+<div id="busy" role="alert" aria-live="assertive" aria-busy="true">
+  <div class="box"><div class="spin" aria-hidden="true"></div><div id="busyText">Processando… aguarde…</div></div>
+</div>
+
 <!-- Busy / Processando -->
 <div aria-busy="true" aria-live="assertive" class="busy" id="busy" role="alert">
 <div class="panel">
@@ -559,7 +573,8 @@ window.__CONSULTA_CFG__ = {
 </div>
 <div class="ft" style="display:flex;gap:8px;justify-content:flex-end">
 <button class="btn" id="btnActionCancel" type="button">Cancelar</button>
-<button class="btn" id="btnActionPdf" type="button">Gerar PDF</button>
+<button class="btn" id="btnActionPdf" type="button" onclick="(function(){var c=(document.getElementById('actDocCode')||{}).textContent||document.getElementById('codigo')?.value||'';c=(c||'').trim();gerarContratoParaCodigo(c);var m=document.getElementById('actionModal');if(m)m.remove();})();">
+Gerar PDF</button>
 <button class="btn primary" id="btnActionUpdate" type="button">Atualizar informações</button>
 </div>
 </div>
@@ -2350,7 +2365,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 2.4 - 18-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 2.6 - 18-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2526,6 +2541,33 @@ function baixarExcel(codigo){
   if (b) b.addEventListener('click', abrirConsultaModal);
 })();
 </script>
-<script src="consulta_json_v3_beauty.js"></script>
+<script src="consulta_json_v3_beauty_brand_fixclose_loader.js"></script>
+
+<script>
+function showBusy(msg){var el=document.getElementById('busy');var t=document.getElementById('busyText');if(t)t.textContent=msg||'Processando… aguarde…';if(el){el.style.display='flex';document.body.style.cursor='progress';}}
+function hideBusy(){var el=document.getElementById('busy');if(el){el.style.display='none';document.body.style.cursor='';}}
+async function gerarContratoParaCodigo(codigo){
+  if(!codigo){alert('Código não informado');return;}
+  showBusy('Gerando contrato… aguarde…');
+  try{
+    const url='https://www.erpimpar.com.br/api/gerador/make_contract.php?codigo='+encodeURIComponent(codigo);
+    const r=await fetch(url,{method:'GET',credentials:'omit',cache:'no-cache'});
+    const ct=(r.headers.get('content-type')||'').toLowerCase();
+    let data=null;
+    try{data=ct.includes('application/json')?await r.json():JSON.parse(await r.text());}catch(e){data=null;}
+    if(!data||data.ok!==true||!data.url){
+      try{window.open(url,'_blank');}catch(_){}
+      alert('Servidor não retornou JSON ok. Abri o endpoint em outra aba para você verificar.');
+      return;
+    }
+    const docUrl=data.url.startsWith('/')?data.url:('/api/storage/docs/'+encodeURIComponent(data.file||('CONTRATO_'+codigo+'.docx')));
+    const w=window.open(docUrl,'_blank');
+    if(!w||w.closed||typeof w.closed==='undefined'){alert('Contrato gerado. Se o navegador bloqueou pop-ups, pegue aqui:
+'+docUrl);}
+  }catch(err){console.error(err);alert('Falha ao gerar contrato. Tente novamente.');}
+  finally{hideBusy();}
+}
+</script>
+
 </body>
 </html>
