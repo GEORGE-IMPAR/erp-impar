@@ -306,7 +306,9 @@ window.__CONSULTA_CFG__ = {
 #openConsultaBtn{display:none!important;visibility:hidden!important;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<style>.version-badge{position:fixed;right:10px;bottom:10px;z-index:200;background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font:12px/1.2 Arial,Helvetica,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.25)}</style></head>
+<style>.version-badge{position:fixed;right:10px;bottom:10px;z-index:200;background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font:12px/1.2 Arial,Helvetica,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.25)}</style><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
 <body>
 <!-- Busy / Processando -->
 <div aria-busy="true" aria-live="assertive" class="busy" id="busy" role="alert">
@@ -2527,5 +2529,115 @@ function baixarExcel(codigo){
 })();
 </script>
 <script src="consulta_json_v3_beauty.js"></script>
+
+<!-- ===== Add-on: Gerar contrato a partir do botão do modal (Pesquisar -> Gerar contrato) ===== -->
+<script>
+(function(){
+  const API_ORIGIN = 'https://api.erpimpar.com.br';
+  const PATH_EXCEL    = '/storage/docs';
+  const PATH_TEMPLATE = '/gerador/templates';
+
+  function ymd(d=new Date()){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
+  function nomeExcelPorCodigo(codigo){ return `${codigo}_${ymd()}.xlsx`; }
+  function nomeTemplatePadrao(){ return 'Template-Contrato.docx'; }
+
+  function findByText(selector, regex){
+    return Array.from(document.querySelectorAll(selector))
+      .find(el => regex.test((el.textContent||'').trim()));
+  }
+  function getCodigoDigitado(){
+    const sels = [
+      '#codigo','[name="codigo"]',
+      'input[placeholder*="código"]','input[placeholder*="codigo"]',
+      'input[aria-label*="código"]','input[aria-label*="codigo"]'
+    ];
+    for (const s of sels){ const el=document.querySelector(s); if (el?.value?.trim()) return el.value.trim(); }
+    return '';
+  }
+
+  function hookPesquisar(){
+    const btn = findByText('button, input[type="button"], input[type="submit"], a[role="button"]', /pesquisar/i);
+    if (!btn || btn.__hooked) return !!btn;
+    btn.__hooked = true;
+    btn.addEventListener('click', ()=>{ setTimeout(configurarBotaoGerarContrato, 300); });
+    return true;
+  }
+
+  function getBtnGerarContrato(){
+    return document.getElementById('btnGerarContrato')
+        || findByText('button, a[role="button"]', /gerar contrato/i);
+  }
+
+  function configurarBotaoGerarContrato(){
+    const btn = getBtnGerarContrato();
+    if (!btn) return;
+
+    const meta = document.getElementById('docMeta');
+    const codigo       = (meta?.dataset?.codigo) || getCodigoDigitado();
+    const excelName    = (meta?.dataset?.excel)   || nomeExcelPorCodigo(codigo);
+    const templateName = (meta?.dataset?.template)|| nomeTemplatePadrao();
+
+    const excelURL    = `${API_ORIGIN}${PATH_EXCEL}/${encodeURIComponent(excelName)}`;
+    const templateURL = `${API_ORIGIN}${PATH_TEMPLATE}/${encodeURIComponent(templateName)}`;
+
+    btn.dataset.excelUrl    = excelURL;
+    btn.dataset.templateUrl = templateURL;
+  }
+
+  function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
+  function makeDocxSafeRegex(ph){const esc=ph.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); const between='(?:<[^>]+>)*'; return new RegExp(esc.split('').join(between),'gi');}
+  async function generateDocxReplacedRobusto(templateAB, map){
+    const zip = await JSZip.loadAsync(templateAB);
+    const p='word/document.xml'; let xml=await zip.file(p).async('string');
+    xml = xml.replace(/(<w:t\b[^>]*>)([\s\S]*?)(<\/w:t>)/g,(m,o,t,c)=>{let tt=t; for(const [k,v] of Object.entries(map)){const ph='#'+k; if (tt.includes(ph)) tt=tt.split(ph).join(xmlEscape(v));} return o+tt+c;});
+    for(const [k,v] of Object.entries(map)){ xml = xml.replace(makeDocxSafeRegex('#'+k), xmlEscape(v)); }
+    zip.file(p, xml); return await zip.generateAsync({type:'blob'});
+  }
+  function sanitize(s){return String(s??'').normalize('NFKD').replace(/[^\w\s.-]/g,'').replace(/\s+/g,'-').substring(0,80)||'contrato';}
+  function autoDetectHeaderRow(matrix){for(let i=0;i<matrix.length;i++){const filled=(matrix[i]||[]).filter(c=>String(c||'').trim().length>0); if(filled.length>=2) return i;} return null;}
+  function buildObjectsFromMatrix(matrix, headerIdx){
+    const hdr=(matrix[headerIdx]||[]).map(h=>String(h||'').trim()), objs=[];
+    for(let i=headerIdx+1;i<matrix.length;i++){const row=matrix[i]||[]; if(row.every(c=>String(c||'').trim()==='')) continue; const o={}; hdr.forEach((h,ix)=>{ if(h) o[h]=row[ix]??''; }); objs.push(o);}
+    return { headers: hdr.filter(Boolean), rows: objs };
+  }
+  async function fetchAB(url){ const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error('Falha ao baixar: '+url); return await r.arrayBuffer(); }
+  async function readExcelRowsFromURL(url){
+    const ab=await fetchAB(url), wb=XLSX.read(new Uint8Array(ab),{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]], matrix=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,blankrows:false});
+    const hdrIdx=autoDetectHeaderRow(matrix); if(hdrIdx===null) return {headers:[],rows:[]}; return buildObjectsFromMatrix(matrix,hdrIdx);
+  }
+  async function gerarContratoDeURLs(excelURL, templateURL){
+    const [{rows}, tplAB] = await Promise.all([readExcelRowsFromURL(excelURL), fetchAB(templateURL)]);
+    if (!rows.length){ alert('Planilha sem dados.'); return; }
+    const row=rows[0];
+    const blob=await generateDocxReplacedRobusto(tplAB, row);
+    const codigo = row['codigo']||row['Codigo']||row['CODIGO']||'';
+    const nome   = row['nomeContratante']||row['NomeContratante']||row['nome']||'';
+    const fname  = `${sanitize(codigo)}_${sanitize(nome)}`.replace(/^_+|_+$/g,'') || 'Contrato';
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname+'.docx';
+    document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0);
+  }
+
+  function hookGerar(){
+    const btn = document.getElementById('btnGerarContrato') || findByText('button, a[role="button"]', /gerar contrato/i);
+    if (!btn || btn.__hooked) return !!btn;
+    btn.__hooked = true;
+    btn.addEventListener('click', async ()=>{
+      const excelURL = btn.dataset.excelUrl, templateURL = btn.dataset.templateUrl;
+      if (!excelURL || !templateURL){ alert('URLs não definidas no botão (data-excel-url / data-template-url).'); return; }
+      try { await gerarContratoDeURLs(excelURL, templateURL); }
+      catch(e){ console.error(e); alert('Erro ao gerar contrato (veja o console).'); }
+    });
+    return true;
+  }
+
+  const iv = setInterval(()=>{
+    const p = hookPesquisar();
+    const g = hookGerar();
+    if (p && g) { /* ok */ }
+  }, 400);
+})();
+</script>
+
 </body>
 </html>
