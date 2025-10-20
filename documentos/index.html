@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.1 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.2 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2734,6 +2734,81 @@ function baixarExcel(codigo){
 })();
 </script>
 
+<script>
+(function(){
+  // Localiza botões pelo texto visível
+  function findByText(selector, re){
+    return Array.from(document.querySelectorAll(selector))
+      .find(el => re.test((el.textContent || el.value || '').trim()));
+  }
+
+  // Lê o código do input (agora preenchido pela rotina "Atualizar documento")
+  function readCodigoDoInput(){
+    const el =
+      document.querySelector('#codigo') ||
+      document.querySelector('[name="codigo"]') ||
+      document.querySelector('input[aria-label*="código" i]') ||
+      document.querySelector('input[aria-label*="codigo" i]');
+    const v = (el?.value || '').trim();
+    return v;
+  }
+
+  // Intercepta o clique do "Gerar contrato"
+  function hookGerarContratoUsandoAtualizar(){
+    const btnGerar = findByText('button, a[role="button"], input[type="button"], input[type="submit"]', /gerar contrato/i);
+    if (!btnGerar || btnGerar.__hookedAtualizarPrimeiro) return !!btnGerar;
+    btnGerar.__hookedAtualizarPrimeiro = true;
+
+    btnGerar.addEventListener('click', async (ev)=>{
+      ev.preventDefault(); ev.stopPropagation();
+
+      // 1) dispara o MESMO fluxo do seu sistema que já pega o código certo
+      const btnAtualizar = findByText('button, a[role="button"], input[type="button"], input[type="submit"]', /atualizar documento/i);
+      if (btnAtualizar) {
+        btnAtualizar.click();
+      } else {
+        console.warn('[Gerar Contrato] botão "Atualizar documento" não encontrado para pré-preencher o código.');
+      }
+
+      // 2) dá um tempo para o sistema copiar o código para o input
+      await new Promise(r => setTimeout(r, 250));
+
+      // 3) lê o código já correto do input (preenchido pela rotina oficial)
+      const codigo = readCodigoDoInput();
+      if (!codigo) {
+        alert('Não consegui obter o código após "Atualizar documento".');
+        return;
+      }
+
+      // 4) chama sua preparação com o código certo
+      if (typeof window.prepararGerarContrato === 'function') {
+        window.prepararGerarContrato(codigo);
+      } else {
+        console.warn('[Gerar Contrato] prepararGerarContrato não está disponível.');
+      }
+
+      // 5) agora deixa o clique original seguir para que o handler existente gere o DOCX
+      //    (se não houver handler original, você pode chamar diretamente aqui o fluxo de geração)
+      // Ex.: se seu botão não tiver outro listener, você pode disparar um novo click:
+      setTimeout(()=> {
+        // dispara o click real para acionar o gerador já com as URLs injetadas
+        btnGerar.removeEventListener('click', arguments.callee); // evita loop
+        btnGerar.click();
+      }, 50);
+    }, true);
+
+    return true;
+  }
+
+  // Tenta repetidamente até que os botões existam no DOM (modal aberto)
+  const iv = setInterval(()=>{
+    if (hookGerarContratoUsandoAtualizar()){
+      // mantemos rodando caso o modal se reabra muitas vezes; remova o clearInterval se quiser persistir
+      // clearInterval(iv);
+    }
+  }, 300);
+})();
+</script>
 
 </body>
 </html>
