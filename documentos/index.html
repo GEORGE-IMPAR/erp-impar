@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.5 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.6 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2693,65 +2693,128 @@ function baixarExcel(codigo){
 </script>
 
 <script>
-// === 1) CAPTURA O CÓDIGO DA LINHA CLICADA (mesma lógica do "Atualizar documento")
-//     - salva em window.codigoSelecionado
-document.addEventListener('click', function(e) {
-  const cell = e.target.closest('td:nth-child(2)'); // segunda coluna (Código)
-  if (!cell || !cell.textContent.trim()) return;
-
-  const tr = cell.parentElement;
-  if (!tr || !tr.closest('#consultaModal')) return; // garante que é a tabela do modal de consulta
-
-  e.preventDefault();
-  const code = cell.textContent.trim();
-
-  // guarda globalmente para o gerador
-  window.codigoSelecionado = code;
-
-  // mantém seu comportamento atual: copia no input + fecha modal + foca botão
-  const inp = document.getElementById('codigo');
-  if (inp) {
-    inp.value = code;
-    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
-  }
-  const modal = document.getElementById('consultaModal');
-  if (modal) modal.style.display = 'none';
-
-  const continuar = document.getElementById('bar1');
-  if (continuar) setTimeout(() => continuar.focus(), 0);
-
-  console.log('[Consulta] Código selecionado:', code);
-}, true);
-
-// === 2) NO "GERAR CONTRATO": usa SEMPRE o código selecionado da consulta
 (function(){
-  // util: hoje você usa prepararGerarContrato(codigo) para setar data-excel-url/template
-  const _prep = window.prepararGerarContrato;
+  // ============== util ==============
+  const AC_RE = /\bAC[0-9A-Za-z]+\b/;
 
+  function toast(msg){
+    let t = document.getElementById('__contrato_toast__');
+    if(!t){
+      t = document.createElement('div'); t.id='__contrato_toast__';
+      Object.assign(t.style,{
+        position:'fixed', zIndex:999999, left:'50%', bottom:'20px',
+        transform:'translateX(-50%)', background:'#111', color:'#fff',
+        padding:'10px 16px', borderRadius:'8px', fontSize:'13px',
+        boxShadow:'0 6px 20px rgba(0,0,0,.25)'
+      });
+      document.body.appendChild(t);
+    }
+    t.textContent = msg; t.style.display='block';
+    clearTimeout(t.__hidetimer);
+    t.__hidetimer = setTimeout(()=>{ t.style.display='none'; }, 2000);
+  }
+
+  function getModalRoot(){
+    // tenta as variações comuns
+    return document.querySelector('.swal2-container .swal2-popup')
+        || document.querySelector('.modal.show, .modal[open]')
+        || document.querySelector('[role="dialog"].show, [role="dialog"]')
+        || null;
+  }
+
+  // varre o modal e retorna o ÚLTIMO ACxxxxx visível (exceto AC00025)
+  function scanModalForCode(root){
+    if(!root) return '';
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    let m, last = '';
+    while(walker.nextNode()){
+      const txt = (walker.currentNode.nodeValue||'').trim();
+      if(!txt) continue;
+      const all = txt.match(AC_RE);
+      if(!all) continue;
+      for (const code of all){
+        const up = code.toUpperCase();
+        if (up !== 'AC00025') last = code; // fica com o último
+      }
+    }
+    return last;
+  }
+
+  // tenta capturar o código do modal e salvar globalmente
+  function captureCodeFromModal(){
+    const root = getModalRoot();
+    const code = scanModalForCode(root);
+    if (code){
+      window.codigoSelecionado = code;
+      toast('Código detectado: ' + code);
+      console.log('[Contrato] código do modal =', code);
+      return code;
+    }
+    return '';
+  }
+
+  // observa abertura/alterações do DOM para capturar assim que o modal aparecer
+  const mo = new MutationObserver(()=>{
+    const root = getModalRoot();
+    if (!root) return;
+    // tenta capturar assim que o modal existir
+    const got = captureCodeFromModal();
+    if (got) return;
+  });
+  mo.observe(document.documentElement, {subtree:true, childList:true});
+
+  // fallback adicional: se você clicar numa linha da consulta (segunda coluna dentro do #consultaModal)
+  document.addEventListener('click', (e)=>{
+    const cell = e.target.closest('#consultaModal td:nth-child(2)');
+    if (!cell) return;
+    const code = (cell.textContent||'').trim();
+    if (AC_RE.test(code) && code.toUpperCase()!=='AC00025'){
+      window.codigoSelecionado = code;
+      toast('Código selecionado: ' + code);
+      console.log('[Consulta] código =', code);
+    }
+  }, true);
+
+  // força o Gerar Contrato a usar SEMPRE o codigoSelecionado
   function hookGerarContrato(){
     const btn = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
       .find(el => /gerar contrato/i.test((el.textContent||el.value||'').trim()));
-    if (!btn || btn.__useSelectedCode) return !!btn;
-    btn.__useSelectedCode = true;
+    if (!btn || btn.__hookedForceCode) return !!btn;
+    btn.__hookedForceCode = true;
 
     btn.addEventListener('click', (ev)=>{
-      // pega do clique da lista (nunca do placeholder)
-      const codigo = (window.codigoSelecionado||'').trim();
-      if (!codigo){
-        console.warn('[Gerar Contrato] Nenhum código selecionado na consulta ainda.');
-        alert('Selecione um documento na consulta antes de gerar o contrato.');
-        return;
+      // não cancela o fluxo; apenas garante que teremos o código certo
+      if (!window.codigoSelecionado){
+        // tenta mais uma vez ler do modal no momento do clique
+        const tryNow = captureCodeFromModal();
+        if (!tryNow){
+          alert('Selecione um documento na consulta (ou abra o modal com o código) antes de gerar o contrato.');
+          ev.preventDefault(); ev.stopPropagation();
+          return;
+        }
       }
-      // chama sua preparação com o código correto
-      if (typeof _prep === 'function') _prep(codigo);
-      // deixa o restante do fluxo seguir normalmente (seu gerador já lê data-urls do botão)
+      // injeta nas data-* do próprio botão, caso sua preparação leia daqui
+      const codigo = window.codigoSelecionado;
+      const API  = 'https://api.erpimpar.com.br';
+      const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
+      const excelURL    = `${API}/storage/docs/${encodeURIComponent(`${codigo}_${ymd}.xlsx`)}`;
+      const templateURL = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
+      btn.dataset.excelUrl    = excelURL;
+      btn.dataset.templateUrl = templateURL;
+
+      // se existir prepararGerarContrato, chame com o código correto
+      if (typeof window.prepararGerarContrato === 'function'){
+        window.prepararGerarContrato(codigo);
+      }
+      console.log('[Contrato] usando', codigo, excelURL);
+      // deixa o fluxo original seguir
     }, true);
 
     return true;
   }
 
-  // ativa quando o modal abre
-  const iv = setInterval(hookGerarContrato, 300);
+  // tenta conectar sempre que o modal abre
+  setInterval(hookGerarContrato, 300);
 })();
 </script>
 
