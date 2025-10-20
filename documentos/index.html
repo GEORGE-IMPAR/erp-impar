@@ -2530,14 +2530,19 @@ function baixarExcel(codigo){
 </script>
 <script src="consulta_json_v3_beauty.js"></script>
 
-<!-- ===== Add-on: Gerar contrato a partir do botão do modal (Pesquisar -> Gerar contrato) ===== -->
+<!-- ===== Integração completa: Pesquisa -> abre modal -> prepararGerarContrato(codigo) -> Gerar contrato ===== -->
 <script>
 (function(){
+  // ===== Config domínio/pastas (já fixos para seu subdomínio API) =====
   const API_ORIGIN = 'https://api.erpimpar.com.br';
   const PATH_EXCEL    = '/storage/docs';
   const PATH_TEMPLATE = '/gerador/templates';
 
-  function ymd(d=new Date()){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
+  // ===== Helpers =====
+  function ymd(d=new Date()){
+    const p=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());
+  }
   function nomeExcelPorCodigo(codigo){ return `${codigo}_${ymd()}.xlsx`; }
   function nomeTemplatePadrao(){ return 'Template-Contrato.docx'; }
 
@@ -2545,45 +2550,55 @@ function baixarExcel(codigo){
     return Array.from(document.querySelectorAll(selector))
       .find(el => regex.test((el.textContent||'').trim()));
   }
-  function getCodigoDigitado(){
-    const sels = [
-      '#codigo','[name="codigo"]',
-      'input[placeholder*="código"]','input[placeholder*="codigo"]',
-      'input[aria-label*="código"]','input[aria-label*="codigo"]'
-    ];
-    for (const s of sels){ const el=document.querySelector(s); if (el?.value?.trim()) return el.value.trim(); }
-    return '';
-  }
 
-  function hookPesquisar(){
-    const btn = findByText('button, input[type="button"], input[type="submit"], a[role="button"]', /pesquisar/i);
-    if (!btn || btn.__hooked) return !!btn;
-    btn.__hooked = true;
-    btn.addEventListener('click', ()=>{ setTimeout(configurarBotaoGerarContrato, 300); });
-    return true;
-  }
+  // 1) Será chamada assim que o modal abrir, com o código escolhido
+  window.prepararGerarContrato = function(codigo){
+    const btn = document.getElementById('btnGerarContrato')
+            || findByText('button, a[role="button"]', /gerar contrato/i);
+    if (!btn) { console.warn('[Gerar Contrato] botão não encontrado.'); return; }
 
-  function getBtnGerarContrato(){
-    return document.getElementById('btnGerarContrato')
-        || findByText('button, a[role="button"]', /gerar contrato/i);
-  }
-
-  function configurarBotaoGerarContrato(){
-    const btn = getBtnGerarContrato();
-    if (!btn) return;
-
+    // Você pode setar nomes exatos em #docMeta; se não houver, usa convenção
     const meta = document.getElementById('docMeta');
-    const codigo       = (meta?.dataset?.codigo) || getCodigoDigitado();
-    const excelName    = (meta?.dataset?.excel)   || nomeExcelPorCodigo(codigo);
-    const templateName = (meta?.dataset?.template)|| nomeTemplatePadrao();
+    const excelName    = (meta?.dataset?.excel)    || nomeExcelPorCodigo(codigo);
+    const templateName = (meta?.dataset?.template) || nomeTemplatePadrao();
 
     const excelURL    = `${API_ORIGIN}${PATH_EXCEL}/${encodeURIComponent(excelName)}`;
     const templateURL = `${API_ORIGIN}${PATH_TEMPLATE}/${encodeURIComponent(templateName)}`;
 
     btn.dataset.excelUrl    = excelURL;
     btn.dataset.templateUrl = templateURL;
+
+    console.log('[Gerar Contrato] pronto | codigo:', codigo, '| excel:', excelURL, '| template:', templateURL);
+  };
+
+  // 2) Detector do clique em "Pesquisar": quando abrir o modal, pegamos o código e chamamos prepararGerarContrato(codigo)
+  function getCodigoEscolhido(){
+    const sels = [
+      '#codigo','[name="codigo"]',
+      'input[placeholder*="código"]','input[placeholder*="codigo"]',
+      'input[aria-label*="código"]','input[aria-label*="codigo"]'
+    ];
+    for (const s of sels){ const el=document.querySelector(s); if (el?.value?.trim()) return el.value.trim(); }
+    // fallback: badge no modal (ex.: AC05299R1)
+    const badge = Array.from(document.querySelectorAll('*')).map(n=> (n.textContent||'').trim()).find(t=>/^AC[0-9A-Za-z]+/i.test(t));
+    if (badge){ const m=badge.match(/AC[0-9A-Za-z]+/i); if (m) return m[0]; }
+    return '';
+  }
+  function hookPesquisar(){
+    const btn = findByText('button, input[type="button"], input[type="submit"], a[role="button"]', /pesquisar/i);
+    if (!btn || btn.__hooked) return !!btn;
+    btn.__hooked = true;
+    btn.addEventListener('click', ()=>{
+      setTimeout(()=>{
+        const codigo = getCodigoEscolhido();
+        if (!codigo){ console.warn('[Gerar Contrato] código não encontrado após pesquisar.'); return; }
+        window.prepararGerarContrato(codigo);
+      }, 300);
+    });
+    return true;
   }
 
+  // 3) Lógica do gerador (a mesma que funcionou)
   function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
   function makeDocxSafeRegex(ph){const esc=ph.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); const between='(?:<[^>]+>)*'; return new RegExp(esc.split('').join(between),'gi');}
   async function generateDocxReplacedRobusto(templateAB, map){
@@ -2624,13 +2639,14 @@ function baixarExcel(codigo){
     btn.__hooked = true;
     btn.addEventListener('click', async ()=>{
       const excelURL = btn.dataset.excelUrl, templateURL = btn.dataset.templateUrl;
-      if (!excelURL || !templateURL){ alert('URLs não definidas no botão (data-excel-url / data-template-url).'); return; }
+      if (!excelURL || !templateURL){ alert('URLs do Excel/Template não definidas (data-excel-url / data-template-url).'); return; }
       try { await gerarContratoDeURLs(excelURL, templateURL); }
       catch(e){ console.error(e); alert('Erro ao gerar contrato (veja o console).'); }
     });
     return true;
   }
 
+  // Observadores simples
   const iv = setInterval(()=>{
     const p = hookPesquisar();
     const g = hookGerar();
