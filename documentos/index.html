@@ -365,6 +365,7 @@ window.__CONSULTA_CFG__ = {
 <div class="hint">Digite o código e clique em Buscar.</div>
 </div>
 <button class="btn primary" id="btnBuscarInline" type="button">Buscar</button>
+<button class="btn" id="btnGerarInline" type="button" style="margin-left:8px;display:none">Gerar contrato</button>
 </div>
 <table class="tbl">
 <thead>
@@ -1258,11 +1259,7 @@ function closeActionModal(){
 }
 document.addEventListener('click', function(e){
   if(e.target && e.target.id==='btnActionCancel') closeActionModal();
-  if(e.target && e.target.id==='btnActionPdf'){
-  const up=document.getElementById('btnActionUpdate')||document.querySelector('.btn-atualizar-documento');
-  try{ up && up.click(); }catch(_){}
-  setTimeout(()=>{ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }, 1000);
-}catch(_){} setTimeout(()=>{ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }, 1000); } closeActionModal(); }
+  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
   if(e.target && e.target.id==='btnActionUpdate'){
     if(__actionRow){
       const norm = normalizeRowForFill(__actionRow);
@@ -2356,7 +2353,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.20 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.30 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2743,28 +2740,308 @@ function baixarExcel(codigo){
     if (!btnGerar || btnGerar.__hooked_usaCodigo) return;
     btnGerar.__hooked_usaCodigo = true;
 
-    btnGerar.addEventListener('click', async (ev)=>{
+    btnGerar.addEventListener('click', (ev)=>{
+      // pega prioritariamente o código salvo da consulta
+      let codigo = 'AC05925';
 
-      // força atualização e lê o campo com validação
-      const AC_RE = /\b[A-Z]{2}\d{5,}\b/;
-      const up = document.getElementById('btnActionUpdate') || document.querySelector('.btn-atualizar-documento');
-      try { up && up.click(); } catch(_) {}
-      await new Promise(r => setTimeout(r, 1000));
-      let codigo = (typeof readCodigoField==='function' && readCodigoField()) || '';
-      if (codigo) { codigo = String(codigo).trim().toUpperCase(); }
-      if (!codigo || !AC_RE.test(codigo) || codigo === 'AC00025') {
-        ev && ev.preventDefault && ev.preventDefault();
-        ev && ev.stopPropagation && ev.stopPropagation();
-        alert('Não foi possível obter um código válido. Selecione na consulta ou digite manualmente.');
-        return;
+      // fallback: tenta do campo #codigo
+      if (!codigo) {
+        const v = readCodigoField();
+        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
+          codigo = v;
+        }
       }
 
-});
+      // if (!codigo) {
+        // ev.preventDefault(); ev.stopPropagation();
+        // alert('Selecione um documento na consulta para gerar o contrato.');
+        // return;
+      // }
+
+      // monta URLs para o gerador que você já validou
+      const API = 'https://api.erpimpar.com.br';
+      const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
+      btnGerar.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${codigo}_${ymd}.xlsx`)}`;
+      btnGerar.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
+
+      // se tiver aquele preparador, chamamos com o código correto
+      if (typeof window.prepararGerarContrato === 'function'){
+        window.prepararGerarContrato(codigo);
+      }
+
+      // segue o fluxo normal do botão
+      console.log('[GerarContrato] usando código:', codigo);
+    }, true);
+  }
+
+  setInterval(hookGerarContrato, 300);
+})();
+</script>
+
+<style>
+  /* Toast suave e moderno */
+  #contrato-toast {
+    position: fixed; inset: auto 20px 20px auto;
+    display: none; gap: 12px; align-items: center;
+    background: #0b1220; color: #e6f0ff; border: 1px solid #21304a;
+    padding: 14px 16px; border-radius: 12px; z-index: 999999;
+    box-shadow: 0 16px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    font: 500 14px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    transform: translateY(10px); opacity: 0; transition: .28s ease;
+    max-width: min(480px, calc(100vw - 40px));
+  }
+  #contrato-toast.show { display:flex; transform: translateY(0); opacity: 1; }
+  .toast-icon {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #12b98122; border: 2px solid #12b981;
+    display: grid; place-items: center; position: relative; overflow: hidden;
+    box-shadow: 0 0 0 3px #12b98122;
+  }
+  .toast-icon::before {
+    content: ""; width: 9px; height: 16px; border-right: 3px solid #12b981; border-bottom: 3px solid #12b981;
+    transform: rotate(45deg) translateY(-2px); opacity: 0; transition: .28s ease .08s;
+  }
+  #contrato-toast.show .toast-icon::before { opacity: 1; }
+  .toast-title { font-weight: 700; color: #eafff6; }
+  .toast-sub { opacity: .85; margin-top: 4px; font-weight: 500; }
+  .toast-close {
+    margin-left: 10px; background: transparent; border: 0; color: #cfe7ff; opacity:.7; cursor: pointer;
+    padding: 6px; border-radius: 8px;
+  }
+  .toast-close:hover { opacity: 1; background:#ffffff14 }
+  /* barra de progresso */
+  .toast-bar {
+    position: absolute; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg,#34d399,#22c55e);
+    width: 100%; transform-origin: left; animation: toastbar 4.2s linear forwards;
+    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; opacity:.9;
+  }
+  @keyframes toastbar { to { transform: scaleX(0); } }
+</style>
+
+<div id="contrato-toast" role="status" aria-live="polite">
+  <div class="toast-icon" aria-hidden="true"></div>
+  <div style="display:flex; flex-direction:column">
+    <div class="toast-title">Contrato gerado com sucesso</div>
+    <div class="toast-sub" id="toast-sub">O download foi iniciado.</div>
+  </div>
+  <button class="toast-close" type="button" onclick="(function(t){t.classList.remove('show'); setTimeout(()=>t.style.display='none',280)})(document.getElementById('contrato-toast'))">✕</button>
+  <div class="toast-bar"></div>
+</div>
+
+<script>
+  // Exponho uma função para você chamar de onde quiser
+  window.contratoSucesso = function (opts = {}) {
+    const t = document.getElementById('contrato-toast');
+    const sub = document.getElementById('toast-sub');
+    const msg = [];
+
+    if (opts.codigo) msg.push(`Código: ${opts.codigo}`);
+    if (opts.nome)   msg.push(opts.nome);
+
+    sub.textContent = opts.texto || (msg.length ? msg.join(' · ') : 'O download foi iniciado.');
+
+    // mostra o toast
+    t.style.display = 'flex';
+    // reinicia a barra de tempo
+    const bar = t.querySelector('.toast-bar');
+    bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = null;
+
+    requestAnimationFrame(()=> t.classList.add('show'));
+
+    // fecha automático após 4.6s
+    clearTimeout(t.__hideTimer);
+    t.__hideTimer = setTimeout(()=>{
+      t.classList.remove('show');
+      setTimeout(()=> t.style.display='none', 280);
+    }, 4600);
+  };
+
+  // OPCIONAL: se quiser acoplar automaticamente ao clique do "Gerar contrato"
+  (function autoHook(){
+    const btns = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'));
+    const btn = btns.find(el => /gerar contrato/i.test((el.textContent || el.value || '').trim()));
+    if (!btn || btn.__toastHooked) return;
+    btn.__toastHooked = true;
+    btn.addEventListener('click', () => {
+      // chame logo após você iniciar o download (ou aqui, se já inicia no clique)
+      const codigo = (window.codigoSelecionado || document.getElementById('codigo')?.value || '').trim();
+      window.contratoSucesso({ codigo: codigo && codigo !== 'AC00025' ? codigo : undefined });
     });
   })();
 </script>
 
 
 
-</body>
-</html>
+<script>
+(function(){
+  function setCodigoAndNotify(codigo){
+    const inp = document.getElementById('codigo') || document.querySelector('#codigo');
+    if (!inp) return;
+    inp.value = codigo || '';
+    try { inp.dispatchEvent(new Event('input', {bubbles:true})); } catch(_){}
+    const g = document.getElementById('btnGerarInline');
+    if (g) g.style.display = (codigo && String(codigo).trim()) ? '' : 'none';
+  }
+
+  const AC_RE = /\b[A-Z]{2}\d{5,}\b/;
+  function extractCodigoFromNode(node){
+    if (!node) return '';
+    const fromData = node.dataset && (node.dataset.codigo || node.dataset.cod || node.dataset.code);
+    if (fromData) return fromData;
+    const m = (node.textContent || '').toUpperCase().match(AC_RE);
+    return (m && m[0] !== 'AC00025') ? m[0] : '';
+  }
+
+  document.addEventListener('click', function(ev){
+    const row = ev.target.closest('.consulta-row, tr, li, .linha, .item');
+    if (!row) return;
+    const codigo = extractCodigoFromNode(row);
+    if (!codigo) return;
+    setCodigoAndNotify(codigo);
+    try {
+      const m = document.getElementById('consultaModal') || document.getElementById('actionModal') || document.querySelector('.modal.show,.modal[style*=\"display: block\"]');
+      if (m) m.style.display = 'none';
+    } catch(_){}
+  }, true);
+
+  document.addEventListener('input', function(ev){
+    if (ev.target && ev.target.id === 'codigo'){
+      const v = (ev.target.value || '').toUpperCase().trim();
+      const g = document.getElementById('btnGerarInline');
+      if (g) g.style.display = (AC_RE.test(v) && v !== 'AC00025') ? '' : 'none';
+    }
+  }, true);
+
+  (function(){
+    const g = document.getElementById('btnGerarInline');
+    if (!g) return;
+    g.addEventListener('click', async function(ev){
+      const read = (typeof readCodigoField === 'function') ? readCodigoField : function(){ const el=document.getElementById('codigo'); return el?el.value:''; };
+      let codigo = (read() || '').toUpperCase().trim();
+      if (!AC_RE.test(codigo) || codigo === 'AC00025'){
+        ev.preventDefault(); ev.stopPropagation();
+        alert('Informe ou selecione um código válido para gerar o contrato.');
+        return;
+      }
+      const btnGerarDocx = document.getElementById('btnGerarDocx') || document.querySelector('#btnGerarDocx');
+      if (btnGerarDocx) { try { btnGerarDocx.click(); return; } catch(_) {} }
+      const btnGerar = document.getElementById('btnGerar') || document.querySelector('#btnGerar');
+      if (btnGerar) { try { btnGerar.click(); return; } catch(_) {} }
+      if (typeof window.gerarContratoDeURLs === 'function'){ try{ await window.gerarContratoDeURLs(); return; }catch(_){ } }
+      alert('Não foi possível acionar a geração. Verifique os botões de gerar no HTML.');
+    });
+  })();
+
+  (function(){
+    const el = document.getElementById('codigo');
+    if (!el) return;
+    const v = (el.value || '').toUpperCase().trim();
+    const g = document.getElementById('btnGerarInline');
+    if (g) g.style.display = (AC_RE.test(v) && v !== 'AC00025') ? '' : 'none';
+  })();
+})();
+
+</script>
+
+<script>
+(function(){
+  function onReady(fn){ if(document.readyState!=='loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
+
+  onReady(function(){
+    // === 1) Cria o botão "Gerar contrato" ao lado do "Pesquisar" ===
+    var buscar = document.getElementById('btnBuscarInline') || document.querySelector('#btnBuscarInline, [data-btn=buscarInline], button.btn-buscar-inline');
+    if (buscar && !document.getElementById('btnGerarInline')){
+      var g = document.createElement('button');
+      g.type = 'button';
+      g.id = 'btnGerarInline';
+      g.className = 'btn';
+      g.style.marginLeft = '8px';
+      g.style.display = 'none';
+      g.textContent = 'Gerar contrato';
+      buscar.insertAdjacentElement('afterend', g);
+    }
+
+    var AC_RE = /\b[A-Z]{2}\d{5,}\b/;
+
+    function setCodigoAndNotify(codigo){
+      var inp = document.getElementById('codigo') || document.querySelector('#codigo');
+      if (!inp) return;
+      inp.value = codigo || '';
+      try { inp.dispatchEvent(new Event('input', {bubbles:true})); } catch(_){}
+      var g = document.getElementById('btnGerarInline');
+      if (g) g.style.display = (codigo && String(codigo).trim() && AC_RE.test(String(codigo).toUpperCase()) && String(codigo).toUpperCase()!=='AC00025') ? '' : 'none';
+    }
+
+    function extractCodigoFromNode(node){
+      if (!node) return '';
+      var fromData = node.dataset && (node.dataset.codigo || node.dataset.cod || node.dataset.code);
+      if (fromData) return fromData;
+      var m = (node.textContent || '').toUpperCase().match(AC_RE);
+      return (m && m[0] !== 'AC00025') ? m[0] : '';
+    }
+
+    // === 2) Clique em resultado da consulta → preenche campo e fecha consulta ===
+    document.addEventListener('click', function(ev){
+      var row = ev.target.closest('.consulta-row, table tr, li, .linha, .item');
+      if (!row) return;
+
+      // GARANTIR que é dentro da janela/lista de consulta
+      var inConsulta = row.closest('#consultaModal, #actionModal, .consulta, .modal'); // <- ajuste aqui se seus ids forem outros
+      if (!inConsulta) return;
+
+      var codigo = extractCodigoFromNode(row);
+      if (!codigo) return;
+
+      setCodigoAndNotify(codigo);
+
+      // Fecha a consulta/modal
+      try {
+        var mod = row.closest('#consultaModal, #actionModal, .modal'); // <- ajuste aqui se necessário
+        if (mod) mod.style.display = 'none';
+        var backdrop = document.querySelector('.modal-backdrop, .backdrop');
+        if (backdrop) backdrop.parentNode.removeChild(backdrop);
+      } catch(_){}
+    }, true);
+
+    // === 3) Mostrar/ocultar botão ao digitar manualmente ===
+    document.addEventListener('input', function(ev){
+      if (ev.target && ev.target.id === 'codigo'){
+        var v = (ev.target.value || '').toUpperCase().trim();
+        var g = document.getElementById('btnGerarInline');
+        if (g) g.style.display = (AC_RE.test(v) && v !== 'AC00025') ? '' : 'none';
+      }
+    }, true);
+
+    // === 4) Handler do "Gerar contrato" inline — usa exclusivamente o campo ===
+    var gerar = document.getElementById('btnGerarInline');
+    if (gerar){
+      gerar.addEventListener('click', async function(ev){
+        var read = (typeof readCodigoField === 'function') ? readCodigoField : function(){ var el=document.getElementById('codigo'); return el?el.value:''; };
+        var codigo = (read() || '').toUpperCase().trim();
+        if (!AC_RE.test(codigo) || codigo === 'AC00025'){
+          ev.preventDefault(); ev.stopPropagation();
+          alert('Informe ou selecione um código válido para gerar o contrato.');
+          return;
+        }
+        var btnGerarDocx = document.getElementById('btnGerarDocx') || document.querySelector('#btnGerarDocx');
+        if (btnGerarDocx) { try { btnGerarDocx.click(); return; } catch(_) {} }
+        var btnGerar = document.getElementById('btnGerar') || document.querySelector('#btnGerar');
+        if (btnGerar) { try { btnGerar.click(); return; } catch(_) {} }
+        if (typeof window.gerarContratoDeURLs === 'function'){ try{ await window.gerarContratoDeURLs(); return; }catch(_){ } }
+        alert('Não foi possível acionar a geração. Verifique os botões/funções de gerar.');
+      });
+    }
+
+    // === 5) Estado inicial: se já houver código válido, mostra o botão ===
+    (function(){
+      var el = document.getElementById('codigo');
+      if (!el) return;
+      var v = (el.value || '').toUpperCase().trim();
+      var g = document.getElementById('btnGerarInline');
+      if (g) g.style.display = (AC_RE.test(v) && v !== 'AC00025') ? '' : 'none';
+    })();
+  });
+})();
+</script>
+
+</body></html>
