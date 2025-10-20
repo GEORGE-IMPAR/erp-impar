@@ -93,7 +93,7 @@ if (document.readyState === 'loading') {
   bindDefaultButton();
 }
 
-// === Patch para botões dentro do modal ===
+// === Patch para ação automática ao clicar na linha ===
 (function () {
   const btnPdf = document.getElementById('btnActionPdf');
   const btnUpdate = document.getElementById('btnActionUpdate');
@@ -124,12 +124,31 @@ if (document.readyState === 'loading') {
         return;
       }
 
-      console.log('[Atualizar Documento] Código:', codigo);
-      if (typeof window.atualizarDocumento === 'function') {
-        window.atualizarDocumento(codigo);
-      } else {
-        alert('Função de atualização não disponível.');
-      }
+      const input = document.getElementById('codigo');
+      if (input) input.value = codigo;
+
+      const modal = document.getElementById('actionModal');
+      if (modal) modal.style.display = 'none';
     });
+  }
+
+  // 🔥 Aqui está o clique automático da linha ativando o botão atualizar
+  const table = document.getElementById('consBodyInline');
+  if (table) {
+    table.onclick = function (e) {
+      const row = e.target.closest('tr');
+      if (!row) return;
+      const dados = row.__dados__;
+      if (!dados || !dados.codigo) return;
+
+      const actDocCode = document.getElementById('actDocCode');
+      if (actDocCode) actDocCode.textContent = dados.codigo;
+
+      const btnUpdate = document.getElementById('btnActionUpdate');
+      if (btnUpdate) btnUpdate.click();
+
+      const modal = document.getElementById('actionModal');
+      if (modal) modal.style.display = 'none';
+    };
   }
 })();
