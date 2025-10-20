@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.4 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.5 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2693,51 +2693,65 @@ function baixarExcel(codigo){
 </script>
 
 <script>
+// === 1) CAPTURA O CÓDIGO DA LINHA CLICADA (mesma lógica do "Atualizar documento")
+//     - salva em window.codigoSelecionado
+document.addEventListener('click', function(e) {
+  const cell = e.target.closest('td:nth-child(2)'); // segunda coluna (Código)
+  if (!cell || !cell.textContent.trim()) return;
+
+  const tr = cell.parentElement;
+  if (!tr || !tr.closest('#consultaModal')) return; // garante que é a tabela do modal de consulta
+
+  e.preventDefault();
+  const code = cell.textContent.trim();
+
+  // guarda globalmente para o gerador
+  window.codigoSelecionado = code;
+
+  // mantém seu comportamento atual: copia no input + fecha modal + foca botão
+  const inp = document.getElementById('codigo');
+  if (inp) {
+    inp.value = code;
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
+  }
+  const modal = document.getElementById('consultaModal');
+  if (modal) modal.style.display = 'none';
+
+  const continuar = document.getElementById('bar1');
+  if (continuar) setTimeout(() => continuar.focus(), 0);
+
+  console.log('[Consulta] Código selecionado:', code);
+}, true);
+
+// === 2) NO "GERAR CONTRATO": usa SEMPRE o código selecionado da consulta
 (function(){
-  function modalRoot(){
-    return document.querySelector('.swal2-container .swal2-popup')
-        || document.querySelector('.modal.show, .modal[open], [role="dialog"], .dialog, .popup')
-        || null;
-  }
-  function codigoDoCabecalho(){
-    const root = modalRoot(); if (!root) return '';
-    const header = root.querySelector('.swal2-title, .modal-header, [data-modal-title]') || root;
+  // util: hoje você usa prepararGerarContrato(codigo) para setar data-excel-url/template
+  const _prep = window.prepararGerarContrato;
 
-    // tenta chip/pill/badge primeiro
-    const chip = header.querySelector('.badge, .pill, span, strong, b, .tag');
-    if (chip){
-      const m = (chip.textContent||'').trim().match(/\bAC[0-9A-Za-z]+\b/);
-      if (m && m[0].toUpperCase() !== 'AC00025') return m[0];
-    }
-    // fallback: pega do texto do header
-    const txt = (header.textContent||'').trim();
-    const todos = txt.match(/\bAC[0-9A-Za-z]+\b/g) || [];
-    const bom = todos.filter(c => c.toUpperCase() !== 'AC00025');
-    return bom.at(-1) || '';
-  }
-
-  function hookMostrarCodigo(){
+  function hookGerarContrato(){
     const btn = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
       .find(el => /gerar contrato/i.test((el.textContent||el.value||'').trim()));
-    if (!btn || btn.__showCodeOnce) return !!btn;
-    btn.__showCodeOnce = true;
+    if (!btn || btn.__useSelectedCode) return !!btn;
+    btn.__useSelectedCode = true;
 
     btn.addEventListener('click', (ev)=>{
-      // não impede o fluxo; apenas mostra a msg
-      const code = codigoDoCabecalho();
-      if (code) {
-        alert('Código detectado no cabeçalho: ' + code);
-        console.log('[DEBUG] Código do cabeçalho do modal:', code);
-      } else {
-        alert('Não consegui ler o código no cabeçalho do modal.');
-        console.warn('[DEBUG] Código não encontrado no cabeçalho.');
+      // pega do clique da lista (nunca do placeholder)
+      const codigo = (window.codigoSelecionado||'').trim();
+      if (!codigo){
+        console.warn('[Gerar Contrato] Nenhum código selecionado na consulta ainda.');
+        alert('Selecione um documento na consulta antes de gerar o contrato.');
+        return;
       }
+      // chama sua preparação com o código correto
+      if (typeof _prep === 'function') _prep(codigo);
+      // deixa o restante do fluxo seguir normalmente (seu gerador já lê data-urls do botão)
     }, true);
 
     return true;
   }
 
-  const iv = setInterval(()=>{ hookMostrarCodigo(); }, 250);
+  // ativa quando o modal abre
+  const iv = setInterval(hookGerarContrato, 300);
 })();
 </script>
 
