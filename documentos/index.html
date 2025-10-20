@@ -1258,7 +1258,7 @@ function closeActionModal(){
 }
 document.addEventListener('click', function(e){
   if(e.target && e.target.id==='btnActionCancel') closeActionModal();
-  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
+  if(e.target && e.target.id==='btnActionPdf'){ const up=document.getElementById('btnActionUpdate'); try{ up && up.click(); }catch(_){} setTimeout(()=>{ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }, 1000); } closeActionModal(); }
   if(e.target && e.target.id==='btnActionUpdate'){
     if(__actionRow){
       const norm = normalizeRowForFill(__actionRow);
@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 2.00 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.20 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2739,37 +2739,27 @@ function baixarExcel(codigo){
     if (!btnGerar || btnGerar.__hooked_usaCodigo) return;
     btnGerar.__hooked_usaCodigo = true;
 
-    btnGerar.addEventListener('click', (ev)=>{
-      // pega prioritariamente o código salvo da consulta
-      let codigo = getOrResolveCodigo();
-      if (!codigo && typeof readCodigoField === 'function') {
-        codigo = readCodigoField();
-      }
+    btnGerar.addEventListener('click', async (ev)=>{
+      // 1) tenta global/campo
+      let codigo = (typeof getSelectedCodigo==='function' && getSelectedCodigo()) || (typeof readCodigoField==='function' && readCodigoField()) || '';
+
+      // 2) se ainda não tiver, aciona "Atualizar informações" para popular o campo da Etapa 1
       if (!codigo) {
-        const btnAtualizar = document.querySelector('#btnAtualizarDocumento, .btn-atualizar-documento');
-        if (btnAtualizar) {
-          btnAtualizar.click();
-        }
-        await new Promise(r=>setTimeout(r, 400));
+        const btnAtualizar = document.querySelector('#btnActionUpdate, .btn-atualizar-documento');
+        try { btnAtualizar && btnAtualizar.click(); } catch(_) {}
+        // espera 1s para garantir preenchimento
+        await new Promise(r => setTimeout(r, 1000));
         if (typeof readCodigoField === 'function') {
-          codigo = readCodigoField();
+          codigo = readCodigoField() || '';
         }
       }
 
-
-      // fallback: tenta do campo #codigo
+      // 3) se conseguiu o código, prossegue; senão impede a ação
       if (!codigo) {
-        const v = readCodigoField();
-        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
-          codigo = v;
-        }
+        ev.preventDefault(); ev.stopPropagation();
+        alert('Informe ou selecione um código para gerar o contrato.');
+        return;
       }
-
-      // if (!codigo) {
-        // ev.preventDefault(); ev.stopPropagation();
-        // alert('Selecione um documento na consulta para gerar o contrato.');
-        // return;
-      // }
 
       // monta URLs para o gerador que você já validou
       const API = 'https://api.erpimpar.com.br';
@@ -2885,95 +2875,5 @@ function baixarExcel(codigo){
 
 
 
-<script>
-  window.AppState = window.AppState || {};
-  AppState.selectedCodigo = AppState.selectedCodigo || null;
-  function setSelectedCodigo(codigo) {
-    AppState.selectedCodigo = codigo || null;
-    document.dispatchEvent(new CustomEvent('codigo:selected', { detail: { codigo: AppState.selectedCodigo } }));
-  }
-  function getSelectedCodigo() {
-    return AppState.selectedCodigo || null;
-  }
-</script>
-<script>
-document.addEventListener('click', (ev) => {
-  const row = ev.target.closest('.consulta-row, tr, li, .linha, .item');
-  if (!row) return;
-  let codigo = row.dataset.codigo
-            || (row.querySelector('[data-codigo]') && row.querySelector('[data-codigo]').dataset.codigo)
-            || (row.textContent && (row.textContent.match(/\b[A-Z]{2}\d{5,}\b/) || [])[0]);
-  if (codigo) {
-    setSelectedCodigo(codigo);
-  }
-}, true);
-</script>
-<script>
-  // Retorna o código selecionado; se ainda não houver,
-  // tenta ler do campo e já salva globalmente (evita 'null' nas composições de URL)
-  function getOrResolveCodigo() {
-    let codigo = getOrResolveCodigo();
-      if (!codigo && typeof readCodigoField === 'function') {
-        codigo = readCodigoField();
-      }
-      if (!codigo) {
-        const btnAtualizar = document.querySelector('#btnAtualizarDocumento, .btn-atualizar-documento');
-        if (btnAtualizar) {
-          btnAtualizar.click();
-        }
-        await new Promise(r=>setTimeout(r, 400));
-        if (typeof readCodigoField === 'function') {
-          codigo = readCodigoField();
-        }
-      }
-
-    if (!codigo && typeof readCodigoField === 'function') {
-      const v = readCodigoField && readCodigoField();
-      // Respeita sua regex/placeholder padrão
-      try {
-        const AC_RE = /\b[A-Z]{2}\d{5,}\b/;
-        if (v && AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
-          codigo = v;
-          setSelectedCodigo(codigo);
-        }
-      } catch(e) {
-        // fallback simples
-        if (v) { codigo = v; setSelectedCodigo(codigo); }
-      }
-    }
-    return codigo || null;
-  }
-</script>
-<script>
-  // SAFE overrides to avoid recursion/loops:
-  window.AppState = window.AppState || {};
-  AppState.selectedCodigo = AppState.selectedCodigo || null;
-
-  // No event dispatch to prevent cyclic handlers
-  function setSelectedCodigo(codigo) {
-    AppState.selectedCodigo = codigo || null;
-  }
-
-  function getSelectedCodigo() {
-    return AppState.selectedCodigo || null;
-  }
-
-  // Do NOT set inside this helper; only resolve and return.
-  function getOrResolveCodigo() {
-    let codigo = getSelectedCodigo();
-    if (!codigo && typeof readCodigoField === 'function') {
-      try {
-        const v = readCodigoField();
-        const AC_RE = /\b[A-Z]{2}\d{5,}\b/;
-        if (v && AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
-          codigo = v;
-          // (não gravar aqui para evitar side-effects durante ações)
-        }
-      } catch(e) {
-        // ignore
-      }
-    }
-    return codigo || null;
-  }
-</script>
-</body></html>
+</body>
+</html>
