@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.2 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.3 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2692,123 +2692,61 @@ function baixarExcel(codigo){
 })();
 </script>
 
-<!-- PATCH TEMPORÁRIO DE TESTE: força o código AC05299R1 -->
 <script>
 (function(){
-  // Config do seu subdomínio/pastas
-  const API_ORIGIN   = 'https://api.erpimpar.com.br';
-  const PATH_EXCEL   = '/storage/docs';
-  const PATH_TPL     = '/gerador/templates';
-
-  // Força o código de teste
-  const CODIGO_FIXO = 'AC05299R1';
-
-  // monta nomes/URLs usando a regra atual (CODIGO_YYYYMMDD.xlsx e Template-Contrato.docx)
-  function ymd(d=new Date()){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
-  function excelName(){ return `${CODIGO_FIXO}_${ymd()}.xlsx`; }
-  function templateName(){ return 'Template-Contrato.docx'; }
-
-  // quando o botão "Gerar contrato" existir, injeta URLs com o código fixo
-  function setFixedURLs(){
-    const btn = document.getElementById('btnGerarContrato')
-            || Array.from(document.querySelectorAll('button, a[role="button"]'))
-                 .find(b => /gerar contrato/i.test((b.textContent||'').trim()));
-    if (!btn) return false;
-
-    const excelURL = `${API_ORIGIN}${PATH_EXCEL}/${encodeURIComponent(excelName())}`;
-    const tplURL   = `${API_ORIGIN}${PATH_TPL}/${encodeURIComponent(templateName())}`;
-
-    btn.dataset.excelUrl    = excelURL;
-    btn.dataset.templateUrl = tplURL;
-
-    console.log('[TESTE FIXO] Usando código:', CODIGO_FIXO, '| Excel:', excelURL, '| Template:', tplURL);
-    return true;
+  // encontra o modal aberto (SweetAlert2 / modal custom)
+  function getModalRoot(){
+    return document.querySelector('.swal2-container .swal2-popup')
+        || document.querySelector('.modal.show, .modal[open], [role="dialog"], .dialog, .popup')
+        || null;
   }
 
-  // tenta periodicamente até achar o botão do modal
-  const iv = setInterval(()=>{
-    if (setFixedURLs()){
-      clearInterval(iv);
+  // pega o texto do cabeçalho azul e extrai o ACxxxxx
+  function getCodigoFromBlueHeader(){
+    const root = getModalRoot();
+    if (!root) return '';
+
+    // 1) tente seletores mais prováveis do "chip" ao lado de "Documento"
+    const candidates = [
+      // ex.: <span class="badge">AC05299R1</span> dentro do header
+      '.swal2-title .badge, .swal2-title .pill, .swal2-title span, .swal2-title strong',
+      '.modal-header .badge, .modal-header .pill, .modal-header span, .modal-header strong',
+      // fallback: qualquer texto no título
+      '.swal2-title, .modal-header, [data-modal-title]'
+    ];
+
+    for (const sel of candidates){
+      const el = root.querySelector(sel);
+      if (!el) continue;
+      const txt = (el.textContent || '').trim();
+      const m = txt.match(/\bAC[0-9A-Za-z]+\b/); // pega ACxxxxx
+      if (m && m[0].toUpperCase() !== 'AC00025') return m[0];
     }
-  }, 300);
+
+    // último fallback: varre todos elementos do header do modal
+    const header = root.querySelector('.swal2-title, .modal-header') || root;
+    const all = Array.from(header.querySelectorAll('*')).map(n => (n.textContent||'').trim());
+    for (const t of all){
+      const m = t.match(/\bAC[0-9A-Za-z]+\b/);
+      if (m && m[0].toUpperCase() !== 'AC00025') return m[0];
+    }
+    return '';
+  }
+
+  // usa SEMPRE o código do cabeçalho azul do modal
+  const _origPrep = window.prepararGerarContrato;
+  window.prepararGerarContrato = function(codigo){
+    const fromHeader = getCodigoFromBlueHeader();
+    const finalCode = fromHeader || codigo || '';
+    if (!finalCode){
+      console.warn('[Gerar Contrato] não achei o código no cabeçalho do modal.');
+      return;
+    }
+    return _origPrep ? _origPrep(finalCode) : void 0;
+  };
 })();
 </script>
 
-<script>
-(function(){
-  // Localiza botões pelo texto visível
-  function findByText(selector, re){
-    return Array.from(document.querySelectorAll(selector))
-      .find(el => re.test((el.textContent || el.value || '').trim()));
-  }
-
-  // Lê o código do input (agora preenchido pela rotina "Atualizar documento")
-  function readCodigoDoInput(){
-    const el =
-      document.querySelector('#codigo') ||
-      document.querySelector('[name="codigo"]') ||
-      document.querySelector('input[aria-label*="código" i]') ||
-      document.querySelector('input[aria-label*="codigo" i]');
-    const v = (el?.value || '').trim();
-    return v;
-  }
-
-  // Intercepta o clique do "Gerar contrato"
-  function hookGerarContratoUsandoAtualizar(){
-    const btnGerar = findByText('button, a[role="button"], input[type="button"], input[type="submit"]', /gerar contrato/i);
-    if (!btnGerar || btnGerar.__hookedAtualizarPrimeiro) return !!btnGerar;
-    btnGerar.__hookedAtualizarPrimeiro = true;
-
-    btnGerar.addEventListener('click', async (ev)=>{
-      ev.preventDefault(); ev.stopPropagation();
-
-      // 1) dispara o MESMO fluxo do seu sistema que já pega o código certo
-      const btnAtualizar = findByText('button, a[role="button"], input[type="button"], input[type="submit"]', /atualizar documento/i);
-      if (btnAtualizar) {
-        btnAtualizar.click();
-      } else {
-        console.warn('[Gerar Contrato] botão "Atualizar documento" não encontrado para pré-preencher o código.');
-      }
-
-      // 2) dá um tempo para o sistema copiar o código para o input
-      await new Promise(r => setTimeout(r, 250));
-
-      // 3) lê o código já correto do input (preenchido pela rotina oficial)
-      const codigo = readCodigoDoInput();
-      if (!codigo) {
-        alert('Não consegui obter o código após "Atualizar documento".');
-        return;
-      }
-
-      // 4) chama sua preparação com o código certo
-      if (typeof window.prepararGerarContrato === 'function') {
-        window.prepararGerarContrato(codigo);
-      } else {
-        console.warn('[Gerar Contrato] prepararGerarContrato não está disponível.');
-      }
-
-      // 5) agora deixa o clique original seguir para que o handler existente gere o DOCX
-      //    (se não houver handler original, você pode chamar diretamente aqui o fluxo de geração)
-      // Ex.: se seu botão não tiver outro listener, você pode disparar um novo click:
-      setTimeout(()=> {
-        // dispara o click real para acionar o gerador já com as URLs injetadas
-        btnGerar.removeEventListener('click', arguments.callee); // evita loop
-        btnGerar.click();
-      }, 50);
-    }, true);
-
-    return true;
-  }
-
-  // Tenta repetidamente até que os botões existam no DOM (modal aberto)
-  const iv = setInterval(()=>{
-    if (hookGerarContratoUsandoAtualizar()){
-      // mantemos rodando caso o modal se reabra muitas vezes; remova o clearInterval se quiser persistir
-      // clearInterval(iv);
-    }
-  }, 300);
-})();
-</script>
 
 </body>
 </html>
