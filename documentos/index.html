@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.7 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.8 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2692,100 +2692,122 @@ function baixarExcel(codigo){
 })();
 </script>
 
+<style>
+  /* overlay de processamento */
+  #__proc_overlay__{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45); z-index:999999;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  #__proc_box__{
+    background:#0f172a; color:#fff; padding:18px 22px; border-radius:12px;
+    display:flex; gap:12px; align-items:center; box-shadow:0 10px 30px rgba(0,0,0,.35)
+  }
+  #__proc_spinner__{
+    width:22px; height:22px; border:3px solid rgba(255,255,255,.25);
+    border-top-color:#fff; border-radius:50%; animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<div id="__proc_overlay__" aria-hidden="true">
+  <div id="__proc_box__">
+    <div id="__proc_spinner__"></div>
+    <div id="__proc_text__">Processando...</div>
+  </div>
+</div>
+
 <script>
 (function(){
   const AC_RE = /\bAC[0-9A-Za-z]+\b/;
+  const TIMEOUT_MS = 6000; // <-- 6 segundos
 
-  // acha o modal DONO do botão "Gerar contrato" que você acabou de clicar
-  function getModalFrom(btn){
-    // tenta os padrões mais comuns de modal
-    return btn.closest('.swal2-popup, .modal, [role="dialog"], .dialog, .popup') || document.body;
+  // overlay helpers
+  const ov = document.getElementById('__proc_overlay__');
+  const txt = document.getElementById('__proc_text__');
+  function show(msg){ if (txt) txt.textContent = msg || 'Processando...'; ov.style.display='flex'; }
+  function hide(){ ov.style.display='none'; }
+
+  // acha botão pelo texto visível
+  function findBtnByText(re){
+    return Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
+      .find(el => re.test((el.textContent || el.value || '').trim()));
   }
 
-  // varre APENAS o modal do botão e pega o ÚLTIMO ACxxxxx visível (ignora AC00025)
-  function pickCodeFromModal(modalRoot){
-    // 1) prioriza cabeçalho (primeiros elementos do modal)
-    const header = modalRoot.querySelector('.swal2-title, .modal-header, [data-modal-title]') || modalRoot;
-    const headerTxt = (header.textContent||'').trim();
-    let all = headerTxt.match(AC_RE) || [];
-
-    // 2) se não achou, varre todo modal (texto visível)
-    if (all.length === 0){
-      const walker = document.createTreeWalker(modalRoot, NodeFilter.SHOW_TEXT, null, false);
-      while (walker.nextNode()){
-        const t = (walker.currentNode.nodeValue||'').trim();
-        if (!t) continue;
-        const m = t.match(AC_RE);
-        if (m) all.push(...m);
-      }
-    }
-
-    // 3) filtra e retorna o ÚLTIMO diferente de AC00025
-    const good = all.map(x=>x.toUpperCase()).filter(x=>x !== 'AC00025');
-    return good.length ? good[good.length-1] : '';
+  // lê o campo de código
+  function readCodigoField(){
+    const el =
+      document.querySelector('#codigo') ||
+      document.querySelector('input[name="codigo"]') ||
+      document.querySelector('input[aria-label*="código" i], input[aria-label*="codigo" i]');
+    return (el?.value || '').trim();
   }
 
-  // toastzinho só pra depurar visualmente
-  function toast(msg){
-    let t = document.getElementById('__code_toast__');
-    if(!t){
-      t = document.createElement('div'); t.id='__code_toast__';
-      Object.assign(t.style,{
-        position:'fixed', left:'50%', bottom:'20px', transform:'translateX(-50%)',
-        background:'#111', color:'#fff', padding:'10px 14px', borderRadius:'8px',
-        fontSize:'13px', zIndex: 999999, boxShadow:'0 8px 24px rgba(0,0,0,.25)'
-      });
-      document.body.appendChild(t);
-    }
-    t.textContent = msg; t.style.display='block';
-    clearTimeout(t.__hidetimer); t.__hidetimer = setTimeout(()=>t.style.display='none', 1500);
+  // espera o campo #codigo ser preenchido por até TIMEOUT_MS
+  function waitCodigoPreenchido(timeoutMs=TIMEOUT_MS){
+    return new Promise((resolve)=>{
+      const start = Date.now();
+      const iv = setInterval(()=>{
+        const v = readCodigoField();
+        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025'){
+          clearInterval(iv); resolve(v);
+        } else if (Date.now() - start > timeoutMs){
+          clearInterval(iv); resolve(''); // timeout
+        }
+      }, 120);
+    });
   }
 
-  function hookGerarContrato(){
-    // procura o botão "Gerar contrato" que está visível
-    const btn = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
-      .find(el => /gerar contrato/i.test((el.textContent||el.value||'').trim()));
-    if (!btn || btn.__hookedForceModal) return !!btn;
-    btn.__hookedForceModal = true;
+  // injeta URLs no próprio botão (caso seu gerador leia de data-*)
+  function injectUrlsOn(btn, codigo){
+    const API = 'https://api.erpimpar.com.br';
+    const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
+    btn.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${codigo}_${ymd}.xlsx`)}`;
+    btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
+  }
 
-    btn.addEventListener('click', (ev)=>{
-      // não deixa passar adiante até capturar o código
-      ev.preventDefault(); ev.stopPropagation();
+  async function onGerarContratoClick(ev, btnGerar){
+    ev.preventDefault(); ev.stopPropagation();
 
-      const modal = getModalFrom(btn);
-      const code  = pickCodeFromModal(modal);
+    show('Processando... buscando código correto');
+    try{
+      // 1) dispara a ação "Atualizar documento" (sua rotina que preenche o #codigo)
+      const btnAtualizar = findBtnByText(/atualizar documento/i);
+      if (btnAtualizar) btnAtualizar.click();
 
-      if (!code){
-        alert('Selecione um documento na consulta (ou deixe o código visível no modal) antes de gerar o contrato.');
+      // 2) espera o #codigo ser preenchido
+      const codigo = await waitCodigoPreenchido(TIMEOUT_MS);
+      if (!codigo){
+        hide();
+        alert('Não consegui obter o código após “Atualizar documento”. Selecione um item na consulta e tente novamente.');
         return;
       }
 
-      // salva global pra qualquer outra parte que use
-      window.codigoSelecionado = code;
-
-      // monta URLs e injeta no próprio botão (seu gerador lê dessas data-*)
-      const API = 'https://api.erpimpar.com.br';
-      const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
-      btn.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${code}_${ymd}.xlsx`)}`;
-      btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
-
-      console.log('[GerarContrato] código:', code, '| excel:', btn.dataset.excelUrl);
-      toast('Código detectado: ' + code);
-
-      // chama sua preparação, se existir
+      // 3) injeta URLs + chama preparação
+      show('Gerando contrato...');
+      injectUrlsOn(btnGerar, codigo);
       if (typeof window.prepararGerarContrato === 'function'){
-        window.prepararGerarContrato(code);
+        window.prepararGerarContrato(codigo);
       }
 
-      // agora dispare o clique original para seguir o fluxo normal
-      setTimeout(()=> btn.click(), 0);
-    }, true);
-
-    return true;
+      // 4) segue o fluxo normal
+      setTimeout(()=> { hide(); btnGerar.click(); }, 80);
+    }catch(err){
+      console.error(err);
+      hide();
+      alert('Falha ao processar a geração do contrato.');
+    }
   }
 
-  // re-tenta conectar o hook enquanto o modal abre/fecha
-  const iv = setInterval(hookGerarContrato, 250);
+  function hook(){
+    const btnGerar = findBtnByText(/gerar contrato/i);
+    if (!btnGerar || btnGerar.__hookedAtualizarPrimeiro) return;
+    btnGerar.__hookedAtualizarPrimeiro = true;
+    btnGerar.addEventListener('click', (ev)=> onGerarContratoClick(ev, btnGerar), true);
+  }
+
+  // tenta conectar sempre que o modal abre
+  const iv = setInterval(hook, 300);
 })();
 </script>
 
