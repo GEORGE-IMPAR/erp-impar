@@ -129,10 +129,13 @@ if (document.readyState === 'loading') {
 
       const modal = document.getElementById('actionModal');
       if (modal) modal.style.display = 'none';
+
+      const btnGerar = document.getElementById('btnGerarContrato');
+      if (btnGerar) btnGerar.style.display = 'inline-block';
     });
   }
 
-  // 🔥 Aqui está o clique automático da linha ativando o botão atualizar
+  // 🔧 Chuncho: clique automático no botão "Atualizar documento"
   const table = document.getElementById('consBodyInline');
   if (table) {
     table.onclick = function (e) {
@@ -141,14 +144,21 @@ if (document.readyState === 'loading') {
       const dados = row.__dados__;
       if (!dados || !dados.codigo) return;
 
+      // 1. Atualiza o campo oculto que o botão usa
       const actDocCode = document.getElementById('actDocCode');
       if (actDocCode) actDocCode.textContent = dados.codigo;
 
-      const btnUpdate = document.getElementById('btnActionUpdate');
-      if (btnUpdate) btnUpdate.click();
+      // 2. Aciona automaticamente o botão "Atualizar documento"
+      setTimeout(() => {
+        const btnUpdate = document.getElementById('btnActionUpdate');
+        if (btnUpdate) btnUpdate.click();
+      }, 50); // 50ms para garantir que o código foi setado
 
-      const modal = document.getElementById('actionModal');
-      if (modal) modal.style.display = 'none';
+      // 3. Fecha o modal de ação pouco depois (usuário nem vê)
+      setTimeout(() => {
+        const modal = document.getElementById('actionModal');
+        if (modal) modal.style.display = 'none';
+      }, 300); // quase imperceptível para o usuário
     };
   }
 })();
