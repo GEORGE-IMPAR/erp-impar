@@ -365,6 +365,7 @@ window.__CONSULTA_CFG__ = {
 <div class="hint">Digite o código e clique em Buscar.</div>
 </div>
 <button class="btn primary" id="btnBuscarInline" type="button">Buscar</button>
+<button class="btn" id="btnGerarInline" type="button" style="margin-left:8px;display:none">Gerar contrato</button>
 </div>
 <table class="tbl">
 <thead>
@@ -1258,7 +1259,7 @@ function closeActionModal(){
 }
 document.addEventListener('click', function(e){
   if(e.target && e.target.id==='btnActionCancel') closeActionModal();
-  if(e.target && e.target.id==='btnActionPdf'){ const up=document.getElementById('btnActionUpdate'); try{ up && up.click(); }catch(_){} setTimeout(()=>{ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }, 1000); } closeActionModal(); }
+  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
   if(e.target && e.target.id==='btnActionUpdate'){
     if(__actionRow){
       const norm = normalizeRowForFill(__actionRow);
@@ -2739,27 +2740,23 @@ function baixarExcel(codigo){
     if (!btnGerar || btnGerar.__hooked_usaCodigo) return;
     btnGerar.__hooked_usaCodigo = true;
 
-    btnGerar.addEventListener('click', async (ev)=>{
-      // 1) tenta global/campo
-      let codigo = (typeof getSelectedCodigo==='function' && getSelectedCodigo()) || (typeof readCodigoField==='function' && readCodigoField()) || '';
+    btnGerar.addEventListener('click', (ev)=>{
+      // pega prioritariamente o código salvo da consulta
+      let codigo = 'AC05925';
 
-      // 2) se ainda não tiver, aciona "Atualizar informações" para popular o campo da Etapa 1
+      // fallback: tenta do campo #codigo
       if (!codigo) {
-        const btnAtualizar = document.querySelector('#btnActionUpdate, .btn-atualizar-documento');
-        try { btnAtualizar && btnAtualizar.click(); } catch(_) {}
-        // espera 1s para garantir preenchimento
-        await new Promise(r => setTimeout(r, 1000));
-        if (typeof readCodigoField === 'function') {
-          codigo = readCodigoField() || '';
+        const v = readCodigoField();
+        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
+          codigo = v;
         }
       }
 
-      // 3) se conseguiu o código, prossegue; senão impede a ação
-      if (!codigo) {
-        ev.preventDefault(); ev.stopPropagation();
-        alert('Informe ou selecione um código para gerar o contrato.');
-        return;
-      }
+      // if (!codigo) {
+        // ev.preventDefault(); ev.stopPropagation();
+        // alert('Selecione um documento na consulta para gerar o contrato.');
+        // return;
+      // }
 
       // monta URLs para o gerador que você já validou
       const API = 'https://api.erpimpar.com.br';
@@ -2875,5 +2872,73 @@ function baixarExcel(codigo){
 
 
 
-</body>
-</html>
+<script>
+(function(){
+  function setCodigoAndNotify(codigo){
+    const inp = document.getElementById('codigo') || document.querySelector('#codigo');
+    if (!inp) return;
+    inp.value = codigo || '';
+    try { inp.dispatchEvent(new Event('input', {bubbles:true})); } catch(_){}
+    const g = document.getElementById('btnGerarInline');
+    if (g) g.style.display = (codigo && String(codigo).trim()) ? '' : 'none';
+  }
+
+  const AC_RE = /\b[A-Z]{2}\d{5,}\b/;
+  function extractCodigoFromNode(node){
+    if (!node) return '';
+    const fromData = node.dataset && (node.dataset.codigo || node.dataset.cod || node.dataset.code);
+    if (fromData) return fromData;
+    const m = (node.textContent || '').toUpperCase().match(AC_RE);
+    return (m && m[0] !== 'AC00025') ? m[0] : '';
+  }
+
+  document.addEventListener('click', function(ev){
+    const row = ev.target.closest('.consulta-row, tr, li, .linha, .item');
+    if (!row) return;
+    const codigo = extractCodigoFromNode(row);
+    if (!codigo) return;
+    setCodigoAndNotify(codigo);
+    try {
+      const m = document.getElementById('consultaModal') || document.getElementById('actionModal') || document.querySelector('.modal.show,.modal[style*=\"display: block\"]');
+      if (m) m.style.display = 'none';
+    } catch(_){}
+  }, true);
+
+  document.addEventListener('input', function(ev){
+    if (ev.target && ev.target.id === 'codigo'){
+      const v = (ev.target.value || '').toUpperCase().trim();
+      const g = document.getElementById('btnGerarInline');
+      if (g) g.style.display = (AC_RE.test(v) && v !== 'AC00025') ? '' : 'none';
+    }
+  }, true);
+
+  (function(){
+    const g = document.getElementById('btnGerarInline');
+    if (!g) return;
+    g.addEventListener('click', async function(ev){
+      const read = (typeof readCodigoField === 'function') ? readCodigoField : function(){ const el=document.getElementById('codigo'); return el?el.value:''; };
+      let codigo = (read() || '').toUpperCase().trim();
+      if (!AC_RE.test(codigo) || codigo === 'AC00025'){
+        ev.preventDefault(); ev.stopPropagation();
+        alert('Informe ou selecione um código válido para gerar o contrato.');
+        return;
+      }
+      const btnGerarDocx = document.getElementById('btnGerarDocx') || document.querySelector('#btnGerarDocx');
+      if (btnGerarDocx) { try { btnGerarDocx.click(); return; } catch(_) {} }
+      const btnGerar = document.getElementById('btnGerar') || document.querySelector('#btnGerar');
+      if (btnGerar) { try { btnGerar.click(); return; } catch(_) {} }
+      if (typeof window.gerarContratoDeURLs === 'function'){ try{ await window.gerarContratoDeURLs(); return; }catch(_){ } }
+      alert('Não foi possível acionar a geração. Verifique os botões de gerar no HTML.');
+    });
+  })();
+
+  (function(){
+    const el = document.getElementById('codigo');
+    if (!el) return;
+    const v = (el.value || '').toUpperCase().trim();
+    const g = document.getElementById('btnGerarInline');
+    if (g) g.style.display = (AC_RE.test(v) && v !== 'AC00025') ? '' : 'none';
+  })();
+})();
+</script>
+</body></html>
