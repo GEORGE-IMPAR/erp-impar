@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 2.4 - 18-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2530,34 +2530,83 @@ function baixarExcel(codigo){
 </script>
 <script src="consulta_json_v3_beauty.js"></script>
 
-<!-- ===== Integração completa: Pesquisa -> abre modal -> prepararGerarContrato(codigo) -> Gerar contrato ===== -->
+<!-- ===== Add-on ROBUSTO: garante captura do código certo e geração do DOCX ===== -->
 <script>
 (function(){
-  // ===== Config domínio/pastas (já fixos para seu subdomínio API) =====
   const API_ORIGIN = 'https://api.erpimpar.com.br';
   const PATH_EXCEL    = '/storage/docs';
   const PATH_TEMPLATE = '/gerador/templates';
 
-  // ===== Helpers =====
-  function ymd(d=new Date()){
-    const p=n=>String(n).padStart(2,'0');
-    return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());
-  }
+  // ---------- util ----------
+  function ymd(d=new Date()){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
   function nomeExcelPorCodigo(codigo){ return `${codigo}_${ymd()}.xlsx`; }
   function nomeTemplatePadrao(){ return 'Template-Contrato.docx'; }
-
   function findByText(selector, regex){
     return Array.from(document.querySelectorAll(selector))
-      .find(el => regex.test((el.textContent||'').trim()));
+      .find(el => regex.test((el.textContent||el.value||'').trim()));
   }
 
-  // 1) Será chamada assim que o modal abrir, com o código escolhido
+  // ---------- persistir código escolhido assim que o usuário clicar no resultado ----------
+  // Estratégia: delegação de eventos — se sua lista tiver classe/contêiner identificado, troque '.consulta-lista'
+  document.addEventListener('click', (ev)=>{
+    // tenta capturar cliques em linhas da consulta
+    const el = ev.target.closest('tr, li, .linha, .item, .row, .resultado, .consulta-item');
+    if (!el) return;
+    // procura um possível código no elemento clicado/linha
+    const text = (el.textContent||'').trim();
+    const m = text.match(/\bAC[0-9A-Za-z]+/i);
+    if (!m) return; // não é uma linha com código
+    const codigo = m[0];
+
+    // guarda em #docMeta para uso garantido
+    let meta = document.getElementById('docMeta');
+    if (!meta){
+      meta = document.createElement('div');
+      meta.id = 'docMeta';
+      meta.style.display='none';
+      document.body.appendChild(meta);
+    }
+    meta.dataset.codigo = codigo;
+    // se você souber o nome exato do arquivo Excel/Template aqui, pode setar também:
+    // meta.dataset.excel = `${codigo}_20251020.xlsx`;
+    // meta.dataset.template = 'Template-Contrato.docx';
+
+    // log
+    console.log('[Gerar Contrato] código selecionado na lista:', codigo);
+  }, true);
+
+  // ---------- obter código válido (nunca placeholder) ----------
+  function getCodigoEscolhido(){
+    // 1) prioriza #docMeta (preenchido no clique da lista)
+    const metaCode = (document.getElementById('docMeta')?.dataset?.codigo||'').trim();
+    if (/^AC[0-9A-Za-z]+$/i.test(metaCode)) return metaCode;
+
+    // 2) badge/label no modal
+    const modalCodeNode = Array.from(document.querySelectorAll('.modal, [role="dialog"], .dialog, .popup, body'))
+      .flatMap(root => Array.from(root.querySelectorAll('*')))
+      .find(el => /^AC[0-9A-Za-z]+$/i.test((el.textContent||'').trim()));
+    if (modalCodeNode) return (modalCodeNode.textContent||'').trim();
+
+    // 3) input (mas ignora placeholder)
+    const input = document.querySelector('#codigo') ||
+                  document.querySelector('[name="codigo"]') ||
+                  document.querySelector('input[aria-label*="código" i]') ||
+                  document.querySelector('input[aria-label*="codigo" i]');
+    if (input){
+      const v = (input.value||'').trim();
+      if (/^AC[0-9A-Za-z]+$/i.test(v)) return v;
+    }
+
+    console.warn('[Gerar Contrato] Código não encontrado (placeholder ignorado).');
+    return '';
+  }
+
+  // ---------- prepararGerarContrado(codigo) ----------
   window.prepararGerarContrato = function(codigo){
-    const btn = document.getElementById('btnGerarContrato')
-            || findByText('button, a[role="button"]', /gerar contrato/i);
+    const btn = document.getElementById('btnGerarContrato') ||
+                findByText('button, a[role="button"]', /gerar contrato/i);
     if (!btn) { console.warn('[Gerar Contrato] botão não encontrado.'); return; }
 
-    // Você pode setar nomes exatos em #docMeta; se não houver, usa convenção
     const meta = document.getElementById('docMeta');
     const excelName    = (meta?.dataset?.excel)    || nomeExcelPorCodigo(codigo);
     const templateName = (meta?.dataset?.template) || nomeTemplatePadrao();
@@ -2567,23 +2616,10 @@ function baixarExcel(codigo){
 
     btn.dataset.excelUrl    = excelURL;
     btn.dataset.templateUrl = templateURL;
-
     console.log('[Gerar Contrato] pronto | codigo:', codigo, '| excel:', excelURL, '| template:', templateURL);
   };
 
-  // 2) Detector do clique em "Pesquisar": quando abrir o modal, pegamos o código e chamamos prepararGerarContrato(codigo)
-  function getCodigoEscolhido(){
-    const sels = [
-      '#codigo','[name="codigo"]',
-      'input[placeholder*="código"]','input[placeholder*="codigo"]',
-      'input[aria-label*="código"]','input[aria-label*="codigo"]'
-    ];
-    for (const s of sels){ const el=document.querySelector(s); if (el?.value?.trim()) return el.value.trim(); }
-    // fallback: badge no modal (ex.: AC05299R1)
-    const badge = Array.from(document.querySelectorAll('*')).map(n=> (n.textContent||'').trim()).find(t=>/^AC[0-9A-Za-z]+/i.test(t));
-    if (badge){ const m=badge.match(/AC[0-9A-Za-z]+/i); if (m) return m[0]; }
-    return '';
-  }
+  // ---------- ligar no "Pesquisar": ao abrir modal, chama preparar... com código certo ----------
   function hookPesquisar(){
     const btn = findByText('button, input[type="button"], input[type="submit"], a[role="button"]', /pesquisar/i);
     if (!btn || btn.__hooked) return !!btn;
@@ -2591,14 +2627,14 @@ function baixarExcel(codigo){
     btn.addEventListener('click', ()=>{
       setTimeout(()=>{
         const codigo = getCodigoEscolhido();
-        if (!codigo){ console.warn('[Gerar Contrato] código não encontrado após pesquisar.'); return; }
+        if (!codigo){ console.warn('[Gerar Contrato] código não disponível após pesquisar.'); return; }
         window.prepararGerarContrato(codigo);
       }, 300);
     });
     return true;
   }
 
-  // 3) Lógica do gerador (a mesma que funcionou)
+  // ---------- gerador DOCX (mesma lógica aprovada) ----------
   function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
   function makeDocxSafeRegex(ph){const esc=ph.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); const between='(?:<[^>]+>)*'; return new RegExp(esc.split('').join(between),'gi');}
   async function generateDocxReplacedRobusto(templateAB, map){
@@ -2633,6 +2669,7 @@ function baixarExcel(codigo){
     document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0);
   }
 
+  // liga o clique do botão "Gerar contrato"
   function hookGerar(){
     const btn = document.getElementById('btnGerarContrato') || findByText('button, a[role="button"]', /gerar contrato/i);
     if (!btn || btn.__hooked) return !!btn;
@@ -2646,11 +2683,11 @@ function baixarExcel(codigo){
     return true;
   }
 
-  // Observadores simples
+  // Observa a página: conecta pesquisar e gerar
   const iv = setInterval(()=>{
     const p = hookPesquisar();
     const g = hookGerar();
-    if (p && g) { /* ok */ }
+    if (p && g){ /* ok */ }
   }, 400);
 })();
 </script>
