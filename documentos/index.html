@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.21 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.20 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2741,7 +2741,7 @@ function baixarExcel(codigo){
 
     btnGerar.addEventListener('click', (ev)=>{
       // pega prioritariamente o código salvo da consulta
-      let codigo = 'AC05925';
+      let codigo = getSelectedCodigo();
 
       // fallback: tenta do campo #codigo
       if (!codigo) {
@@ -2868,126 +2868,30 @@ function baixarExcel(codigo){
     });
   })();
 </script>
+
+
+
 <script>
-(function(){
-  const AC_RE = /\bAC[0-9A-Za-z]+\b/;
-
-  // --- 0) garante um meta central para guardar o código selecionado
-  function ensureDocMeta(){
-    let m = document.getElementById('docMeta');
-    if (!m){
-      m = document.createElement('div');
-      m.id = 'docMeta';
-      m.hidden = true;
-      document.body.appendChild(m);
-    }
-    return m;
+  window.AppState = window.AppState || {};
+  AppState.selectedCodigo = AppState.selectedCodigo || null;
+  function setSelectedCodigo(codigo) {
+    AppState.selectedCodigo = codigo || null;
+    document.dispatchEvent(new CustomEvent('codigo:selected', { detail: { codigo: AppState.selectedCodigo } }));
   }
-
-  // --- 1) captura clique em linhas/itens da consulta e grava #docMeta.dataset.codigo
-  document.addEventListener('click', (e)=>{
-    // aceita resultados em <tr>, <li>, .linha, .item etc.
-    const row = e.target.closest('tr, li, .linha, .item, .result-row');
-    if (!row) return;
-
-    const text = (row.innerText || row.textContent || '').trim();
-    const m = text.match(AC_RE);
-    if (m && m[0] && m[0].toUpperCase() !== 'AC00025'){
-      const meta = ensureDocMeta();
-      meta.dataset.codigo = m[0];
-      // opcional: se a linha tiver nome/cliente
-      const nome = row.querySelector('.nome, .cliente, [data-campo="nome"], [data-campo="cliente"]');
-      if (nome) meta.dataset.nome = (nome.textContent || '').trim();
-      // se o modal já estiver aberto, atualiza o chip
-      try { setActDocCode(m[0]); } catch (_) {}
-    }
-  }, true);
-
-  // --- 2) util: seta o chip do modal (#actDocCode) se existir
-  function setActDocCode(cod){
-    const chip = document.getElementById('actDocCode');
-    if (chip) chip.textContent = cod;
+  function getSelectedCodigo() {
+    return AppState.selectedCodigo || null;
   }
-
-  // --- 3) getCodigoEscolhido(): ordem: #docMeta -> chip do modal -> input #codigo
-  window.getCodigoEscolhido = function(){
-    // (1) #docMeta
-    const meta = document.getElementById('docMeta');
-    const c1 = meta?.dataset?.codigo;
-    if (AC_RE.test(c1) && c1.toUpperCase() !== 'AC00025') return c1;
-
-    // (2) qualquer chip/label no modal com ACxxxxx
-    const modals = Array.from(document.querySelectorAll('.modal, [role="dialog"], .swal2-popup'))
-      .filter(m => getComputedStyle(m).display !== 'none' && m.offsetParent !== null);
-    for (const m of modals){
-      const nodes = m.querySelectorAll('#actDocCode, .badge, .chip, span, strong, em');
-      for (const n of nodes){
-        const t = (n.textContent || '').trim();
-        if (AC_RE.test(t) && t.toUpperCase() !== 'AC00025') return t.match(AC_RE)[0];
-      }
-    }
-
-    // (3) input #codigo (ignorando placeholder)
-    const inp = document.querySelector('#codigo') ||
-                document.querySelector('input[name="codigo"]');
-    const v = (inp?.value || '').trim();
-    if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') return v;
-
-    return ''; // não achou
-  };
-
-  // --- 4) openActionModal(row): se você já tem, isso é só um "reforço"
-  // sempre que abrir/atualizar o modal, espelha o código no chip
-  window.openActionModal = (function(orig){
-    return function(row){
-      // chamada original (se existir)
-      if (typeof orig === 'function') try { orig.call(this, row); } catch(_){}
-      // tenta obter da row; senão, do getCodigoEscolhido()
-      let cod = '';
-      if (row){
-        const txt = (row.innerText || row.textContent || '').trim();
-        const m = txt.match(AC_RE);
-        if (m) cod = m[0];
-      }
-      if (!cod) cod = window.getCodigoEscolhido();
-      if (cod) {
-        ensureDocMeta().dataset.codigo = cod;
-        setActDocCode(cod);
-      }
-    };
-  })(window.openActionModal);
-
-  // --- 5) Hook no botão "Gerar contrato": usa SEMPRE getCodigoEscolhido()
-  function hookGerarContrato(){
-    const btns = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'));
-    const btn = btns.find(el => /gerar contrato/i.test((el.textContent || el.value || '').trim()));
-    if (!btn || btn.__hookedGerarContrato) return;
-    btn.__hookedGerarContrato = true;
-
-    btn.addEventListener('click', function(ev){
-      const codigo = window.getCodigoEscolhido();
-      if (!codigo){
-        ev.preventDefault(); ev.stopPropagation();
-        alert('Selecione um documento na consulta antes de gerar o contrato.');
-        return;
-      }
-
-      // prepara URLs p/ seu gerador (igual ao que já usa)
-      const API = 'https://api.erpimpar.com.br';
-      const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
-      this.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${codigo}_${ymd}.xlsx`)}`;
-      this.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
-
-      // se seu fluxo tem "preparar", chama com o código bom
-      if (typeof window.prepararGerarContrato === 'function'){
-        window.prepararGerarContrato(codigo);
-      }
-      // daqui pra frente, o clique segue normal (seu script baixa e mostra o toast)
-    }, true);
-  }
-  setInterval(hookGerarContrato, 350);
-})();
 </script>
-
-</body>
-</html>
+<script>
+document.addEventListener('click', (ev) => {
+  const row = ev.target.closest('.consulta-row, tr, li, .linha, .item');
+  if (!row) return;
+  let codigo = row.dataset.codigo
+            || (row.querySelector('[data-codigo]') && row.querySelector('[data-codigo]').dataset.codigo)
+            || (row.textContent && (row.textContent.match(/\b[A-Z]{2}\d{5,}\b/) || [])[0]);
+  if (codigo) {
+    setSelectedCodigo(codigo);
+  }
+}, true);
+</script>
+</body></html>
