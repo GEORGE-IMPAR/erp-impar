@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.3 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.4 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2694,56 +2694,50 @@ function baixarExcel(codigo){
 
 <script>
 (function(){
-  // encontra o modal aberto (SweetAlert2 / modal custom)
-  function getModalRoot(){
+  function modalRoot(){
     return document.querySelector('.swal2-container .swal2-popup')
         || document.querySelector('.modal.show, .modal[open], [role="dialog"], .dialog, .popup')
         || null;
   }
+  function codigoDoCabecalho(){
+    const root = modalRoot(); if (!root) return '';
+    const header = root.querySelector('.swal2-title, .modal-header, [data-modal-title]') || root;
 
-  // pega o texto do cabeçalho azul e extrai o ACxxxxx
-  function getCodigoFromBlueHeader(){
-    const root = getModalRoot();
-    if (!root) return '';
-
-    // 1) tente seletores mais prováveis do "chip" ao lado de "Documento"
-    const candidates = [
-      // ex.: <span class="badge">AC05299R1</span> dentro do header
-      '.swal2-title .badge, .swal2-title .pill, .swal2-title span, .swal2-title strong',
-      '.modal-header .badge, .modal-header .pill, .modal-header span, .modal-header strong',
-      // fallback: qualquer texto no título
-      '.swal2-title, .modal-header, [data-modal-title]'
-    ];
-
-    for (const sel of candidates){
-      const el = root.querySelector(sel);
-      if (!el) continue;
-      const txt = (el.textContent || '').trim();
-      const m = txt.match(/\bAC[0-9A-Za-z]+\b/); // pega ACxxxxx
+    // tenta chip/pill/badge primeiro
+    const chip = header.querySelector('.badge, .pill, span, strong, b, .tag');
+    if (chip){
+      const m = (chip.textContent||'').trim().match(/\bAC[0-9A-Za-z]+\b/);
       if (m && m[0].toUpperCase() !== 'AC00025') return m[0];
     }
-
-    // último fallback: varre todos elementos do header do modal
-    const header = root.querySelector('.swal2-title, .modal-header') || root;
-    const all = Array.from(header.querySelectorAll('*')).map(n => (n.textContent||'').trim());
-    for (const t of all){
-      const m = t.match(/\bAC[0-9A-Za-z]+\b/);
-      if (m && m[0].toUpperCase() !== 'AC00025') return m[0];
-    }
-    return '';
+    // fallback: pega do texto do header
+    const txt = (header.textContent||'').trim();
+    const todos = txt.match(/\bAC[0-9A-Za-z]+\b/g) || [];
+    const bom = todos.filter(c => c.toUpperCase() !== 'AC00025');
+    return bom.at(-1) || '';
   }
 
-  // usa SEMPRE o código do cabeçalho azul do modal
-  const _origPrep = window.prepararGerarContrato;
-  window.prepararGerarContrato = function(codigo){
-    const fromHeader = getCodigoFromBlueHeader();
-    const finalCode = fromHeader || codigo || '';
-    if (!finalCode){
-      console.warn('[Gerar Contrato] não achei o código no cabeçalho do modal.');
-      return;
-    }
-    return _origPrep ? _origPrep(finalCode) : void 0;
-  };
+  function hookMostrarCodigo(){
+    const btn = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
+      .find(el => /gerar contrato/i.test((el.textContent||el.value||'').trim()));
+    if (!btn || btn.__showCodeOnce) return !!btn;
+    btn.__showCodeOnce = true;
+
+    btn.addEventListener('click', (ev)=>{
+      // não impede o fluxo; apenas mostra a msg
+      const code = codigoDoCabecalho();
+      if (code) {
+        alert('Código detectado no cabeçalho: ' + code);
+        console.log('[DEBUG] Código do cabeçalho do modal:', code);
+      } else {
+        alert('Não consegui ler o código no cabeçalho do modal.');
+        console.warn('[DEBUG] Código não encontrado no cabeçalho.');
+      }
+    }, true);
+
+    return true;
+  }
+
+  const iv = setInterval(()=>{ hookMostrarCodigo(); }, 250);
 })();
 </script>
 
