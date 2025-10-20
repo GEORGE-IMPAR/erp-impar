@@ -2352,7 +2352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.8 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 1.9 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2692,35 +2692,10 @@ function baixarExcel(codigo){
 })();
 </script>
 
-<style>
-  /* overlay de processamento */
-  #__proc_overlay__{
-    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.45); z-index:999999;
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-  }
-  #__proc_box__{
-    background:#0f172a; color:#fff; padding:18px 22px; border-radius:12px;
-    display:flex; gap:12px; align-items:center; box-shadow:0 10px 30px rgba(0,0,0,.35)
-  }
-  #__proc_spinner__{
-    width:22px; height:22px; border:3px solid rgba(255,255,255,.25);
-    border-top-color:#fff; border-radius:50%; animation:spin 0.9s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
-
-<div id="__proc_overlay__" aria-hidden="true">
-  <div id="__proc_box__">
-    <div id="__proc_spinner__"></div>
-    <div id="__proc_text__">Processando...</div>
-  </div>
-</div>
-
 <script>
 (function(){
   const AC_RE = /\bAC[0-9A-Za-z]+\b/;
-  const TIMEOUT_MS = 6000; // <-- 6 segundos
+  const TIMEOUT_MS = 6000; // 6s
 
   // overlay helpers
   const ov = document.getElementById('__proc_overlay__');
@@ -2728,7 +2703,7 @@ function baixarExcel(codigo){
   function show(msg){ if (txt) txt.textContent = msg || 'Processando...'; ov.style.display='flex'; }
   function hide(){ ov.style.display='none'; }
 
-  // acha botão pelo texto visível
+  // acha botão pelo texto
   function findBtnByText(re){
     return Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
       .find(el => re.test((el.textContent || el.value || '').trim()));
@@ -2743,7 +2718,7 @@ function baixarExcel(codigo){
     return (el?.value || '').trim();
   }
 
-  // espera o campo #codigo ser preenchido por até TIMEOUT_MS
+  // espera #codigo válido (≠ AC00025)
   function waitCodigoPreenchido(timeoutMs=TIMEOUT_MS){
     return new Promise((resolve)=>{
       const start = Date.now();
@@ -2752,13 +2727,13 @@ function baixarExcel(codigo){
         if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025'){
           clearInterval(iv); resolve(v);
         } else if (Date.now() - start > timeoutMs){
-          clearInterval(iv); resolve(''); // timeout
+          clearInterval(iv); resolve('');
         }
       }, 120);
     });
   }
 
-  // injeta URLs no próprio botão (caso seu gerador leia de data-*)
+  // injeta URLs no botão (caso seu gerador leia de data-*)
   function injectUrlsOn(btn, codigo){
     const API = 'https://api.erpimpar.com.br';
     const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
@@ -2766,34 +2741,51 @@ function baixarExcel(codigo){
     btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
   }
 
-  async function onGerarContratoClick(ev, btnGerar){
-    ev.preventDefault(); ev.stopPropagation();
+  async function guardedHandler(ev){
+    const btnGerar = ev.currentTarget;
 
+    // evita reentrância/loop
+    if (btnGerar.__busy) return;
+    btnGerar.__busy = true;
+
+    ev.preventDefault(); ev.stopPropagation();
     show('Processando... buscando código correto');
+
     try{
-      // 1) dispara a ação "Atualizar documento" (sua rotina que preenche o #codigo)
+      // 1) dispara "Atualizar documento"
       const btnAtualizar = findBtnByText(/atualizar documento/i);
       if (btnAtualizar) btnAtualizar.click();
 
-      // 2) espera o #codigo ser preenchido
+      // 2) aguarda preenchimento do #codigo
       const codigo = await waitCodigoPreenchido(TIMEOUT_MS);
       if (!codigo){
         hide();
+        btnGerar.__busy = false;
         alert('Não consegui obter o código após “Atualizar documento”. Selecione um item na consulta e tente novamente.');
         return;
       }
 
-      // 3) injeta URLs + chama preparação
+      // 3) prepara geração
       show('Gerando contrato...');
       injectUrlsOn(btnGerar, codigo);
       if (typeof window.prepararGerarContrato === 'function'){
         window.prepararGerarContrato(codigo);
       }
 
-      // 4) segue o fluxo normal
-      setTimeout(()=> { hide(); btnGerar.click(); }, 80);
+      // 4) dispara o clique "real" SEM o listener (para não reentrar)
+      btnGerar.removeEventListener('click', guardedHandler, true);
+      setTimeout(()=>{
+        try { btnGerar.click(); } finally {
+          // recoloca o listener para próximos usos
+          btnGerar.addEventListener('click', guardedHandler, true);
+          btnGerar.__busy = false;
+          hide();
+        }
+      }, 50);
+
     }catch(err){
       console.error(err);
+      btnGerar.__busy = false;
       hide();
       alert('Falha ao processar a geração do contrato.');
     }
@@ -2803,13 +2795,14 @@ function baixarExcel(codigo){
     const btnGerar = findBtnByText(/gerar contrato/i);
     if (!btnGerar || btnGerar.__hookedAtualizarPrimeiro) return;
     btnGerar.__hookedAtualizarPrimeiro = true;
-    btnGerar.addEventListener('click', (ev)=> onGerarContratoClick(ev, btnGerar), true);
+    btnGerar.addEventListener('click', guardedHandler, true);
   }
 
-  // tenta conectar sempre que o modal abre
+  // mantém o hook ativo quando o modal aparecer
   const iv = setInterval(hook, 300);
 })();
 </script>
+
 
 
 </body>
