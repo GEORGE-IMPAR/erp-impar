@@ -1,0 +1,256 @@
+/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
+   - UI moderna azul‑marinho (lista + decisão)
+   - Suprime qualquer modal legado ao abrir/fechar (FixClose)
+   - Loader preto “Processando... aguarde...” com borda e texto brancos
+   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antigas
+*/
+(function(){
+  var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
+  var JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
+  var SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
+
+  function el(t,a,h){var e=document.createElement(t);if(a){for(var k in a){if(a.hasOwnProperty(k))e.setAttribute(k,a[k]);}}if(h!=null)e.innerHTML=h;return e;}
+  function q(id){return document.getElementById(id);}
+
+  function hideLegacy(){
+    ['cj_modal','cj_actions','consultaModal','consulta_modal','consulta_json_modal'].forEach(function(id){
+      var n=q(id); if(n){ n.style.setProperty('display','none','important'); n.hidden=true; }
+    });
+    try{
+      var nodes=document.querySelectorAll('div,section,aside');
+      for(var i=0;i<nodes.length;i++){
+        var n=nodes[i]; var txt=(n.textContent||'').trim();
+        if(txt && txt.indexOf('Consulta de documentos (Excel)')!==-1){
+          n.style.setProperty('display','none','important'); n.hidden=true;
+        }
+      }
+    }catch(_){}
+  }
+
+  function injectCSS(){
+    if(q('cj_fix_css')) return;
+    var css=[
+      '@keyframes cjfade{from{opacity:0}to{opacity:1}}',
+      '@keyframes cjscale{from{transform:translate(-50%,-46%) scale(.96);opacity:.03}to{transform:translate(-50%,-50%) scale(1);opacity:1}}',
+      '@keyframes cjspin{to{transform:rotate(360deg)}}',
+      '.cj-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:cjfade .2s ease-out}',
+      '.cj-box{position:relative;width:92%;max-width:980px;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);box-shadow:0 28px 80px rgba(2,6,23,.35)}',
+      '.cj-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff}',
+      '.cj-title{font-weight:900;letter-spacing:.3px}',
+      '.cj-x{background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 10px;border-radius:12px}',
+      '.cj-x:hover{background:rgba(255,255,255,.12)}',
+      '.cj-body{padding:6px 0 10px;max-height:66vh;overflow:auto;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
+      '.cj-row{display:grid;grid-template-columns:200px 170px 1fr;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #e2e8f0;cursor:pointer}',
+      '.cj-code{font-weight:800;color:'+BRAND.primary+'}',
+      '.cj-date{color:#475569;font-size:13px}',
+      '.cj-client{color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.cj-empty{padding:20px;color:#64748b}',
+
+      '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s ease-out}',
+      '.cj-card-head{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff;padding:16px 20px}',
+      '.cj-chip{display:inline-block;background:'+BRAND.primaryDark+';color:#cbd5e1;border:1px solid #334155;padding:4px 12px;border-radius:999px;font-size:12px;margin-left:8px}',
+      '.cj-card-body{padding:18px;color:#0f172a}',
+      '.cj-actions{display:flex;gap:12px;justify-content:flex-end;padding:14px 20px;border-top:1px solid #e2e8f0;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
+      '.btn{border:none;border-radius:999px;padding:12px 16px;cursor:pointer;font-weight:800;letter-spacing:.2px}',
+      '.btn.ghost{background:#e2e8f0;color:'+BRAND.primary+'}',
+      '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
+
+      /* Loader preto com borda branca e texto branco */
+      '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
+      '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
+      '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
+      '.cj-loader-text{font-weight:800;letter-spacing:.2px;color:#fff}'
+    ].join('');
+    document.head.appendChild(el('style',{id:'cj_fix_css'},css));
+  }
+
+  function build(){
+    if(q('cj_list_back')) return;
+    injectCSS();
+
+    var b1=el('div',{id:'cj_list_back',class:'cj-back'});
+    var box=el('div',{class:'cj-box'});
+    box.innerHTML='<div class="cj-head"><div class="cj-title">Consulta de documentos</div><button class="cj-x" id="cj_x1">×</button></div><div class="cj-body" id="cj_list_body"><div class="cj-empty">Carregando...</div></div>';
+    b1.appendChild(box); document.body.appendChild(b1);
+
+    var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
+    var card=el('div',{class:'cj-card'});
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    b2.appendChild(card); document.body.appendChild(b2);
+
+    // Loader
+    var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
+    var lbox=el('div',{class:'cj-loader-box'});
+    lbox.innerHTML='<div class="cj-spinner"></div><div class="cj-loader-text">Processando... aguarde...</div>';
+    lback.appendChild(lbox);
+    document.body.appendChild(lback);
+
+    function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
+    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
+
+    // Atualizar
+    q('cj_btn_atualizar').onclick=function(){
+      var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
+      if(!code){ hideAll(); return; }
+      var inp=q('codigo'); if(inp){ inp.value=code; try{inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }
+      fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
+    };
+
+    // Gerar contrato com loader (CAMINHO ABSOLUTO CORRIGIDO)
+    q('cj_btn_gerar').onclick=function(){
+      
+  
+  var code = (q('cj_code_chip').getAttribute('data-code')||'').trim();
+  if(!code){ hideAll(); return; }
+
+  // NÃO tocar no campo #codigo aqui (evita comportamento de 'Atualizar documento')
+
+  // Mostra loader
+  lback.style.display='flex';
+
+  // Gera o contrato diretamente
+  fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      lback.style.display='none';
+      if(!j || !j.ok || !j.url){
+        hideAll();
+        return;
+      }
+
+      // Abre o contrato gerado (download/visualização)
+      try { window.open(j.url, '_blank'); } catch(_){}
+
+      // Mensagem de sucesso (mesmo layout do index)
+      try {
+        var sm = document.getElementById('successModal');
+        if (sm) {
+          sm.style.display = 'flex';
+          sm.style.visibility = 'visible';
+          sm.style.opacity = '1';
+        }
+      } catch(_){}
+
+      // Reset e retorno à Etapa 1
+      try {
+        // limpar campos sem mexer em #codigo especificamente (pois não alteramos)
+        document.querySelectorAll('input[type="text"], input[type="file"], input[type="number"], textarea, select').forEach(function(el){
+          if (el.tagName === 'SELECT') el.selectedIndex = 0;
+          else if (el.type === 'file') el.value = '';
+          else el.value = '';
+        });
+        window.__savingNow = false;
+        window.__lastSave  = { sig:null, at:0 };
+        try{ localStorage.clear(); }catch(_){}
+        if (typeof updateStepper === 'function') updateStepper(1);
+        if (typeof showOnly === 'function') showOnly('screen1');
+        hideAll();
+        var b1 = document.getElementById('bar1');
+        if (b1) { b1.classList.add('disabled'); b1.classList.remove('enabled'); }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch(_){}
+    })
+    .catch(function(){
+      lback.style.display='none';
+      hideAll();
+    });
+ };
+        try{ localStorage.clear(); }catch(_){}
+        if (typeof updateStepper === 'function') updateStepper(1);
+        if (typeof showOnly === 'function') showOnly('screen1');
+        hideAll();
+        var b1 = document.getElementById('bar1');
+        if (b1) { b1.classList.add('disabled'); b1.classList.remove('enabled'); }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch(_){}
+    })
+    .catch(function(){
+      lback.style.display='none';
+      hideAll();
+    });
+
+    };
+
+    window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
+  }
+
+  function openList(){
+    build(); hideLegacy();
+    window.__CJFIX__.b2.style.display='none';
+    window.__CJFIX__.b1.style.display='flex';
+  }
+  function openDecide(code){
+    build();
+    q('cj_code_chip').textContent=code;
+    q('cj_code_chip').setAttribute('data-code',code);
+    window.__CJFIX__.b1.style.display='none';
+    window.__CJFIX__.b2.style.display='flex';
+    hideLegacy();
+  }
+
+  function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
+  function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
+  function fillForm(d){ if(!d) return; for(var k in d){ if(!d.hasOwnProperty(k)) continue; var f=q(k); if(f&&'value' in f){ f.value=d[k]; } } }
+
+  function render(items){
+    var body=q('cj_list_body'); body.innerHTML='';
+    if(!items||!items.length){ body.innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
+    items.forEach(function(r){
+      var d=el('div',{class:'cj-row'});
+      d.innerHTML='<div class="cj-code">'+(r.codigo||'')+'</div><div class="cj-date">'+((r.data_criacao||"").slice(0,10))+'</div><div class="cj-client">'+(r.nomeContratante||"")+'</div>';
+      d.onclick=function(){ openDecide(r.codigo||''); };
+      body.appendChild(d);
+    });
+  }
+
+  function onSearch(ev){
+    ev&&ev.preventDefault();
+    openList();
+    fetchList().then(function(j){
+      if(!j||!j.ok){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
+      render(j.items||[]);
+    }).catch(function(){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; });
+  }
+
+  function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
+})();
+
+
+// === DIGITAR CÓDIGO → SE EXISTIR, ABRE DECISÃO ===
+(function(){
+  var AC_RE = /\b[A-Z]{2}\d{5,}\b/;
+  var timer = null, lastChecked = '';
+
+  function checkTypedCode(){
+    try {
+      var el = q('codigo');
+      if (!el) return;
+      var v = (el.value || '').toUpperCase().trim();
+      if (!AC_RE.test(v) || v === 'AC00025' || v === lastChecked) return;
+      lastChecked = v;
+
+      if (typeof fetchDoc === 'function') {
+        fetchDoc(v).then(function(item){
+          if (typeof openDecide === 'function') openDecide(v);
+        }).catch(function(){});
+      }
+    } catch(_){}
+  }
+
+  function onInput(){
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(checkTypedCode, 400);
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', function(){
+      var inp = q('codigo');
+      if (inp) inp.addEventListener('input', onInput);
+    });
+  } else {
+    var inp = q('codigo');
+    if (inp) inp.addEventListener('input', onInput);
+  }
+})();
+
