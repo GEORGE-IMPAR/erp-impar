@@ -139,14 +139,6 @@
 }
 
 </style>
-
-<style>
-button[type="submit"] {
-  display: none !important;
-}
-
-</style>
-
 <script>
 window.__CONSULTA_CFG__ = {
   PDF_PATH_CANDIDATES: ['/pdf/', '/uploads/pdf/', '/pdfs/', '/documentos/pdf/']
@@ -422,11 +414,6 @@ window.__CONSULTA_CFG__ = {
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>.version-badge{position:fixed;right:10px;bottom:10px;z-index:200;background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font:12px/1.2 Arial,Helvetica,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.25)}</style><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<style>
-  .top-actions button[onclick="abrirConsulta()"] {
-    display: none !important;
-  }
-</style>
 </head>
 <body>
 <!-- Busy / Processando -->
@@ -467,10 +454,6 @@ window.__CONSULTA_CFG__ = {
 <input class="input" id="codigo" oninput="validate1()" placeholder="Digite o código do projeto"/>
 <div style="text-align:right; margin-top:6px;">
   <button id="searchJsonBtn" type="button" style="background:#000; color:#fff; font-weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;">Pesquisar</button>
-</div>
-<div class="top-actions">
-  <button onclick="abrirConsulta()">Pesquisar</button>
-  <button id="btnGerarContrato" style="display: none;" onclick="gerarContrato()">Gerar Contrato</button>
 </div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn" id="openConsultaBtn" style="display:none!important; visibility:hidden!important;" type="button">Pesquisar documentos cadastrados</button>
@@ -2460,10 +2443,10 @@ document.addEventListener('DOMContentLoaded', () => {
         '</tr>';
       }).join('');
       qsa('.pick-codigo').forEach(function(b){
-  	b.addEventListener('click', function(){
-    	const codigo = b.dataset.codigo;
-    	selecionarCodigoConsulta(codigo); // ✅ nossa nova função
-  	});
+        b.addEventListener('click', function(){
+          if(codigoInput){ codigoInput.value = b.dataset.codigo; }
+          show(modal, false);
+        });
       });
     }catch(e){
       tbody.innerHTML = '<tr><td colspan="3" style="padding:10px">Erro ao carregar a lista.</td></tr>';
@@ -2475,7 +2458,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 111.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 11.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2571,6 +2554,7 @@ window.finalizeStep5 = async function(){
   </div>
 </div>
 
+
 <script>
 async function __upsertJsonBase(dados){
   try{
@@ -2650,7 +2634,7 @@ function baixarExcel(codigo){
   if (b) b.addEventListener('click', abrirConsultaModal);
 })();
 </script>
-<script src="/consulta_json_v3_beauty_brand_fixclose_loader.js"></script>
+<script src="consulta_json_v3_beauty.js"></script>
 
 <!-- ===== Add-on ROBUSTO: garante captura do código certo e geração do DOCX ===== -->
 <script>
@@ -2862,17 +2846,30 @@ function baixarExcel(codigo){
     btnGerar.__hooked_usaCodigo = true;
 
     btnGerar.addEventListener('click', (ev)=>{
-      // usa o código já preenchido no campo da Etapa 1
-      let codigo = document.getElementById('codigo')?.value?.trim().toUpperCase() || '';
-      alert('Código capturado: ' + codigo);
-      let codigo = 'AC06625R4';
+      // pega prioritariamente o código salvo da consulta
+      let codigo = 'AC05925';
+
+      // fallback: tenta do campo #codigo
+      if (!codigo) {
+        const v = readCodigoField();
+        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
+          codigo = v;
+        }
+      }
+
+      // if (!codigo) {
+        // ev.preventDefault(); ev.stopPropagation();
+        // alert('Selecione um documento na consulta para gerar o contrato.');
+        // return;
+      // }
+
       // monta URLs para o gerador que você já validou
       const API = 'https://api.erpimpar.com.br';
       const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
       btnGerar.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${codigo}_${ymd}.xlsx`)}`;
       btnGerar.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
 
-      // chama a rotina oficial de geração (dispara o download)
+      // se tiver aquele preparador, chamamos com o código correto
       if (typeof window.prepararGerarContrato === 'function'){
         window.prepararGerarContrato(codigo);
       }
@@ -2882,10 +2879,8 @@ function baixarExcel(codigo){
     }, true);
   }
 
-  // mantém o seu polling para “achar” o botão quando ele for renderizado
   setInterval(hookGerarContrato, 300);
 })();
-
 </script>
 
 <style>
@@ -2980,111 +2975,7 @@ function baixarExcel(codigo){
   })();
 </script>
 
-<script>
-function selecionarCodigoConsulta(codigo) {
-  const campoCodigo = document.querySelector('input[name="codigo"]');
-  if (campoCodigo) {
-    campoCodigo.value = codigo;
-    campoCodigo.dispatchEvent(new Event('input'));
-  }
 
-  irParaEtapa(1);
-
-  const btnContinuar = document.querySelector('#btnContinuar');
-  if (btnContinuar) {
-    btnContinuar.disabled = false;
-    btnContinuar.focus();
-  }
-
-  const btnGerarContrato = document.querySelector('#btnGerarContrato');
-  if (btnGerarContrato && campoCodigo.value.trim() !== '') {
-    btnGerarContrato.style.display = 'inline-block';
-  }
-
-  fecharConsulta();
-}
-
-function gerarContrato() {
-  const campoCodigo = document.querySelector('input[name="codigo"]');
-  const codigo = campoCodigo?.value.trim();
-
-  if (!codigo) {
-    alert('Código não encontrado. Por favor, selecione um registro.');
-    return;
-  }
-
-  gerarContratoComCodigo(codigo); // sua função real aqui
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-  const campoCodigo = document.querySelector('input[name="codigo"]');
-  const btnGerarContrato = document.querySelector('#btnGerarContrato');
-
-  if (campoCodigo && btnGerarContrato) {
-    campoCodigo.addEventListener('input', function () {
-      btnGerarContrato.style.display = this.value.trim() === '' ? 'none' : 'inline-block';
-    });
-  }
-});
-</script>
-<script>
-(function(){
-  function ready(fn){ if(document.readyState!=='loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
-  ready(function(){
-    var btn = document.getElementById('cj_btn_gerar');
-    if (!btn) return; // o seu loader cria esse botão; se ainda não existir, este patch não roda
-
-    btn.onclick = function(){
-      var chip = document.getElementById('cj_code_chip');
-      var code = (chip && chip.getAttribute('data-code') || '').trim();
-      if (!code){ if (typeof hideAll==='function') hideAll(); return; }
-
-      var lback = document.getElementById('cj_loader_back');
-      if (lback) lback.style.display = 'flex';
-
-      fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
-        .then(function(r){ return r.json(); })
-        .then(function(j){
-          if (lback) lback.style.display = 'none';
-          if (!j || !j.ok || !j.url){ if (typeof hideAll==='function') hideAll(); return; }
-
-          try { window.open(j.url, '_blank'); } catch(_){}
-
-          // mesmo modal de sucesso da etapa 5
-          var sm = document.getElementById('successModal');
-          if (sm){
-            sm.style.display='flex';
-            sm.style.visibility='visible';
-            sm.style.opacity='1';
-          }
-
-          // reset leve + voltar para etapa 1 (sem mexer no #codigo)
-          try {
-            document.querySelectorAll('input[type="text"], input[type="file"], input[type="number"], textarea, select')
-              .forEach(function(el){
-                if (el.tagName === 'SELECT') el.selectedIndex = 0;
-                else if (el.type === 'file') el.value = '';
-                else el.value = '';
-              });
-            try { window.__savingNow = false; } catch(_){}
-            try { window.__lastSave  = { sig:null, at:0 }; } catch(_){}
-            try { localStorage.clear(); } catch(_){}
-            if (typeof updateStepper==='function') updateStepper(1);
-            if (typeof showOnly==='function') showOnly('screen1');
-            if (typeof hideAll==='function') hideAll();
-            var b1 = document.getElementById('bar1');
-            if (b1){ b1.classList.add('disabled'); b1.classList.remove('enabled'); }
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          } catch(_){}
-        })
-        .catch(function(){
-          if (lback) lback.style.display = 'none';
-          if (typeof hideAll==='function') hideAll();
-        });
-    };
-  });
-})();
-</script>
 
 </body>
 </html>
