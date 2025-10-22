@@ -100,6 +100,8 @@
     q('cj_btn_gerar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
       if(!code){ hideAll(); return; }
+      var inp=q('codigo'); if(inp){ inp.value=code; try{inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }
+      fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
       lback.style.display='flex'; // mostra loader
       fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
         .then(function(r){ return r.json(); })
