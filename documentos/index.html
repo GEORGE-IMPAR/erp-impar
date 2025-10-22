@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 100.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 101.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2519,25 +2519,44 @@ async function __uploadExcelToServer_FIX(excelBlob, excelName, codigo){
   fd.append('file_excel', excelBlob, excelName);
   try{const res=await fetch(SAVE_URL,{method:'POST',body:fd}); return {ok:res.ok,status:res.status};}catch(e){return {ok:false,error:String(e)};}
 }
+
 window.finalizeStep5 = async function(){
-  const d=__collectDadosParaExcel_FIX();
-  const code=(d.codigo||'DOC').replace(/[^A-Za-z0-9_\-]/g,'_')||'DOC';
-  const ymd=__todayYMD();
-  const excelName=`${code}.xlsx`;
-  const excelBlob=await __createExcelBlob_FIX(d);
-  await __uploadExcelToServer_FIX(excelBlob, excelName, d.codigo||'');
-  // download local com setTimeout (gesto do usuário)
+  const d = __collectDadosParaExcel_FIX();
+  const code = (d.codigo || 'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
+  const excelName = `${code}.xlsx`;
+
+  // gera o blob do excel
+  const excelBlob = await __createExcelBlob_FIX(d);
+
+  // sobe para o servidor SEM timestamp (já está certo no seu PHP)
+  await __uploadExcelToServer_FIX(excelBlob, excelName, d.codigo || '');
+
+  // download local (gesto do usuário)
   try{
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(excelBlob);
-    a.download=excelName;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(excelBlob);
+    a.download = excelName;
     document.body.appendChild(a);
     setTimeout(()=>{ a.click(); a.remove(); }, 0);
-    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
   }catch(e){}
-  const t=document.getElementById('toast'); if(t){ t.textContent='Documento cadastrado com sucesso!'; t.style.display='block'; setTimeout(()=>t.style.display='none',2000); }
-  setTimeout(()=>{ const m=document.getElementById('successModal'); if(m) m.style.display='flex'; },300);
+
+  // --- NOVO: toast bonito igual ao do Gerar Contrato ---
+  if (window.showSuccessToast){
+    const contratante =
+      d?.contratante?.nome ||
+      d?.contratante?.razao ||
+      '';
+    showSuccessToast(`Código: ${code}`, contratante);
+  }
+
+  // remove o toast/modal antigo (se existirem)
+  const t = document.getElementById('toast');
+  if (t){ t.style.display = 'none'; }
+  const m = document.getElementById('successModal');
+  if (m){ m.style.display = 'none'; }
 };
+
 </script>
 
 
