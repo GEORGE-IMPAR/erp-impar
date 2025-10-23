@@ -166,7 +166,7 @@
     try{
       // no-store pra evitar cache antigo após login/logout
       const resp = await fetch(
-         'https://api.erpimpar.com.br/storage/data/documentos.json?ts=' + Date.now(),
+         'https://api.erpimpar.com.br/storage/data/documentos.json,
          { cache: 'no-store' }
       );
       if (!resp.ok) return;
