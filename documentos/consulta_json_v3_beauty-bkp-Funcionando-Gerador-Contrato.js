@@ -157,4 +157,12 @@
 
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
+
+   // === Carrega os documentos automaticamente ao abrir o sistema ===
+   window.addEventListener('load', async () => {
+     try {
+       const resp = await fetch('https://api.erpimpar.com.br/storage/data/documentos.json', { cache: 'no-cache' });
+       if (resp.ok) {
+         const docs = await resp.json();
+        window.__
 })();
