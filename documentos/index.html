@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 109.0 - 23-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 108.0 - 23-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2540,24 +2540,10 @@ window.finalizeStep5 = async function(){
   }catch(e){}
 
   // 👇 usa o mesmo toast bonito da Etapa 1
-  window.showSuccessToast = function(msg, sub=''){
-    ensureToastRoot();
-    const html = `
-      ${checkIcon()}
-      <div style="display:flex;flex-direction:column">
-        <strong style="color:#a7f3d0">Planilha gerada com sucesso</strong>
-        <span>${msg}${sub ? '<br><small style="opacity:.8">'+sub+'</small>' : ''}</span>
-      </div>
-      <button type="button" aria-label="Fechar" style="
-        margin-left:auto;background:transparent;border:0;color:#94a3b8;
-        cursor:pointer;font-size:18px;line-height:1">×</button>
-    `;
-    const card = makeToastCard(html);
-    const closer = card.querySelector('button');
-    closer.addEventListener('click', ()=> card.remove());
-    toastRoot.appendChild(card);
-    setTimeout(()=> card.remove(), 6000); // some sozinho
-  };
+  if (window.contratoSucesso){
+    const nome = d?.contratante?.nome || d?.contratante?.razao || '';
+    window.contratoSucesso({ codigo: code, nome });
+  }
 
   // remove possíveis elementos antigos
   const t = document.getElementById('toast'); if(t){ t.style.display='none'; }
@@ -3089,6 +3075,83 @@ function pushCodeToEtapa1(code){
   };
 })();
 </script>
+<script>
+(function(){
+  // caches reutilizados pelo restante do sistema
+  window.__DOCS_CACHE   = window.__DOCS_CACHE   || [];
+  window.__DOCS_BY_CODE = window.__DOCS_BY_CODE || {};
+
+  // Tenta múltiplos caminhos possíveis (ordem de prioridade)
+  const JSON_CANDIDATES = [
+    'https://api.erpimpar.com.br/api/storage/data/documentos.json', // <- caminho correto no seu servidor
+    'https://api.erpimpar.com.br/storage/data/documentos.json'       // fallback (antigo)
+  ];
+
+  async function preloadDocs(){
+    for (const url of JSON_CANDIDATES){
+      try{
+        const resp = await fetch(url, { cache: 'no-store' }); // sem timestamp
+        if (!resp.ok) continue;
+        const data = await resp.json();
+
+        // aceita array puro ou objetos com .items / .docs
+        const arr = Array.isArray(data) ? data : (data.items || data.docs || []);
+        const by  = {};
+        arr.forEach(d => {
+          const c = (d && d.codigo ? String(d.codigo) : '').trim().toUpperCase();
+          if (c) by[c] = d;
+        });
+
+        window.__DOCS_CACHE   = arr;
+        window.__DOCS_BY_CODE = by;
+        window.__DOCS_SOURCE  = url; // só para debug, se quiser
+        // console.log('[consulta] documentos carregados de', url, 'qtde:', arr.length);
+        return; // achou, encerra
+      }catch(e){
+        // tenta o próximo candidato
+      }
+    }
+    console.warn('[consulta] documentos.json não encontrado em nenhum caminho');
+  }
+
+  // mantém seu hook do campo #codigo como já fizemos
+  function hookCodeInput(){
+    const inp = document.getElementById('codigo');
+    if (!inp || inp.__hooked_consulta) return;
+    inp.__hooked_consulta = true;
+
+    let t = null;
+    const onChange = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const v = (inp.value || '').trim().toUpperCase();
+        if (!v) return;
+        const ok = window.__DOCS_BY_CODE && window.__DOCS_BY_CODE[v];
+        if (ok){
+          if (typeof openDecide === 'function'){
+            openDecide(v);
+          } else if (window.__CJFIX__ && typeof window.__CJFIX__.openDecide === 'function'){
+            window.__CJFIX__.openDecide(v);
+          }
+        }
+      }, 200);
+    };
+
+    inp.addEventListener('input', onChange);
+    inp.addEventListener('change', onChange);
+  }
+
+  function init(){ preloadDocs(); hookCodeInput(); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+
+
+
 
 </body>
 </html>
