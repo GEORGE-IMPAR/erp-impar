@@ -165,10 +165,7 @@
   async function preloadDocs(){
     try{
       // no-store pra evitar cache antigo após login/logout
-      const resp = await fetch(
-         'https://api.erpimpar.com.br/storage/data/documentos.json',
-         { cache: 'no-store' }
-      );
+      const resp = await fetch('https://api.erpimpar.com.br/storage/data/documentos.json?ts=' + Date.now(), { cache: 'no-store' });
       if (!resp.ok) return;
       const data = await resp.json();
       // aceita tanto array puro quanto {items:[...]}
