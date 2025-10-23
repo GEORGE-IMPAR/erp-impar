@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 106.0 - 23-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 107.0 - 23-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -3073,6 +3073,75 @@ function pushCodeToEtapa1(code){
     toastRoot.appendChild(card);
     setTimeout(()=> card.remove(), 6000); // some sozinho
   };
+})();
+</script>
+<script>
+/* ========= Auto-load da base + detecção de código digitado ========= */
+(function(){
+  // caches globais e reutilizáveis
+  window.__DOCS_CACHE = window.__DOCS_CACHE || [];
+  window.__DOCS_BY_CODE = window.__DOCS_BY_CODE || {};
+
+  async function preloadDocs(){
+    try{
+      // sem timestamp; evita cache antigo com {cache:'no-store'}
+      const resp = await fetch('https://api.erpimpar.com.br/storage/data/documentos.json', {
+        cache: 'no-store'
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const arr  = Array.isArray(data) ? data : (data.items || data.docs || []);
+      const by   = {};
+      arr.forEach(d => {
+        const c = (d && d.codigo ? String(d.codigo) : '').trim().toUpperCase();
+        if (c) by[c] = d;
+      });
+      window.__DOCS_CACHE   = arr;
+      window.__DOCS_BY_CODE = by;
+      // console.debug('[consulta] base carregada', arr.length);
+    }catch(e){
+      console.warn('[consulta] preloadDocs falhou:', e);
+    }
+  }
+
+  // observa o campo #codigo; se existir no cache, abre a modal de decisão
+  function hookCodeInput(){
+    const inp = document.getElementById('codigo');
+    if (!inp || inp.__hooked_consulta) return;
+    inp.__hooked_consulta = true;
+
+    let t = null;
+    const onChange = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const v = (inp.value || '').trim().toUpperCase();
+        if (!v) return;
+        const ok = window.__DOCS_BY_CODE && window.__DOCS_BY_CODE[v];
+        if (ok){
+          // chama sua modal de decisão já existente
+          if (typeof openDecide === 'function'){
+            openDecide(v);
+          } else if (window.__CJFIX__ && typeof window.__CJFIX__.openDecide === 'function'){
+            window.__CJFIX__.openDecide(v);
+          }
+        }
+      }, 200); // debounce leve
+    };
+
+    inp.addEventListener('input', onChange);
+    inp.addEventListener('change', onChange);
+  }
+
+  // inicializa ao carregar a página
+  function init(){
+    preloadDocs();
+    hookCodeInput();
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 
