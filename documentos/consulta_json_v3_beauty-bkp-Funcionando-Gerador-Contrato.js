@@ -157,4 +157,60 @@
 
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
+
+   // === PRELOAD usando a MESMA API da consulta (op=list) ===
+var DOCS_CACHE = [];
+var DOCS_BY_CODE = {};
+
+const API_LIST_URL = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
+const API_TOKEN    = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77'; // o mesmo que você já usa
+
+async function preloadDocs(){
+  try{
+    const qs = new URLSearchParams({ op: 'list' });
+    if (API_TOKEN) qs.append('token', API_TOKEN);
+
+    const res = await fetch(`${API_LIST_URL}?${qs.toString()}`, { cache: 'no-store' });
+    if (!res.ok) { console.warn('[consulta] preloadDocs  HTTP', res.status); return; }
+
+    const data  = await res.json();
+    const items = Array.isArray(data) ? data : (data.items || data.docs || []);
+
+    DOCS_CACHE = items || [];
+    DOCS_BY_CODE = {};
+    DOCS_CACHE.forEach(d=>{
+      const c = d && d.codigo ? String(d.codigo).trim().toUpperCase() : '';
+      if (c) DOCS_BY_CODE[c] = d;
+    });
+
+    // útil para debug no console
+    window.__DOCS_CACHE__   = DOCS_CACHE;
+    window.__DOCS_BY_CODE__ = DOCS_BY_CODE;
+  }catch(e){
+    console.warn('[consulta] preloadDocs falhou:', e);
+  }
+}
+
+// Observa o campo #codigo; se existir no cache, abre a modal de decisão
+function hookCodeInput(){
+  const inp = document.getElementById('codigo');
+  if (!inp || inp.__hooked_modal_from_code) return;
+  inp.__hooked_modal_from_code = true;
+
+  const tryOpen = ()=>{
+    const v = (inp.value || '').trim().toUpperCase();
+    if (v && DOCS_BY_CODE[v] && typeof openDecide === 'function'){
+      openDecide(v);
+    }
+  };
+
+  inp.addEventListener('change', tryOpen);
+  inp.addEventListener('blur',   tryOpen);
+  inp.addEventListener('input',  tryOpen);   // se quiser abrir enquanto digita
+}
+
+// no seu init() já existente, mantenha tudo e acrescente:
+preloadDocs();
+hookCodeInput();
+   
 })();
