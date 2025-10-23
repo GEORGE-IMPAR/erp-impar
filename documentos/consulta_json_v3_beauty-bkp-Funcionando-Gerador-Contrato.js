@@ -158,11 +158,63 @@
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
 
-   // === Carrega os documentos automaticamente ao abrir o sistema ===
-   window.addEventListener('load', async () => {
-     try {
-       const resp = await fetch('https://api.erpimpar.com.br/storage/data/documentos.json', { cache: 'no-cache' });
-       if (resp.ok) {
-         const docs = await resp.json();
-        window.__
-})();
+   // === Cache em memória dos documentos (pré-carregados no load) ===
+  var DOCS_CACHE = [];
+  var DOCS_BY_CODE = {};
+
+  async function preloadDocs(){
+    try{
+      // no-store pra evitar cache antigo após login/logout
+      const resp = await fetch('https://api.erpimpar.com.br/storage/data/documentos.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      // aceita tanto array puro quanto {items:[...]}
+      DOCS_CACHE = Array.isArray(data) ? data : (data.items || data.docs || []);
+      DOCS_BY_CODE = {};
+      DOCS_CACHE.forEach(d=>{
+        const c = (d && d.codigo) ? String(d.codigo).trim().toUpperCase() : '';
+        if (c) DOCS_BY_CODE[c] = d;
+      });
+      // deixa visível pra debug
+      window.__DOCS_CACHE = DOCS_CACHE;
+      window.__DOCS_BY_CODE = DOCS_BY_CODE;
+    }catch(e){
+      // silencioso: não quebra o fluxo legado
+      console.warn('[consulta] preloadDocs falhou:', e);
+    }
+  }
+
+  // Observa o campo #codigo: se o valor existir no cache, abre a modal de decisão
+  function hookCodeInput(){
+    var inp = q('codigo');
+    if (!inp || inp.__cj_hooked) return;
+    inp.__cj_hooked = true;
+
+    var debounce;
+    function check(){
+      var v = (inp.value || '').trim().toUpperCase();
+      if (v && DOCS_BY_CODE[v]) {
+        // garante que o campo fique sincronizado com o valor normalizado
+        inp.value = v;
+        try{
+          inp.dispatchEvent(new Event('input', {bubbles:true}));
+          inp.dispatchEvent(new Event('change', {bubbles:true}));
+        }catch(_){}
+        // abre a modal de decisão com esse código
+        openDecide(v);
+      }
+    }
+    inp.addEventListener('input', function(){
+      clearTimeout(debounce);
+      debounce = setTimeout(check, 350);
+    });
+    inp.addEventListener('change', check);
+  }
+
+  // carrega documentos ao abrir o sistema e já prepara o watcher do campo
+  window.addEventListener('load', async function(){
+    await preloadDocs();
+    hookCodeInput();
+  });
+
+})(); // <— FIM do IIFE
