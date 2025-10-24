@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 301.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 401.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -3024,7 +3024,55 @@ function pushCodeToEtapa1(code){
 
 
 
+<script>
+// Normaliza o código
+function normCode(v){ return String(v||'').trim().toUpperCase(); }
 
+// Debounce simples
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+// Abre modal de decisão se o código existir (sem mensagens)
+async function tryOpenDecisionForCodigo(raw){
+  if (window.__CJ_SUSPEND_AUTO_DECIDE__) { return; }
+  const code = normCode(raw);
+  if (!code) return;
+
+  // Aguarda o módulo de consulta estar disponível
+  if (!window.__CJFIX_API__ || !window.__CJFIX_API__.fetchDoc) return;
+
+  try {
+    const item = await window.__CJFIX_API__.fetchDoc(code); // retorna {ok:true,item:{...}} se existir
+    if (item) {
+      window.__CJFIX_API__.openDecide(code);
+    }
+  } catch(_) {
+    // Silencioso se não existir ou erro
+  }
+}
+
+// Liga eventos no campo #codigo: Enter, blur e digitação com debounce
+(function hookCodigoAutoModal(){
+  const inp = document.getElementById('codigo');
+  if (!inp) return;
+
+  // ENTER abre o modal (se existir o documento)
+  inp.addEventListener('keydown', (ev)=>{
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      tryOpenDecisionForCodigo(inp.value);
+    }
+  });
+
+  // BLUR também tenta (ao sair do campo)
+  inp.addEventListener('blur', ()=>{
+    tryOpenDecisionForCodigo(inp.value);
+  });
+
+  // (Opcional) ao digitar com pequena pausa (600 ms)
+  const onType = debounce(()=>tryOpenDecisionForCodigo(inp.value), 600);
+  inp.addEventListener('input', onType);
+})();
+</script>
 
 
 <script>
@@ -3124,57 +3172,52 @@ function __resetAllFields(){
   bar1.addEventListener('click', handleContinueStep1, false);
 })();
 </script>
-</body>
-</html>
 
 <script>
-// ===== CONTINUAR Etapa 1 (versão somente botão) =====
 (function(){
-  var bar1 = document.getElementById('bar1');
-  if (!bar1) return;
+  var btn = document.getElementById('bar1');
+  if (!btn) return;
 
-  async function handleContinueStep1(ev){
+  async function onContinue(ev){
     if (ev){
       ev.preventDefault();
       ev.stopPropagation();
       if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
     }
 
-    // Reset total do formulário/memória
-    if (typeof __resetAllFields === 'function') { try { __resetAllFields(); } catch(_){ } }
+    try { if (typeof __resetAllFields === 'function') __resetAllFields(); } catch(_) {}
 
-    // Pega código digitado
-    var code = (document.getElementById('codigo').value || '').trim().toUpperCase();
+    var codeEl = document.getElementById('codigo');
+    var code = (codeEl && codeEl.value || '').trim().toUpperCase();
 
     if (!code){
-      // Sem código → vai pra etapa 2 vazia
-      if (typeof goTo === 'function') goTo(2);
+      try { if (typeof goTo === 'function') goTo(2); } catch(_){}
+      try { if (typeof showOnly === 'function') showOnly('screen2'); } catch(_){}
+      try { if (typeof updateStepper === 'function') updateStepper(2); } catch(_){}
       return;
     }
 
-    // Verifica se o código existe na base
     var exists = false;
     if (window.__CJFIX_API__ && typeof window.__CJFIX_API__.fetchDoc === 'function'){
-      try {
-        var item = await window.__CJFIX_API__.fetchDoc(code);
-        exists = !!item;
-      } catch(_){ exists = false; }
+      try { var item = await window.__CJFIX_API__.fetchDoc(code); exists = !!item; } catch(_){ exists = false; }
     }
 
     if (exists){
-      // Se existir, abre o modal de decisão
       try { window.__CJFIX_API__.openDecide(code); } catch(_){}
       return;
     }
 
-    // Se não existir, segue para etapa 2 vazia
-    if (typeof goTo === 'function') goTo(2);
+    try { if (typeof goTo === 'function') goTo(2); } catch(_){}
+    try { if (typeof showOnly === 'function') showOnly('screen2'); } catch(_){}
+    try { if (typeof updateStepper === 'function') updateStepper(2); } catch(_){}
   }
 
-  // Remove listeners antigos e substitui
-  var clone = bar1.cloneNode(true);
-  bar1.parentNode.replaceChild(clone, bar1);
-  bar1 = document.getElementById('bar1');
-  bar1.onclick = handleContinueStep1;
+  var clone = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clone, btn);
+  btn = document.getElementById('bar1');
+  btn.addEventListener('click', onContinue, true);
+  btn.addEventListener('click', onContinue, false);
 })();
 </script>
+</body>
+</html>

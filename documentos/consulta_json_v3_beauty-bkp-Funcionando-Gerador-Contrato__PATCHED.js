@@ -92,26 +92,15 @@
     q('cj_btn_atualizar').onclick=function(){
   var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
   if(!code){ hideAll(); return; }
-
-  // SUSPENDE auto-modal durante preenchimento programático
-  window.__CJ_SUSPEND_AUTO_DECIDE__ = true;
-
-  // Preenche o campo #codigo sem disparar eventos
-  var inp=q('codigo');
-  if(inp){ inp.value=code; }
-
-  // Busca e preenche, vai para Etapa 2 já populada
+  var inp=q('codigo'); if (inp) inp.value=code;
   fetchDoc(code).then(function(item){
-    try{ fillForm(item); }catch(_){}
-    try{ if (typeof goTo==='function') goTo(2); }catch(_){}
+    try { fillForm(item); } catch(_){}
+    try { if (typeof goTo==='function') goTo(2); } catch(_){}
+    try { if (typeof showOnly==='function') showOnly('screen2'); } catch(_){}
+    try { if (typeof updateStepper==='function') updateStepper(2); } catch(_){}
     hideAll();
     window.scrollTo({top:0,behavior:'smooth'});
-  }).catch(function(){
-    hideAll();
-  }).finally(function(){
-    // libera a suspensão após microtask
-    setTimeout(function(){ window.__CJ_SUSPEND_AUTO_DECIDE__ = false; }, 50);
-  });
+  }).catch(function(){ hideAll(); });
 };
 
 // GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
@@ -119,23 +108,12 @@ q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
   if (!code){ hideAll(); return; }
 
-  // 1) Atualiza o formulário silenciosamente (sem disparar auto-modal)
-  window.__CJ_SUSPEND_AUTO_DECIDE__ = true;
   var inp=q('codigo'); if (inp) inp.value = code;
-
-  // 2) Confirma e gera contrato
-  const okFilled = await waitForCodigoFill(code, 6000);
-  if (!okFilled){
-    const current = (q('codigo')?.value || '').trim().toUpperCase() || '(vazio)';
-    openSideConfirm(current, null, () => { /* cancelado */ });
-    window.__CJ_SUSPEND_AUTO_DECIDE__ = false;
-    return;
-  }
 
   openSideConfirm(code, async () => {
     if (q('cj_loader_back')) {
       q('cj_loader_back').style.display = 'flex';
-      const t = q('cj_loader_back').querySelector('.cj-loader-text');
+      var t = q('cj_loader_back').querySelector('.cj-loader-text');
       if (t) t.textContent = 'Gerando contrato...';
     }
 
@@ -143,16 +121,15 @@ q('cj_btn_gerar').onclick = async function(){
       const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
       const j = await res.json();
       if (j && j.ok && j.url) {
-        window.open(j.url, '_blank'); // abre o contrato
-
-        // Após gerar: limpar etapa 1 e permanecer nela pronta para novo código
-        try{
+        window.open(j.url, '_blank');
+        try {
+          hideAll();
           if (typeof __resetAllFields === 'function') __resetAllFields();
-          var codigoInput = q('codigo'); if (codigoInput) codigoInput.value = '';
+          var codigoInput = q('codigo'); if (codigoInput) codigoInput.value='';
           if (typeof showOnly === 'function') showOnly('screen1');
           if (typeof updateStepper === 'function') updateStepper(1);
           window.scrollTo({top:0, behavior:'smooth'});
-        }catch(_){}
+        } catch(_){}
       } else {
         alert('Não foi possível gerar o contrato. Verifique os dados.');
       }
@@ -162,13 +139,11 @@ q('cj_btn_gerar').onclick = async function(){
     }finally{
       if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
       hideAll();
-      setTimeout(function(){ window.__CJ_SUSPEND_AUTO_DECIDE__ = false; }, 50);
     }
   }, () => {
-    // cancelou
-    window.__CJ_SUSPEND_AUTO_DECIDE__ = false;
+    hideAll();
   });
-};;
+};;;
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
