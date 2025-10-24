@@ -1,8 +1,8 @@
-/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
-   - UI moderna azul‑marinho (lista + decisão)
-   - Suprime qualquer modal legado ao abrir/fechar (FixClose)
-   - Loader preto “Processando... aguarde...” com borda e texto brancos
-   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antigas
+/* consulta_json_v3_beauty_brand_fixclose_loader.PATCH.js
+   Patch: garante que ao clicar em "Gerar contrato" o código escolhido
+   é aplicado no campo #codigo, dispara input/change, faz fetchDoc/fillForm,
+   e só então aciona a geração (mantendo o loader preto).
+   Restante do script preservado.
 */
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
@@ -55,7 +55,6 @@
       '.btn.ghost{background:#e2e8f0;color:'+BRAND.primary+'}',
       '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
 
-      /* Loader preto com borda branca e texto branco */
       '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
       '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
       '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
@@ -78,7 +77,6 @@
     card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
-    // Loader
     var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
     var lbox=el('div',{class:'cj-loader-box'});
     lbox.innerHTML='<div class="cj-spinner"></div><div class="cj-loader-text">Processando... aguarde...</div>';
@@ -88,7 +86,7 @@
     function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
     q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
 
-    // Atualizar
+    // Atualizar (já funcionava: mantém)
     q('cj_btn_atualizar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
       if(!code){ hideAll(); return; }
@@ -96,11 +94,26 @@
       fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
     };
 
-    // Gerar contrato com loader (CAMINHO ABSOLUTO CORRIGIDO)
+    // GERAR CONTRATO — PATCH: atualiza #codigo, dispara eventos, faz fillForm e só então gera
     q('cj_btn_gerar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
       if(!code){ hideAll(); return; }
-      lback.style.display='flex'; // mostra loader
+
+      // Sincroniza campo principal (como o "Atualizar documento")
+      var inp=q('codigo');
+      if (inp){
+        inp.value=code;
+        try{
+          inp.dispatchEvent(new Event('input',{bubbles:true}));
+          inp.dispatchEvent(new Event('change',{bubbles:true}));
+        }catch(e){}
+      }
+
+      // Preenche o formulário com os dados do código selecionado
+      try{ fetchDoc(code).then(function(item){ fillForm(item); }).catch(function(){}); }catch(_){}
+
+      // Loader + chamada ao gerador
+      lback.style.display='flex';
       fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
         .then(function(r){ return r.json(); })
         .then(function(j){
@@ -157,4 +170,32 @@
 
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
+
+  // (Opcional) Preload + digitar código abre decisão — pode manter se já usava
+  try{
+    var DOCS_BY_CODE = {};
+    function preloadDocs(){
+      var qs=new URLSearchParams({op:'list'}); if(SAVE_TOKEN) qs.append('token', SAVE_TOKEN);
+      fetch(JSON_URL+'?'+qs.toString(),{cache:'no-store'}).then(r=>r.json()).then(j=>{
+        var items = Array.isArray(j)? j : (j.items||[]);
+        DOCS_BY_CODE={};
+        items.forEach(function(d){var c=(d&&d.codigo||'').toUpperCase().trim(); if(c) DOCS_BY_CODE[c]=d;});
+        window.__DOCS_BY_CODE__=DOCS_BY_CODE;
+      }).catch(()=>{});
+    }
+    function hookCodeInput(){
+      var inp=document.getElementById('codigo'); if(!inp||inp.__hooked_modal_from_code) return;
+      inp.__hooked_modal_from_code=true;
+      var timer=null;
+      function tryOpen(){
+        var v=(inp.value||'').trim().toUpperCase();
+        if(v && DOCS_BY_CODE[v] && typeof openDecide==='function'){ openDecide(v); }
+      }
+      function onInput(){ if(timer) clearTimeout(timer); timer=setTimeout(tryOpen, 350); }
+      inp.addEventListener('input', onInput);
+      inp.addEventListener('change', tryOpen);
+      inp.addEventListener('blur',   tryOpen);
+    }
+    preloadDocs(); hookCodeInput();
+  }catch(_){}
 })();
