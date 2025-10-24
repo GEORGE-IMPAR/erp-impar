@@ -96,41 +96,37 @@
       fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
     };
 
-  // Gerar contrato com loader (CAMINHO ABSOLUTO CORRIGIDO)
-  // Gerar contrato (versão final com loader preto e delay seguro)
+ // Gerar contrato (chama internamente o Atualizar Documento, depois gera e limpa)
  q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
   if(!code){ hideAll(); return; }
 
-  // 🔹 Passo 1: Mostra loader e mensagem de processamento
-  var loaderText = document.querySelector('.cj-loader-text');
-  if (loaderText) loaderText.textContent = 'Processando... levantando informações...';
-  lback.style.display = 'flex';
-
-  // 🔹 Passo 2: Chama o Atualizar Documento (carrega o código)
+  // 🔹 Passo 1: chama a rotina do botão "Atualizar documento"
   if (typeof q('cj_btn_atualizar').onclick === 'function') {
     q('cj_btn_atualizar').onclick();
   }
 
-  // 🔹 Passo 3: Aguarda um tempo seguro para carregar e preencher
-  await new Promise(r => setTimeout(r, 2000));
+  // 🔹 Passo 2: aguarda um pouco para garantir que o fetchDoc terminou
+  await new Promise(r => setTimeout(r, 4000));
 
-  // 🔹 Passo 4: Atualiza texto do loader e chama o gerador
-  if (loaderText) loaderText.textContent = 'Gerando contrato... aguarde...';
-  try {
-    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
-    const j = await res.json();
-    if (!j || !j.ok) throw new Error('Erro ao gerar contrato');
-    window.open(j.url, '_blank');
-  } catch(e) {
-    console.error(e);
-  }
+  // 🔹 Passo 3: chama o gerador de contrato normalmente
+  lback.style.display = 'flex';
+  fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
+    .then(r => r.json())
+    .then(j => {
+      lback.style.display = 'none';
+      if(!j || !j.ok){ hideAll(); return; }
+      window.open(j.url, '_blank');
+      hideAll();
 
-  // 🔹 Passo 5: Limpa o campo e esconde loader/modal
-  const inp = q('codigo');
-  if (inp) inp.value = '';
-  lback.style.display = 'none';
-  hideAll();
+      // 🔹 Passo 4: limpa o campo código ao final
+      const inp = q('codigo');
+      if (inp) inp.value = '';
+    })
+    .catch(()=>{
+      lback.style.display='none';
+      hideAll();
+    });
 };
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
