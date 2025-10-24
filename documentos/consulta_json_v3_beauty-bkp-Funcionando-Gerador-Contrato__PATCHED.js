@@ -1,3 +1,14 @@
+
+// Fecha tudo do módulo de consulta/decisão (forçado)
+window.__forceCloseConsultaUI = function(){
+  try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
+  ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
+    .forEach(function(id){
+      var n = document.getElementById(id);
+      if (n) n.style.display = 'none';
+    });
+};
+
 /* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
    - UI moderna azul‑marinho (lista + decisão)
    - Suprime qualquer modal legado ao abrir/fechar (FixClose)
@@ -96,8 +107,6 @@
   fetchDoc(code).then(function(item){
     try { fillForm(item); } catch(_){}
     try { if (typeof goTo==='function') goTo(2); } catch(_){}
-    try { if (typeof showOnly==='function') showOnly('screen2'); } catch(_){}
-    try { if (typeof updateStepper==='function') updateStepper(2); } catch(_){}
     hideAll();
     window.scrollTo({top:0,behavior:'smooth'});
   }).catch(function(){ hideAll(); });
@@ -106,7 +115,8 @@
 // GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
 q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-  if (!code){ hideAll(); return; }
+  if (!code){ __forceCloseConsultaUI();
+return; }
 
   var inp=q('codigo'); if (inp) inp.value = code;
 
@@ -123,8 +133,8 @@ q('cj_btn_gerar').onclick = async function(){
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
         try {
-          hideAll();
-          if (typeof __resetAllFields === 'function') __resetAllFields();
+          __forceCloseConsultaUI();
+if (typeof __resetAllFields === 'function') __resetAllFields();
           var codigoInput = q('codigo'); if (codigoInput) codigoInput.value='';
           if (typeof showOnly === 'function') showOnly('screen1');
           if (typeof updateStepper === 'function') updateStepper(1);
@@ -138,11 +148,11 @@ q('cj_btn_gerar').onclick = async function(){
       alert('Erro inesperado ao gerar contrato.');
     }finally{
       if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
-      hideAll();
-    }
+      __forceCloseConsultaUI();
+}
   }, () => {
-    hideAll();
-  });
+    __forceCloseConsultaUI();
+});
 };;;
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
