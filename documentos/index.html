@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 111.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 201.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -3031,7 +3031,7 @@ function normCode(v){ return String(v||'').trim().toUpperCase(); }
 // Debounce simples
 function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
-// Abre modal de decisão se o código existir
+// Abre modal de decisão se o código existir (sem mensagens)
 async function tryOpenDecisionForCodigo(raw){
   const code = normCode(raw);
   if (!code) return;
@@ -3042,11 +3042,10 @@ async function tryOpenDecisionForCodigo(raw){
   try {
     const item = await window.__CJFIX_API__.fetchDoc(code); // retorna {ok:true,item:{...}} se existir
     if (item) {
-      // Garante que a UI da consulta está montada e abre o card de ação
       window.__CJFIX_API__.openDecide(code);
     }
   } catch(_) {
-    // Se não existir ou houver erro de rede, não abre nada (comportamento silencioso)
+    // Silencioso se não existir ou erro
   }
 }
 
@@ -3074,10 +3073,10 @@ async function tryOpenDecisionForCodigo(raw){
 })();
 </script>
 
+
 <script>
 // ===== Reset total do formulário (como se fosse o primeiro acesso) =====
 function __resetAllFields(){
-  // Lista de campos (IDs) existentes nas etapas 2–5
   var ids = [
     'servico','endereco',
     'nomeContratante','docContratante','contatoContratante','cepContratante','numeroContratante',
@@ -3088,7 +3087,6 @@ function __resetAllFields(){
     'telefoneContratada','emailContratada',
     'clausulas','condicoes','valor','Extenso_Valor','prazo','dataExtenso','dataPicker','logo'
   ];
-
   ids.forEach(function(id){
     var el = document.getElementById(id);
     if(!el) return;
@@ -3097,7 +3095,6 @@ function __resetAllFields(){
     else if ('value' in el) { el.value = ''; }
   });
 
-  // Esconde mensagens de erro/hint se existirem
   var errIds = [
     'docContratanteErr','cepContratanteErr','telContratanteErr','emailContratanteErr',
     'docContratadaErr','cepContratadaErr','telContratadaErr','emailContratadaErr',
@@ -3108,7 +3105,6 @@ function __resetAllFields(){
     if(n){ n.classList.add('hidden'); }
   });
 
-  // Limpa viewer PDF e modal de sucesso (se visíveis)
   try{
     var viewer = document.getElementById('viewer');
     if (viewer) viewer.style.display = 'none';
@@ -3118,13 +3114,11 @@ function __resetAllFields(){
     if (success){ success.style.display='none'; success.style.visibility='hidden'; success.style.opacity='0'; }
   }catch(_){}
 
-  // Limpa quaisquer variáveis globais (se existirem) sem assumir estrutura
   try{
     ['__CURRENT_DOC','__DOC','__FORM_STATE','__LAST_FETCH']
       .forEach(function(k){ if (k in window) window[k] = null; });
   }catch(_){}
 
-  // Atualiza rótulos de código pré-preenchidos nas etapas
   var codigo = (document.getElementById('codigo').value || '').trim() || 'AC00025';
   ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(function(id){
     var span = document.getElementById(id);
@@ -3132,43 +3126,49 @@ function __resetAllFields(){
   });
 }
 
-// ===== Comportamento do botão Continuar da etapa 1 =====
+// ===== CONTINUAR Etapa 1: limpar + rechecagem, e bloquear efeitos colaterais =====
 (function(){
   var bar1 = document.getElementById('bar1');
   if (!bar1) return;
 
-  async function handleContinueStep1(ev){
-    // Mesmo quando estiver habilitado, forçamos nosso fluxo
-    ev && ev.preventDefault();
-
-    // Limpa completamente o estado/formulário
-    __resetAllFields();
-
-    // Rechecagem do código atual
-    var code = (document.getElementById('codigo').value || '').trim().toUpperCase();
-
-    // Se temos o módulo de consulta e um código, tenta abrir modal de decisão
-    if (code && window.__CJFIX_API__ && typeof window.__CJFIX_API__.fetchDoc === 'function'){
-      try{
-        var item = await window.__CJFIX_API__.fetchDoc(code);
-        if (item){
-          // Se existe, abre o mesmo card de ação da consulta (Atualizar / Gerar contrato / Fechar)
-          window.__CJFIX_API__.openDecide(code);
-          return; // Não avança de etapa; o usuário escolhe a ação no modal
-        }
-      }catch(_){
-        // Se falhar a checagem, cai para o fluxo padrão (segue para etapa 2 em branco)
-      }
+  function handleContinueStep1(ev){
+    if (ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
     }
 
-    // Se não existe ou não há módulo, segue para etapa 2 com tudo limpo
-    if (typeof goTo === 'function'){ goTo(2); }
+    // Guarda global para outros handlers (se existirem) ignorarem este clique
+    window.__STEP1_CONT_GUARD__ = Date.now();
+
+    // Reset total
+    try { __resetAllFields(); } catch(_){}
+
+    var code = (document.getElementById('codigo').value || '').trim().toUpperCase();
+
+    (async function(){
+      var exists = false;
+      if (code && window.__CJFIX_API__ && typeof window.__CJFIX_API__.fetchDoc === 'function'){
+        try {
+          var item = await window.__CJFIX_API__.fetchDoc(code);
+          exists = !!item;
+        } catch(_){ exists = false; }
+      }
+
+      if (exists){
+        try { window.__CJFIX_API__.openDecide(code); } catch(_){}
+        return;
+      }
+      if (typeof goTo === 'function'){ goTo(2); }
+    })();
   }
 
-  // Remove possíveis listeners anteriores para evitar duplicidade
+  // Remove possíveis listeners anteriores e reanexa com captura e bolha
   bar1.replaceWith(bar1.cloneNode(true));
   bar1 = document.getElementById('bar1');
+  bar1.onclick = null;
   bar1.addEventListener('click', handleContinueStep1, true);
+  bar1.addEventListener('click', handleContinueStep1, false);
 })();
 </script>
 </body>
