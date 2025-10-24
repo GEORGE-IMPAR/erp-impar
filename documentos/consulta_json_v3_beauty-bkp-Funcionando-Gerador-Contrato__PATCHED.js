@@ -115,45 +115,48 @@ window.__forceCloseConsultaUI = function(){
 // GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
 q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-  if (!code){ __forceCloseConsultaUI();
-return; }
+  if (!code){ __forceCloseConsultaUI(); return; }
 
   var inp=q('codigo'); if (inp) inp.value = code;
 
-  openSideConfirm(code, async () => {
-    if (q('cj_loader_back')) {
-      q('cj_loader_back').style.display = 'flex';
-      var t = q('cj_loader_back').querySelector('.cj-loader-text');
-      if (t) t.textContent = 'Gerando contrato...';
-    }
-
-    try{
-      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
-      const j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
-        try {
-          __forceCloseConsultaUI();
-if (typeof __resetAllFields === 'function') __resetAllFields();
-          var codigoInput = q('codigo'); if (codigoInput) codigoInput.value='';
-          if (typeof showOnly === 'function') showOnly('screen1');
-          if (typeof updateStepper === 'function') updateStepper(1);
-          window.scrollTo({top:0, behavior:'smooth'});
-        } catch(_){}
-      } else {
-        alert('Não foi possível gerar o contrato. Verifique os dados.');
-      }
-    }catch(err){
-      console.error('Erro ao gerar contrato:', err);
-      alert('Erro inesperado ao gerar contrato.');
-    }finally{
-      if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
-      __forceCloseConsultaUI();
-}
-  }, () => {
+  // Confirmação simples (substitui openSideConfirm)
+  if (!confirm('Deseja realmente gerar o contrato agora?')) {
     __forceCloseConsultaUI();
-});
-};;;
+    return;
+  }
+
+  if (q('cj_loader_back')) {
+    q('cj_loader_back').style.display = 'flex';
+    var t = q('cj_loader_back').querySelector('.cj-loader-text');
+    if (t) t.textContent = 'Gerando contrato...';
+  }
+
+  try{
+    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
+    const j = await res.json();
+    if (j && j.ok && j.url) {
+      window.open(j.url, '_blank'); // abre o contrato
+
+      // Fecha modal e limpa Etapa 1, permanecendo nela
+      __forceCloseConsultaUI();
+      try {
+        if (typeof __resetAllFields === 'function') __resetAllFields();
+        var codigoInput = q('codigo'); if (codigoInput) codigoInput.value='';
+        if (typeof showOnly === 'function') showOnly('screen1');
+        if (typeof updateStepper === 'function') updateStepper(1);
+        window.scrollTo({top:0, behavior:'smooth'});
+      } catch(_){}
+    } else {
+      alert('Não foi possível gerar o contrato. Verifique os dados.');
+    }
+  }catch(err){
+    console.error('Erro ao gerar contrato:', err);
+    alert('Erro inesperado ao gerar contrato.');
+  }finally{
+    if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
+    __forceCloseConsultaUI();
+  }
+};;;;
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
