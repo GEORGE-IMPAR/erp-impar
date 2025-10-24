@@ -90,34 +90,49 @@
 
     // Atualizar
     q('cj_btn_atualizar').onclick=function(){
-      var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
-      if(!code){ hideAll(); return; }
-      var inp=q('codigo'); if(inp){ inp.value=code; try{inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }
-      fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
-    };
+  var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
+  if(!code){ hideAll(); return; }
+
+  // SUSPENDE auto-modal durante preenchimento programático
+  window.__CJ_SUSPEND_AUTO_DECIDE__ = true;
+
+  // Preenche o campo #codigo sem disparar eventos
+  var inp=q('codigo');
+  if(inp){ inp.value=code; }
+
+  // Busca e preenche, vai para Etapa 2 já populada
+  fetchDoc(code).then(function(item){
+    try{ fillForm(item); }catch(_){}
+    try{ if (typeof goTo==='function') goTo(2); }catch(_){}
+    hideAll();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }).catch(function(){
+    hideAll();
+  }).finally(function(){
+    // libera a suspensão após microtask
+    setTimeout(function(){ window.__CJ_SUSPEND_AUTO_DECIDE__ = false; }, 50);
+  });
+};
 
 // GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
 q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
   if (!code){ hideAll(); return; }
 
-  // 1) chama internamente o "Atualizar documento" (preenche #codigo e formulário)
-  if (typeof q('cj_btn_atualizar').onclick === 'function') {
-    q('cj_btn_atualizar').onclick();
-  }
+  // 1) Atualiza o formulário silenciosamente (sem disparar auto-modal)
+  window.__CJ_SUSPEND_AUTO_DECIDE__ = true;
+  var inp=q('codigo'); if (inp) inp.value = code;
 
-  // 2) espera o campo #codigo estar realmente com o valor escolhido
-  const okFilled = await waitForCodigoFill(code, 6000); // até 6s
+  // 2) Confirma e gera contrato
+  const okFilled = await waitForCodigoFill(code, 6000);
   if (!okFilled){
-    // não segue sem você ver; mostra aviso lateral com o que achou (ou não achou)
     const current = (q('codigo')?.value || '').trim().toUpperCase() || '(vazio)';
     openSideConfirm(current, null, () => { /* cancelado */ });
+    window.__CJ_SUSPEND_AUTO_DECIDE__ = false;
     return;
   }
 
-  // 3) abre a confirmação lateral mostrando o código; só segue no "OK"
   openSideConfirm(code, async () => {
-    // (opcional) texto no loader, se você já tem
     if (q('cj_loader_back')) {
       q('cj_loader_back').style.display = 'flex';
       const t = q('cj_loader_back').querySelector('.cj-loader-text');
@@ -128,7 +143,16 @@ q('cj_btn_gerar').onclick = async function(){
       const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
       const j = await res.json();
       if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
+        window.open(j.url, '_blank'); // abre o contrato
+
+        // Após gerar: limpar etapa 1 e permanecer nela pronta para novo código
+        try{
+          if (typeof __resetAllFields === 'function') __resetAllFields();
+          var codigoInput = q('codigo'); if (codigoInput) codigoInput.value = '';
+          if (typeof showOnly === 'function') showOnly('screen1');
+          if (typeof updateStepper === 'function') updateStepper(1);
+          window.scrollTo({top:0, behavior:'smooth'});
+        }catch(_){}
       } else {
         alert('Não foi possível gerar o contrato. Verifique os dados.');
       }
@@ -138,13 +162,13 @@ q('cj_btn_gerar').onclick = async function(){
     }finally{
       if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
       hideAll();
-      // 👇 se quiser LIMPAR o campo após gerar, descomente:
-      // const inp = q('codigo'); if (inp) inp.value = '';
+      setTimeout(function(){ window.__CJ_SUSPEND_AUTO_DECIDE__ = false; }, 50);
     }
   }, () => {
-    // cancelou na confirmação -> não faz nada
+    // cancelou
+    window.__CJ_SUSPEND_AUTO_DECIDE__ = false;
   });
-};
+};;
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
