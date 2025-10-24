@@ -96,59 +96,54 @@
       fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
     };
 
- // Gerar contrato (chama internamente o Atualizar Documento, depois gera e limpa)
- // Gerar contrato com loader preto e verificação de preenchimento do código
+// GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
 q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-  if (!code) { hideAll(); return; }
+  if (!code){ hideAll(); return; }
 
-  // Mostra loader "Levantando informações..."
-  const loader = q('cj_loader_back');
-  if (loader) {
-    loader.style.display = 'flex';
-    const text = loader.querySelector('.cj-loader-text');
-    if (text) text.textContent = 'Levantando informações...';
-  }
-
-  // 1️⃣ Chama internamente o botão "Atualizar Documento"
+  // 1) chama internamente o "Atualizar documento" (preenche #codigo e formulário)
   if (typeof q('cj_btn_atualizar').onclick === 'function') {
     q('cj_btn_atualizar').onclick();
   }
 
-  // 2️⃣ Aguarda até que o campo #codigo contenha o valor correto
-  let tentativas = 0;
-  while (tentativas < 40) { // tenta por até 4 segundos
-    const v = (q('codigo')?.value || '').trim().toUpperCase();
-    if (v === code.toUpperCase()) break;
-    await new Promise(r => setTimeout(r, 100));
-    tentativas++;
+  // 2) espera o campo #codigo estar realmente com o valor escolhido
+  const okFilled = await waitForCodigoFill(code, 6000); // até 6s
+  if (!okFilled){
+    // não segue sem você ver; mostra aviso lateral com o que achou (ou não achou)
+    const current = (q('codigo')?.value || '').trim().toUpperCase() || '(vazio)';
+    openSideConfirm(current, null, () => { /* cancelado */ });
+    return;
   }
 
-  // Troca texto do loader para "Gerando contrato..."
-  const text2 = loader?.querySelector('.cj-loader-text');
-  if (text2) text2.textContent = 'Gerando contrato...';
-
-  // 3️⃣ Faz a chamada real ao gerador de contrato
-  try {
-    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
-    const j = await res.json();
-    if (j && j.ok && j.url) {
-      window.open(j.url, '_blank');
-    } else {
-      alert('Não foi possível gerar o contrato. Verifique os dados.');
+  // 3) abre a confirmação lateral mostrando o código; só segue no "OK"
+  openSideConfirm(code, async () => {
+    // (opcional) texto no loader, se você já tem
+    if (q('cj_loader_back')) {
+      q('cj_loader_back').style.display = 'flex';
+      const t = q('cj_loader_back').querySelector('.cj-loader-text');
+      if (t) t.textContent = 'Gerando contrato...';
     }
-  } catch (err) {
-    console.error('Erro ao gerar contrato:', err);
-    alert('Erro inesperado ao gerar contrato.');
-  }
 
-  // 4️⃣ Oculta o loader e limpa o campo
-  if (loader) loader.style.display = 'none';
-  const inp = q('codigo');
-  if (inp) inp.value = '';
-
-  // Fecha os modais
-  hideAll();
+    try{
+      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
+      const j = await res.json();
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+      } else {
+        alert('Não foi possível gerar o contrato. Verifique os dados.');
+      }
+    }catch(err){
+      console.error('Erro ao gerar contrato:', err);
+      alert('Erro inesperado ao gerar contrato.');
+    }finally{
+      if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
+      hideAll();
+      // 👇 se quiser LIMPAR o campo após gerar, descomente:
+      // const inp = q('codigo'); if (inp) inp.value = '';
+    }
+  }, () => {
+    // cancelou na confirmação -> não faz nada
+  });
 };
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
