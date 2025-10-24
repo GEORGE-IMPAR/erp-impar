@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 99.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 111.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -3071,6 +3071,104 @@ async function tryOpenDecisionForCodigo(raw){
   // (Opcional) ao digitar com pequena pausa (600 ms)
   const onType = debounce(()=>tryOpenDecisionForCodigo(inp.value), 600);
   inp.addEventListener('input', onType);
+})();
+</script>
+
+<script>
+// ===== Reset total do formulário (como se fosse o primeiro acesso) =====
+function __resetAllFields(){
+  // Lista de campos (IDs) existentes nas etapas 2–5
+  var ids = [
+    'servico','endereco',
+    'nomeContratante','docContratante','contatoContratante','cepContratante','numeroContratante',
+    'logradouroContratante','complementoContratante','bairroContratante','cidadeContratante','ufContratante',
+    'telefoneContratante','emailContratante',
+    'nomeContratada','docContratada','contatoContratada','cepContratada','numeroContratada',
+    'logradouroContratada','complementoContratada','bairroContratada','cidadeContratada','ufContratada',
+    'telefoneContratada','emailContratada',
+    'clausulas','condicoes','valor','Extenso_Valor','prazo','dataExtenso','dataPicker','logo'
+  ];
+
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    if (el.tagName === 'SELECT') { el.value = ''; }
+    else if (el.type === 'file') { el.value = ''; }
+    else if ('value' in el) { el.value = ''; }
+  });
+
+  // Esconde mensagens de erro/hint se existirem
+  var errIds = [
+    'docContratanteErr','cepContratanteErr','telContratanteErr','emailContratanteErr',
+    'docContratadaErr','cepContratadaErr','telContratadaErr','emailContratadaErr',
+    'cepContratanteHint','cepContratadaHint'
+  ];
+  errIds.forEach(function(id){
+    var n = document.getElementById(id);
+    if(n){ n.classList.add('hidden'); }
+  });
+
+  // Limpa viewer PDF e modal de sucesso (se visíveis)
+  try{
+    var viewer = document.getElementById('viewer');
+    if (viewer) viewer.style.display = 'none';
+    var frame = document.getElementById('pdfFrame');
+    if (frame) frame.src = 'about:blank';
+    var success = document.getElementById('successModal');
+    if (success){ success.style.display='none'; success.style.visibility='hidden'; success.style.opacity='0'; }
+  }catch(_){}
+
+  // Limpa quaisquer variáveis globais (se existirem) sem assumir estrutura
+  try{
+    ['__CURRENT_DOC','__DOC','__FORM_STATE','__LAST_FETCH']
+      .forEach(function(k){ if (k in window) window[k] = null; });
+  }catch(_){}
+
+  // Atualiza rótulos de código pré-preenchidos nas etapas
+  var codigo = (document.getElementById('codigo').value || '').trim() || 'AC00025';
+  ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(function(id){
+    var span = document.getElementById(id);
+    if (span) span.textContent = codigo;
+  });
+}
+
+// ===== Comportamento do botão Continuar da etapa 1 =====
+(function(){
+  var bar1 = document.getElementById('bar1');
+  if (!bar1) return;
+
+  async function handleContinueStep1(ev){
+    // Mesmo quando estiver habilitado, forçamos nosso fluxo
+    ev && ev.preventDefault();
+
+    // Limpa completamente o estado/formulário
+    __resetAllFields();
+
+    // Rechecagem do código atual
+    var code = (document.getElementById('codigo').value || '').trim().toUpperCase();
+
+    // Se temos o módulo de consulta e um código, tenta abrir modal de decisão
+    if (code && window.__CJFIX_API__ && typeof window.__CJFIX_API__.fetchDoc === 'function'){
+      try{
+        var item = await window.__CJFIX_API__.fetchDoc(code);
+        if (item){
+          // Se existe, abre o mesmo card de ação da consulta (Atualizar / Gerar contrato / Fechar)
+          window.__CJFIX_API__.openDecide(code);
+          return; // Não avança de etapa; o usuário escolhe a ação no modal
+        }
+      }catch(_){
+        // Se falhar a checagem, cai para o fluxo padrão (segue para etapa 2 em branco)
+      }
+    }
+
+    // Se não existe ou não há módulo, segue para etapa 2 com tudo limpo
+    if (typeof goTo === 'function'){ goTo(2); }
+  }
+
+  // Remove possíveis listeners anteriores para evitar duplicidade
+  bar1.replaceWith(bar1.cloneNode(true));
+  bar1 = document.getElementById('bar1');
+  bar1.addEventListener('click', handleContinueStep1, true);
 })();
 </script>
 </body>
