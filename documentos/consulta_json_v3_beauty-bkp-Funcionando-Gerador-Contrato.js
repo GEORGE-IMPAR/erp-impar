@@ -97,38 +97,38 @@
     };
 
   // Gerar contrato com loader (CAMINHO ABSOLUTO CORRIGIDO)
-  q('cj_btn_gerar').onclick = function(){
+// Gerar contrato (chama internamente o Atualizar Documento, depois gera e limpa)
+q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
   if(!code){ hideAll(); return; }
 
-  // 🔹 Garante que o campo principal #codigo e o cache são atualizados
-  var inp = q('codigo');
-  if (inp){
-    inp.value = code;
-    try{
-      inp.dispatchEvent(new Event('input',{bubbles:true}));
-      inp.dispatchEvent(new Event('change',{bubbles:true}));
-    }catch(e){}
+  // 🔹 Passo 1: chama a rotina do botão "Atualizar documento"
+  if (typeof q('cj_btn_atualizar').onclick === 'function') {
+    q('cj_btn_atualizar').onclick();
   }
 
-  // 🔹 Opcional: força também um fetchDoc para preencher os campos
-  fetchDoc(code).then(function(item){ fillForm(item); }).catch(()=>{});
+  // 🔹 Passo 2: aguarda um pouco para garantir que o fetchDoc terminou
+  await new Promise(r => setTimeout(r, 1200));
 
-  // 🔹 Mostra loader e chama a geração
-  lback.style.display='flex';
+  // 🔹 Passo 3: chama o gerador de contrato normalmente
+  lback.style.display = 'flex';
   fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
-    .then(r=>r.json())
-    .then(j=>{
-      lback.style.display='none';
+    .then(r => r.json())
+    .then(j => {
+      lback.style.display = 'none';
       if(!j || !j.ok){ hideAll(); return; }
-      window.open(j.url,'_blank');
+      window.open(j.url, '_blank');
       hideAll();
+
+      // 🔹 Passo 4: limpa o campo código ao final
+      const inp = q('codigo');
+      if (inp) inp.value = '';
     })
     .catch(()=>{
       lback.style.display='none';
       hideAll();
     });
-  };
+};
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
