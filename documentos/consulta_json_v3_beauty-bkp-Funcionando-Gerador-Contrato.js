@@ -97,36 +97,58 @@
     };
 
  // Gerar contrato (chama internamente o Atualizar Documento, depois gera e limpa)
- q('cj_btn_gerar').onclick = async function(){
+ // Gerar contrato com loader preto e verificação de preenchimento do código
+q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-  if(!code){ hideAll(); return; }
+  if (!code) { hideAll(); return; }
 
-  // 🔹 Passo 1: chama a rotina do botão "Atualizar documento"
+  // Mostra loader "Levantando informações..."
+  const loader = q('cj_loader_back');
+  if (loader) {
+    loader.style.display = 'flex';
+    const text = loader.querySelector('.cj-loader-text');
+    if (text) text.textContent = 'Levantando informações...';
+  }
+
+  // 1️⃣ Chama internamente o botão "Atualizar Documento"
   if (typeof q('cj_btn_atualizar').onclick === 'function') {
     q('cj_btn_atualizar').onclick();
   }
 
-  // 🔹 Passo 2: aguarda um pouco para garantir que o fetchDoc terminou
-  await new Promise(r => setTimeout(r, 4000));
+  // 2️⃣ Aguarda até que o campo #codigo contenha o valor correto
+  let tentativas = 0;
+  while (tentativas < 40) { // tenta por até 4 segundos
+    const v = (q('codigo')?.value || '').trim().toUpperCase();
+    if (v === code.toUpperCase()) break;
+    await new Promise(r => setTimeout(r, 100));
+    tentativas++;
+  }
 
-  // 🔹 Passo 3: chama o gerador de contrato normalmente
-  lback.style.display = 'flex';
-  fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code))
-    .then(r => r.json())
-    .then(j => {
-      lback.style.display = 'none';
-      if(!j || !j.ok){ hideAll(); return; }
+  // Troca texto do loader para "Gerando contrato..."
+  const text2 = loader?.querySelector('.cj-loader-text');
+  if (text2) text2.textContent = 'Gerando contrato...';
+
+  // 3️⃣ Faz a chamada real ao gerador de contrato
+  try {
+    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
+    const j = await res.json();
+    if (j && j.ok && j.url) {
       window.open(j.url, '_blank');
-      hideAll();
+    } else {
+      alert('Não foi possível gerar o contrato. Verifique os dados.');
+    }
+  } catch (err) {
+    console.error('Erro ao gerar contrato:', err);
+    alert('Erro inesperado ao gerar contrato.');
+  }
 
-      // 🔹 Passo 4: limpa o campo código ao final
-      const inp = q('codigo');
-      if (inp) inp.value = '';
-    })
-    .catch(()=>{
-      lback.style.display='none';
-      hideAll();
-    });
+  // 4️⃣ Oculta o loader e limpa o campo
+  if (loader) loader.style.display = 'none';
+  const inp = q('codigo');
+  if (inp) inp.value = '';
+
+  // Fecha os modais
+  hideAll();
 };
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
