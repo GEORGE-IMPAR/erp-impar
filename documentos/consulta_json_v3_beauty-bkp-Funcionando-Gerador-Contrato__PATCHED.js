@@ -170,59 +170,49 @@ if (!window.__forceCloseConsultaUI) {
     }
 
     /* --- Gerar contrato (com pré-carregamento) --- */
-// GERAR CONTRATO — auto-retry transparente com limpeza do código + overlay
+/* --- Gerar contrato (com pré-carregamento) --- */
+// GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
 q('cj_btn_gerar').onclick = async function () {
   var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) {
-    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-    return;
-  }
+  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
-  // Seletores e regex (não mexa se sua mensagem já combina com isso)
+  // Regex para as mensagens de alerta que você descreveu
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
-  // 1) LIMPA o input antes da 1ª tentativa para evitar código antigo
+  // 1) LIMPA o input antes da 1ª tentativa (evita código antigo)
   const inp = q('codigo');
   if (inp) inp.value = '';
 
-  // 2) Mostra o loader preto já existente no seu arquivo
+  // 2) Loader preto já existente
   const loader = q('cj_loader_back');
-  const showLoader = (msg) => {
-    if (loader) {
-      loader.style.display = 'flex';
-      try {
-        const t = loader.querySelector('.cj-loader-text');
-        if (t && msg) t.textContent = msg;
-      } catch (_) {}
-    }
+  const setLoader = (msg) => {
+    if (!loader) return;
+    loader.style.display = 'flex';
+    const t = loader.querySelector('.cj-loader-text');
+    if (t && msg) t.textContent = msg;
   };
   const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-  // 3) Monkey-patch de alert apenas durante ESTA ação (para detectar “não encontrado”)
+  // 3) Patch do alert apenas durante ESTA ação
   const originalAlert = window.alert;
   let sawNotFound = false;
   window.alert = function (msg) {
     if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
       sawNotFound = true;
-      showLoader('Processando... aguarde...');
+      setLoader('Gerando documento...');
     }
     return originalAlert.call(window, msg);
   };
 
-  // 4) Função de geração (mantive seu endpoint e sem tocar no resto do sistema)
-  async function gerarContratoOnce() {
+  async function gerarContratoOnce(c) {
     try {
-      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code), { cache: 'no-store' });
+      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
       const j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
         try {
           const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({
-            titulo: 'Documento gerado com sucesso',
-            codigo: code.toUpperCase(),
-            nome
-          });
+          window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
         } catch (_) {}
         return true;
       }
@@ -232,34 +222,36 @@ q('cj_btn_gerar').onclick = async function () {
     return false;
   }
 
-  // 5) Primeira tentativa (com overlay)
-  showLoader('Processando... aguarde...');
-  let ok = await gerarContratoOnce();
+  // 4) Primeira tentativa
+  setLoader('Processando... aguarde...');
+  if (inp) {
+    inp.value = code.toUpperCase();
+    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+  }
+  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+  let ok = await gerarContratoOnce(code);
 
-  // 6) Se falhou OU se houve alert “não encontrado”, re-tenta UMA vez:
+  // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
   if (!ok || sawNotFound) {
-    // repõe o código no input (para seu fluxo interno reconhecer) e dispara eventos
-    if (inp) {
+    if (inp && !inp.value) {
       inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
     }
-
-    // pequena espera para estabilizar DOM/validações internas
-    await new Promise(r => setTimeout(r, 450));
-
-    showLoader('Gerando documento...');
-    ok = await gerarContratoOnce();
+    setLoader('Gerando documento...');
+    await new Promise(r => setTimeout(r, 350));
+    ok = await gerarContratoOnce(code);
   }
 
-  // 7) Restaura alert e UI
+  // 6) Restaura alert/loader e fecha UI da consulta
   window.alert = originalAlert;
   hideLoader();
-
-  // fecha a UI da consulta se desejar manter a tela “limpa”
   try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
 };
-}
+
+   window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
+  }
   /* ---- Aberturas ---- */
   function openList(){
     build(); hideLegacy();
