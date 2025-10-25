@@ -170,57 +170,99 @@ if (!window.__forceCloseConsultaUI) {
     }
 
     /* --- Gerar contrato (com pré-carregamento) --- */
-    q('cj_btn_gerar').onclick = async function(){
-      var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-      if (!code){
-        try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-        return;
-      }
+// GERAR CONTRATO — com retry automático se veio da pesquisa
+q('cj_btn_gerar').onclick = async function(){
+  var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
+  if (!code){
+    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
+    return;
+  }
 
-      var inp = q('codigo'); if (inp) inp.value = code; // compat
+  // injeta o código no campo e dispara eventos (sempre)
+  var inp = q('codigo');
+  if (inp) {
+    inp.value = code.toUpperCase();
+    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
+    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
+  }
 
-      const item = await __preloadDocForContract(code);
+  // define nº de tentativas: 2 se veio da pesquisa, 1 se veio da etapa 1
+  var maxTries = (window.__CJ_fromSearch === true) ? 2 : 1;
 
-      openSideConfirm(code, async () => {
-        if (q('cj_loader_back')) {
-          q('cj_loader_back').style.display = 'flex';
-          var t = q('cj_loader_back').querySelector('.cj-loader-text');
-          if (t) t.textContent = 'Gerando contrato...';
+  openSideConfirm(code, async () => {
+    if (q('cj_loader_back')) {
+      q('cj_loader_back').style.display = 'flex';
+      var t = q('cj_loader_back').querySelector('.cj-loader-text');
+      if (t) t.textContent = 'Gerando contrato...';
+    }
+
+    const urlAPI = '/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
+
+    async function tentar(attemptIdx){
+      try {
+        const res = await fetch(urlAPI, { cache: 'no-store' });
+        let j = null;
+        try { j = await res.json(); } catch(_){ j = null; }
+
+        if (j && j.ok && j.url) {
+          window.open(j.url, '_blank');
+
+          // fecha modal e limpa estado
+          try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
+          window.__CJ_fromSearch = false;
+
+          // (opcional) seu toast bonito
+          try {
+            const nome = (q('nomeContratante')?.value || '').trim();
+            window.contratoSucesso?.({
+              titulo: 'Documento gerado com sucesso',
+              codigo: code.toUpperCase(),
+              nome
+            });
+          } catch(_){}
+          return true;
         }
 
-        try {
-          const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
-          const j   = await res.json();
+        // falhou → se ainda há tentativas, dá "respiro", reforça o input e tenta de novo
+        if (attemptIdx + 1 < maxTries) {
+          await new Promise(r => requestAnimationFrame(r));
+          await new Promise(r => requestAnimationFrame(r));
 
-          if (j && j.ok && j.url) {
-            window.open(j.url, '_blank');
-
-            // fecha modal imediatamente
-            try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-
-            // toast moderno
-            try {
-              const nome = (item && item.nomeContratante) || (q('nomeContratante')?.value || '');
-              window.contratoSucesso?.({
-                titulo: 'Documento gerado com sucesso',
-                codigo: code.toUpperCase(),
-                nome
-              });
-            } catch(_){}
-          } else {
-            alert('Não foi possível gerar o contrato. Verifique os dados.');
+          if (inp) {
+            inp.value = code.toUpperCase();
+            try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
+            try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
           }
-        } catch (err) {
-          console.error('Erro ao gerar contrato:', err);
-          alert('Erro inesperado ao gerar contrato.');
-        } finally {
-          if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
-          try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
+          return await tentar(attemptIdx + 1);
         }
-      }, () => {
-        try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-      });
-    };
+
+        // esgotou tentativas
+        alert('Não foi possível gerar o contrato. Verifique os dados.');
+        return false;
+      } catch (err) {
+        // erro de rede → tenta de novo se houver crédito
+        if (attemptIdx + 1 < maxTries) {
+          await new Promise(r => setTimeout(r, 80));
+          return await tentar(attemptIdx + 1);
+        }
+        console.error('Erro ao gerar contrato:', err);
+        alert('Erro inesperado ao gerar contrato.');
+        return false;
+      }
+    }
+
+    try {
+      await tentar(0);
+    } finally {
+      if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
+      // se quiser sempre fechar o modal, descomente:
+      // try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
+    }
+  }, () => {
+    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
+    window.__CJ_fromSearch = false;
+  });
+};
 
     window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
