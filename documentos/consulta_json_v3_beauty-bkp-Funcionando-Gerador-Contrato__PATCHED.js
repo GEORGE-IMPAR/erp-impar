@@ -171,85 +171,69 @@ if (!window.__forceCloseConsultaUI) {
 
     /* --- Gerar contrato (com pré-carregamento) --- */
 // GERAR CONTRATO — com retry automático se veio da pesquisa
+// GERAR CONTRATO — versão final com duplo disparo, loader e toast bonito
 q('cj_btn_gerar').onclick = async function(){
-  var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
+  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code){
     try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
     return;
   }
 
-  // injeta o código no campo e dispara eventos (sempre)
-  var inp = q('codigo');
-  if (inp) {
+  // Zera o campo código antes de tudo (garante limpeza)
+  const inp = q('codigo');
+  if (inp) inp.value = '';
+
+  // Mostra loader preto
+  const loader = q('cj_loader_back');
+  if (loader){
+    loader.style.display = 'flex';
+    const t = loader.querySelector('.cj-loader-text');
+    if (t) t.textContent = 'Processando contrato...';
+  }
+
+  // 1️⃣ Primeira tentativa: injeta o código e espera “assentar”
+  if (inp){
     inp.value = code.toUpperCase();
     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
   }
+  await new Promise(r => setTimeout(r, 600)); // tempo pro DOM atualizar
 
-  // define nº de tentativas: 2 se veio da pesquisa, 1 se veio da etapa 1
-  var maxTries = (window.__CJ_fromSearch === true) ? 2 : 1;
+  // 2️⃣ Segunda tentativa: chama a geração do contrato de fato
+  try {
+    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code), { cache: 'no-store' });
+    const j = await res.json();
 
-  openSideConfirm(code, async () => {
-    if (q('cj_loader_back')) {
-      q('cj_loader_back').style.display = 'flex';
-      var t = q('cj_loader_back').querySelector('.cj-loader-text');
-      if (t) t.textContent = 'Gerando contrato...';
-    }
+    if (j && j.ok && j.url) {
+      // abre contrato
+      window.open(j.url, '_blank');
 
-    const urlAPI = '/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
+      // fecha loader
+      if (loader) loader.style.display = 'none';
 
-    async function tentar(attemptIdx){
+      // fecha modal de consulta
+      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
+
+      // ✅ Mensagem verde bonita no canto direito
       try {
-        const res = await fetch(urlAPI, { cache: 'no-store' });
-        let j = null;
-        try { j = await res.json(); } catch(_){ j = null; }
-
-        if (j && j.ok && j.url) {
-          window.open(j.url, '_blank');
-
-          // fecha modal e limpa estado
-          try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){}
-          window.__CJ_fromSearch = false;
-
-          // (opcional) seu toast bonito
-          try {
-            const nome = (q('nomeContratante')?.value || '').trim();
-            window.contratoSucesso?.({
-              titulo: 'Documento gerado com sucesso',
-              codigo: code.toUpperCase(),
-              nome
-            });
-          } catch(_){}
-          return true;
-        }
-
-        // falhou → se ainda há tentativas, dá "respiro", reforça o input e tenta de novo
-        if (attemptIdx + 1 < maxTries) {
-          await new Promise(r => requestAnimationFrame(r));
-          await new Promise(r => requestAnimationFrame(r));
-
-          if (inp) {
-            inp.value = code.toUpperCase();
-            try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
-            try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
-          }
-          return await tentar(attemptIdx + 1);
-        }
-
-        // esgotou tentativas
-        alert('Não foi possível gerar o contrato. Verifique os dados.');
-        return false;
-      } catch (err) {
-        // erro de rede → tenta de novo se houver crédito
-        if (attemptIdx + 1 < maxTries) {
-          await new Promise(r => setTimeout(r, 80));
-          return await tentar(attemptIdx + 1);
-        }
-        console.error('Erro ao gerar contrato:', err);
-        alert('Erro inesperado ao gerar contrato.');
-        return false;
-      }
+        const nome = (q('nomeContratante')?.value || '').trim();
+        window.contratoSucesso?.({
+          titulo: 'Documento gerado com sucesso',
+          codigo: code.toUpperCase(),
+          nome
+        });
+      } catch(_){}
+    } else {
+      alert('Não foi possível gerar o contrato. Verifique os dados.');
     }
+  } catch(err) {
+    console.error('Erro ao gerar contrato:', err);
+    alert('Erro inesperado ao gerar contrato.');
+  } finally {
+    if (loader) loader.style.display = 'none';
+    window.__CJ_fromSearch = false; // limpa o flag
+  }
+};
 
     try {
       await tentar(0);
