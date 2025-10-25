@@ -259,7 +259,7 @@ q('cj_btn_gerar').onclick = async function () {
   // fecha a UI da consulta se desejar manter a tela “limpa”
   try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
 };
-
+}
   /* ---- Aberturas ---- */
   function openList(){
     build(); hideLegacy();
