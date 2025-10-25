@@ -1098,15 +1098,6 @@ async function saveDocumentWithPdf(pdfBlob){
   }
 }
 
-<!-- Módulo de consulta (DEVE vir antes dos scripts de guard/continuar) -->
-
-</script>
-
-<script src="consulta_json_v3_beauty-bkp-Funcionando-Gerador-Contrato__PATCHED_FINAL4.js"</script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 99.0 - 20-10-2025</div>
-
-<script>
-
 /* ===== Consulta ===== */
 const LOGIN_URL='/login_doc.html';
 const apiPatch=(window.__ERP_SAVE_PATCH__||{});
@@ -1309,9 +1300,1900 @@ function fillFromRowFallback(row){
   setIfExists('cnpj_contratada', pick2(row, ['cta_cpfCnpj','contratada_cnpj','contratada_doc']));
 }
 function proceedToStep2(){
-  try{ if (typeof goTo === 'function') goTo(2); 
-setTimeout(function(){ ['bar2','back2'].forEach(function(id){ var el=document.getElementById(id); if(el) el.classList.remove('hidden'); }); }, 0);
- } catch(_){}
+  try{ if (typeof goTo === 'function') goTo(2); }catch(_){}
+  const step = document.querySelector('[data-step="2"]');
+  if (step){ step.scrollIntoView({behavior:'smooth',block:'start'}); step.classList.add('pulse'); setTimeout(()=> step.classList.remove('pulse'), 1000); }
+}
+function updateAllFieldsFromRow(row){
+  if (typeof window.fillAllFromRow === 'function'){
+    try { window.fillAllFromRow(row); }
+    catch(e){ console.error('fillAllFromRow falhou, usando fallback:', e); fillFromRowFallback(row); }
+  } else {
+    fillFromRowFallback(row);
+  }
+  proceedToStep2();
+}
+
+// === Normalização do objeto recebido da API para o formato esperado por fillAllFromRow ===
+function normalizeRowForFill(row){
+  const pickKey = (keys)=>{
+    for (const k of keys){ if (row && row[k] != null && String(row[k]).trim() !== '') return row[k]; }
+    return '';
+  };
+  const addr = (n, altKeys=[])=>{
+    // tenta campo único de endereço; se não houver, monta com partes
+    const single = pickKey(altKeys);
+    if (single) return single;
+    const parts = [pickKey([n+'_logradouro', n+'_logradouro_nome']),
+                   pickKey([n+'_numero']),
+                   pickKey([n+'_complemento']),
+                   pickKey([n+'_bairro']),
+                   pickKey([n+'_cidade']), pickKey([n+'_uf'])].filter(Boolean);
+    return parts.length ? parts.join(', ') : '';
+  };
+
+  return {
+    // Etapa 2
+    servico:        pickKey(['servico','Serviço','descricao','objeto']),
+    endereco_obra:  pickKey(['endereco_obra','enderecoObra','obra_endereco','endereco']),
+
+    // Etapa 3 (Contratante)
+    contratante_nome:     pickKey(['ctt_nome','contratante_nome','contratante','cliente']),
+    contratante_doc:      pickKey(['ctt_cpfCnpj','contratante_doc','cpfCnpjContratante','contratante_cnpj','cpfCnpj']),
+    contratante_contato:  pickKey(['ctt_contato','contato_contratante','responsavel_contratante']),
+    contratante_tel:      pickKey(['ctt_telefone','telefone_contratante','telefone']),
+    contratante_email:    pickKey(['ctt_email','email_contratante','email']),
+    contratante_endereco: pickKey(['ctt_endereco','contratante_endereco','endereco_contratante']) || addr('ctt',['ctt_endereco']),
+    
+    // Etapa 4 (Contratada)
+    contratada_nome:      pickKey(['cta_nome','contratada_nome','contratada']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA',
+    contratada_doc:       pickKey(['cta_cpfCnpj','contratada_doc','contratada_cnpj']),
+    contratada_contato:   pickKey(['cta_contato','contato_contratada','responsavel_contratada']),
+    contratada_tel:       pickKey(['cta_telefone','telefone_contratada']),
+    contratada_email:     pickKey(['cta_email','email_contratada']),
+    contratada_endereco:  pickKey(['cta_endereco','contratada_endereco','endereco_contratada']) || addr('cta',['cta_endereco']),
+
+    // Etapa 5
+    valor:            pickKey(['valor','valor_total']),
+    Extenso_Valor:    pickKey(['Extenso_Valor','Extenso_Valor']),
+    prazo_dias:       pickKey(['prazo','prazo_dias']),
+    data_extenso:     pickKey(['dataExtenso','data_extenso']),
+    clausulas:        pickKey(['clausulas']),
+    condicoes:        pickKey(['condicoes','condicoes_pagamento'])
+  };
+}
+
+// === Modal de Ação (UX mais amigável) ===
+let __actionRow = null;
+function openActionModal(row){
+  __actionRow = row;
+  const m = document.getElementById('actionModal');
+  document.getElementById('actDocCode').textContent = row.codigo || row.code || '';
+  m.style.display='flex';
+}
+function closeActionModal(){
+  const m = document.getElementById('actionModal');
+  if (m) m.style.display='none';
+}
+document.addEventListener('click', function(e){
+  if(e.target && e.target.id==='btnActionCancel') closeActionModal();
+  if(e.target && e.target.id==='btnActionPdf'){ if(__actionRow){ openPdfFromRow(__actionRow); } closeActionModal(); }
+  if(e.target && e.target.id==='btnActionUpdate'){
+    if(__actionRow){
+      const norm = normalizeRowForFill(__actionRow);
+      try { fillAllFromRow(norm); } catch(err){ console.error(err); }
+      try { closeConsulta(); } catch(_){}
+    }
+    closeActionModal();
+  }
+});
+
+// Entry point chamado na célula do código
+function showAction(row){ openActionModal(row); }
+
+function showAction_old(row){
+  const msg = 'Deseja atualizar as informações ou gerar o PDF?\n\nClique "OK" para Atualizar, ou "Cancelar" para Gerar o PDF.';
+  const chooseUpdate = confirm(msg);
+  if (chooseUpdate) updateAllFieldsFromRow(row);
+  else openPdfFromRow(row);
+}
+
+function renderRows(tbodyId, rows){
+  const tb = document.getElementById(tbodyId);
+  if (!tb) return;
+  if (!rows || !rows.length){
+    tb.innerHTML = '<tr><td colspan="6" class="row-muted">Nenhum registro encontrado.</td></tr>';
+    return;
+  }
+  let html = '';
+  for (const row of rows){
+    const rowData = JSON.stringify(row).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const dt   = pick(row, ['created_at','data','Data','timestamp','DATA','dt']);
+    const cod  = pick(row, ['codigo','Código','CÓDIGO','CODIGO','code']);
+    const serv = pick(row, ['servico','Serviço','SERVIÇO','descricao','Descrição','DESCRICAO','objeto','OBJETO']);
+    const cttN = pick(row, ['ctt_nome','contratante_nome','contratante','Contratante','CONTRATANTE','cliente','CLIENTE']);
+    const cttD = pick(row, ['ctt_cpfCnpj','contratante_doc','cpfCnpj','cpfCnpjContratante','contratante_cnpj']);
+    const ctaN = pick(row, ['cta_nome','contratada_nome','contratada','Contratada','CONTRATADA']) || 'IMPAR CLIMATIZAÇÃO E SISTEMAS LTDA';
+    const ctaD = pick(row, ['cta_cpfCnpj','contratada_doc','contratada_cnpj']);
+    const href = pdfHrefFromRow(row);
+    html += `
+      <tr>
+        <td>${fmtDate(dt) || '—'}</td>
+        <td>${cod ? `<a href="#" class="code-link" data-row="${rowData}" onclick='showAction(JSON.parse(this.dataset.row));return false;'>${cod}</a>` : '—'}</td>
+        <td><div>${cttN || '—'}</div><small>${cttD || ''}</small></td>
+        <td><div>${ctaN || '—'}</div><small>${ctaD || ''}</small></td>
+        <td>${serv || '—'}</td>
+        <td>${href !== '#' ? `<a class="link" href="${href}" target="_blank" rel="noopener noreferrer">abrir</a>` : '—'}</td>
+      </tr>
+    `;
+  }
+  tb.innerHTML = html;
+}
+
+
+function renderConsMsgInline(msg){
+  const tb=document.getElementById('consBodyInline');
+  if (tb) tb.innerHTML = `<tr><td colspan="3" class="row-muted">${msg}</td></tr>`;
+}
+
+async function fetchConsulta(codigo){
+  const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
+  if(!LIST_URL || !SAVE_TOKEN) throw new Error('Endpoint não configurado.');
+
+  // Envia o token NO CORPO (POST) — não aparece no URL/DOM
+  const body = new URLSearchParams({ token: SAVE_TOKEN, codigo: (codigo||'') }).toString();
+
+  const r = await fetch(LIST_URL, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/x-www-form-urlencoded' },
+    body
+  });
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return await r.json();
+}
+
+// Toggle da consulta inline
+function toggleInlineConsulta(){
+  const box = document.getElementById('consultaInline');
+  if (!box) return;
+  box.classList.toggle('hidden');
+  const cur = (document.getElementById('codigo').value||'').trim();
+  const input = document.getElementById('consCodigoInline');
+  if (input && cur && !input.value) input.value = cur;
+}
+
+
+async function doSearch(){
+  try{
+    const code = (document.getElementById('consCodigo').value||'').trim();
+    renderConsMsg('Buscando...');
+    const j    = await fetchConsulta(code);      // POST com token no corpo
+    const rows = (j && j.rows) ? j.rows : [];
+    if(!rows.length){
+      renderConsMsg(code ? 'Código não encontrado.' : 'Nenhum registro encontrado.');
+      return;
+    }
+    renderRows('consBody', rows);
+  }catch(e){
+    console.error(e);
+    renderConsMsg('Falha ao buscar.');
+  }
+}
+
+document.getElementById('openConsultaBtn').onclick = openConsulta;
+document.getElementById('btnCloseConsulta').onclick=closeConsulta;
+document.getElementById('btnBuscar').onclick=doSearch;
+
+// === Consulta inline: Enter + botão ===
+document.getElementById('btnBuscarInline').onclick = async ()=>{
+  const code = (document.getElementById('consCodigoInline').value||'').trim();
+  renderConsMsgInline('Buscando...');
+  try{
+    const j = await fetchConsulta(code);           // usa POST com token no corpo (passo 2)
+    const rows = (j && j.rows) ? j.rows : [];
+    if (!rows.length){
+      renderConsMsgInline(code ? 'Código não encontrado.' : 'Nenhum registro encontrado.');
+    }else{
+      renderRows('consBodyInline', rows);          // mesma tabela da modal
+    }
+  }catch(e){
+    console.error(e);
+    renderConsMsgInline('Falha ao buscar.');
+  }
+};
+
+// Enter no campo da inline
+document.getElementById('consCodigoInline').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    document.getElementById('btnBuscarInline').click();
+  }
+});
+
+// Enter no campo da MODAL
+document.getElementById('consCodigo').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    document.getElementById('btnBuscar').click();
+  }
+});
+
+// Sincroniza com o campo principal "codigo" quando a consulta inline estiver aberta
+document.getElementById('codigo').addEventListener('input', ()=>{
+  const cur = (document.getElementById('codigo').value||'').trim();
+  const box = document.getElementById('consultaInline');
+  if (!box || box.classList.contains('hidden')) return;
+  const input = document.getElementById('consCodigoInline');
+  if (input) input.value = cur;
+});
+
+/* ===== Fechar / Limpar ===== */
+function closeWizard(){
+  const current = [...document.querySelectorAll('.card')].findIndex(c => !c.classList.contains('hidden')) + 1;
+  if (current <= 1){
+    try { window.location.href = LOGIN_URL; } catch(e){ goTo(1); }
+  } else {
+    goTo(1);
+  }
+}
+function clearLocal(){
+  try{
+    // Se quiser manter o usuário, comente a linha abaixo.
+    // localStorage.removeItem('impar_user');
+    ['screen2','screen3','screen4','screen5'].forEach(sc=>{
+      const box = document.getElementById(sc);
+      if(!box) return;
+      box.querySelectorAll('input,textarea,select').forEach(el=>{
+        if(el.type==='file') el.value = '';
+        else if (el.tagName==='SELECT') el.selectedIndex = 0;
+        else el.value = '';
+      });
+    });
+    document.getElementById('codigo').value=''
+    showToast('Dados locais limpos');
+  }catch(e){}
+}
+
+/* ===== Código único na etapa 1 ===== */
+(function overrideStep1(){
+  const b = document.getElementById('bar1');
+  const codigoEl = document.getElementById('codigo');
+
+  function arm(){
+    const v = (codigoEl.value||'').trim();
+    if(v){
+      b.classList.add('enabled'); b.classList.remove('disabled');
+      b.onclick = ()=>proceedFromStep1(v);
+    }else{
+      b.classList.add('disabled'); b.classList.remove('enabled');
+      b.onclick = noop;
+    }
+  }
+  arm();
+  codigoEl.addEventListener('input', arm);
+
+  // Enter => continuar
+  codigoEl.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const v = (codigoEl.value||'').trim();
+      if(v) proceedFromStep1(v);
+    }
+  });
+})();
+
+async function proceedFromStep1(codigo){
+  const LIST_URL = apiPatch.LIST_URL, SAVE_TOKEN = apiPatch.SAVE_TOKEN;
+  if(!LIST_URL || !SAVE_TOKEN){ goTo(2); return; }
+  try{
+    const j    = await fetchConsulta(codigo);     // POST com token no corpo
+    const rows = (j && j.rows) ? j.rows : [];
+    if(rows.length === 0){ goTo(2); return; }
+    const exact = rows.find(r => (String(r.codigo||'').toUpperCase() === String(code).toUpperCase()));
+    if (exact) { openDupeModal(exact); } else { goTo(2); }
+  }catch(e){
+    console.error(e);
+    goTo(2);
+  }
+}
+
+let __dupeRow = null;
+function openDupeModal(row){
+  __dupeRow = row || null;
+  const el = document.getElementById('dupeModal');
+  const info = document.getElementById('dupeInfo');
+  if(info){ info.textContent = `Código: ${row.codigo || '-'} • Obra: ${row.contratante_nome || '-'}`; }
+  el.style.display = 'flex';
+}
+function closeDupeModal(){ document.getElementById('dupeModal').style.display='none'; }
+document.getElementById('btnDupCancel').onclick = () => { closeDupeModal(); };
+document.getElementById('btnDupPrint').onclick = () => {
+  if(!__dupeRow){ closeDupeModal(); return; }
+  openPdfSmart(__dupeRow); closeDupeModal();
+};
+document.getElementById('btnDupUpdate').onclick = () => {
+  if(!__dupeRow){ closeDupeModal(); return; }
+  fillAllFromRow(__dupeRow); closeDupeModal(); goTo(2); showToast('Dados carregados do cadastro existente');
+};
+
+function setVal(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.oninput) try{ el.oninput({}); }catch(_){} } }
+function setSel(id, v){ const el=document.getElementById(id); if(el){ el.value = (v||''); if(el.onchange) try{ el.onchange({}); }catch(_){} } }
+
+function fillAllFromRow(row){
+  // Etapa 2
+  setVal('servico',       row.servico);
+  setVal('endereco',      row.endereco_obra);
+
+  // Etapa 3 (Contratante)
+  setVal('nomeContratante',     row.contratante_nome);
+  setVal('docContratante',      row.contratante_doc);
+  setVal('contatoContratante',  row.contratante_contato);
+  setVal('telefoneContratante', row.contratante_tel);
+  setVal('emailContratante',    row.contratante_email);
+  setVal('cepContratante',      (row.contratante_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
+  splitAddressToForm('Contratante', row.contratante_endereco);
+
+  // Etapa 4 (Contratada)
+  setVal('nomeContratada',      row.contratada_nome);
+  setVal('docContratada',       row.contratada_doc);
+  setVal('contatoContratada',   row.contratada_contato);
+  setVal('telefoneContratada',  row.contratada_tel);
+  setVal('emailContratada',     row.contratada_email);
+  setVal('cepContratada',       (row.contratada_endereco||'').match(/CEP\s([\d\-]+)/i)?.[1] || '');
+  splitAddressToForm('Contratada', row.contratada_endereco);
+
+  // Etapa 5
+  setVal('valor',        row.valor);
+  setVal('Extenso_Valor', row.Extenso_Valor);
+  setVal('prazo',        row.prazo_dias);
+  setVal('dataExtenso',  row.data_extenso)
+
+  
+// Etapa 5 — textos (cláusulas / condições)
+setVal('clausulas', row.clausulas || row.clausulas_texto || row.textoClausulas || row.clausulas_gerais || '');
+setVal('condicoes', row.condicoes || row.condicoes_pagamento || row.condicoes_texto || row.textoCondicoes || row.condicoesGerais || '');
+;
+
+  try { validate2(); } catch(_){}
+  try { validate3(); } catch(_){}
+  try { validate4(); } catch(_){}
+  try { validate5(); } catch(_){}
+}
+
+// quebra best-effort do endereço salvo
+function splitAddressToForm(prefix, enderecoCompleto){
+  if(!enderecoCompleto) return;
+  const r = {logradouro:'',numero:'',complemento:'',bairro:'',cidade:'',uf:''};
+  try{
+    const parts = enderecoCompleto.split(' — ');
+    const p1=(parts[0]||'').split(',');
+    r.logradouro=(p1[0]||'').trim();
+    const p1b=(p1[1]||'').trim().split(' - ');
+    r.numero=(p1b[0]||'').trim();
+    r.complemento=(p1b[1]||'').trim();
+    r.bairro=(parts[1]||'').trim();
+    const m=(parts[2]||'').match(/(.+)\/([A-Z]{2})/);
+    if(m){ r.cidade=m[1].trim(); r.uf=m[2].trim(); }
+  }catch(_){}
+  setVal('logradouro'+prefix, r.logradouro);
+  setVal('numero'+prefix,     r.numero);
+  setVal('complemento'+prefix,r.complemento);
+  setVal('bairro'+prefix,     r.bairro);
+  setVal('cidade'+prefix,     r.cidade);
+  setSel('uf'+prefix,         r.uf);
+}
+function focusNext(el){
+  const id = el.getAttribute('data-next');
+  if(!id) return false;
+  const nxt = document.getElementById(id);
+  if(nxt){
+    nxt.focus({ preventScroll: true });
+    // Em iOS às vezes precisa rolar um pouquinho:
+    setTimeout(()=>nxt.scrollIntoView({block:'center', behavior:'smooth'}), 60);
+    return true;
+  }
+  return false;
+}
+
+// Atalho: em qualquer input/textarea com data-next,
+// pressionar Enter move para o próximo
+(function armNextKeys(){
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Enter') return;
+    const el = e.target;
+    if(!(el instanceof HTMLElement)) return;
+    if(!el.matches('input, textarea, select')) return;
+
+    // se tiver data-next, usamos navegação custom
+    if(el.hasAttribute('data-next')){
+      e.preventDefault();
+      focusNext(el);
+    }
+  });
+})();
+
+// ✅ Clique simples na tabela de consulta — apenas copia o código, fecha e foca o botão
+document.addEventListener('click', function(e) {
+  const cell = e.target.closest('td:nth-child(2)'); // segunda coluna (Código)
+  if (!cell || !cell.textContent.trim()) return;
+  const tr = cell.parentElement;
+  if (!tr || !tr.closest('#consultaModal')) return;
+
+  e.preventDefault();
+  const code = cell.textContent.trim();
+  const inp = document.getElementById('codigo');
+  if (inp) {
+    inp.value = code;
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
+  }
+
+  const modal = document.getElementById('consultaModal');
+  if (modal) modal.style.display = 'none';
+
+  const continuar = document.getElementById('bar1');
+  if (continuar) setTimeout(() => continuar.focus(), 0);
+});
+
+    // ===== Init =====
+    updateStepper(1); validate1();
+  </script>
+<!-- ====== INTEGRAÇÃO DOCX (sem defaults) ====== -->
+<script>
+(function(){
+  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
+
+  async function gerarDOCXContrato(payload){
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  function getVal(sel){ const el=document.querySelector(sel); return el?el.value:''; }
+
+  function mapearParaTemplateDoRegistro(r){
+    const out = {
+      codigo: r.codigo,
+      servico: r.servico,
+      endereco_obra: r.endereco_obra,
+
+      contratante_nome: r.contratante_nome,
+      contratante_endereco: r.contratante_endereco,
+      contratante_doc: r.contratante_doc,
+      contratante_contato: r.contratante_contato,
+      contratante_CNPJ: r.contratante_CNPJ,
+
+      contratada_nome: r.contratada_nome,
+      contratada_endereco: r.contratada_endereco,
+      contratada_doc: r.contratada_doc,
+      contratada_CNPJ: r.contratada_CNPJ,
+
+      clausulas: r.clausulas,
+      prazo_dias: r.prazo_dias,
+      valor: r.valor,
+      Extenso_Valor: r.Extenso_Valor,
+      condicoes: r.condicoes,
+      data_extenso: r.data_extenso
+    };
+    Object.keys(out).forEach(k => { if (out[k] === undefined) delete out[k]; });
+    return out;
+  }
+
+  function coletarMinimoDoFormulario(){
+    const out = {
+      codigo: getVal('#codigo'),
+      servico: getVal('#servico'),
+      endereco_obra: getVal('#endereco_obra'),
+      contratante_nome: getVal('#contratante_nome'),
+      contratante_endereco: getVal('#contratante_endereco'),
+      contratante_doc: getVal('#contratante_doc'),
+      contratante_contato: getVal('#contratante_contato'),
+      contratante_CNPJ: getVal('#contratante_CNPJ'),
+      contratada_nome: getVal('#contratada_nome'),
+      contratada_endereco: getVal('#contratada_endereco'),
+      contratada_doc: getVal('#contratada_doc'),
+      contratada_CNPJ: getVal('#contratada_CNPJ'),
+      clausulas: getVal('#clausulas'),
+      prazo_dias: getVal('#prazo_dias'),
+      valor: getVal('#valor'),
+      Extenso_Valor: getVal('#Extenso_Valor'),
+      condicoes: getVal('#condicoes'),
+      data_extenso: getVal('#data_extenso')
+    };
+    Object.keys(out).forEach(k => { if (out[k] === '') delete out[k]; });
+    return out;
+  }
+
+  document.getElementById('btnGerarDocx')?.addEventListener('click', async () => {
+    try {
+      let payload = null;
+      if (window.documentoAtual && typeof window.documentoAtual === 'object') {
+        payload = mapearParaTemplateDoRegistro(window.documentoAtual);
+      } else {
+        payload = coletarMinimoDoFormulario();
+      }
+      await gerarDOCXContrato(payload);
+    } catch (e) {
+      alert(e.message);
+      console.error(e);
+    }
+  });
+
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target;
+    if (t && t.classList && t.classList.contains('btn-docx')){
+      const id = t.dataset.id;
+      if (!id) return;
+      if (typeof window.carregarRegistroPorId === 'function') {
+        try {
+          const r = await window.carregarRegistroPorId(id);
+          const payload = mapearParaTemplateDoRegistro(r);
+          await gerarDOCXContrato(payload);
+        } catch (e) {
+          alert('Erro ao gerar DOCX: ' + e.message);
+          console.error(e);
+        }
+      } else {
+        alert('Função carregarRegistroPorId(id) não encontrada.');
+      }
+    }
+  });
+})();
+</script>
+<script>
+(function(){
+  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
+
+  async function gerarDOCXContrato(payload){
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  function getVal(sel){ const el=document.querySelector(sel); return el?el.value:''; }
+
+  function mapearParaTemplateDoRegistro(r){
+    const out = {
+      codigo: r.codigo,
+      servico: r.servico,
+      endereco_obra: r.endereco_obra || r.enderecoObra,
+      contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
+      contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
+      contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
+      contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
+      contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
+      contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
+      contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
+      contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
+      contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
+      clausulas: r.clausulas || r.clausulas_texto,
+      prazo_dias: r.prazo_dias || r.prazo,
+      valor: r.valor,
+      Extenso_Valor: r.Extenso_Valor || r.Extenso_Valor,
+      condicoes: r.condicoes || r.condicoes_pagamento,
+      data_extenso: r.data_extenso || r.dataExtenso || r.data
+    };
+    Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
+    return out;
+  }
+
+  function coletarDoFormulario(){
+    const endereco_obra = getVal('#endereco') || getVal('#endereco_obra');
+    const out = {
+      codigo: getVal('#codigo'),
+      servico: getVal('#servico'),
+      endereco_obra,
+      contratante_nome: getVal('#nomeContratante'),
+      contratante_endereco: (()=>{
+        const log = getVal('#logradouroContratante'),
+              num = getVal('#numeroContratante'),
+              comp= getVal('#complementoContratante'),
+              bai = getVal('#bairroContratante'),
+              cid = getVal('#cidadeContratante'),
+              uf  = getVal('#ufContratante'),
+              cep = getVal('#cepContratante');
+        return log ? `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}` : '';
+      })(),
+      contratante_doc: getVal('#docContratante'),
+      contratante_contato: getVal('#contatoContratante'),
+      contratante_CNPJ: getVal('#docContratante'),
+      contratada_nome: getVal('#nomeContratada'),
+      contratada_endereco: (()=>{
+        const log = getVal('#logradouroContratada'),
+              num = getVal('#numeroContratada'),
+              comp= getVal('#complementoContratada'),
+              bai = getVal('#bairroContratada'),
+              cid = getVal('#cidadeContratada'),
+              uf  = getVal('#ufContratada'),
+              cep = getVal('#cepContratada');
+        return log ? `${log}, ${num}${comp?(' - '+comp):''} — ${bai} — ${cid}/${uf} — CEP ${cep}` : '';
+      })(),
+      contratada_doc: getVal('#docContratada'),
+      contratada_CNPJ: getVal('#docContratada'),
+      clausulas: getVal('#clausulas'),
+      prazo_dias: getVal('#prazo'),
+      valor: getVal('#valor'),
+      Extenso_Valor: getVal('#Extenso_Valor'),
+      condicoes: getVal('#condicoes'),
+      data_extenso: getVal('#dataExtenso')
+    };
+    Object.keys(out).forEach(k => out[k]==='' && delete out[k]);
+    return out;
+  }
+
+  const btnTop = document.getElementById('btnGerarDocxTop');
+  if (btnTop){
+    btnTop.addEventListener('click', async () => {
+      try{
+        let payload;
+        if (window.documentoAtual && typeof window.documentoAtual === 'object'){
+          payload = mapearParaTemplateDoRegistro(window.documentoAtual);
+        } else {
+          payload = coletarDoFormulario();
+        }
+        await gerarDOCXContrato(payload);
+      } catch(e){ alert(e.message); console.error(e); }
+    });
+  }
+
+  function openExistingPdfByUrl(url){
+    const iframe = document.getElementById('pdfFrame');
+    if (!iframe) { window.open(url, '_blank'); return; }
+    iframe.src = url;
+    const viewer = document.getElementById('viewer');
+    if (viewer) viewer.style.display = 'flex';
+  }
+
+  document.addEventListener('click', (ev)=>{
+    const a = ev.target.closest('.code-link, .pdf-code-link, .codigo-link');
+    if (!a) return;
+    ev.preventDefault();
+    const tr = a.closest('tr');
+    let pdfHref = null;
+    if (tr){
+      const link = tr.querySelector('a.pdf-link, a[href$=".pdf"]');
+      if (link) pdfHref = link.getAttribute('href');
+    }
+    if (!pdfHref && a.dataset && a.dataset.pdf) pdfHref = a.dataset.pdf;
+    if (pdfHref) openExistingPdfByUrl(pdfHref);
+  });
+})();
+</script>
+<!-- Botão "Gerar contrato.docx" AO LADO do "Baixar PDF" no viewer -->
+<script>
+(function(){
+  const URL_DOCX = 'https://api.erpimpar.com.br/gerador/gerar_docx.php';
+
+  function mapearRegistro(r){
+    if (!r) return {};
+    const out = {
+      codigo: r.codigo,
+      servico: r.servico,
+      endereco_obra: r.endereco_obra || r.enderecoObra,
+      contratante_nome: r.contratante_nome || (r.contratante && r.contratante.nome),
+      contratante_endereco: r.contratante_endereco || (r.contratante && r.contratante.endereco),
+      contratante_doc: r.contratante_doc || (r.contratante && r.contratante.cpfCnpj),
+      contratante_contato: r.contratante_contato || (r.contratante && r.contratante.contato),
+      contratante_CNPJ: r.contratante_CNPJ || (r.contratante && r.contratante.cpfCnpj),
+      contratada_nome: r.contratada_nome || (r.contratada && r.contratada.nome),
+      contratada_endereco: r.contratada_endereco || (r.contratada && r.contratada.endereco),
+      contratada_doc: r.contratada_doc || (r.contratada && r.contratada.cpfCnpj),
+      contratada_CNPJ: r.contratada_CNPJ || (r.contratada && r.contratada.cpfCnpj),
+      clausulas: r.clausulas || r.clausulas_texto,
+      prazo_dias: r.prazo_dias || r.prazo,
+      valor: r.valor,
+      Extenso_Valor: r.Extenso_Valor || r.Extenso_Valor,
+      condicoes: r.condicoes || r.condicoes_pagamento,
+      data_extenso: r.data_extenso || r.dataExtenso || r.data
+    };
+    Object.keys(out).forEach(k => (out[k]===undefined || out[k]==='') && delete out[k]);
+    return out;
+  }
+
+  async function gerarDOCX(){
+    if (!window.documentoAtual || typeof window.documentoAtual !== 'object'){
+      alert('Abra um documento primeiro para gerar o contrato.');
+      return;
+    }
+    const payload = mapearRegistro(window.documentoAtual);
+    const resp = await fetch(URL_DOCX, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Falha ao gerar DOCX: ' + txt.slice(0,300));
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const codigo = (payload.codigo || 'DOC').toString().replace(/[^0-9A-Za-z_\-]/g,'_');
+    a.download = `CONTRATO_${codigo}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  function ensureBtnNextToBaixarPDF(){
+    // procura o botão "Baixar PDF" dentro do viewer
+    const pdfBtn = Array.from(document.querySelectorAll('#viewer button, #viewer a'))
+      .find(el => /baixar\s*pdf/i.test((el.textContent||'').trim()));
+    if (!pdfBtn) return;
+    if (document.getElementById('btnGerarContratoDocx')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btnGerarContratoDocx';
+    btn.type = 'button';
+    // herda a classe do "Baixar PDF" para ficar idêntico
+    btn.className = pdfBtn.className || 'btn';
+    btn.style.marginLeft = '8px';
+    btn.textContent = 'Gerar contrato.docx';
+    btn.addEventListener('click', async ()=>{
+      try { await gerarDOCX(); } catch(e){ alert(e.message); console.error(e); }
+    });
+
+    // insere logo depois do "Baixar PDF"
+    if (pdfBtn.parentNode) {
+      pdfBtn.parentNode.insertBefore(btn, pdfBtn.nextSibling);
+    }
+  }
+
+  // Observa o abrir do viewer
+  (function watchViewer(){
+    const viewer = document.getElementById('viewer');
+    if (!viewer) return;
+    const obs = new MutationObserver(()=>{
+      const visible = getComputedStyle(viewer).display !== 'none';
+      if (visible) {
+        setTimeout(ensureBtnNextToBaixarPDF, 30);
+        setTimeout(ensureBtnNextToBaixarPDF, 200);
+      }
+    });
+    obs.observe(viewer, {attributes:true, attributeFilter:['style','class']});
+  })();
+
+  // Caso o viewer já esteja aberto no load
+  document.addEventListener('DOMContentLoaded', ()=>{
+    setTimeout(ensureBtnNextToBaixarPDF, 200);
+  });
+})();
+</script>
+<script>
+function proceedFromStep1() {
+  const codigo = (document.getElementById('codigo')?.value || '').trim();
+  if (!codigo) return;
+  try {
+    if (typeof showBusy === 'function') showBusy('Buscando documento pelo código...');
+    const _fetch = (typeof fetchConsulta === 'function') ? fetchConsulta(codigo) : Promise.reject(new Error('fetchConsulta não disponível'));
+    Promise.resolve(_fetch).then((res) => {
+      const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
+      if (rows.length === 1) {
+        const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(rows[0]) : rows[0];
+        if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
+        try {
+          const mirrors = document.querySelectorAll('[id^="codigoVal"]');
+          mirrors.forEach(el => { el.textContent = codigo; });
+        } catch(e) {}
+        if (typeof goTo === 'function') goTo(2);
+      } else if (rows.length === 0) {
+        (window.toast?.error || window.alert)('Código não encontrado.');
+      } else {
+        (window.toast?.error || window.alert)('Mais de um documento com esse código.');
+      }
+    }).catch((err) => {
+      (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+      console.error(err);
+    }).finally(() => {
+      if (typeof hideBusy === 'function') hideBusy();
+    });
+  } catch (err) {
+    if (typeof hideBusy === 'function') hideBusy();
+    (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+    console.error(err);
+  }
+}
+</script>
+<script>
+// Chama delete.php para deduplicar por CÓDIGO antes de carregar o documento
+async function dedupeByCodigo(codigo) {
+  const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+  const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
+  if (!LIST_URL || !SAVE_TOKEN || !codigo) return {ok:false, skipped:true};
+
+  // base da API a partir do list.php
+  const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
+  const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
+
+  if (!delUrl) return {ok:false, skipped:true};
+
+  const body = new URLSearchParams();
+  body.set('token', SAVE_TOKEN);
+  body.set('codigo', String(codigo));
+  body.set('keep', 'newest'); // manter o mais recente
+
+  try {
+    const res = await fetch(delUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body
+    });
+    const json = await res.json().catch(()=>({}));
+    return json;
+  } catch (e) {
+    console.warn('dedupeByCodigo falhou', e);
+    return {ok:false, error:String(e)};
+  }
+}
+
+// Mantém a função original e cria um wrapper que roda o dedupe antes
+const __orig_proceedFromStep1 = (typeof proceedFromStep1 === 'function') ? proceedFromStep1 : null;
+
+async function proceedFromStep1_Dedupe() {
+  const codigo = (document.getElementById('codigo')?.value || '').trim();
+  if (!codigo) return;
+  try {
+    if (typeof showBusy === 'function') showBusy('Dedupe por código...');
+    await dedupeByCodigo(codigo);
+  } catch (e) {
+    console.warn('Erro no dedupe:', e);
+  } finally {
+    if (typeof hideBusy === 'function') hideBusy();
+  }
+  if (__orig_proceedFromStep1) return __orig_proceedFromStep1();
+}
+
+// Redireciona o botão para o wrapper (sem mexer no HTML)
+window.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('bar1');
+  if (btn) btn.setAttribute('onclick', 'proceedFromStep1_Dedupe()');
+});
+</script>
+<script>
+// Normaliza código: tira espaços e não-alfanuméricos, upper-case
+function normCodigo(v){
+  return String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+}
+
+(function(){
+  if (typeof proceedFromStep1 !== 'function') return;
+  const __orig_fetch = (typeof fetchConsulta === 'function') ? fetchConsulta : null;
+
+  window.proceedFromStep1 = function() {
+    const raw = (document.getElementById('codigo')?.value || '').trim();
+    const codigo = normCodigo(raw);
+    if (!codigo) return;
+    try {
+      if (typeof showBusy === 'function') showBusy('Buscando documento pelo código...');
+      const p = __orig_fetch ? __orig_fetch(raw) : Promise.reject(new Error('fetchConsulta não disponível'));
+      Promise.resolve(p).then(res => {
+        const rows = (res && Array.isArray(res.rows)) ? res.rows : [];
+        // Log de apoio no console
+        try {
+          console.log('[consulta] total rows:', rows.length);
+          console.log('[consulta] codes retornados:', rows.map(r => r.codigo));
+        } catch(e){}
+
+        // Filtra por código normalizado
+        const matches = rows.filter(r => normCodigo(r.codigo) === codigo);
+
+        if (matches.length === 0) {
+          /* código não encontrado: seguir para novo cadastro */ if (typeof goTo === 'function') goTo(2); return;
+        }
+
+        // Escolhe o mais recente quando houver mais de um
+        function t(v){ if(!v) return 0; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
+        matches.sort((a,b)=> (t(b.updated_at||b.created_at||b.data) - t(a.updated_at||a.created_at||a.data)));
+        const row = matches[0];
+
+        const norm = (typeof normalizeRowForFill === 'function') ? normalizeRowForFill(row) : row;
+        if (typeof fillAllFromRow === 'function') fillAllFromRow(norm);
+        try {
+          const mirrors = document.querySelectorAll('[id^="codigoVal"]');
+          mirrors.forEach(el => { el.textContent = raw; });
+        } catch(e) {}
+        if (typeof goTo === 'function') goTo(2);
+      }).catch(err => {
+        (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+        console.error(err);
+      }).finally(()=>{
+        if (typeof hideBusy === 'function') hideBusy();
+      });
+    } catch(e){
+      if (typeof hideBusy === 'function') hideBusy();
+      (window.toast?.error || window.alert)('Falha ao buscar o documento.');
+      console.error(e);
+    }
+  };
+})();
+</script>
+<script>
+// --------- DEDUPE GLOBAL AO ABRIR CONSULTA ---------
+async function dedupeAllByCodigo() {
+  const LIST_URL  = (window.__ERP_SAVE_PATCH__?.LIST_URL || '').trim();
+  const SAVE_TOKEN= (window.__ERP_SAVE_PATCH__?.SAVE_TOKEN || '').trim();
+  if (!LIST_URL || !SAVE_TOKEN) return {ok:false, skipped:true};
+
+  const apiBase = LIST_URL.replace(/\/list\.php.*$/,'').replace(/\/+$/,'');
+  const delUrl  = apiBase ? (apiBase + '/delete.php') : '';
+  if (!delUrl) return {ok:false, skipped:true};
+
+  // Busca todos os registros
+  const form = new URLSearchParams();
+  form.set('token', SAVE_TOKEN);
+  // sem codigo => lista completa
+  const res = await fetch(LIST_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
+  const j = await res.json().catch(()=>({rows:[]}));
+  const rows = Array.isArray(j.rows) ? j.rows : [];
+  // Agrupa por codigo (normalizado)
+  const norm = v => String(v||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  const groups = new Map();
+  for (const r of rows) {
+    const c = norm(r.codigo);
+    if (!c) continue;
+    if (!groups.has(c)) groups[c] = [];
+    (groups[c] || groups.set(c, [])).push(r);
+  }
+  // Para cada codigo com mais de 1, chama delete.php (keep=newest)
+  let affected = 0;
+  for (const [code, arr] of Object.entries(groups)) {
+    if (!Array.isArray(arr) || arr.length <= 1) continue;
+    affected++;
+    const body = new URLSearchParams();
+    body.set('token', SAVE_TOKEN);
+    body.set('codigo', code);
+    body.set('keep', 'newest');
+    try {
+      await fetch(delUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+    } catch(e) {
+      console.warn('dedupe codigo falhou', code, e);
+    }
+  }
+  return {ok:true, affected};
+}
+
+// Envolve a abertura do modal de consulta (ou o clique do botão "Consulta") para rodar dedupe antes
+(function(){
+  // Tenta interceptar a função do botão de Consulta (se houver)
+  const openers = [];
+  // Caso exista uma função showConsultaModal() ou similar, você pode adaptar aqui.
+  // Como fallback, ligamos no botão #btnConsulta (se existir) e no botão que abre o modal (#openConsulta, etc.).
+  window.addEventListener('DOMContentLoaded', () => {
+    const candidates = [
+      document.getElementById('btnConsulta'),
+      document.querySelector('[data-open="consulta"]'),
+      document.getElementById('openConsulta'),
+      document.querySelector('button.consulta'),
+      document.querySelector('#consultaModalButton')
+    ].filter(Boolean);
+
+    candidates.forEach(btn => {
+      const originalOnClick = btn.getAttribute('onclick');
+      btn.setAttribute('onclick', '');
+      btn.addEventListener('click', async (ev) => {
+        try {
+          if (typeof showBusy === 'function') showBusy('Eliminando duplicados...');
+          await dedupeAllByCodigo();
+        } catch(e) {
+          console.warn('dedupeAllByCodigo erro', e);
+        } finally {
+          if (typeof hideBusy === 'function') hideBusy();
+        }
+        // Reexecuta o handler original, se havia
+        if (originalOnClick) {
+          try { new Function(originalOnClick).call(btn); } catch(e){ console.error(e); }
+        }
+      });
+    });
+  });
+})();
+</script>
+<script>
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Gera Excel a partir do MESMO objeto 'dados' usado para o PDF
+function gerarExcelDoMesmoConteudo(dados, nomeBase) {
+  const wsData = [];
+  const ctt = dados.contratante || {}, cta = dados.contratada || {}, op = dados.operador || {};
+
+  
+  const pickEmail = (o)=> (o && (o["e-mail"] || o["email"] || o["e_mail"] || o["mail"] || o["Email"] || o["E-mail"])) || "";
+  const opEmail  = pickEmail(op);
+  const cttEmail = pickEmail(ctt);
+  const ctaEmail = pickEmail(cta);
+wsData.push(["Resumo do Documento",""]);
+  wsData.push(["Operador", [op.nome || "", opEmail].filter(Boolean).join(" ")]);
+  wsData.push(["Código do Projeto", dados.codigo || dados["código"] || ""]);
+  wsData.push(["Serviço", dados.servico || ""]);
+  wsData.push(["Endereço da obra", dados.enderecoObra || dados.enderecoobra || ""]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONTRATANTE",""]);
+  wsData.push(["Nome", ctt.nome || ""]);
+  wsData.push(["CPF/CNPJ", ctt.cpfCnpj || ctt.cpfcnpj || ""]);
+  wsData.push(["Endereço", ctt.endereco || ""]);
+  wsData.push(["Contato", ctt.contato || ""]);
+  wsData.push(["Telefone", ctt.telefone || ""]);
+  wsData.push(["E-mail", cttEmail]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONTRATADA",""]);
+  wsData.push(["Nome", cta.nome || ""]);
+  wsData.push(["CPF/CNPJ", cta.cpfCnpj || cta.cpfcnpj || ""]);
+  wsData.push(["Endereço", cta.endereco || ""]);
+  wsData.push(["Contato", cta.contato || ""]);
+  wsData.push(["Telefone", cta.telefone || ""]);
+  wsData.push(["E-mail", ctaEmail]);
+  wsData.push(["",""]);
+
+  wsData.push(["CONDIÇÕES",""]);
+  wsData.push(["Valor", dados.valor || ""]);
+  wsData.push(["Valor (extenso)", dados.Extenso_Valor || dados.Extenso_Valor || ""]);
+  wsData.push(["Prazo", dados.prazo || ""]);
+  wsData.push(["Data", dados.dataExtenso || dados.dataextenso || ""]);
+  wsData.push(["Condições de pagamento", (dados.condicoes || dados.condicoespagamento || "")]);
+  wsData.push(["",""]);
+
+  wsData.push(["Cláusulas", (dados.clausulas || "")]);
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:40},{wch:90}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Documento");
+  const ab = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const fn = (nomeBase || 'DOC') + ".xlsx";
+  downloadBlob(blob, fn);
+}
+
+// Hook simples chamado após salvamento OK (PDF no servidor, Excel para o usuário)
+function __afterPdfSavedGenerateExcel(dados) {
+  const base = (typeof dados.codigo !== 'undefined' ? dados.codigo : (dados["código"]||"DOC"));
+  const ymd = new Date().toISOString().slice(0,10).replaceAll('-','');
+  const nomeBase = (base || 'DOC');
+  try { gerarExcelDoMesmoConteudo(dados, nomeBase); } catch(e){ console.error(e); }
+}
+
+// Troca apenas os textos visuais de PDF -> EXCEL (não altera funções internas)
+document.addEventListener('DOMContentLoaded', () => {
+  const swap = (el) => { el.textContent = el.textContent.replace(/PDF/gi, 'EXCEL'); };
+  document.querySelectorAll('button, .hint, .hd, .bd, .ft, label, .btn').forEach(el => {
+    if (el && /PDF/i.test(el.textContent || '')) swap(el);
+  });
+});
+</script>
+<div class="version-badge">Versão 1.0 - 17-10-2025</div><div id="consultaJsonModal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:1000;"><div style="background:#fff;max-width:880px;width:92%;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden;"><div style="padding:10px 14px;font-weight:700;background:#f3f4f6;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;"><div>Consulta de documentos (Excel)</div><button id="consultaJsonClose" style="background:none;border:0;font-size:18px;cursor:pointer" type="button">×</button></div><div style="padding:12px;max-height:70vh;overflow:auto"><table id="consultaJsonTable" style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:8px 10px;border-bottom:1px solid #eee;text-align:left;background:#fafafa;position:sticky;top:0;font-size:14px;">Código</th><th style="padding:8px 10px;border-bottom:1px solid #eee;text-align:left;background:#fafafa;position:sticky;top:0;font-size:14px;">Data de geração</th><th style="padding:8px 10px;border-bottom:1px solid #eee;text-align:left;background:#fafafa;position:sticky;top:0;font-size:14px;">Contratante (Nome)</th></tr></thead><tbody id="consultaJsonTbody"></tbody></table></div></div></div><script>
+// WIRE_SEARCH_JSON_V1
+(function(){
+  function qs(s, r){ return (r||document).querySelector(s); }
+  function qsa(s, r){ return Array.from((r||document).querySelectorAll(s)); }
+  function show(el, on){ if(el) el.style.display = on ? 'flex' : 'none'; }
+  var LIST_URL = (window.apiPatch && window.apiPatch.LIST_URL) || window.LIST_URL;
+  var SAVE_TOKEN = (window.apiPatch && window.apiPatch.SAVE_TOKEN) || window.SAVE_TOKEN;
+  var btn = qs('#searchJsonBtn');
+  var modal = qs('#consultaJsonModal');
+  var tbody = qs('#consultaJsonTbody');
+  var closeBtn = qs('#consultaJsonClose');
+  var codigoInput = qs('#codigo');
+
+  async function listarArquivos(){
+    if(!LIST_URL) throw new Error('LIST_URL ausente');
+    var body = new URLSearchParams({ token: SAVE_TOKEN || '' });
+    var r = await fetch(LIST_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+    if(!r.ok) throw new Error('Erro na listagem');
+    return r.json();
+  }
+
+  async function abrirConsulta(){
+    show(modal, true);
+    if(tbody) tbody.innerHTML = '<tr><td colspan="3" style="padding:10px">Carregando...</td></tr>';
+    try{
+      var data = await listarArquivos();
+      var files = Array.isArray(data) ? data : [];
+      var jsons = files.filter(function(f){ return f && f.name && /\.json$/i.test(f.name); });
+      if(jsons.length===0){ tbody.innerHTML = '<tr><td colspan="3" style="padding:10px">Nenhum documento Excel (JSON) encontrado.</td></tr>'; return; }
+      var rows = await Promise.all(jsons.map(async function(f){
+        var name = f.name || ''; var url = f.url || f.download || '';
+        var base = name.replace(/\.json$/i, '');
+        var codigo = base.split('_')[0] || base;
+        var dataGer = ''; var m = base.match(/_(\d{8})$/); if(m){ var d=m[1]; dataGer = d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8); }
+        var contratante = '';
+        try{
+          if(url){
+            var jr = await fetch(url); if(jr.ok){ var j = await jr.json(); contratante = (j.CONTRATANTE && j.CONTRATANTE['CONTRATANTE-Nome']) || ''; }
+          }
+        }catch(_){}
+        return {codigo: codigo, dataGer: dataGer, contratante: contratante};
+      }));
+      tbody.innerHTML = rows.map(function(r){
+        var c = (r.contratante||'').replace(/</g,'&lt;');
+        return '<tr>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid #eee"><button class="pick-codigo" data-codigo="'+r.codigo+'" style="background:none;border:0;color:#0d6efd;text-decoration:underline;cursor:pointer;font-weight:600">'+r.codigo+'</button></td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid #eee">'+(r.dataGer||'')+'</td>' +
+          '<td style="padding:8px 10px;border-bottom:1px solid #eee">'+c+'</td>' +
+        '</tr>';
+      }).join('');
+      qsa('.pick-codigo').forEach(function(b){
+        b.addEventListener('click', function(){
+          if(codigoInput){ codigoInput.value = b.dataset.codigo; }
+          show(modal, false);
+        });
+      });
+    }catch(e){
+      tbody.innerHTML = '<tr><td colspan="3" style="padding:10px">Erro ao carregar a lista.</td></tr>';
+    }
+  }
+
+  if(btn){ btn.addEventListener('click', abrirConsulta); }
+  if(closeBtn){ closeBtn.addEventListener('click', function(){ show(modal,false); }); }
+  if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
+})();
+</script>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 101.0 - 20-10-2025</div>
+
+<script>
+function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
+function __collectDadosParaExcel_FIX(){
+  const get=(id)=>{const el=document.getElementById(id); return el ? (el.value||'').trim() : '';};
+  return {
+    codigo:get('codigo'), servico:get('servico'), endereco:get('endereco'), valor:get('valor'),
+    Extenso_Valor:get('Extenso_Valor'), prazo:get('prazo'), dataExtenso:get('dataExtenso'),
+    clausulas:get('clausulas'), condicoes:get('condicoes'),
+    nomeContratante:get('nomeContratante'), docContratante:get('docContratante'),
+    contatoContratante:get('contatoContratante'), telefoneContratante:get('telefoneContratante'),
+    emailContratante:get('emailContratante'), cepContratante:get('cepContratante'),
+    numeroContratante:get('numeroContratante'), logradouroContratante:get('logradouroContratante'),
+    complementoContratante:get('complementoContratante'), bairroContratante:get('bairroContratante'),
+    cidadeContratante:get('cidadeContratante'), ufContratante:get('ufContratante'),
+    nomeContratada:get('nomeContratada'), docContratada:get('docContratada'),
+    contatoContratada:get('contatoContratada'), telefoneContratada:get('telefoneContratada'),
+    emailContratada:get('emailContratada'), cepContratada:get('cepContratada'),
+    numeroContratada:get('numeroContratada'), logradouroContratada:get('logradouroContratada'),
+    complementoContratada:get('complementoContratada'), bairroContratada:get('bairroContratada'),
+    cidadeContratada:get('cidadeContratada'), ufContratada:get('ufContratada'),
+    operador_Nome:(function(){ try{const u=JSON.parse(localStorage.getItem('impar_user')||'null')||{}; return u.Nome||'';}catch(e){return '';} })(),
+    operador_Email:(function(){ try{const u=JSON.parse(localStorage.getItem('impar_user')||'null')||{}; return u.Email||'';}catch(e){return '';} })(),
+    data_criacao:new Date().toISOString()
+  };
+}
+async function __createExcelBlob_FIX(dados){
+  const ws=XLSX.utils.json_to_sheet([dados],{skipHeader:false});
+  const headers=Object.keys(dados); ws['!cols']=headers.map(h=>({wch:Math.min(Math.max(12,String(h).length+2),48)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Documento');
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  return new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+async function __uploadExcelToServer_FIX(excelBlob, excelName, codigo){
+  const patch=(window.__ERP_SAVE_PATCH__||{});
+  const SAVE_URL=patch.SAVE_URL||'https://api.erpimpar.com.br/gerador/save.php';
+  const SAVE_TOKEN=patch.SAVE_TOKEN||'';
+  const fd=new FormData();
+  if(SAVE_TOKEN) fd.append('token', SAVE_TOKEN);
+  fd.append('codigo', codigo||'');
+  fd.append('pdfName', excelName);
+  fd.append('nome_arquivo', excelName);
+  fd.append('file', excelBlob, excelName);
+  fd.append('pdf', excelBlob, excelName);
+  fd.append('file_excel', excelBlob, excelName);
+  try{const res=await fetch(SAVE_URL,{method:'POST',body:fd}); return {ok:res.ok,status:res.status};}catch(e){return {ok:false,error:String(e)};}
+}
+
+window.finalizeStep5 = async function(){
+  const d = __collectDadosParaExcel_FIX();
+  const code = (d.codigo || 'DOC').replace(/[^A-Za-z0-9_\-]/g,'_') || 'DOC';
+  const excelName = `${code}.xlsx`;
+
+  // gera o blob do excel
+  const excelBlob = await __createExcelBlob_FIX(d);
+
+  // sobe para o servidor SEM timestamp (já está certo no seu PHP)
+  await __uploadExcelToServer_FIX(excelBlob, excelName, d.codigo || '');
+
+  // download local (gesto do usuário)
+  try{
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(excelBlob);
+    a.download = excelName;
+    document.body.appendChild(a);
+    setTimeout(()=>{ a.click(); a.remove(); }, 0);
+    setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
+  }catch(e){}
+
+  // --- NOVO: toast bonito igual ao do Gerar Contrato ---
+  if (window.showSuccessToast){
+    const contratante =
+      d?.contratante?.nome ||
+      d?.contratante?.razao ||
+      '';
+    showSuccessToast(`Código: ${code}`, contratante);
+  }
+
+  // remove o toast/modal antigo (se existirem)
+  const t = document.getElementById('toast');
+  if (t){ t.style.display = 'none'; }
+  const m = document.getElementById('successModal');
+  if (m){ m.style.display = 'none'; }
+};
+
+</script>
+
+
+<!-- [NOVO] Consulta JSON -->
+<div id="consultaModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; z-index:99999;">
+  <div style="background:#fff; width:90%; max-width:900px; border-radius:10px; padding:16px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+      <div style="font-weight:700;">Consulta de Documentos</div>
+      <button type="button" onclick="fecharConsultaModal()" style="border:none; background:#eee; padding:6px 10px; border-radius:8px; cursor:pointer;">Fechar</button>
+    </div>
+    <div style="margin-bottom:8px; display:flex; gap:8px;">
+      <input id="consultaFiltro" placeholder="Filtrar por código..." style="flex:1; padding:6px 10px; border:1px solid #ddd; border-radius:8px;">
+      <button type="button" onclick="carregarListaConsulta()" style="background:#000; color:#fff; border:none; padding:6px 12px; border-radius:999px; cursor:pointer; font-weight:700;">Buscar</button>
+    </div>
+    <div style="max-height:60vh; overflow:auto; border:1px solid #eee; border-radius:8px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f5f5f5;">
+            <th style="text-align:left; padding:8px; border-bottom:1px solid #eee;">Código</th>
+            <th style="text-align:left; padding:8px; border-bottom:1px solid #eee;">Data</th>
+            <th style="text-align:left; padding:8px; border-bottom:1px solid #eee;">Contratante</th>
+          </tr>
+        </thead>
+        <tbody id="consultaBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+
+<script>
+async function __upsertJsonBase(dados){
+  try{
+    const patch=(window.__ERP_SAVE_PATCH__||{});
+    const URL = (patch.JSON_URL || 'https://api.erpimpar.com.br/gerador/json_table_cors.php');
+    const token = (patch.SAVE_TOKEN || '');
+    const payload = {...dados};
+    if (token) payload.token = token;
+    payload.op = 'upsert';
+    const res = await fetch(URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    return res.ok;
+  }catch(e){ return false; }
+}
+(function(){
+  const origFinalize = window.finalizeStep5;
+  window.finalizeStep5 = async function(){
+    await origFinalize();
+    try{
+      if (typeof __collectDadosParaExcel_FIX === 'function'){
+        const d = __collectDadosParaExcel_FIX();
+        __upsertJsonBase(d);
+      }
+    }catch(e){}
+  };
+})();
+function abrirConsultaModal(){ document.getElementById('consultaModal').style.display='flex'; carregarListaConsulta(); }
+function fecharConsultaModal(){ document.getElementById('consultaModal').style.display='none'; }
+async function carregarListaConsulta(){
+  const filtro = (document.getElementById('consultaFiltro').value || '').trim().toLowerCase();
+  const patch=(window.__ERP_SAVE_PATCH__||{});
+  const URL = (patch.JSON_URL || 'https://api.erpimpar.com.br/gerador/json_table_cors.php');
+  const token = (patch.SAVE_TOKEN || '');
+  const qs = new URLSearchParams({ op:'list' }); if (token) qs.append('token', token);
+  const res = await fetch(`${URL}?${qs.toString()}`);
+  const j = await res.json().catch(()=>({ok:false}));
+  const tbody = document.getElementById('consultaBody');
+  tbody.innerHTML='';
+  if (!j || !j.ok) return;
+  (j.items||[]).forEach(row=>{
+    const cod = row.codigo || '';
+    if (filtro && !cod.toLowerCase().includes(filtro)) return;
+    const tr = document.createElement('tr'); tr.style.cursor='pointer';
+    tr.onclick = ()=> abrirAcoesDocumento(cod);
+    tr.innerHTML = `<td style="padding:8px; border-bottom:1px solid #f0f0f0;">${cod}</td>
+                    <td style="padding:8px; border-bottom:1px solid #f0f0f0;">${(row.data_criacao||'').slice(0,10)}</td>
+                    <td style="padding:8px; border-bottom:1px solid #f0f0f0;">${row.nomeContratante||''}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+function abrirAcoesDocumento(codigo){
+  if (!codigo) return;
+  const op = window.confirm(`Documento ${codigo}
+
+OK = Atualizar dados
+Cancelar = Gerar Excel`);
+  if (op){ carregarParaEdicao(codigo); } else { baixarExcel(codigo); }
+}
+async function carregarParaEdicao(codigo){
+  const patch=(window.__ERP_SAVE_PATCH__||{});
+  const URL = (patch.JSON_URL || 'https://api.erpimpar.com.br/gerador/json_table_cors.php');
+  const token = (patch.SAVE_TOKEN || '');
+  const qs = new URLSearchParams({ op:'get', codigo }); if (token) qs.append('token', token);
+  const res = await fetch(`${URL}?${qs.toString()}`);
+  const j = await res.json().catch(()=>({ok:false}));
+  if (!j || !j.ok || !j.item) return;
+  const d = j.item;
+  Object.keys(d).forEach(k=>{ const el=document.getElementById(k); if (el && 'value' in el) el.value=d[k]; });
+  fecharConsultaModal();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function baixarExcel(codigo){
+  if (!codigo) return;
+  alert('Abra a pasta /www/api/storage/docs e baixe o arquivo do código ' + codigo + ' com a data desejada.');
+}
+(function(){
+  const b = document.getElementById('searchJsonBtn');
+  if (b) b.addEventListener('click', abrirConsultaModal);
+})();
+</script>
+<script src="consulta_json_v3_beauty-bkp-Funcionando-Gerador-Contrato__PATCHED.js"></script>
+
+<!-- ===== Add-on ROBUSTO: garante captura do código certo e geração do DOCX ===== -->
+<script>
+(function(){
+  const API_ORIGIN = 'https://api.erpimpar.com.br';
+  const PATH_EXCEL    = '/storage/docs';
+  const PATH_TEMPLATE = '/gerador/templates';
+
+  // ---------- util ----------
+  function ymd(d=new Date()){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
+  function nomeExcelPorCodigo(codigo){ return `${codigo}.xlsx`; }
+  function nomeTemplatePadrao(){ return 'Template-Contrato.docx'; }
+  function findByText(selector, regex){
+    return Array.from(document.querySelectorAll(selector))
+      .find(el => regex.test((el.textContent||el.value||'').trim()));
+  }
+
+  // ---------- persistir código escolhido assim que o usuário clicar no resultado ----------
+  // Estratégia: delegação de eventos — se sua lista tiver classe/contêiner identificado, troque '.consulta-lista'
+  document.addEventListener('click', (ev)=>{
+    // tenta capturar cliques em linhas da consulta
+    const el = ev.target.closest('tr, li, .linha, .item, .row, .resultado, .consulta-item');
+    if (!el) return;
+    // procura um possível código no elemento clicado/linha
+    const text = (el.textContent||'').trim();
+    const m = text.match(/\bAC[0-9A-Za-z]+/i);
+    if (!m) return; // não é uma linha com código
+    const codigo = m[0];
+
+    // guarda em #docMeta para uso garantido
+    let meta = document.getElementById('docMeta');
+    if (!meta){
+      meta = document.createElement('div');
+      meta.id = 'docMeta';
+      meta.style.display='none';
+      document.body.appendChild(meta);
+    }
+    meta.dataset.codigo = codigo;
+    // se você souber o nome exato do arquivo Excel/Template aqui, pode setar também:
+    // meta.dataset.excel = `${codigo}_20251020.xlsx`;
+    // meta.dataset.template = 'Template-Contrato.docx';
+
+    // log
+    console.log('[Gerar Contrato] código selecionado na lista:', codigo);
+  }, true);
+
+  // ---------- obter código válido (nunca placeholder) ----------
+  function getCodigoEscolhido(){
+    // 1) prioriza #docMeta (preenchido no clique da lista)
+    const metaCode = (document.getElementById('docMeta')?.dataset?.codigo||'').trim();
+    if (/^AC[0-9A-Za-z]+$/i.test(metaCode)) return metaCode;
+
+    // 2) badge/label no modal
+    const modalCodeNode = Array.from(document.querySelectorAll('.modal, [role="dialog"], .dialog, .popup, body'))
+      .flatMap(root => Array.from(root.querySelectorAll('*')))
+      .find(el => /^AC[0-9A-Za-z]+$/i.test((el.textContent||'').trim()));
+    if (modalCodeNode) return (modalCodeNode.textContent||'').trim();
+
+    // 3) input (mas ignora placeholder)
+    const input = document.querySelector('#codigo') ||
+                  document.querySelector('[name="codigo"]') ||
+                  document.querySelector('input[aria-label*="código" i]') ||
+                  document.querySelector('input[aria-label*="codigo" i]');
+    if (input){
+      const v = (input.value||'').trim();
+      if (/^AC[0-9A-Za-z]+$/i.test(v)) return v;
+    }
+
+    console.warn('[Gerar Contrato] Código não encontrado (placeholder ignorado).');
+    return '';
+  }
+
+  // ---------- prepararGerarContrado(codigo) ----------
+  window.prepararGerarContrato = function(codigo){
+    const btn = document.getElementById('btnGerarContrato') ||
+                findByText('button, a[role="button"]', /gerar contrato/i);
+    if (!btn) { console.warn('[Gerar Contrato] botão não encontrado.'); return; }
+
+    const meta = document.getElementById('docMeta');
+    const excelName    = (meta?.dataset?.excel)    || nomeExcelPorCodigo(codigo);
+    const templateName = (meta?.dataset?.template) || nomeTemplatePadrao();
+
+    const excelURL    = `${API_ORIGIN}${PATH_EXCEL}/${encodeURIComponent(excelName)}`;
+    const templateURL = `${API_ORIGIN}${PATH_TEMPLATE}/${encodeURIComponent(templateName)}`;
+
+    btn.dataset.excelUrl    = excelURL;
+    btn.dataset.templateUrl = templateURL;
+    console.log('[Gerar Contrato] pronto | codigo:', codigo, '| excel:', excelURL, '| template:', templateURL);
+  };
+
+  // ---------- ligar no "Pesquisar": ao abrir modal, chama preparar... com código certo ----------
+  function hookPesquisar(){
+    const btn = findByText('button, input[type="button"], input[type="submit"], a[role="button"]', /pesquisar/i);
+    if (!btn || btn.__hooked) return !!btn;
+    btn.__hooked = true;
+    btn.addEventListener('click', ()=>{
+      setTimeout(()=>{
+        const codigo = getCodigoEscolhido();
+        if (!codigo){ console.warn('[Gerar Contrato] código não disponível após pesquisar.'); return; }
+        window.prepararGerarContrato(codigo);
+      }, 300);
+    });
+    return true;
+  }
+
+  // ---------- gerador DOCX (mesma lógica aprovada) ----------
+  function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
+  function makeDocxSafeRegex(ph){const esc=ph.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); const between='(?:<[^>]+>)*'; return new RegExp(esc.split('').join(between),'gi');}
+  async function generateDocxReplacedRobusto(templateAB, map){
+    const zip = await JSZip.loadAsync(templateAB);
+    const p='word/document.xml'; let xml=await zip.file(p).async('string');
+    xml = xml.replace(/(<w:t\b[^>]*>)([\s\S]*?)(<\/w:t>)/g,(m,o,t,c)=>{let tt=t; for(const [k,v] of Object.entries(map)){const ph='#'+k; if (tt.includes(ph)) tt=tt.split(ph).join(xmlEscape(v));} return o+tt+c;});
+    for(const [k,v] of Object.entries(map)){ xml = xml.replace(makeDocxSafeRegex('#'+k), xmlEscape(v)); }
+    zip.file(p, xml); return await zip.generateAsync({type:'blob'});
+  }
+  function sanitize(s){return String(s??'').normalize('NFKD').replace(/[^\w\s.-]/g,'').replace(/\s+/g,'-').substring(0,80)||'contrato';}
+  function autoDetectHeaderRow(matrix){for(let i=0;i<matrix.length;i++){const filled=(matrix[i]||[]).filter(c=>String(c||'').trim().length>0); if(filled.length>=2) return i;} return null;}
+  function buildObjectsFromMatrix(matrix, headerIdx){
+    const hdr=(matrix[headerIdx]||[]).map(h=>String(h||'').trim()), objs=[];
+    for(let i=headerIdx+1;i<matrix.length;i++){const row=matrix[i]||[]; if(row.every(c=>String(c||'').trim()==='')) continue; const o={}; hdr.forEach((h,ix)=>{ if(h) o[h]=row[ix]??''; }); objs.push(o);}
+    return { headers: hdr.filter(Boolean), rows: objs };
+  }
+  async function fetchAB(url){ const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error('Falha ao baixar: '+url); return await r.arrayBuffer(); }
+  async function readExcelRowsFromURL(url){
+    const ab=await fetchAB(url), wb=XLSX.read(new Uint8Array(ab),{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]], matrix=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,blankrows:false});
+    const hdrIdx=autoDetectHeaderRow(matrix); if(hdrIdx===null) return {headers:[],rows:[]}; return buildObjectsFromMatrix(matrix,hdrIdx);
+  }
+  async function gerarContratoDeURLs(excelURL, templateURL){
+    const [{rows}, tplAB] = await Promise.all([readExcelRowsFromURL(excelURL), fetchAB(templateURL)]);
+    if (!rows.length){ alert('Planilha sem dados.'); return; }
+    const row=rows[0];
+    const blob=await generateDocxReplacedRobusto(tplAB, row);
+    const codigo = row['codigo']||row['Codigo']||row['CODIGO']||'';
+    const nome   = row['nomeContratante']||row['NomeContratante']||row['nome']||'';
+    const fname  = `${sanitize(codigo)}_${sanitize(nome)}`.replace(/^_+|_+$/g,'') || 'Contrato';
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname+'.docx';
+    document.body.appendChild(a); a.click(); try { window.contratoSucesso?.({ codigo: codigo, nome: nome }); } catch(_) {}; setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0);
+  }
+
+  // liga o clique do botão "Gerar contrato"
+  function hookGerar(){
+    const btn = document.getElementById('btnGerarContrato') || findByText('button, a[role="button"]', /gerar contrato/i);
+    if (!btn || btn.__hooked) return !!btn;
+    btn.__hooked = true;
+    btn.addEventListener('click', async ()=>{
+      let excelURL = btn.dataset.excelUrl, templateURL = btn.dataset.templateUrl;
+      if(!excelURL){ const c = (document.getElementById('codigo')?.value||'').trim().toUpperCase(); if(c) excelURL = `https://api.erpimpar.com.br/storage/docs/${encodeURIComponent(c)}.xlsx`; }
+      if (!excelURL || !templateURL){ alert('URLs do Excel/Template não definidas (data-excel-url / data-template-url).'); return; }
+      try { await gerarContratoDeURLs(excelURL, templateURL); }
+      catch(e){ console.error(e); alert('Erro ao gerar contrato (veja o console).'); }
+    });
+    return true;
+  }
+
+  // Observa a página: conecta pesquisar e gerar
+  const iv = setInterval(()=>{
+    const p = hookPesquisar();
+    const g = hookGerar();
+    if (p && g){ /* ok */ }
+  }, 400);
+})();
+</script>
+
+<script>
+(function(){
+  const AC_RE = /\bAC[0-9A-Za-z]+\b/;
+
+  // 1) CAPTURA O CÓDIGO QUANDO CLICA NA CONSULTA (2ª COLUNA)
+  document.addEventListener('click', function(e) {
+    const cell = e.target.closest('td:nth-child(2)'); // segunda coluna
+    if (!cell || !cell.textContent.trim()) return;
+    const tr = cell.parentElement;
+    // limita à tabela do modal de consulta (ajuste o seletor se seu modal tiver outro id)
+    if (!tr || !tr.closest('#consultaModal')) return;
+
+    const code = cell.textContent.trim();
+    if (AC_RE.test(code) && code.toUpperCase() !== 'AC00025') {
+      window.codigoSelecionado = code;
+      console.log('[Consulta] Código selecionado:', code);
+
+      // opcional: já atualiza o input #codigo
+      const inp = document.getElementById('codigo');
+      if (inp) {
+        inp.value = code;
+        try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(_) {}
+      }
+    }
+  }, true);
+
+  // util: acha botão por texto visível (com e sem acento)
+  function findBtnByText(re){
+    return Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
+      .find(el => re.test((el.textContent || el.value || '').trim()));
+  }
+
+  // util: lê o input #codigo (fallback)
+  function readCodigoField(){
+    const el =
+      document.querySelector('#codigo') ||
+      document.querySelector('input[name="codigo"]') ||
+      document.querySelector('input[aria-label*="código" i], input[aria-label*="codigo" i]');
+    return (el?.value || '').trim();
+  }
+
+  // 2) GARANTE QUE O "GERAR CONTRATO" USE O CÓDIGO CERTO
+  
+function pushCodeToEtapa1(code){
+  const el = document.getElementById('codigo');
+  if (!el) return;
+  const v = String(code||'').trim().toUpperCase();
+  el.value = v;
+  try{
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+  }catch(e){}
+}
+
+  function hookGerarContrato(){
+    const btnGerar = findBtnByText(/gerar contrato/i);
+    if (!btnGerar || btnGerar.__hooked_usaCodigo) return;
+    btnGerar.__hooked_usaCodigo = true;
+
+    btnGerar.addEventListener('click', (ev)=>{
+      // pega prioritariamente o código salvo da consulta
+      let codigo = document.getElementById('codigo')?.value?.trim().toUpperCase();
+      pushCodeToEtapa1 && pushCodeToEtapa1(codigo);
+
+      // fallback: tenta do campo #codigo
+      if (!codigo) {
+        const v = readCodigoField();
+        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
+          codigo = v;
+        }
+      }
+
+      // if (!codigo) {
+        // ev.preventDefault(); ev.stopPropagation();
+        // alert('Selecione um documento na consulta para gerar o contrato.');
+        // return;
+      // }
+
+      // monta URLs para o gerador que você já validou
+      const API = 'https://api.erpimpar.com.br';
+      const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
+      btnGerar.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${codigo}.xlsx`)}`;
+      btnGerar.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('Template-Contrato.docx')}`;
+
+      // se tiver aquele preparador, chamamos com o código correto
+      if (typeof window.prepararGerarContrato === 'function'){
+        window.prepararGerarContrato(codigo);
+      }
+
+      // segue o fluxo normal do botão
+      console.log('[GerarContrato] usando código:', codigo);
+    }, true);
+  }
+
+  setInterval(hookGerarContrato, 300);
+})();
+</script>
+
+<style>
+  /* Toast suave e moderno */
+  #contrato-toast {
+    position: fixed; inset: auto 20px 20px auto;
+    display: none; gap: 12px; align-items: center;
+    background: #0b1220; color: #e6f0ff; border: 1px solid #21304a;
+    padding: 14px 16px; border-radius: 12px; z-index: 999999;
+    box-shadow: 0 16px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    font: 500 14px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    transform: translateY(10px); opacity: 0; transition: .28s ease;
+    max-width: min(480px, calc(100vw - 40px));
+  }
+  #contrato-toast.show { display:flex; transform: translateY(0); opacity: 1; }
+  .toast-icon {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #12b98122; border: 2px solid #12b981;
+    display: grid; place-items: center; position: relative; overflow: hidden;
+    box-shadow: 0 0 0 3px #12b98122;
+  }
+  .toast-icon::before {
+    content: ""; width: 9px; height: 16px; border-right: 3px solid #12b981; border-bottom: 3px solid #12b981;
+    transform: rotate(45deg) translateY(-2px); opacity: 0; transition: .28s ease .08s;
+  }
+  #contrato-toast.show .toast-icon::before { opacity: 1; }
+  .toast-title { font-weight: 700; color: #eafff6; }
+  .toast-sub { opacity: .85; margin-top: 4px; font-weight: 500; }
+  .toast-close {
+    margin-left: 10px; background: transparent; border: 0; color: #cfe7ff; opacity:.7; cursor: pointer;
+    padding: 6px; border-radius: 8px;
+  }
+  .toast-close:hover { opacity: 1; background:#ffffff14 }
+  /* barra de progresso */
+  .toast-bar {
+    position: absolute; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg,#34d399,#22c55e);
+    width: 100%; transform-origin: left; animation: toastbar 4.2s linear forwards;
+    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; opacity:.9;
+  }
+  @keyframes toastbar { to { transform: scaleX(0); } }
+</style>
+
+<div id="contrato-toast" role="status" aria-live="polite">
+  <div class="toast-icon" aria-hidden="true"></div>
+  <div style="display:flex; flex-direction:column">
+    <div class="toast-title">Contrato gerado com sucesso</div>
+    <div class="toast-sub" id="toast-sub">O download foi iniciado.</div>
+  </div>
+  <button class="toast-close" type="button" onclick="(function(t){t.classList.remove('show'); setTimeout(()=>t.style.display='none',280)})(document.getElementById('contrato-toast'))">✕</button>
+  <div class="toast-bar"></div>
+</div>
+
+<script>
+  // Exponho uma função para você chamar de onde quiser
+  window.contratoSucesso = function (opts = {}) {
+    const t = document.getElementById('contrato-toast');
+    const sub = document.getElementById('toast-sub');
+    const msg = [];
+
+    if (opts.codigo) msg.push(`Código: ${opts.codigo}`);
+    if (opts.nome)   msg.push(opts.nome);
+
+    sub.textContent = opts.texto || (msg.length ? msg.join(' · ') : 'O download foi iniciado.');
+
+    // mostra o toast
+    t.style.display = 'flex';
+    // reinicia a barra de tempo
+    const bar = t.querySelector('.toast-bar');
+    bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = null;
+
+    requestAnimationFrame(()=> t.classList.add('show'));
+
+    // fecha automático após 4.6s
+    clearTimeout(t.__hideTimer);
+    t.__hideTimer = setTimeout(()=>{
+      t.classList.remove('show');
+      setTimeout(()=> t.style.display='none', 280);
+    }, 4600);
+  };
+
+  // OPCIONAL: se quiser acoplar automaticamente ao clique do "Gerar contrato"
+  (function autoHook(){
+    const btns = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'));
+    const btn = btns.find(el => /gerar contrato/i.test((el.textContent || el.value || '').trim()));
+    if (!btn || btn.__toastHooked) return;
+    btn.__toastHooked = true;
+    btn.addEventListener('click', () => {
+      // chame logo após você iniciar o download (ou aqui, se já inicia no clique)
+      const codigo = (window.codigoSelecionado || document.getElementById('codigo')?.value || '').trim();
+      window.contratoSucesso({ codigo: codigo && codigo !== 'AC00025' ? codigo : undefined });
+    });
+  })();
+</script>
+
+
+
+
+<script>
+// Normaliza o código
+function normCode(v){ return String(v||'').trim().toUpperCase(); }
+
+// Debounce simples
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+// Abre modal de decisão se o código existir (sem mensagens)
+async function tryOpenDecisionForCodigo(raw){
+  if (window.__CJ_SUSPEND_AUTO_DECIDE__) { return; }
+  const code = normCode(raw);
+  if (!code) return;
+
+  // Aguarda o módulo de consulta estar disponível
+  if (!window.__CJFIX_API__ || !window.__CJFIX_API__.fetchDoc) return;
+
+  try {
+    const item = await window.__CJFIX_API__.fetchDoc(code); // retorna {ok:true,item:{...}} se existir
+    if (item) {
+      window.__CJFIX_API__.openDecide(code);
+    }
+  } catch(_) {
+    // Silencioso se não existir ou erro
+  }
+}
+
+// Liga eventos no campo #codigo: Enter, blur e digitação com debounce
+(function hookCodigoAutoModal(){
+  const inp = document.getElementById('codigo');
+  if (!inp) return;
+
+  // ENTER abre o modal (se existir o documento)
+  inp.addEventListener('keydown', (ev)=>{
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      tryOpenDecisionForCodigo(inp.value);
+    }
+  });
+
+  // BLUR também tenta (ao sair do campo)
+  inp.addEventListener('blur', ()=>{
+    tryOpenDecisionForCodigo(inp.value);
+  });
+
+  // (Opcional) ao digitar com pequena pausa (600 ms)
+  const onType = debounce(()=>tryOpenDecisionForCodigo(inp.value), 600);
+  inp.addEventListener('input', onType);
+})();
+</script>
+
+
+<script>
+// ===== Reset total do formulário (como se fosse o primeiro acesso) =====
+function __resetAllFields(){
+  var ids = [
+    'servico','endereco',
+    'nomeContratante','docContratante','contatoContratante','cepContratante','numeroContratante',
+    'logradouroContratante','complementoContratante','bairroContratante','cidadeContratante','ufContratante',
+    'telefoneContratante','emailContratante',
+    'nomeContratada','docContratada','contatoContratada','cepContratada','numeroContratada',
+    'logradouroContratada','complementoContratada','bairroContratada','cidadeContratada','ufContratada',
+    'telefoneContratada','emailContratada',
+    'clausulas','condicoes','valor','Extenso_Valor','prazo','dataExtenso','dataPicker','logo'
+  ];
+  ids.forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    if (el.tagName === 'SELECT') { el.value = ''; }
+    else if (el.type === 'file') { el.value = ''; }
+    else if ('value' in el) { el.value = ''; }
+  });
+
+  var errIds = [
+    'docContratanteErr','cepContratanteErr','telContratanteErr','emailContratanteErr',
+    'docContratadaErr','cepContratadaErr','telContratadaErr','emailContratadaErr',
+    'cepContratanteHint','cepContratadaHint'
+  ];
+  errIds.forEach(function(id){
+    var n = document.getElementById(id);
+    if(n){ n.classList.add('hidden'); }
+  });
+
+  try{
+    var viewer = document.getElementById('viewer');
+    if (viewer) viewer.style.display = 'none';
+    var frame = document.getElementById('pdfFrame');
+    if (frame) frame.src = 'about:blank';
+    var success = document.getElementById('successModal');
+    if (success){ success.style.display='none'; success.style.visibility='hidden'; success.style.opacity='0'; }
+  }catch(_){}
+
+  try{
+    ['__CURRENT_DOC','__DOC','__FORM_STATE','__LAST_FETCH']
+      .forEach(function(k){ if (k in window) window[k] = null; });
+  }catch(_){}
+
+  var codigo = (document.getElementById('codigo').value || '').trim() || 'AC00025';
+  ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(function(id){
+    var span = document.getElementById(id);
+    if (span) span.textContent = codigo;
+  });
+}
+
+// ===== CONTINUAR Etapa 1: limpar + rechecagem, e bloquear efeitos colaterais =====
+(function(){
+  var bar1 = document.getElementById('bar1');
+  if (!bar1) return;
+
+  function handleContinueStep1(ev){
+    if (ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+    }
+
+    // Guarda global para outros handlers (se existirem) ignorarem este clique
+    window.__STEP1_CONT_GUARD__ = Date.now();
+
+    // Reset total
+    try { __resetAllFields(); } catch(_){}
+
+    var code = (document.getElementById('codigo').value || '').trim().toUpperCase();
+
+    (async function(){
+      var exists = false;
+      if (code && window.__CJFIX_API__ && typeof window.__CJFIX_API__.fetchDoc === 'function'){
+        try {
+          var item = await window.__CJFIX_API__.fetchDoc(code);
+          exists = !!item;
+        } catch(_){ exists = false; }
+      }
+
+      if (exists){
+        try { window.__CJFIX_API__.openDecide(code); } catch(_){}
+        return;
+      }
+      if (typeof goTo === 'function'){ goTo(2); }
+    })();
+  }
+
+  // Remove possíveis listeners anteriores e reanexa com captura e bolha
+  bar1.replaceWith(bar1.cloneNode(true));
+  bar1 = document.getElementById('bar1');
+  bar1.onclick = null;
+  bar1.addEventListener('click', handleContinueStep1, true);
+  bar1.addEventListener('click', handleContinueStep1, false);
+})();
+</script>
+
+<script>
+(function(){
+  var btn = document.getElementById('bar1');
+  if (!btn) return;
+
+  async function onContinue(ev){
+    if (ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+    }
+
+    try { if (typeof __resetAllFields === 'function') __resetAllFields(); } catch(_) {}
+
+    var codeEl = document.getElementById('codigo');
+    var code = (codeEl && codeEl.value || '').trim().toUpperCase();
+
+    if (!code){
+      try { if (typeof goTo === 'function') goTo(2); } catch(_){}
+      try { if (typeof showOnly === 'function') showOnly('screen2'); } catch(_){}
+      try { if (typeof updateStepper === 'function') updateStepper(2); } catch(_){}
       return;
     }
 
@@ -1325,9 +3207,9 @@ setTimeout(function(){ ['bar2','back2'].forEach(function(id){ var el=document.ge
       return;
     }
 
-    try { if (typeof goTo === 'function') goTo(2); 
-setTimeout(function(){ ['bar2','back2'].forEach(function(id){ var el=document.getElementById(id); if(el) el.classList.remove('hidden'); }); }, 0);
- } catch(_){}
+    try { if (typeof goTo === 'function') goTo(2); } catch(_){}
+    try { if (typeof showOnly === 'function') showOnly('screen2'); } catch(_){}
+    try { if (typeof updateStepper === 'function') updateStepper(2); } catch(_){}
   }
 
   var clone = btn.cloneNode(true);
@@ -1336,34 +3218,6 @@ setTimeout(function(){ ['bar2','back2'].forEach(function(id){ var el=document.ge
   btn.addEventListener('click', onContinue, true);
   btn.addEventListener('click', onContinue, false);
 })();
-</script>
-
-<script>
-// === Guard: só permite abrir a decisão (openDecide) quando for clique do CONTINUAR ===
-window.__ALLOW_DECIDE__ = false;
-function __guardOpeners(){
-  try{
-    if (typeof window.openDecide === 'function' && !window.openDecide.__guarded__) {
-      const __orig = window.openDecide;
-      window.openDecide = function(code){
-        if (!window.__ALLOW_DECIDE__) return;
-        return __orig(code);
-      };
-      window.openDecide.__guarded__ = true;
-    }
-    if (window.__CJFIX_API__ && typeof window.__CJFIX_API__.openDecide === 'function' && !window.__CJFIX_API__.openDecide.__guarded__) {
-      const __orig2 = window.__CJFIX_API__.openDecide;
-      window.__CJFIX_API__.openDecide = function(code){
-        if (!window.__ALLOW_DECIDE__) return;
-        return __orig2(code);
-      };
-      window.__CJFIX_API__.openDecide.__guarded__ = true;
-    }
-  }catch(e){}
-}
-document.addEventListener('DOMContentLoaded', __guardOpeners);
-setTimeout(__guardOpeners, 1000);
-
 </script>
 </body>
 </html>
