@@ -119,31 +119,102 @@ if (!window.__forceCloseConsultaUI) {
   }).catch(function(){ hideAll(); });
 };
 
-// GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
+// Prepara o ambiente p/ gerar: injeta código, atualiza espelhos e pré-carrega o doc
+function __preloadDocForContract(code){
+  return (async function(){
+    const codeUpper = (code || '').toUpperCase();
+
+    // 1) injeta no campo principal e dispara eventos (máscaras/validadores)
+    const inp = q('codigo');
+    if (inp) {
+      inp.value = codeUpper;
+      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+    }
+
+    // 2) espelhos visuais (codigoVal, etc.)
+    try {
+      document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; });
+    } catch(_){}
+
+    // 3) pré-carrega como o "Atualizar" (sem navegar): fetchDoc + fillForm
+    //    + 2 frames para o DOM/estado “assentarem” antes de gerar
+    let savedGoTo = window.goTo;
+    window.goTo = function(){}; // no-op temporário por segurança
+    let item = null;
+    try {
+      if (typeof fetchDoc === 'function') {
+        item = await fetchDoc(codeUpper);
+        try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
+      }
+      await Promise.resolve();                            // microtask
+      await new Promise(r => requestAnimationFrame(r));   // 1º frame
+      await new Promise(r => requestAnimationFrame(r));   // 2º frame
+    } finally {
+      window.goTo = savedGoTo;
+    }
+
+    return item; // pode ser útil para pegar nomeContratante no toast
+  })();
+}
+
+
+// GERAR CONTRATO — fluxo: decide → loader → gerar
 q('cj_btn_gerar').onclick = async function(){
   var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-  if (!code){ __forceCloseConsultaUI();
-return; }
-
-  var inp=q('codigo'); if (inp) inp.value = code;
-
-  // >>> INSERIR AQUI (pré-passo igual ao "Atualizar", mas sem navegar/fechar) <<<
-
-  // 1) Normaliza e atualiza espelhos visuais do código (se existirem)
-  var codeUpper = (code || '').toUpperCase();
-  try {
-    document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; });
-  } catch(_) {}
-
-  // 2) Pré-carrega o documento na memória, como o "Atualizar" faz
-  try {
-    if (typeof fetchDoc === 'function') {
-      const item = await fetchDoc(codeUpper);
-      try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
-    }
-  } catch(_) {
-    // se der erro, seguimos mesmo assim — a geração não é bloqueada
+  if (!code){
+    if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI();
+    return;
   }
+
+  // Mantém compatibilidade: ainda espelha no #codigo
+  var inp = q('codigo'); if (inp) inp.value = code;
+
+  // *** PASSO CRÍTICO: pré-carrega como o "Atualizar" e aguarda terminar ***
+  // (injeta código, atualiza espelhos, fetchDoc + fillForm + 2 RAFs)
+  const item = await __preloadDocForContract(code);
+
+  // Segue com o seu confirm + geração
+  openSideConfirm(code, async () => {
+    if (q('cj_loader_back')) {
+      q('cj_loader_back').style.display = 'flex';
+      var t = q('cj_loader_back').querySelector('.cj-loader-text');
+      if (t) t.textContent = 'Gerando contrato...';
+    }
+
+    try {
+      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
+      const j   = await res.json();
+
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+
+        // fecha modal (se você quiser manter)
+        try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
+
+        // toast (opcional): usa o item carregado ou lê do form
+        try {
+          const nome = (item && item.nomeContratante) || (q('nomeContratante')?.value || '');
+          window.contratoSucesso?.({
+            titulo: 'Documento gerado com sucesso',
+            codigo: code.toUpperCase(),
+            nome
+          });
+        } catch(_){}
+      } else {
+        alert('Não foi possível gerar o contrato. Verifique os dados.');
+      }
+    } catch (err) {
+      console.error('Erro ao gerar contrato:', err);
+      alert('Erro inesperado ao gerar contrato.');
+    } finally {
+      if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
+      try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
+    }
+  }, () => {
+    try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
+  });
+};
 
   openSideConfirm(code, async () => {
     if (q('cj_loader_back')) {
