@@ -86,41 +86,27 @@ if (!window.__forceCloseConsultaUI) {
   }
 
   /* ---- Constrói estrutura ---- */
-  function build(){
-    if(q('cj_list_back')) return;
-    injectCSS();
+function build(){
+  if(q('cj_list_back')) return;
+  injectCSS();
 
-    var b1=el('div',{id:'cj_list_back',class:'cj-back'});
-    var box=el('div',{class:'cj-box'});
-    box.innerHTML=
-      '<div class="cj-head"><div class="cj-title">Consulta de documentos</div>'+
-      '<button class="cj-x" id="cj_x1">×</button></div>'+
-      '<div class="cj-body" id="cj_list_body"><div class="cj-empty">Carregando...</div></div>';
-    b1.appendChild(box); document.body.appendChild(b1);
+  // Garante que o objeto global existe
+  window.__CJFIX__ = window.__CJFIX__ || {};
 
-    var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
-    var card=el('div',{class:'cj-card'});
-    card.innerHTML=
-      '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div>'+
-      '<button class="cj-x" id="cj_x2">×</button></div>'+
-      '<div class="cj-card-body">O que você deseja fazer com este documento?</div>'+
-      '<div class="cj-actions">'+
-        '<button class="btn ghost" id="cj_btn_close">Fechar</button>'+
-        '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>'+
-        '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>'+
-      '</div>';
-    b2.appendChild(card); document.body.appendChild(b2);
+  var b1 = el('div',{id:'cj_list_back',class:'cj-back'});
+  ...
+  var lback = el('div',{id:'cj_loader_back',class:'cj-loader-back'});
+  ...
+  document.body.appendChild(lback);
 
-    // Loader
-    var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
-    var lbox=el('div',{class:'cj-loader-box'});
-    lbox.innerHTML='<div class="cj-spinner"></div><div class="cj-loader-text">Processando... aguarde...</div>';
-    lback.appendChild(lbox);
-    document.body.appendChild(lback);
+  function _hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
+  q('cj_x1').onclick=_hideAll; q('cj_x2').onclick=_hideAll; q('cj_btn_close').onclick=_hideAll;
 
-    function _hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
-    q('cj_x1').onclick=_hideAll; q('cj_x2').onclick=_hideAll; q('cj_btn_close').onclick=_hideAll;
-
+  // Exporta pro escopo global
+  window.__CJFIX__.b1 = b1;
+  window.__CJFIX__.b2 = b2;
+  window.__CJFIX__.loaderBack = lback;
+}
     /* --- Atualizar documento --- */
     q('cj_btn_atualizar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
