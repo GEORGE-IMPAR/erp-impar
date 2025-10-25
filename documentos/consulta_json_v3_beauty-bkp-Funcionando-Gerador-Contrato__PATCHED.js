@@ -127,6 +127,24 @@ return; }
 
   var inp=q('codigo'); if (inp) inp.value = code;
 
+  // >>> INSERIR AQUI (pré-passo igual ao "Atualizar", mas sem navegar/fechar) <<<
+
+  // 1) Normaliza e atualiza espelhos visuais do código (se existirem)
+  var codeUpper = (code || '').toUpperCase();
+  try {
+    document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; });
+  } catch(_) {}
+
+  // 2) Pré-carrega o documento na memória, como o "Atualizar" faz
+  try {
+    if (typeof fetchDoc === 'function') {
+      const item = await fetchDoc(codeUpper);
+      try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
+    }
+  } catch(_) {
+    // se der erro, seguimos mesmo assim — a geração não é bloqueada
+  }
+
   openSideConfirm(code, async () => {
     if (q('cj_loader_back')) {
       q('cj_loader_back').style.display = 'flex';
