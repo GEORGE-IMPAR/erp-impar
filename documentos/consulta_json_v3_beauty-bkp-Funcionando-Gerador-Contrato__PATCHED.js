@@ -170,60 +170,95 @@ if (!window.__forceCloseConsultaUI) {
     }
 
     /* --- Gerar contrato (com pré-carregamento) --- */
-    q('cj_btn_gerar').onclick = async function(){
-      var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-      if (!code){
-        try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-        return;
-      }
-
-      var inp = q('codigo'); if (inp) inp.value = code; // compat
-
-      const item = await __preloadDocForContract(code);
-
-      openSideConfirm(code, async () => {
-        if (q('cj_loader_back')) {
-          q('cj_loader_back').style.display = 'flex';
-          var t = q('cj_loader_back').querySelector('.cj-loader-text');
-          if (t) t.textContent = 'Gerando contrato...';
-        }
-
-        try {
-          const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
-          const j   = await res.json();
-
-          if (j && j.ok && j.url) {
-            window.open(j.url, '_blank');
-
-            // fecha modal imediatamente
-            try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-
-            // toast moderno
-            try {
-              const nome = (item && item.nomeContratante) || (q('nomeContratante')?.value || '');
-              window.contratoSucesso?.({
-                titulo: 'Documento gerado com sucesso',
-                codigo: code.toUpperCase(),
-                nome
-              });
-            } catch(_){}
-          } else {
-            alert('Não foi possível gerar o contrato. Verifique os dados.');
-          }
-        } catch (err) {
-          console.error('Erro ao gerar contrato:', err);
-          alert('Erro inesperado ao gerar contrato.');
-        } finally {
-          if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
-          try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-        }
-      }, () => {
-        try { if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI(); } catch(_){}
-      });
-    };
-
-    window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
+// GERAR CONTRATO — auto-retry transparente com limpeza do código + overlay
+q('cj_btn_gerar').onclick = async function () {
+  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  if (!code) {
+    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
+    return;
   }
+
+  // Seletores e regex (não mexa se sua mensagem já combina com isso)
+  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
+
+  // 1) LIMPA o input antes da 1ª tentativa para evitar código antigo
+  const inp = q('codigo');
+  if (inp) inp.value = '';
+
+  // 2) Mostra o loader preto já existente no seu arquivo
+  const loader = q('cj_loader_back');
+  const showLoader = (msg) => {
+    if (loader) {
+      loader.style.display = 'flex';
+      try {
+        const t = loader.querySelector('.cj-loader-text');
+        if (t && msg) t.textContent = msg;
+      } catch (_) {}
+    }
+  };
+  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+
+  // 3) Monkey-patch de alert apenas durante ESTA ação (para detectar “não encontrado”)
+  const originalAlert = window.alert;
+  let sawNotFound = false;
+  window.alert = function (msg) {
+    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
+      sawNotFound = true;
+      showLoader('Processando... aguarde...');
+    }
+    return originalAlert.call(window, msg);
+  };
+
+  // 4) Função de geração (mantive seu endpoint e sem tocar no resto do sistema)
+  async function gerarContratoOnce() {
+    try {
+      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code), { cache: 'no-store' });
+      const j = await res.json();
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+        try {
+          const nome = (q('nomeContratante')?.value || '').trim();
+          window.contratoSucesso?.({
+            titulo: 'Documento gerado com sucesso',
+            codigo: code.toUpperCase(),
+            nome
+          });
+        } catch (_) {}
+        return true;
+      }
+    } catch (e) {
+      console.error('Erro ao gerar contrato:', e);
+    }
+    return false;
+  }
+
+  // 5) Primeira tentativa (com overlay)
+  showLoader('Processando... aguarde...');
+  let ok = await gerarContratoOnce();
+
+  // 6) Se falhou OU se houve alert “não encontrado”, re-tenta UMA vez:
+  if (!ok || sawNotFound) {
+    // repõe o código no input (para seu fluxo interno reconhecer) e dispara eventos
+    if (inp) {
+      inp.value = code.toUpperCase();
+      try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+    }
+
+    // pequena espera para estabilizar DOM/validações internas
+    await new Promise(r => setTimeout(r, 450));
+
+    showLoader('Gerando documento...');
+    ok = await gerarContratoOnce();
+  }
+
+  // 7) Restaura alert e UI
+  window.alert = originalAlert;
+  hideLoader();
+
+  // fecha a UI da consulta se desejar manter a tela “limpa”
+  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
+};
 
   /* ---- Aberturas ---- */
   function openList(){
