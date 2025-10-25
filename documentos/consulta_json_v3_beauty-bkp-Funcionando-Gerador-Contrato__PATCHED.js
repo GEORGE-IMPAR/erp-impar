@@ -113,50 +113,48 @@ window.__forceCloseConsultaUI = function(){
 };
 
 // GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
+// Fecha tudo do módulo de consulta/decisão (forçado) — idempotente
+if (!window.__forceCloseConsultaUI) {
+  window.__forceCloseConsultaUI = function(){
+    try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
+    ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
+      .forEach(function(id){
+        var n = document.getElementById(id);
+        if (n) n.style.display = 'none';
+      });
+  };
+}
+
 q('cj_btn_gerar').onclick = async function(){
-  var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
-  if (!code){ __forceCloseConsultaUI(); return; }
+  // 1) Captura o código
+  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  if (!code) { __forceCloseConsultaUI(); return; }
 
-  var inp=q('codigo'); if (inp) inp.value = code;
-
-  // Confirmação simples (substitui openSideConfirm)
-  if (!confirm('Deseja realmente gerar o contrato agora?')) {
-    __forceCloseConsultaUI();
-    return;
-  }
-
+  // 2) Loader opcional
   if (q('cj_loader_back')) {
     q('cj_loader_back').style.display = 'flex';
     var t = q('cj_loader_back').querySelector('.cj-loader-text');
     if (t) t.textContent = 'Gerando contrato...';
   }
 
-  try{
-    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
-    const j = await res.json();
-    if (j && j.ok && j.url) {
-      window.open(j.url, '_blank'); // abre o contrato
+  // 3) Abre a geração diretamente (sem confirm, sem JSON)
+  var url = '/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
+  try { window.open(url, '_blank'); } catch(_) {}
 
-      // Fecha modal e limpa Etapa 1, permanecendo nela
-      __forceCloseConsultaUI();
-      try {
-        if (typeof __resetAllFields === 'function') __resetAllFields();
-        var codigoInput = q('codigo'); if (codigoInput) codigoInput.value='';
-        if (typeof showOnly === 'function') showOnly('screen1');
-        if (typeof updateStepper === 'function') updateStepper(1);
-        window.scrollTo({top:0, behavior:'smooth'});
-      } catch(_){}
-    } else {
-      alert('Não foi possível gerar o contrato. Verifique os dados.');
-    }
-  }catch(err){
-    console.error('Erro ao gerar contrato:', err);
-    alert('Erro inesperado ao gerar contrato.');
-  }finally{
+  // 4) Após um pequeno atraso, fecha modal e limpa Etapa 1
+  setTimeout(function(){
     if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
     __forceCloseConsultaUI();
-  }
-};;;;
+    try {
+      if (typeof __resetAllFields === 'function') __resetAllFields();
+      var codigoInput = q('codigo'); if (codigoInput) codigoInput.value = '';
+      if (typeof showOnly === 'function') showOnly('screen1');
+      if (typeof updateStepper === 'function') updateStepper(1);
+      window.scrollTo({top:0, behavior:'smooth'});
+    } catch(_){}
+  }, 400);
+};
+
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
