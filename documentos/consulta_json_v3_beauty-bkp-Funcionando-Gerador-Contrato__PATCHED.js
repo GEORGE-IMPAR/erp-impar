@@ -1,13 +1,20 @@
 
-// Fecha tudo do módulo de consulta/decisão (forçado)
-window.__forceCloseConsultaUI = function(){
-  try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
-  ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
-    .forEach(function(id){
-      var n = document.getElementById(id);
-      if (n) n.style.display = 'none';
+// Fecha todos os overlays/modal da consulta (idempotente)
+if (!window.__forceCloseConsultaUI) {
+  window.__forceCloseConsultaUI = function(){
+    try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
+    ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
+      .forEach(function(id){
+        var n = document.getElementById(id);
+        if (n) n.style.display = 'none';
+      });
+    // Se você usa os modais clássicos também:
+    ['consultaModal','actionModal','dupeModal'].forEach(function(id){
+      var m = document.getElementById(id);
+      if (m) { m.style.display='none'; m.style.visibility='hidden'; m.style.opacity='0'; }
     });
-};
+  };
+}
 
 /* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
    - UI moderna azul‑marinho (lista + decisão)
@@ -132,15 +139,17 @@ return; }
       const j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
-        try {
-          __forceCloseConsultaUI();
-if (typeof __resetAllFields === 'function') __resetAllFields();
-          var codigoInput = q('codigo'); if (codigoInput) codigoInput.value='';
-          if (typeof showOnly === 'function') showOnly('screen1');
-          if (typeof updateStepper === 'function') updateStepper(1);
-          window.scrollTo({top:0, behavior:'smooth'});
-        } catch(_){}
-      } else {
+
+       // Fechar o modal imediatamente após disparar o contrato
+       if (typeof __forceCloseConsultaUI === 'function') __forceCloseConsultaUI();
+
+       // Mantém seu toast bonito (ok)
+       try {
+        window.contratoSucesso?.({
+          codigo: (q('cj_code_chip')?.getAttribute('data-code')||'').trim()
+        });
+      } catch(_){}
+    } else {
         alert('Não foi possível gerar o contrato. Verifique os dados.');
       }
     }catch(err){
