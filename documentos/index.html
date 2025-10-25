@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 101.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 111.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -3219,5 +3219,90 @@ function __resetAllFields(){
   btn.addEventListener('click', onContinue, false);
 })();
 </script>
+
+<script>
+// BEGIN CONTINUE-ONLY PATCH (somente o que foi pedido)
+
+// 1) Bloquear abertura automática do modal de decisão
+if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = false;
+(function(){
+  try{
+    // Versão antiga (global)
+    if (typeof window.openDecide === 'function' && !window.openDecide.__guarded__) {
+      const __orig = window.openDecide;
+      window.openDecide = function(code){
+        if (!window.__ALLOW_DECIDE__) return; // bloqueia auto-abrir
+        return __orig(code);
+      };
+      window.openDecide.__guarded__ = true;
+    }
+    // Versão moderna (API de consulta)
+    if (window.__CJFIX_API__ && typeof window.__CJFIX_API__.openDecide === 'function' && !window.__CJFIX_API__.openDecide.__guarded__) {
+      const __orig2 = window.__CJFIX_API__.openDecide;
+      window.__CJFIX_API__.openDecide = function(code){
+        if (!window.__ALLOW_DECIDE__) return; // bloqueia auto-abrir
+        return __orig2(code);
+      };
+      window.__CJFIX_API__.openDecide.__guarded__ = true;
+    }
+  }catch(e){}
+})();
+
+// 2) Verificação só no clique do "Continuar" (Etapa 1)
+(function(){
+  var btn = document.getElementById('bar1'); // botão Continuar da etapa 1
+  if (!btn) return;
+
+  async function onContinue(ev){
+    if (ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+    }
+
+    // Reset total (como se fosse o primeiro acesso)
+    try { if (typeof __resetAllFields === 'function') __resetAllFields(); } catch(_){}
+
+    var input = document.getElementById('codigo');
+    var code = (input && input.value || '').trim().toUpperCase();
+
+    if (!code){
+      // Sem código → segue direto para a Etapa 2 vazia (sem mensagens)
+      try { if (typeof goTo === 'function') goTo(2); } catch(_){}
+      return;
+    }
+
+    // Verifica existência SOMENTE aqui
+    var exists = false;
+    try {
+      if (window.__CJFIX_API__ && typeof window.__CJFIX_API__.fetchDoc === 'function'){
+        var item = await window.__CJFIX_API__.fetchDoc(code);
+        exists = !!item;
+      }
+    } catch(_){ exists = false; }
+
+    if (exists){
+      // Abre o modal de decisão APENAS pelo clique do Continuar
+      window.__ALLOW_DECIDE__ = true;
+      try { window.__CJFIX_API__.openDecide(code); } catch(_){}
+      setTimeout(function(){ window.__ALLOW_DECIDE__ = false; }, 0);
+      return;
+    }
+
+    // Código não existe → Etapa 2 vazia
+    try { if (typeof goTo === 'function') goTo(2); } catch(_){}
+  }
+
+  // Remove listeners anteriores e instala o nosso
+  var clone = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clone, btn);
+  btn = document.getElementById('bar1');
+  btn.addEventListener('click', onContinue, true);
+  btn.addEventListener('click', onContinue, false);
+})();
+
+// END CONTINUE-ONLY PATCH
+</script>
+
 </body>
 </html>
