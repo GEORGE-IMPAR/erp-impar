@@ -2471,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if(modal){ modal.addEventListener('click', function(ev){ if(ev.target===modal) show(modal,false); }); }
 })();
 </script>
-<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 111.0 - 20-10-2025</div>
+<div style="position:fixed; right:12px; bottom:10px; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#fff; background:#061736; border-radius:8px; padding:4px 8px; font-weight:700; z-index:9999;">Versão 222.0 - 20-10-2025</div>
 
 <script>
 function __todayYMD(){const d=new Date();const y=d.getFullYear();const m=('0'+(d.getMonth()+1)).slice(-2);const dd=('0'+d.getDate()).slice(-2);return `${y}${m}${dd}`;}
@@ -2542,13 +2542,15 @@ window.finalizeStep5 = async function(){
   }catch(e){}
 
   // --- NOVO: toast bonito igual ao do Gerar Contrato ---
-  if (window.showSuccessToast){
-    const contratante =
-      d?.contratante?.nome ||
-      d?.contratante?.razao ||
-      '';
-    showSuccessToast(`Código: ${code}`, contratante);
+  try {
+  if (window.contratoSucesso) {
+    window.contratoSucesso({
+      titulo: 'Documento gerado com sucesso',
+      codigo: d.codigo || code,           // mostra o código do documento
+      nome:   d.nomeContratante || ''     // mostra o nome do contratante
+    });
   }
+ } catch (_) {}
 
   // remove o toast/modal antigo (se existirem)
   const t = document.getElementById('toast');
@@ -2980,49 +2982,36 @@ function pushCodeToEtapa1(code){
 </div>
 
 <script>
-  // Exponho uma função para você chamar de onde quiser
+  // Toast reutilizável
   window.contratoSucesso = function (opts = {}) {
-    const t = document.getElementById('contrato-toast');
+    const t   = document.getElementById('contrato-toast');
+    const ttl = document.getElementById('toast-title');
     const sub = document.getElementById('toast-sub');
-    const msg = [];
 
+    // Título padrão pedido
+    if (ttl) ttl.textContent = opts.titulo || 'Contrato gerado com sucesso';
+
+    // Subtítulo: "Código: ABC123 · Nome do contratante"
+    const msg = [];
     if (opts.codigo) msg.push(`Código: ${opts.codigo}`);
     if (opts.nome)   msg.push(opts.nome);
-
     sub.textContent = opts.texto || (msg.length ? msg.join(' · ') : 'O download foi iniciado.');
 
-    // mostra o toast
+    // Mostra o toast + animação da barrinha
     t.style.display = 'flex';
-    // reinicia a barra de tempo
     const bar = t.querySelector('.toast-bar');
-    bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = null;
+    if (bar) { bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = null; }
 
     requestAnimationFrame(()=> t.classList.add('show'));
 
-    // fecha automático após 4.6s
+    // Fecha automático em 4.6s
     clearTimeout(t.__hideTimer);
     t.__hideTimer = setTimeout(()=>{
       t.classList.remove('show');
       setTimeout(()=> t.style.display='none', 280);
     }, 4600);
   };
-
-  // OPCIONAL: se quiser acoplar automaticamente ao clique do "Gerar contrato"
-  (function autoHook(){
-    const btns = Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'));
-    const btn = btns.find(el => /gerar contrato/i.test((el.textContent || el.value || '').trim()));
-    if (!btn || btn.__toastHooked) return;
-    btn.__toastHooked = true;
-    btn.addEventListener('click', () => {
-      // chame logo após você iniciar o download (ou aqui, se já inicia no clique)
-      const codigo = (window.codigoSelecionado || document.getElementById('codigo')?.value || '').trim();
-      window.contratoSucesso({ codigo: codigo && codigo !== 'AC00025' ? codigo : undefined });
-    });
-  })();
 </script>
-
-
-
 
 <script>
 // Normaliza o código
