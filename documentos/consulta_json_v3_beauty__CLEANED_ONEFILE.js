@@ -94,9 +94,9 @@ function build(){
   window.__CJFIX__ = window.__CJFIX__ || {};
 
   var b1 = el('div',{id:'cj_list_back',class:'cj-back'});
-  ...
+  
   var lback = el('div',{id:'cj_loader_back',class:'cj-loader-back'});
-  ...
+  
   document.body.appendChild(lback);
 
   function _hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
