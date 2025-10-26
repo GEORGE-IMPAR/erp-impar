@@ -462,7 +462,7 @@ window.__CONSULTA_CFG__ = {
 <!-- TELA 1 -->
 <div class="card" id="screen1">
 <div class="header">
-<h2 class="title">Gerador de documentos <span class="version-tag">Versão 11.0 - 26-10-2025</span></h2>
+<h2 class="title">Gerador de documentos <span class="version-tag">Versão 121.0 - 26-10-2025</span></h2>
 <p class="user" id="userInfo1">Usuário</p>
 </div>
 <div class="body">
@@ -508,7 +508,7 @@ window.__CONSULTA_CFG__ = {
 <div class="bar disabled" id="bar1">Continuar</div>
 <!-- TELA 2 -->
 <div class="card hidden" id="screen2">
-<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 11.0 - 26-10-2025</span></h2><p class="user" id="userInfo2">Usuário</p><p class="code">Código Projeto: <b id="codigoVal">AC00025</b></p></div>
+<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 121.0 - 26-10-2025</span></h2><p class="user" id="userInfo2">Usuário</p><p class="code">Código Projeto: <b id="codigoVal">AC00025</b></p></div>
 <div class="body">
 <div class="block"><div class="cap">SERVIÇO <span class="req">*</span></div><div class="content"><textarea class="textarea" id="servico" oninput="validate2()" placeholder="Digite o serviço do projeto"></textarea></div></div>
 <div class="block"><div class="cap">ENDEREÇO DA OBRA <span class="req">*</span></div><div class="content"><input class="input" id="endereco" oninput="validate2()" placeholder="Digite o endereço da obra"/></div></div>
@@ -518,7 +518,7 @@ window.__CONSULTA_CFG__ = {
 <div class="back hidden" id="back2" onclick="goTo(1)"><span class="chev">◀</span> Voltar</div>
 <!-- TELA 3 -->
 <div class="card hidden" id="screen3">
-<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 11.0 - 26-10-2025</span></h2><p class="user" id="userInfo3">Usuário</p><p class="code">Código Projeto: <b id="codigoVal3">AC00025</b></p></div>
+<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 121.0 - 26-10-2025</span></h2><p class="user" id="userInfo3">Usuário</p><p class="code">Código Projeto: <b id="codigoVal3">AC00025</b></p></div>
 <div class="body">
 <div class="block"><div class="cap">DADOS DO CONTRATANTE</div></div>
 <div class="grid-2">
@@ -562,7 +562,7 @@ window.__CONSULTA_CFG__ = {
 <div class="back hidden" id="back3" onclick="goTo(2)"><span class="chev">◀</span> Voltar</div>
 <!-- TELA 4 -->
 <div class="card hidden" id="screen4">
-<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 11.0 - 26-10-2025</span></h2><p class="user" id="userInfo4">Usuário</p><p class="code">Código Projeto: <b id="codigoVal4">AC00025</b></p></div>
+<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 121.0 - 26-10-2025</span></h2><p class="user" id="userInfo4">Usuário</p><p class="code">Código Projeto: <b id="codigoVal4">AC00025</b></p></div>
 <div class="body">
 <div class="block"><div class="cap">DADOS DA CONTRATADA</div></div>
 <div class="grid-2">
@@ -3447,6 +3447,183 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
     };
     window.prepararGerarContrato.__wrappedByShimV6 = true;
   })();
+
+})();
+</script>
+
+<style id="step-slide-css">
+/* Contêiner para as telas — aplicado dinamicamente via JS se não existir */
+.step-stage{
+  position: relative;
+  overflow: hidden;
+}
+
+/* Cada tela/etapa precisa ser posicionada absoluta para deslizar */
+.step-pane{
+  position: absolute;
+  inset: 0;
+  /* garante que só a ativa interaja */
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(0);
+}
+
+.step-pane.active{
+  pointer-events: auto;
+  opacity: 1;
+}
+
+/* Animações */
+.step-anim{
+  transition: transform .42s cubic-bezier(.22,.61,.36,1), opacity .42s ease;
+}
+
+/* direções */
+.exit-left   { transform: translateX(-100%); opacity: 0; }
+.exit-right  { transform: translateX( 100%); opacity: 0; }
+.enter-left  { transform: translateX(-100%); }
+.enter-right { transform: translateX( 100%); }
+.enter-to    { transform: translateX(0); opacity: 1; }
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  // === Config: como localizar as telas por índice (1..N) ===
+  function paneFor(i){
+    return document.querySelector('[data-step="'+i+'"]')
+        || document.getElementById('etapa'+i)
+        || document.querySelector('.step'+i);
+  }
+
+  // Cria um "stage" (pai com overflow:hidden) uma única vez
+  function ensureStage(p){
+    if (!p) return null;
+    var stage = p.parentElement;
+    if (!stage) return null;
+    if (!stage.classList.contains('step-stage')) stage.classList.add('step-stage');
+    return stage;
+  }
+
+  // Garante classes base de cada pane
+  function prepPane(p){
+    if (!p) return;
+    p.classList.add('step-pane');
+    // Se o pane já está visível por CSS/inline, assumimos como ativo
+    var visible = (p.style.display !== 'none') && (p.offsetParent !== null || getComputedStyle(p).display !== 'none');
+    if (visible) p.classList.add('active');
+  }
+
+  // Descobre etapa ativa atual (1..N) — heurística
+  function getActiveIndex(max=8){
+    for (var i=1;i<=max;i++){
+      var p = paneFor(i);
+      if (!p) continue;
+      if (p.classList.contains('active')) return i;
+      // fallback: se está visível
+      var visible = (p.style.display !== 'none') && (p.offsetParent !== null || getComputedStyle(p).display !== 'none');
+      if (visible) return i;
+    }
+    return null;
+  }
+
+  // Preparação inicial leve
+  (function initOnce(){
+    for (var i=1;i<=8;i++){
+      var p = paneFor(i);
+      if (!p) continue;
+      ensureStage(p);
+      prepPane(p);
+    }
+  })();
+
+  // === Wrap do goTo ===
+  var oldGoTo = window.goTo;
+  if (typeof oldGoTo !== 'function'){
+    // Se não existir goTo, não fazemos nada (sem risco)
+    return;
+  }
+  if (oldGoTo.__wrappedForSlide) return;
+
+  window.goTo = function(nextIndex){
+    try{
+      // tenta descobrir atual e os panes
+      var curIndex = getActiveIndex(12);
+      var fromPane = curIndex ? paneFor(curIndex) : null;
+      var toPane   = paneFor(nextIndex);
+
+      // se não dá pra animar, delega normal
+      if (!fromPane || !toPane || fromPane === toPane){
+        return oldGoTo.apply(this, arguments);
+      }
+
+      // garante stage e classes
+      ensureStage(fromPane);
+      ensureStage(toPane);
+      fromPane.classList.add('step-pane');
+      toPane.classList.add('step-pane');
+
+      // direção
+      var forward = !curIndex ? true : (nextIndex > curIndex);
+      var outClass = forward ? 'exit-left'  : 'exit-right';
+      var inStart  = forward ? 'enter-right': 'enter-left';
+
+      // prepara "to" fora da tela e visível
+      toPane.classList.add('active', 'step-anim', inStart);
+      // forçar reflow para iniciar transição
+      void toPane.offsetWidth;
+
+      // aplica saída para o "from"
+      fromPane.classList.add('step-anim');
+      fromPane.classList.add(outClass);
+
+      // anima "to" até a posição final
+      toPane.classList.add('enter-to');
+
+      // quando terminar, limpa classes e delega pro goTo original
+      var done = 0, need = 2;
+      function cleanPane(p){
+        p.classList.remove('step-anim','exit-left','exit-right','enter-left','enter-right','enter-to');
+      }
+      function onEnd(){
+        if (++done < need) return;
+        // desativa o pane anterior
+        fromPane.classList.remove('active');
+        // limpa classes temporárias
+        cleanPane(fromPane);
+        cleanPane(toPane);
+
+        // agora chama o goTo original para executar qualquer lógica interna (preenchimento, etc.)
+        try { oldGoTo.call(window, nextIndex); } catch(_){}
+
+        // reforça estado visual (caso o core altere display)
+        toPane.classList.add('active');
+      }
+
+      // listeners (com fallback por tempo)
+      var T = 450;
+      var t1 = setTimeout(onEnd, T);
+      var t2 = setTimeout(onEnd, T);
+
+      fromPane.addEventListener('transitionend', function te1(e){
+        if (e.propertyName !== 'transform' && e.propertyName !== 'opacity') return;
+        fromPane.removeEventListener('transitionend', te1);
+        clearTimeout(t1); onEnd();
+      }, {once:true});
+
+      toPane.addEventListener('transitionend', function te2(e){
+        if (e.propertyName !== 'transform' && e.propertyName !== 'opacity') return;
+        toPane.removeEventListener('transitionend', te2);
+        clearTimeout(t2); onEnd();
+      }, {once:true});
+
+    } catch(e){
+      // em qualquer falha, cai no goTo original
+      return oldGoTo.apply(this, arguments);
+    }
+  };
+  window.goTo.__wrappedForSlide = true;
 
 })();
 </script>
