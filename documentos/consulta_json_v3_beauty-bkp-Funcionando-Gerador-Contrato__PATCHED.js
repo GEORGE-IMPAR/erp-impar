@@ -1,308 +1,125 @@
-/* ============================================================================
-   consulta_json_v3_beauty_brand_fixclose_loader.js
-   - UI moderna (lista + decidir)
-   - Fecha modais antigos automaticamente
-   - Loader preto “Processando...”
-   - Botão “Gerar contrato” pré-carrega como “Atualizar” (injeta código, fillForm)
-   - Exporta helpers em window.__CJFIX_API__
-   ============================================================================ */
 
-/* ---- Fechamento idempotente de qualquer UI da consulta ---- */
-if (!window.__forceCloseConsultaUI) {
-  window.__forceCloseConsultaUI = function () {
-    try { if (typeof hideAll === 'function') hideAll(); } catch (e) {}
-    ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
-      .forEach(function (id) {
-        var n = document.getElementById(id);
-        if (n) n.style.display = 'none';
-      });
-    ['consultaModal','actionModal','dupeModal'].forEach(function (id) {
-      var m = document.getElementById(id);
-      if (m) { m.style.display = 'none'; m.style.visibility = 'hidden'; m.style.opacity = '0'; }
-    });
-  };
-}
-
+/*!
+ * cj_autoretry_shim_v1.js
+ * Shim NÃO intrusivo para o botão "Gerar contrato" do ERP Ímpar.
+ * - Não altera o seu JS principal.
+ * - Ouve somente o botão cj_btn_gerar.
+ * - Limpa o #codigo na primeira tentativa para evitar reaproveitar código antigo.
+ * - Mostra o loader preto (#cj_loader_back) se existir.
+ * - Se surgir um alert de "não encontrado / veja o console", após o OK re-clica 1x o botão automaticamente.
+ * - Restaura tudo no final. Idempotente.
+ */
 (function(){
-  var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
-  var JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
-  var SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
+  'use strict';
 
-  function el(t,a,h){var e=document.createElement(t);if(a){for(var k in a){if(a.hasOwnProperty(k))e.setAttribute(k,a[k]);}}if(h!=null)e.innerHTML=h;return e;}
-  function q(id){return document.getElementById(id);}
+  // ====== CONFIGURAÇÃO (ajuste os IDs se necessário) ======
+  var BTN_GERAR_ID     = 'cj_btn_gerar';
+  var CODIGO_INPUT_ID  = 'codigo';
+  var CHIP_ID          = 'cj_code_chip';
+  var LOADER_ID        = 'cj_loader_back';
 
-  /* ---- Esconde qualquer modal legado ---- */
-  function hideLegacy(){
-    ['cj_modal','cj_actions','consultaModal','consulta_modal','consulta_json_modal'].forEach(function(id){
-      var n=q(id); if(n){ n.style.setProperty('display','none','important'); n.hidden=true; }
-    });
-    try{
-      var nodes=document.querySelectorAll('div,section,aside');
-      for(var i=0;i<nodes.length;i++){
-        var n=nodes[i]; var txt=(n.textContent||'').trim();
-        if(txt && txt.indexOf('Consulta de documentos (Excel)')!==-1){
-          n.style.setProperty('display','none','important'); n.hidden=true;
-        }
-      }
-    }catch(_){}
-  }
+  // Regex para capturar mensagens do seu alerta de "não encontrado"
+  var NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
-  /* ---- CSS do componente ---- */
-  function injectCSS(){
-    if(q('cj_fix_css')) return;
-    var css=[
-      '@keyframes cjfade{from{opacity:0}to{opacity:1}}',
-      '@keyframes cjscale{from{transform:translate(-50%,-46%) scale(.96);opacity:.03}to{transform:translate(-50%,-50%) scale(1);opacity:1}}',
-      '@keyframes cjspin{to{transform:rotate(360deg)}}',
-      '.cj-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:cjfade .2s ease-out}',
-      '.cj-box{position:relative;width:92%;max-width:980px;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);box-shadow:0 28px 80px rgba(2,6,23,.35)}',
-      '.cj-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff}',
-      '.cj-title{font-weight:900;letter-spacing:.3px}',
-      '.cj-x{background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 10px;border-radius:12px}',
-      '.cj-x:hover{background:rgba(255,255,255,.12)}',
-      '.cj-body{padding:6px 0 10px;max-height:66vh;overflow:auto;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
-      '.cj-row{display:grid;grid-template-columns:200px 170px 1fr;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #e2e8f0;cursor:pointer}',
-      '.cj-code{font-weight:800;color:'+BRAND.primary+'}',
-      '.cj-date{color:#475569;font-size:13px}',
-      '.cj-client{color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.cj-empty{padding:20px;color:#64748b}',
+  function q(id){ return document.getElementById(id); }
 
-      '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s ease-out}',
-      '.cj-card-head{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff;padding:16px 20px}',
-      '.cj-chip{display:inline-block;background:'+BRAND.primaryDark+';color:#cbd5e1;border:1px solid #334155;padding:4px 12px;border-radius:999px;font-size:12px;margin-left:8px}',
-      '.cj-card-body{padding:18px;color:#0f172a}',
-      '.cj-actions{display:flex;gap:12px;justify-content:flex-end;padding:14px 20px;border-top:1px solid #e2e8f0;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
-      '.btn{border:none;border-radius:999px;padding:12px 16px;cursor:pointer;font-weight:800;letter-spacing:.2px}',
-      '.btn.ghost{background:#e2e8f0;color:'+BRAND.primary+'}',
-      '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
-
-      /* Loader preto com borda e texto brancos */
-      '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
-      '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
-      '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
-      '.cj-loader-text{font-weight:800;letter-spacing:.2px;color:#fff}'
-    ].join('');
-    document.head.appendChild(el('style',{id:'cj_fix_css'},css));
-  }
-
-  /* ---- Constrói estrutura ---- */
-function build(){
-  if(q('cj_list_back')) return;
-  injectCSS();
-
-  // Garante que o objeto global existe
-  window.__CJFIX__ = window.__CJFIX__ || {};
-
-  var b1 = el('div',{id:'cj_list_back',class:'cj-back'});
-  ...
-  var lback = el('div',{id:'cj_loader_back',class:'cj-loader-back'});
-  ...
-  document.body.appendChild(lback);
-
-  function _hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
-  q('cj_x1').onclick=_hideAll; q('cj_x2').onclick=_hideAll; q('cj_btn_close').onclick=_hideAll;
-
-  // Exporta pro escopo global
-  window.__CJFIX__.b1 = b1;
-  window.__CJFIX__.b2 = b2;
-  window.__CJFIX__.loaderBack = lback;
-}
-    /* --- Atualizar documento --- */
-    q('cj_btn_atualizar').onclick=function(){
-      var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
-      if(!code){ _hideAll(); return; }
-      var inp=q('codigo'); if (inp) inp.value=code;
-      fetchDoc(code).then(function(item){
-        try { fillForm(item); } catch(_){}
-        try { if (typeof goTo==='function') goTo(2); } catch(_){}
-        _hideAll();
-        window.scrollTo({top:0,behavior:'smooth'});
-      }).catch(function(){ _hideAll(); });
-    };
-
-    /* --- Pré-carrega como “Atualizar” para garantir código e dados no form --- */
-    function __preloadDocForContract(code){
-      return (async function(){
-        const codeUpper = (code || '').toUpperCase();
-
-        // 1) injeta no input principal e dispara eventos
-        const inp = q('codigo');
-        if (inp) {
-          inp.value = codeUpper;
-          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-        }
-
-        // 2) espelhos
-        try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
-
-        // 3) busca item e preenche, sem navegar
-        let savedGoTo = window.goTo;
-        window.goTo = function(){}; // no-op temporário
-        let item = null;
-        try {
-          if (typeof fetchDoc === 'function') {
-            item = await fetchDoc(codeUpper);
-            try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
-          }
-          await Promise.resolve();
-          await new Promise(r => requestAnimationFrame(r));
-          await new Promise(r => requestAnimationFrame(r));
-        } finally {
-          window.goTo = savedGoTo;
-        }
-        return item;
-      })();
-    }
-
-    /* --- Gerar contrato (com pré-carregamento) --- */
-/* --- Gerar contrato (com pré-carregamento) --- */
-// GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-q('cj_btn_gerar').onclick = async function () {
-  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
-
-  // Regex para as mensagens de alerta que você descreveu
-  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
-
-  // 1) LIMPA o input antes da 1ª tentativa (evita código antigo)
-  const inp = q('codigo');
-  if (inp) inp.value = '';
-
-  // 2) Loader preto já existente
-  const loader = q('cj_loader_back');
-  const setLoader = (msg) => {
-    if (!loader) return;
-    loader.style.display = 'flex';
-    const t = loader.querySelector('.cj-loader-text');
-    if (t && msg) t.textContent = msg;
-  };
-  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
-
-  // 3) Patch do alert apenas durante ESTA ação
-  const originalAlert = window.alert;
-  let sawNotFound = false;
-  window.alert = function (msg) {
-    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-      sawNotFound = true;
-      setLoader('Gerando documento...');
-    }
-    return originalAlert.call(window, msg);
-  };
-
-  async function gerarContratoOnce(c) {
+  function showLoader(msg){
+    var l = q(LOADER_ID);
+    if (!l) return;
+    l.style.display = 'flex';
     try {
-      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
-      const j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
-        try {
-          const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-        } catch (_) {}
-        return true;
+      var t = l.querySelector('.cj-loader-text');
+      if (t && msg) t.textContent = msg;
+    } catch(_) {}
+  }
+  function hideLoader(){
+    var l = q(LOADER_ID);
+    if (l) l.style.display = 'none';
+  }
+
+  var bound = false;
+  var retrying = false; // guarda se já estamos no segundo clique automático
+
+  function bind(){
+    if (bound) return;
+    var btn = q(BTN_GERAR_ID);
+    if (!btn) return; // botão ainda não existe; tentaremos de novo após DOMContentLoaded
+    bound = true;
+
+    // Listener EM CAPTURA para executar antes do handler original, sem mudar o core
+    btn.addEventListener('click', function onFirstClick(){
+      if (retrying){
+        // Segundo clique automático: não interferimos, só limpamos o flag.
+        retrying = false;
+        return;
       }
-    } catch (e) {
-      console.error('Erro ao gerar contrato:', e);
-    }
-    return false;
+
+      // 1) Limpa o campo código para evitar reaproveitar valor antigo
+      try {
+        var inp = q(CODIGO_INPUT_ID);
+        if (inp) inp.value = '';
+      } catch(_) {}
+
+      // 2) Mostra loader (se existir)
+      showLoader('Processando... aguarde...');
+
+      // 3) Patch do alert somente enquanto durar este fluxo
+      var originalAlert = window.alert;
+      var sawNotFound = false;
+      window.alert = function(msg){
+        try {
+          if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
+            sawNotFound = true;
+            showLoader('Gerando documento...');
+          }
+        } catch(_) {}
+        return originalAlert.call(window, msg);
+      };
+
+      // 4) Após o handler original rodar, decidimos se re-clicamos 1x
+      setTimeout(function(){
+        if (sawNotFound){
+          try {
+            // Garante que #codigo tenha o valor correto a partir do chip (se necessário)
+            var chip = q(CHIP_ID);
+            var code = (chip && chip.getAttribute('data-code') || '').trim();
+            var inp2 = q(CODIGO_INPUT_ID);
+            if (code && inp2 && !inp2.value){
+              inp2.value = code.toUpperCase();
+              try { inp2.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
+              try { inp2.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
+            }
+          } catch(_) {}
+
+          // Re-dispara UMA vez
+          retrying = true;
+          setTimeout(function(){
+            try { btn.click(); } finally {
+              // Restaura alert e esconde loader um pouco depois
+              setTimeout(function(){ window.alert = originalAlert; hideLoader(); }, 1200);
+            }
+          }, 300);
+        } else {
+          // Sem "não encontrado": restaura tudo normalmente
+          window.alert = originalAlert;
+          setTimeout(hideLoader, 800);
+        }
+      }, 0);
+    }, true);
   }
 
-  // 4) Primeira tentativa
-  setLoader('Processando... aguarde...');
-  if (inp) {
-    inp.value = code.toUpperCase();
-    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-  }
-  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
-  let ok = await gerarContratoOnce(code);
-
-  // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
-  if (!ok || sawNotFound) {
-    if (inp && !inp.value) {
-      inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-    }
-    setLoader('Gerando documento...');
-    await new Promise(r => setTimeout(r, 350));
-    ok = await gerarContratoOnce(code);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bind);
+  } else {
+    bind();
   }
 
-  // 6) Restaura alert/loader e fecha UI da consulta
-  window.alert = originalAlert;
-  hideLoader();
-  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-};
-
-   window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-  }
-  /* ---- Aberturas ---- */
-  function openList(){
-    build(); hideLegacy();
-    window.__CJFIX__.b2.style.display='none';
-    window.__CJFIX__.b1.style.display='flex';
-  }
-  function openDecide(code){
-    build();
-    q('cj_code_chip').textContent=code;
-    q('cj_code_chip').setAttribute('data-code',code);
-    window.__CJFIX__.b1.style.display='none';
-    window.__CJFIX__.b2.style.display='flex';
-    hideLegacy();
-  }
-
-  /* ---- Fetch/helpers ---- */
-  function fetchList(){
-    var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):'');
-    return fetch(u).then(function(r){return r.json();});
-  }
-  function fetchDoc(c){
-    var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):'');
-    return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; });
-  }
-  function fillForm(d){
-    if(!d) return;
-    for(var k in d){
-      if(!d.hasOwnProperty(k)) continue;
-      var f=q(k); if(f&&'value' in f){ f.value=d[k]; }
-    }
-  }
-
-  function render(items){
-    var body=q('cj_list_body'); body.innerHTML='';
-    if(!items||!items.length){ body.innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
-    items.forEach(function(r){
-      var d=el('div',{class:'cj-row'});
-      d.innerHTML=
-        '<div class="cj-code">'+(r.codigo||'')+'</div>'+
-        '<div class="cj-date">'+((r.data_criacao||"").slice(0,10))+'</div>'+
-        '<div class="cj-client">'+(r.nomeContratante||"")+'</div>';
-      d.onclick=function(){ openDecide(r.codigo||''); };
-      body.appendChild(d);
-    });
-  }
-
-  function onSearch(ev){
-    ev&&ev.preventDefault();
-    openList();
-    fetchList().then(function(j){
-      if(!j||!j.ok){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
-      render(j.items||[]);
-    }).catch(function(){
-      q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>';
-    });
-  }
-
-  function init(){
-    var btn=q('searchJsonBtn'); if(!btn) return;
-    btn.addEventListener('click', onSearch);
-  }
-  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
-
-  // Exporta API p/ uso externo (Continuar etapa 1, etc.)
-  window.__CJFIX_API__ = {
-    openList, openDecide, fetchList, fetchDoc
-  };
+  // Fallback: caso o botão seja injetado depois, tentamos bindar novamente por alguns segundos
+  var tries = 0, maxTries = 20;
+  var iv = setInterval(function(){
+    if (bound) return clearInterval(iv);
+    tries += 1;
+    if (tries > maxTries) return clearInterval(iv);
+    bind();
+  }, 300);
 })();
