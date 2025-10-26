@@ -1,175 +1,250 @@
 
-/*! contract_autoretry_no_popup.js
- * - Não altera seu HTML.
- * - Não mexe no backend.
- * - Intercepta o botão "Gerar contrato" e faz o fluxo na MESMA ABA, sem baixar .php.
- * - Usa o código selecionado no card (cj_code_chip) e limpa tudo no final.
- * - Mantém suas mensagens (window.contratoSucesso) e o loader existente (#cj_loader_back).
- */
-(function(){
-  'use strict';
-
-  var IDs = {
-    gerarBtn: ['cj_btn_gerar','btnGerarContrato','gerarContrato','btn-gerar-contrato'],
-    chip: 'cj_code_chip',
-    codigo: 'codigo',
-    loader: 'cj_loader_back'
-  };
-  var CONTINUAR_IDS = ['bar1','bar2','bar3','bar4','bar5'];
-  var BIND_FLAG = '__bind_contract_patch_v1__';
-  var running = false;
-
-  function q(id){ return document.getElementById(id); }
-  function findBtn(){
-    for (var i=0;i<IDs.gerarBtn.length;i++){ var b=q(IDs.gerarBtn[i]); if(b) return b; }
-    var all = document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]');
-    for (var j=0;j<all.length;j++){
-      var txt=(all[j].innerText||all[j].value||'').toLowerCase();
-      if(txt.includes('gerar') && txt.includes('contrato')) return all[j];
-    }
-    return null;
-  }
-  function showLoader(msg){
-    var l=q(IDs.loader); if(!l) return;
-    l.style.display='flex';
-    try { var t=l.querySelector('.cj-loader-text'); if(t && msg) t.textContent=msg; } catch(_){}
-  }
-  function hideLoader(){ var l=q(IDs.loader); if(l) l.style.display='none'; }
-  function showContinuar(){
-    CONTINUAR_IDS.forEach(function(id){
-      var b=q(id); if(!b) return;
-      try{ b.classList.remove('disabled'); }catch(_){}
-      b.style.display=''; b.style.visibility=''; b.style.opacity='';
+// Fecha tudo do módulo de consulta/decisão (forçado)
+window.__forceCloseConsultaUI = function(){
+  try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
+  ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
+    .forEach(function(id){
+      var n = document.getElementById(id);
+      if (n) n.style.display = 'none';
     });
+};
+
+/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
+   - UI moderna azul‑marinho (lista + decisão)
+   - Suprime qualquer modal legado ao abrir/fechar (FixClose)
+   - Loader preto “Processando... aguarde...” com borda e texto brancos
+   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antigas
+*/
+(function(){
+  var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
+  var JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
+  var SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
+
+  function el(t,a,h){var e=document.createElement(t);if(a){for(var k in a){if(a.hasOwnProperty(k))e.setAttribute(k,a[k]);}}if(h!=null)e.innerHTML=h;return e;}
+  function q(id){return document.getElementById(id);}
+
+  function hideLegacy(){
+    ['cj_modal','cj_actions','consultaModal','consulta_modal','consulta_json_modal'].forEach(function(id){
+      var n=q(id); if(n){ n.style.setProperty('display','none','important'); n.hidden=true; }
+    });
+    try{
+      var nodes=document.querySelectorAll('div,section,aside');
+      for(var i=0;i<nodes.length;i++){
+        var n=nodes[i]; var txt=(n.textContent||'').trim();
+        if(txt && txt.indexOf('Consulta de documentos (Excel)')!==-1){
+          n.style.setProperty('display','none','important'); n.hidden=true;
+        }
+      }
+    }catch(_){}
   }
-  function cleanState(){
+
+  function injectCSS(){
+    if(q('cj_fix_css')) return;
+    var css=[
+      '@keyframes cjfade{from{opacity:0}to{opacity:1}}',
+      '@keyframes cjscale{from{transform:translate(-50%,-46%) scale(.96);opacity:.03}to{transform:translate(-50%,-50%) scale(1);opacity:1}}',
+      '@keyframes cjspin{to{transform:rotate(360deg)}}',
+      '.cj-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:cjfade .2s ease-out}',
+      '.cj-box{position:relative;width:92%;max-width:980px;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);box-shadow:0 28px 80px rgba(2,6,23,.35)}',
+      '.cj-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff}',
+      '.cj-title{font-weight:900;letter-spacing:.3px}',
+      '.cj-x{background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 10px;border-radius:12px}',
+      '.cj-x:hover{background:rgba(255,255,255,.12)}',
+      '.cj-body{padding:6px 0 10px;max-height:66vh;overflow:auto;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
+      '.cj-row{display:grid;grid-template-columns:200px 170px 1fr;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #e2e8f0;cursor:pointer}',
+      '.cj-code{font-weight:800;color:'+BRAND.primary+'}',
+      '.cj-date{color:#475569;font-size:13px}',
+      '.cj-client{color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.cj-empty{padding:20px;color:#64748b}',
+
+      '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s ease-out}',
+      '.cj-card-head{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff;padding:16px 20px}',
+      '.cj-chip{display:inline-block;background:'+BRAND.primaryDark+';color:#cbd5e1;border:1px solid #334155;padding:4px 12px;border-radius:999px;font-size:12px;margin-left:8px}',
+      '.cj-card-body{padding:18px;color:#0f172a}',
+      '.cj-actions{display:flex;gap:12px;justify-content:flex-end;padding:14px 20px;border-top:1px solid #e2e8f0;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
+      '.btn{border:none;border-radius:999px;padding:12px 16px;cursor:pointer;font-weight:800;letter-spacing:.2px}',
+      '.btn.ghost{background:#e2e8f0;color:'+BRAND.primary+'}',
+      '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
+
+      /* Loader preto com borda branca e texto branco */
+      '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
+      '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
+      '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
+      '.cj-loader-text{font-weight:800;letter-spacing:.2px;color:#fff}'
+    ].join('');
+    document.head.appendChild(el('style',{id:'cj_fix_css'},css));
+  }
+
+  function build(){
+    if(q('cj_list_back')) return;
+    injectCSS();
+
+    var b1=el('div',{id:'cj_list_back',class:'cj-back'});
+    var box=el('div',{class:'cj-box'});
+    box.innerHTML='<div class="cj-head"><div class="cj-title">Consulta de documentos</div><button class="cj-x" id="cj_x1">×</button></div><div class="cj-body" id="cj_list_body"><div class="cj-empty">Carregando...</div></div>';
+    b1.appendChild(box); document.body.appendChild(b1);
+
+    var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
+    var card=el('div',{class:'cj-card'});
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    b2.appendChild(card); document.body.appendChild(b2);
+
+    // Loader
+    var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
+    var lbox=el('div',{class:'cj-loader-box'});
+    lbox.innerHTML='<div class="cj-spinner"></div><div class="cj-loader-text">Processando... aguarde...</div>';
+    lback.appendChild(lbox);
+    document.body.appendChild(lback);
+
+    function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
+    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
+
+    // Atualizar
+    q('cj_btn_atualizar').onclick=function(){
+  var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
+  if(!code){ hideAll(); return; }
+  var inp=q('codigo'); if (inp) inp.value=code;
+  fetchDoc(code).then(function(item){
+    try { fillForm(item); } catch(_){}
+    try { if (typeof goTo==='function') goTo(2); } catch(_){}
+    hideAll();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }).catch(function(){ hideAll(); });
+};
+
+// GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
+// =======================================================
+// consulta_json_v3-beauty-bkp-Funcionando-Gerador-Contrato__PATCHED_continue_only_loopfix_FINAL3.js
+// Base FINAL2 + correção no "Gerar contrato" (sem confirm, sem JSON)
+// =======================================================
+
+// helper global idempotente para fechar tudo da consulta
+if (!window.__forceCloseConsultaUI) {
+  window.__forceCloseConsultaUI = function(){
+    try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
+    [
+      'cj_list_back','cj_decide_back','cj_loader_back',
+      'cj_side','cj_side_back','cj_confirm_back'
+    ].forEach(function(id){
+      var n = document.getElementById(id);
+      if (n) n.style.display = 'none';
+    });
+  };
+}
+
+// -------------------------------------------------------
+// BOTÃO GERAR CONTRATO — versão FIXADA 2025-10-26
+// -------------------------------------------------------
+q('cj_btn_gerar').onclick = async function() {
+  const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  if (!code) { __forceCloseConsultaUI(); return; }
+
+  const loader = q('cj_loader_back');
+  if (loader) {
+    loader.style.display = 'flex';
+    const t = loader.querySelector('.cj-loader-text');
+    if (t) t.textContent = 'Gerando contrato...';
+  }
+
+  try {
+    // Faz o download do contrato via fetch
+    const url = '/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Erro ao gerar contrato');
+    const blob = await resp.blob();
+
+    // Cria link temporário e força o download
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    // tenta extrair o nome do arquivo retornado ou usa padrão
+    const dispo = resp.headers.get('Content-Disposition') || '';
+    const fname = (dispo.match(/filename="?([^"]+)"?/) || [])[1] || `Contrato_${code}.xlsx`;
+    link.download = fname;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+
+    // Mensagem de sucesso
+    try {
+      window.contratoSucesso?.({
+        titulo: 'Documento gerado com sucesso',
+        codigo: code
+      });
+    } catch(_) {}
+
+  } catch (e) {
+    console.error(e);
+    alert('Falha ao gerar contrato. Verifique a conexão ou o código.');
+  } finally {
+    // fecha loader e limpa tudo
+    if (loader) loader.style.display = 'none';
+    __forceCloseConsultaUI();
     try {
       if (typeof __resetAllFields === 'function') __resetAllFields();
-      var i=q(IDs.codigo); if(i) i.value='';
+      const codigoInput = q('codigo'); if (codigoInput) codigoInput.value = '';
       if (typeof showOnly === 'function') showOnly('screen1');
       if (typeof updateStepper === 'function') updateStepper(1);
-      window.scrollTo({top:0, behavior:'smooth'});
-    }catch(_){}
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch(_) {}
   }
-  function closeConsulta(){
-    try {
-      if (window.__forceCloseConsultaUI) window.__forceCloseConsultaUI();
-      var m1=q('cj_list_back'); if(m1) m1.style.display='none';
-      var m2=q('cj_decide_back'); if(m2) m2.style.display='none';
-    }catch(_){}
-  }
+};
 
-  // Envolver o toast de sucesso para garantir UI ok
-  (function wrapToast(){
-    try{
-      var fn = window.contratoSucesso;
-      if (typeof fn==='function' && !fn.__wrappedByPatchV1){
-        window.contratoSucesso = function(){
-          try { hideLoader(); } catch(_){}
-          try { showContinuar(); } catch(_){}
-          return fn.apply(this, arguments);
-        };
-        window.contratoSucesso.__wrappedByPatchV1 = true;
-      }
-    }catch(_){}
-  })();
 
-  function bind(){
-    var btn = findBtn();
-    if (!btn || btn[BIND_FLAG]) return;
-    btn[BIND_FLAG] = true;
+// -------------------------------------------------------
+// (demais partes do seu arquivo permanecem IGUAIS ao FINAL2)
+// -------------------------------------------------------
 
-    // Remove onclick antigo se for setado direto na propriedade
-    try { btn.onclick = null; } catch(_){}
 
-    btn.addEventListener('click', async function(ev){
-      // Não deixa propagar pro handler antigo (evita nova aba e php download)
-      ev.preventDefault(); ev.stopImmediatePropagation();
-      if (running) return;
-      running = true;
-
-      // Pega o código escolhido no chip
-      var code = (q(IDs.chip)?.getAttribute('data-code') || '').trim();
-      if (!code){
-        // fallback: usa input #codigo se existir
-        code = (q(IDs.codigo)?.value || '').trim();
-      }
-      if (!code){
-        alert('Selecione um documento antes de gerar.');
-        running=false;
-        return;
-      }
-
-      // Injeta o código no input e dispara eventos (garante estado interno)
-      var inp = q(IDs.codigo);
-      if (inp){
-        inp.value='';
-        inp.value=code.toUpperCase();
-        try{ inp.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
-        try{ inp.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
-      }
-
-      showLoader('Gerando contrato...');
-
-      var originalAlert = window.alert;
-      var originalOpen  = window.open;
-      window.alert = function(){};               // sem pop-up do browser
-      window.open  = function(url){              // mesma aba, mas evitamos abrir direto
-        try{ /* bloqueado */ }catch(_){}
-        return window;
-      };
-
-      try {
-        // Chama o backend normalmente; não mexe no back.
-        var url = '/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
-        var resp = await fetch(url, { cache:'no-store' });
-        if (!resp.ok) throw new Error('Falha ao gerar');
-        var blob = await resp.blob();
-
-        // Força o download com nome amigável sem interferir no back
-        var cd = resp.headers.get('Content-Disposition') || '';
-        var fname = (cd.match(/filename="?([^"]+)"?/) || [])[1] || ('Contrato_'+code+'.xlsx');
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = fname;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-
-        // Dispara seu toast de sucesso original
-        try {
-          window.contratoSucesso && window.contratoSucesso({
-            titulo: 'Documento gerado com sucesso',
-            codigo: code,
-            nome: (document.getElementById('nomeContratante')?.value || '')
-          });
-        } catch(_){}
-
-      } catch (e){
-        console.error('Erro ao gerar contrato:', e);
-        try { alert('Falha ao gerar contrato.'); } catch(_){}
-      } finally {
-        try { window.alert = originalAlert; } catch(_){}
-        try { window.open  = originalOpen;  } catch(_){}
-        hideLoader();
-        closeConsulta();
-        showContinuar();
-        cleanState();
-        running = false;
-      }
-    }, true);
+    window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
 
-  if (document.readyState==='loading') {
-    document.addEventListener('DOMContentLoaded', bind);
-  } else {
-    bind();
+  function openList(){
+    build(); hideLegacy();
+    window.__CJFIX__.b2.style.display='none';
+    window.__CJFIX__.b1.style.display='flex';
   }
-  // Caso o botão apareça depois
-  var tries=0, iv=setInterval(function(){
-    if (findBtn() && findBtn()[BIND_FLAG]) { clearInterval(iv); return; }
-    bind(); if (++tries>30) clearInterval(iv);
-  }, 250);
+  function openDecide(code){
+    build();
+    q('cj_code_chip').textContent=code;
+    q('cj_code_chip').setAttribute('data-code',code);
+    window.__CJFIX__.b1.style.display='none';
+    window.__CJFIX__.b2.style.display='flex';
+    hideLegacy();
+  }
 
+  function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
+  function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
+  function fillForm(d){ if(!d) return; for(var k in d){ if(!d.hasOwnProperty(k)) continue; var f=q(k); if(f&&'value' in f){ f.value=d[k]; } } }
+
+  function render(items){
+    var body=q('cj_list_body'); body.innerHTML='';
+    if(!items||!items.length){ body.innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
+    items.forEach(function(r){
+      var d=el('div',{class:'cj-row'});
+      d.innerHTML='<div class="cj-code">'+(r.codigo||'')+'</div><div class="cj-date">'+((r.data_criacao||"").slice(0,10))+'</div><div class="cj-client">'+(r.nomeContratante||"")+'</div>';
+      d.onclick=function(){ openDecide(r.codigo||''); };
+      body.appendChild(d);
+    });
+  }
+
+  function onSearch(ev){
+    ev&&ev.preventDefault();
+    openList();
+    fetchList().then(function(j){
+      if(!j||!j.ok){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
+      render(j.items||[]);
+    }).catch(function(){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; });
+  }
+
+  function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
+
+// --- EXPORTA helpers do módulo de consulta para uso externo ---
+window.__CJFIX_API__ = {
+  openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
+  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
+  fetchList,   // busca a listagem completa
+  fetchDoc     // busca 1 documento pelo código
+};
 })();
