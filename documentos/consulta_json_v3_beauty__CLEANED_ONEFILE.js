@@ -235,8 +235,8 @@ q('cj_btn_gerar').onclick = async function () {
 };
 
    window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-  }
-  /* ---- Aberturas ---- */
+  
+   /* ---- Aberturas ---- */
   function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
