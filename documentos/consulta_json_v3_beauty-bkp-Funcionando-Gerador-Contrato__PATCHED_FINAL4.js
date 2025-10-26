@@ -1,14 +1,3 @@
-
-// Fecha tudo do módulo de consulta/decisão (forçado)
-window.__forceCloseConsultaUI = function(){
-  try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
-  ['cj_list_back','cj_decide_back','cj_loader_back','cj_side','cj_side_back','cj_confirm_back']
-    .forEach(function(id){
-      var n = document.getElementById(id);
-      if (n) n.style.display = 'none';
-    });
-};
-
 /* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
    - UI moderna azul‑marinho (lista + decisão)
    - Suprime qualquer modal legado ao abrir/fechar (FixClose)
@@ -101,100 +90,61 @@ window.__forceCloseConsultaUI = function(){
 
     // Atualizar
     q('cj_btn_atualizar').onclick=function(){
-  var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
-  if(!code){ hideAll(); return; }
-  var inp=q('codigo'); if (inp) inp.value=code;
-  fetchDoc(code).then(function(item){
-    try { fillForm(item); } catch(_){}
-    try { if (typeof goTo==='function') goTo(2); } catch(_){}
-    hideAll();
-    window.scrollTo({top:0,behavior:'smooth'});
-  }).catch(function(){ hideAll(); });
-};
+      var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
+      if(!code){ hideAll(); return; }
+      var inp=q('codigo'); if(inp){ inp.value=code; try{inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }
+      fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
+    };
 
 // GERAR CONTRATO — fluxo: chama "Atualizar", espera, mostra confirmação, só então gera
-// =======================================================
-// consulta_json_v3-beauty-bkp-Funcionando-Gerador-Contrato__PATCHED_continue_only_loopfix_FINAL3.js
-// Base FINAL2 + correção no "Gerar contrato" (sem confirm, sem JSON)
-// =======================================================
+q('cj_btn_gerar').onclick = async function(){
+  var code = (q('cj_code_chip').getAttribute('data-code') || '').trim();
+  if (!code){ hideAll(); return; }
 
-// helper global idempotente para fechar tudo da consulta
-if (!window.__forceCloseConsultaUI) {
-  window.__forceCloseConsultaUI = function(){
-    try{ if (typeof hideAll === 'function') hideAll(); }catch(e){}
-    [
-      'cj_list_back','cj_decide_back','cj_loader_back',
-      'cj_side','cj_side_back','cj_confirm_back'
-    ].forEach(function(id){
-      var n = document.getElementById(id);
-      if (n) n.style.display = 'none';
-    });
-  };
-}
-
-// -------------------------------------------------------
-// BOTÃO GERAR CONTRATO — versão FIXADA 2025-10-26
-// -------------------------------------------------------
-q('cj_btn_gerar').onclick = async function() {
-  const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) { __forceCloseConsultaUI(); return; }
-
-  const loader = q('cj_loader_back');
-  if (loader) {
-    loader.style.display = 'flex';
-    const t = loader.querySelector('.cj-loader-text');
-    if (t) t.textContent = 'Gerando contrato...';
+  // 1) chama internamente o "Atualizar documento" (preenche #codigo e formulário)
+  if (typeof q('cj_btn_atualizar').onclick === 'function') {
+    q('cj_btn_atualizar').onclick();
   }
 
-  try {
-    // Faz o download do contrato via fetch
-    const url = '/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Erro ao gerar contrato');
-    const blob = await resp.blob();
-
-    // Cria link temporário e força o download
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    // tenta extrair o nome do arquivo retornado ou usa padrão
-    const dispo = resp.headers.get('Content-Disposition') || '';
-    const fname = (dispo.match(/filename="?([^"]+)"?/) || [])[1] || `Contrato_${code}.xlsx`;
-    link.download = fname;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
-
-    // Mensagem de sucesso
-    try {
-      window.contratoSucesso?.({
-        titulo: 'Documento gerado com sucesso',
-        codigo: code
-      });
-    } catch(_) {}
-
-  } catch (e) {
-    console.error(e);
-    alert('Falha ao gerar contrato. Verifique a conexão ou o código.');
-  } finally {
-    // fecha loader e limpa tudo
-    if (loader) loader.style.display = 'none';
-    __forceCloseConsultaUI();
-    try {
-      if (typeof __resetAllFields === 'function') __resetAllFields();
-      const codigoInput = q('codigo'); if (codigoInput) codigoInput.value = '';
-      if (typeof showOnly === 'function') showOnly('screen1');
-      if (typeof updateStepper === 'function') updateStepper(1);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch(_) {}
+  // 2) espera o campo #codigo estar realmente com o valor escolhido
+  const okFilled = await waitForCodigoFill(code, 6000); // até 6s
+  if (!okFilled){
+    // não segue sem você ver; mostra aviso lateral com o que achou (ou não achou)
+    const current = (q('codigo')?.value || '').trim().toUpperCase() || '(vazio)';
+    openSideConfirm(current, null, () => { /* cancelado */ });
+    return;
   }
+
+  // 3) abre a confirmação lateral mostrando o código; só segue no "OK"
+  openSideConfirm(code, async () => {
+    // (opcional) texto no loader, se você já tem
+    if (q('cj_loader_back')) {
+      q('cj_loader_back').style.display = 'flex';
+      const t = q('cj_loader_back').querySelector('.cj-loader-text');
+      if (t) t.textContent = 'Gerando contrato...';
+    }
+
+    try{
+      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(code));
+      const j = await res.json();
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+      } else {
+        alert('Não foi possível gerar o contrato. Verifique os dados.');
+      }
+    }catch(err){
+      console.error('Erro ao gerar contrato:', err);
+      alert('Erro inesperado ao gerar contrato.');
+    }finally{
+      if (q('cj_loader_back')) q('cj_loader_back').style.display = 'none';
+      hideAll();
+      // 👇 se quiser LIMPAR o campo após gerar, descomente:
+      // const inp = q('codigo'); if (inp) inp.value = '';
+    }
+  }, () => {
+    // cancelou na confirmação -> não faz nada
+  });
 };
-
-
-// -------------------------------------------------------
-// (demais partes do seu arquivo permanecem IGUAIS ao FINAL2)
-// -------------------------------------------------------
-
 
     window.__CJFIX__={b1:b1,b2:b2,loaderBack:lback};
   }
