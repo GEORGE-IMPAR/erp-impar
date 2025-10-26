@@ -1,4 +1,3 @@
-429: Too Many Requests
 For more on scraping GitHub and how it may affect your rights, please review our Terms of Service (https://docs.github.com/en/site-policy/github-terms/github-terms-of-service).
 
 
@@ -9,7 +8,7 @@ For more on scraping GitHub and how it may affect your rights, please review our
  * ------------------------------------------------------------------------- */
 (function(){
   'use strict';
-  var BTN_GERAR_ID     = 'cj_btn_gerar';
+  var BTN_GERAR_ID = 'cj_btn_gerar';
   var CODIGO_INPUT_ID  = 'codigo';
   var CHIP_ID          = 'cj_code_chip';
   var LOADER_ID        = 'cj_loader_back';
