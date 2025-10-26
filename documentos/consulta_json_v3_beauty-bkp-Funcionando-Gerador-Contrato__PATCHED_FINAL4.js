@@ -2,7 +2,7 @@
    - UI moderna azul‑marinho (lista + decisão)
    - Suprime qualquer modal legado ao abrir/fechar (FixClose)
    - Loader preto “Processando... aguarde...” com borda e texto brancos
-   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antigas
+   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga s
 */
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
