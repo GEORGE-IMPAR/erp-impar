@@ -1,6 +1,3 @@
-For more on scraping GitHub and how it may affect your rights, please review our Terms of Service (https://docs.github.com/en/site-policy/github-terms/github-terms-of-service).
-
-
 /*! -------------------------------------------------------------------------
  * [APPEND] cj_autoretry_shim_v3 (inline)
  * 100% automático (sem pop-up/OK). Não altera o core do arquivo acima.
