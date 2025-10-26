@@ -3338,8 +3338,11 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 
 <script>
 /*!
- * shim_autoretry_inline_v3 – 100% automático (sem pop-up/OK)
- * Não altera seu core. Apenas escuta o botão Gerar contrato e faz o retry.
+ * shim_autoretry_inline_v4 – 100% automático, MESMA ABA, sem download de .php
+ * - Não altera o core.
+ * - Suprime alert do navegador.
+ * - Força window.open a abrir na mesma aba.
+ * - No 2º clique, bloqueia submit do form (evita baixar .php) e dispara o handler.
  */
 (function(){
   'use strict';
@@ -3351,104 +3354,132 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 
   function q(id){ return document.getElementById(id); }
   function findBtn(){
-    for (var i=0;i<BTN_IDS.length;i++){
-      var b = q(BTN_IDS[i]);
-      if (b) return b;
-    }
-    // fallback por texto
+    for (var i=0;i<BTN_IDS.length;i++){ var b=q(BTN_IDS[i]); if(b) return b; }
     var cand = document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]');
     for (var j=0;j<cand.length;j++){
-      var t = (cand[j].innerText || cand[j].value || '').toLowerCase();
-      if (t.indexOf('gerar')>-1 && t.indexOf('contrato')>-1) return cand[j];
+      var t=(cand[j].innerText||cand[j].value||'').toLowerCase();
+      if(t.includes('gerar') && t.includes('contrato')) return cand[j];
     }
     return null;
   }
-  function showLoader(msg){
-    var l = q(LOADER_ID);
-    if (!l) return;
-    l.style.display = 'flex';
-    try {
-      var t = l.querySelector('.cj-loader-text'); if (t && msg) t.textContent = msg;
-    } catch(_) {}
+  function closestForm(el){
+    while(el){ if(el.tagName==='FORM') return el; el=el.parentElement; }
+    return null;
   }
-  function hideLoader(){ var l = q(LOADER_ID); if (l) l.style.display = 'none'; }
+  function showLoader(msg){
+    var l=q(LOADER_ID); if(!l) return;
+    l.style.display='flex';
+    try{ var t=l.querySelector('.cj-loader-text'); if(t&&msg) t.textContent=msg; }catch(_){}
+  }
+  function hideLoader(){ var l=q(LOADER_ID); if(l) l.style.display='none'; }
 
   var bound=false, inProgress=false, retrying=false;
 
-  // Fecha loader cedo se seu core disparar esse callback
+  // Fecha loader cedo se o core chamar esse callback
   (function wrapContratoSucesso(){
     try{
-      var fn = window.contratoSucesso;
-      if (typeof fn==='function' && !fn.__wrappedByShimV3){
-        window.contratoSucesso = function(){
-          try { hideLoader(); } catch(_){}
-          try { return fn.apply(this, arguments); }
-          finally { inProgress=false; retrying=false; }
+      var fn=window.contratoSucesso;
+      if(typeof fn==='function' && !fn.__wrappedByShimV4){
+        window.contratoSucesso=function(){
+          try{ hideLoader(); }catch(_){}
+          try{ return fn.apply(this, arguments); }
+          finally{ inProgress=false; retrying=false; }
         };
-        window.contratoSucesso.__wrappedByShimV3 = true;
+        window.contratoSucesso.__wrappedByShimV4=true;
       }
     }catch(_){}
   })();
 
   function bind(){
-    if (bound) return;
-    var btn = findBtn(); if (!btn) return;
-    bound = true;
+    if(bound) return;
+    var btn=findBtn(); if(!btn) return;
+    bound=true;
 
     btn.addEventListener('click', function(){
-      if (retrying){ retrying=false; return; }
-      if (inProgress){ return; }
-      inProgress = true;
+      if(retrying){ retrying=false; return; }
+      if(inProgress){ return; }
+      inProgress=true;
 
       showLoader('Processando... aguarde...');
 
-      // limpa e sobrescreve SEMPRE com o código do chip
-      try {
-        var chip = q(CHIP_ID);
-        var code = (chip && chip.getAttribute('data-code') || '').trim();
-        var inp  = q(CODIGO_INPUT_ID);
-        if (inp){
-          inp.value = '';
-          if (code){
-            inp.value = code.toUpperCase();
-            try { inp.dispatchEvent(new Event('input',  {bubbles:true})); } catch(_){}
-            try { inp.dispatchEvent(new Event('change', {bubbles:true})); } catch(_){}
+      // 1) injeta o código do chip no input (limpa e sobrescreve)
+      try{
+        var chip=q(CHIP_ID);
+        var code=(chip && chip.getAttribute('data-code')||'').trim();
+        var inp=q(CODIGO_INPUT_ID);
+        if(inp){
+          inp.value='';
+          if(code){
+            inp.value=code.toUpperCase();
+            try{ inp.dispatchEvent(new Event('input',  {bubbles:true})); }catch(_){}
+            try{ inp.dispatchEvent(new Event('change', {bubbles:true})); }catch(_){}
           }
         }
-      } catch(_) {}
+      }catch(_){}
 
-      // suprime alert só neste ciclo
+      // 2) suprime alert e força mesma aba
       var originalAlert = window.alert;
-      window.alert = function(){ /* suprimido */ };
+      var originalOpen  = window.open;
+      window.alert = function(){ /*silenciado*/ };
+      window.open  = function(url){ try{ location.href=url; }catch(_){} return window; };
 
-      // 2º clique automático (retry)
+      // 3) agenda 2º clique automático
       setTimeout(function(){
-        retrying = true;
-        try {
-          var chip2 = q(CHIP_ID);
-          var code2 = (chip2 && chip2.getAttribute('data-code') || '').trim();
-          var inp2  = q(CODIGO_INPUT_ID);
-          if (inp2){
-            inp2.value = (code2 || '').toUpperCase();
-            try { inp2.dispatchEvent(new Event('input',  {bubbles:true})); } catch(_){}
-            try { inp2.dispatchEvent(new Event('change', {bubbles:true})); } catch(_){}
+        retrying=true;
+
+        // bloqueia submit do form SOMENTE no 2º clique para evitar baixar .php
+        var form = closestForm(btn), blocked=false, prevTarget=null, prevType=null;
+        if(form){
+          var handler = function(ev){ ev.preventDefault(); blocked=true; };
+          form.addEventListener('submit', handler, true);
+          // força target _self
+          prevTarget = form.getAttribute('target'); form.setAttribute('target','_self');
+          // se o botão for submit, troca momentaneamente para "button" (não dispara submit)
+          if(btn.tagName==='INPUT' || btn.tagName==='BUTTON'){
+            prevType = btn.getAttribute('type')||''; btn.setAttribute('type','button');
           }
-          findBtn()?.click();
-        } finally {
-          setTimeout(function(){
-            try { window.alert = originalAlert; } catch(_){}
-            setTimeout(function(){ hideLoader(); inProgress=false; }, 4000);
-          }, 50);
         }
+
+        try{
+          // reforça código antes do retry
+          try{
+            var chip2=q(CHIP_ID), code2=(chip2 && chip2.getAttribute('data-code')||'').trim();
+            var inp2=q(CODIGO_INPUT_ID);
+            if(inp2){
+              inp2.value=(code2||'').toUpperCase();
+              try{ inp2.dispatchEvent(new Event('input',  {bubbles:true})); }catch(_){}
+              try{ inp2.dispatchEvent(new Event('change', {bubbles:true})); }catch(_){}
+            }
+          }catch(_){}
+          // dispara o handler do botão
+          btn.click();
+        } finally {
+          // restaura ambientes após pequena espera
+          setTimeout(function(){
+            try{ window.alert = originalAlert; }catch(_){}
+            try{ window.open  = originalOpen;  }catch(_){}
+            if(form){
+              // devolve target e tipo
+              try{
+                if(prevTarget!=null) form.setAttribute('target', prevTarget); else form.removeAttribute('target');
+                if(prevType!=null)  btn.setAttribute('type', prevType); else btn.removeAttribute('type');
+              }catch(_){}
+            }
+            // segurança: some loader caso não tenha callback
+            setTimeout(function(){ hideLoader(); inProgress=false; }, 4000);
+          }, 80);
+        }
+
       }, 320);
     }, true);
   }
 
-  if (document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', bind); } else { bind(); }
-  // se o botão for renderizado depois
-  var tries=0, iv=setInterval(function(){ if (bound) return clearInterval(iv); tries++; if (tries>24) return clearInterval(iv); bind(); }, 250);
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', bind); } else { bind(); }
+  // se o botão aparecer depois:
+  var tries=0, iv=setInterval(function(){ if(bound) return clearInterval(iv); tries++; if(tries>24) return clearInterval(iv); bind(); }, 250);
 })();
 </script>
+
 
 
 </body>
