@@ -207,26 +207,43 @@ ${fileUrl}`);
 /* === FIM MOBILE SHARE HELPER === */
 
 async function gerarContratoOnce(c) {
-    try {
-      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
-      const j = await res.json();
-        try {
-          const onMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-          if (onMobile) {
-            await tryShareContractFile(j.url, (j.filename||('CONTRATO_'+(c||'')+'.docx')), `Contrato do código ${c||''}`);
-          }
-        } catch (e) { console.warn('share mobile falhou', e); }
-try {
-          const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-        } catch (_) {}
-        return true;
-      }
-    } catch (e) {
-      console.error('Erro ao gerar contrato:', e);
+  try {
+    const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+    const j = await res.json();
+
+    if (j && j.ok && j.url) {
+
+      // Compartilhar no mobile (Web Share API)
+      try {
+        const onMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        if (onMobile) {
+          await tryShareContractFile(
+            j.url,
+            (j.filename || ('CONTRATO_' + (c || '') + '.docx')),
+            `Contrato do código ${c || ''}`
+          );
+        }
+      } catch (e) { console.warn('share mobile falhou', e); }
+
+      // Mantém o comportamento atual (abre o arquivo normalmente)
+      window.open(j.url, '_blank');
+
+      try {
+        const nome = (q('nomeContratante')?.value || '').trim();
+        window.contratoSucesso?.({
+          titulo: 'Documento gerado com sucesso',
+          codigo: c.toUpperCase(),
+          nome
+        });
+      } catch (_) {}
+
+      return true;
     }
-    return false;
+  } catch (e) {
+    console.error('Erro ao gerar contrato:', e);
   }
+  return false;
+}
 
   // 4) Primeira tentativa
   setLoader('Processando... aguarde...');
