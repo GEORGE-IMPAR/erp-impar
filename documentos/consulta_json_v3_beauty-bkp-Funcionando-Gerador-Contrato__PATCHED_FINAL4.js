@@ -10,7 +10,7 @@
   var SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
 
   function el(t,a,h){var e=document.createElement(t);if(a){for(var k in a){if(a.hasOwnProperty(k))e.setAttribute(k,a[k]);}}if(h!=null)e.innerHTML=h;return e;}
-  function q(id){return document.getElementById(id);}
+  function q(id){return document.getElementById(id);} 
 
   function hideLegacy(){
     ['cj_modal','cj_actions','consultaModal','consulta_modal','consulta_json_modal'].forEach(function(id){
@@ -43,7 +43,7 @@
       '.cj-row{display:grid;grid-template-columns:200px 170px 1fr;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #e2e8f0;cursor:pointer}',
       '.cj-code{font-weight:800;color:'+BRAND.primary+'}',
       '.cj-date{color:#475569;font-size:13px}',
-      '.cj-client{color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.cj-client{color:'#0f172a';white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.cj-empty{padding:20px;color:#64748b}',
 
       '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s ease-out}',
@@ -94,9 +94,10 @@
       if(!code){ hideAll(); return; }
       var inp=q('codigo'); if (inp) inp.value=code;
       fetchDoc(code).then(function(item){
-        try { fillForm(item); } catch(_){}
+        try { fillForm(item); } catch(_){}}
+      ).then(function(){
         try { if (typeof goTo==='function') goTo(2); } catch(_){}
-        _hideAll();
+        hideAll();
         window.scrollTo({top:0,behavior:'smooth'});
       }).catch(function(){ hideAll(); });
     };
@@ -106,24 +107,19 @@
       return (async function(){
         const codeUpper = (code || '').toUpperCase();
 
-        // 1) injeta no input principal e dispara eventos
         const inp = q('codigo');
         if (inp) {
           inp.value = codeUpper;
           try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
           try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
         }
-
-        // 2) espelhos
         try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
 
-        // 3) busca item e preenche, sem navegar
         let savedGoTo = window.goTo;
-        window.goTo = function(){}; // no-op temporário
-        let item = null;
+        window.goTo = function(){};
         try {
           if (typeof fetchDoc === 'function') {
-            item = await fetchDoc(codeUpper);
+            const item = await fetchDoc(codeUpper);
             try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
           }
           await Promise.resolve();
@@ -132,96 +128,103 @@
         } finally {
           window.goTo = savedGoTo;
         }
-        return item;
+        return true;
       })();
     }
 
+    /* --- Gerar contrato (com pré-carregamento) --- */
+    // Fluxo pedido: quando CAMPO CÓDIGO NA TELA estiver VAZIO e clicar em "Gerar contrato":
+    // 1) tenta gerar (falha), 2) dá OK na mensagem automaticamente (suprimimos o alert),
+    // 3) tenta gerar novamente, 4) fecha a modal — sem alterar mais nada fora desse fluxo
+    q('cj_btn_gerar').onclick = async function () {
+      var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+      if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
-/* --- Gerar contrato (com pré-carregamento) --- */
-// GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-q('cj_btn_gerar').onclick = async function () {
-  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
+      const inp = q('codigo');
+      const wasEmptyOnStart = !inp || !String(inp.value || '').trim();
 
-  // Regex para as mensagens de alerta que você descreveu
-  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
+      const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
-  // 1) LIMPA o input antes da 1ª tentativa (evita código antigo)
-  const inp = q('codigo');
-  if (inp) inp.value = '';
+      const loader = q('cj_loader_back');
+      const setLoader = (msg) => {
+        if (!loader) return;
+        loader.style.display = 'flex';
+        const t = loader.querySelector('.cj-loader-text');
+        if (t && msg) t.textContent = msg;
+      };
+      const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-  // 2) Loader preto já existente
-  const loader = q('cj_loader_back');
-  const setLoader = (msg) => {
-    if (!loader) return;
-    loader.style.display = 'flex';
-    const t = loader.querySelector('.cj-loader-text');
-    if (t && msg) t.textContent = msg;
-  };
-  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+      const originalAlert = window.alert;
+      let sawNotFound = false;
+      window.alert = function (msg) {
+        if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
+          sawNotFound = true;
+          setLoader('Gerando documento...');
+          if (wasEmptyOnStart) {
+            // suprime o modal nativo (equivalente a clicar OK automaticamente)
+            return;
+          }
+        }
+        return originalAlert.call(window, msg);
+      };
 
-  // 3) Patch do alert apenas durante ESTA ação
-  const originalAlert = window.alert;
-  let sawNotFound = false;
-  window.alert = function (msg) {
-    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-      sawNotFound = true;
-      setLoader('Gerando documento...');
-    }
-    return originalAlert.call(window, msg);
-  };
-
-  async function gerarContratoOnce(c) {
-    try {
-      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
-      const j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
+      async function gerarContratoOnce(c) {
         try {
-          const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-        } catch (_) {}
-        return true;
+          const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+          const j = await res.json();
+          if (j && j.ok && j.url) {
+            window.open(j.url, '_blank');
+            try {
+              const nome = (q('nomeContratante')?.value || '').trim();
+              window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
+            } catch (_) {}
+            return true;
+          }
+        } catch (e) {
+          console.error('Erro ao gerar contrato:', e);
+        }
+        return false;
       }
-    } catch (e) {
-      console.error('Erro ao gerar contrato:', e);
-    }
-    return false;
+
+      setLoader('Processando... aguarde...');
+
+      // Garante o código no input + eventos
+      if (inp) {
+        inp.value = code.toUpperCase();
+        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+      }
+
+      await new Promise(r => setTimeout(r, 300));
+
+      // Primeira tentativa (equivale ao 1º clique)
+      let ok = await gerarContratoOnce(code);
+
+      // Se estava vazio (fluxo solicitado) OU se detectamos "não encontrado", re-tenta (2º clique)
+      if (wasEmptyOnStart || !ok || sawNotFound) {
+        setLoader('Gerando documento...');
+        if (inp && !inp.value) {
+          inp.value = code.toUpperCase();
+          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+        }
+        await new Promise(r => setTimeout(r, 350));
+        ok = await gerarContratoOnce(code);
+      }
+
+      // Restaura alert/loader e fecha a UI
+      window.alert = originalAlert;
+      hideLoader();
+      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
+      try { hideAll && hideAll(); } catch (_) {}
+    };
+
+    // --- (NADA MAIS AQUI) ---
+    // Importante: NÃO deixe blocos soltos depois do onclick.
+    // A próxima linha já é a exportação dos elementos criados nesta build:
+    window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
 
-  // 4) Primeira tentativa
-  setLoader('Processando... aguarde...');
-  if (inp) {
-    inp.value = code.toUpperCase();
-    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-  }
-  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
-  let ok = await gerarContratoOnce(code);
-
-  // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
-  if (!ok || sawNotFound) {
-    if (inp && !inp.value) {
-      inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-    }
-    setLoader('Gerando documento...');
-    await new Promise(r => setTimeout(r, 350));
-    ok = await gerarContratoOnce(code);
-  }
-
-  // 6) Restaura alert/loader e fecha UI da consulta
-  window.alert = originalAlert;
-  hideLoader();
-  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-};
-
-// --- (NADA MAIS AQUI) ---
-// Importante: NÃO deixe blocos soltos depois do onclick.
-// A próxima linha já é a exportação dos elementos criados nesta build:
-window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-  }
   function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
@@ -263,11 +266,11 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
 
-// --- EXPORTA helpers do módulo de consulta para uso externo ---
-window.__CJFIX_API__ = {
-  openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
-  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
-  fetchList,   // busca a listagem completa
-  fetchDoc     // busca 1 documento pelo código
-};
+  // --- EXPORTA helpers do módulo de consulta para uso externo ---
+  window.__CJFIX_API__ = {
+    openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
+    openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
+    fetchList,   // busca a listagem completa
+    fetchDoc     // busca 1 documento pelo código
+  };
 })();
