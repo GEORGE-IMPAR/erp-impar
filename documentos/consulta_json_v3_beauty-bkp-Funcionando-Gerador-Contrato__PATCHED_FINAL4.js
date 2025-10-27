@@ -91,14 +91,14 @@
     /* --- Atualizar documento --- */
     q('cj_btn_atualizar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
-      if(!code){ _hideAll(); return; }
+      if(!code){ hideAll(); return; }
       var inp=q('codigo'); if (inp) inp.value=code;
       fetchDoc(code).then(function(item){
         try { fillForm(item); } catch(_){}
         try { if (typeof goTo==='function') goTo(2); } catch(_){}
         _hideAll();
         window.scrollTo({top:0,behavior:'smooth'});
-      }).catch(function(){ _hideAll(); });
+      }).catch(function(){ hideAll(); });
     };
 
     /* --- Pré-carrega como “Atualizar” para garantir código e dados no form --- */
