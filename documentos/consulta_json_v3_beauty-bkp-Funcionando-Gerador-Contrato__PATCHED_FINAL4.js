@@ -143,7 +143,6 @@ q('cj_btn_gerar').onclick = async function () {
   const inp = q('codigo');
   const wasEmptyOnStart = !inp || !String(inp.value || '').trim();
 
-  // regex das mensagens de "não encontrado"
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
   const loader = q('cj_loader_back');
@@ -155,18 +154,18 @@ q('cj_btn_gerar').onclick = async function () {
   };
   const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-  // Suprime alert só quando começou vazio (equivale a “dar OK” na 1ª falha)
+  // suprime alert apenas quando começou vazio (equivalente a "dar OK" automático)
   const originalAlert = window.alert;
   let sawNotFound = false;
   window.alert = function (msg) {
     if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
       sawNotFound = true;
-      if (wasEmptyOnStart) return; // engole o alert
+      if (wasEmptyOnStart) return;
     }
     return originalAlert.call(window, msg);
   };
 
-  // injeta o código no input e dispara eventos
+  // injeta código no input + eventos
   setLoader('Processando... aguarde...');
   if (inp) {
     inp.value = code.toUpperCase();
@@ -174,25 +173,28 @@ q('cj_btn_gerar').onclick = async function () {
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
 
-  // pequena estabilização antes da 1ª tentativa
-  await new Promise(r => setTimeout(r, 400));
+  // ⬇️ PAUSA 1 — precisa estar DENTRO do async
+  await new Promise(r => setTimeout(r, 900));
+
+  // tentativa 1
   let ok = await gerarContratoOnce(code);
 
-  // Se começou vazio (fluxo pedido) OU falhou/alertou, aguarda e tenta de novo
+  // se começou vazio OU falhou/alertou, tenta de novo
   if (wasEmptyOnStart || !ok || sawNotFound) {
     setLoader('Gerando documento...');
-    // garante que o input permaneça com o código
     if (inp && !inp.value) {
       inp.value = code.toUpperCase();
       try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
       try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
     }
-    // **tempo real** para backend/DOM (ajuste fino: 700–900ms costuma ser ótimo)
-    await new Promise(r => setTimeout(r, 800));
+
+    // ⬇️ PAUSA 2 — também DENTRO do async
+    await new Promise(r => setTimeout(r, 1200));
+
     ok = await gerarContratoOnce(code);
   }
 
-  // restaura estado e fecha UI da consulta
+  // restaura e fecha UI
   window.alert = originalAlert;
   hideLoader();
   try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
