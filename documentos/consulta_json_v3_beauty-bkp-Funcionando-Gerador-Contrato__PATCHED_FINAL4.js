@@ -177,6 +177,13 @@ q('cj_btn_gerar').onclick = async function () {
   await new Promise(r => setTimeout(r, 900));
 
   // tentativa 1
+
+  // aguarda até o campo código receber valor
+  for (let i = 0; i < 20; i++) {
+    if (q('codigo') && q('codigo').value.trim()) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+   
   let ok = await gerarContratoOnce(code);
 
   // se começou vazio OU falhou/alertou, tenta de novo
@@ -191,6 +198,12 @@ q('cj_btn_gerar').onclick = async function () {
     // ⬇️ PAUSA 2 — também DENTRO do async
     await new Promise(r => setTimeout(r, 1200));
 
+  // aguarda até o campo código receber valor
+  for (let i = 0; i < 20; i++) {
+    if (q('codigo') && q('codigo').value.trim()) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+     
     ok = await gerarContratoOnce(code);
   }
 
