@@ -142,7 +142,6 @@ q('cj_btn_gerar').onclick = async function () {
 
   const inp = q('codigo');
   const wasEmptyOnStart = !inp || !String(inp.value || '').trim();
-
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
   const loader = q('cj_loader_back');
@@ -154,7 +153,7 @@ q('cj_btn_gerar').onclick = async function () {
   };
   const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-  // suprime alert apenas quando começou vazio (equivalente a "dar OK" automático)
+  // Suprime alert só quando começou vazio (equivale a “OK” automático)
   const originalAlert = window.alert;
   let sawNotFound = false;
   window.alert = function (msg) {
@@ -165,7 +164,6 @@ q('cj_btn_gerar').onclick = async function () {
     return originalAlert.call(window, msg);
   };
 
-  // injeta código no input + eventos
   setLoader('Processando... aguarde...');
   if (inp) {
     inp.value = code.toUpperCase();
@@ -173,41 +171,44 @@ q('cj_btn_gerar').onclick = async function () {
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
 
-  // ⬇️ PAUSA 1 — precisa estar DENTRO do async
+  // ⬇️ NOVO: garante que os dados e espelhos sejam carregados ANTES da 1ª tentativa
+  try { await __preloadDocForContract(code); } catch (_) {}
+
+  // Pequena estabilização
   await new Promise(r => setTimeout(r, 900));
 
-  // tentativa 1
-
-  // aguarda até o campo código receber valor
+  // Garante #codigo preenchido (belt & suspenders)
   for (let i = 0; i < 20; i++) {
     if (q('codigo') && q('codigo').value.trim()) break;
     await new Promise(r => setTimeout(r, 100));
   }
-   
+
+  // Primeira tentativa
   let ok = await gerarContratoOnce(code);
 
-  // se começou vazio OU falhou/alertou, tenta de novo
+  // Retentativa: espera o .xlsx existir (HEAD) e tenta novamente
   if (wasEmptyOnStart || !ok || sawNotFound) {
     setLoader('Gerando documento...');
+
     if (inp && !inp.value) {
       inp.value = code.toUpperCase();
       try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
       try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
     }
 
-    // ⬇️ PAUSA 2 — também DENTRO do async
-    await new Promise(r => setTimeout(r, 1200));
+    for (let i = 0; i < 15; i++) {
+      const testUrl = `https://api.erpimpar.com.br/storage/docs/${code}.xlsx`;
+      try {
+        const head = await fetch(testUrl, { method: 'HEAD', cache: 'no-store' });
+        if (head.ok) break;
+      } catch (_) {}
+      await new Promise(r => setTimeout(r, 100));
+    }
 
-  // aguarda até o campo código receber valor
-  for (let i = 0; i < 20; i++) {
-    if (q('codigo') && q('codigo').value.trim()) break;
-    await new Promise(r => setTimeout(r, 100));
-  }
-     
+    await new Promise(r => setTimeout(r, 500));
     ok = await gerarContratoOnce(code);
   }
 
-  // restaura e fecha UI
   window.alert = originalAlert;
   hideLoader();
   try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
