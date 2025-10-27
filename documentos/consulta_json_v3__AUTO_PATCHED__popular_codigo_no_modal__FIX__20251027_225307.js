@@ -361,4 +361,5 @@ async function tryShareContractFile(fileUrl, fileName, message) {
 
     return p;
   };
+ })();
 })();
