@@ -201,20 +201,18 @@ q('cj_btn_gerar').onclick = async function () {
   try { hideAll && hideAll(); } catch (_) {}
 };
 
+// Função auxiliar: tenta gerar o contrato uma vez
 async function gerarContratoOnce(c) {
   try {
     const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
-
-    // Fallback: se vier HTML (erro PHP/redirect), não quebre o fluxo
     let data;
     try {
       data = await res.json();
     } catch {
-      const txt = await res.text(); // só para log
+      const txt = await res.text();
       console.warn('make_contract.php retornou não-JSON:', txt.slice(0, 200));
       return false;
     }
-
     if (data && data.ok && data.url) {
       window.open(data.url, '_blank');
       try {
@@ -229,38 +227,51 @@ async function gerarContratoOnce(c) {
   return false;
 }
 
-      setLoader('Processando... aguarde...');
+// -----------------------------------------------
+// Botão "Gerar contrato" com retentativa automática
+// -----------------------------------------------
+q('cj_btn_gerar').onclick = async function () {
+  const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
-      // Garante o código no input + eventos
-      if (inp) {
-        inp.value = code.toUpperCase();
-        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-      }
+  const inp = q('codigo');
+  const wasEmptyOnStart = !inp || !String(inp.value || '').trim();
 
-      await new Promise(r => setTimeout(r, 900));
+  const loader = q('cj_loader_back');
+  const setLoader = (msg) => {
+    if (!loader) return;
+    loader.style.display = 'flex';
+    const t = loader.querySelector('.cj-loader-text');
+    if (t && msg) t.textContent = msg;
+  };
+  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-      // Primeira tentativa (equivale ao 1º clique)
-      let ok = await gerarContratoOnce(code);
+  setLoader('Processando... aguarde...');
 
-      // Se estava vazio (fluxo solicitado) OU se detectamos "não encontrado", re-tenta (2º clique)
-      if (wasEmptyOnStart || !ok || sawNotFound) {
-        setLoader('Gerando documento...');
-        if (inp && !inp.value) {
-          inp.value = code.toUpperCase();
-          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-        }
-        await new Promise(r => setTimeout(r, 1200));
-        ok = await gerarContratoOnce(code);
-      }
+  if (inp) {
+    inp.value = code.toUpperCase();
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+    try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+  }
 
-      // Restaura alert/loader e fecha a UI
-      window.alert = originalAlert;
-      hideLoader();
-      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-      try { hideAll && hideAll(); } catch (_) {}
-    };
+  // Aguarda backend estabilizar
+  await new Promise(r => setTimeout(r, 900));
+
+  // Primeira tentativa
+  let ok = await gerarContratoOnce(code);
+
+  // Se falhou ou começou vazio, tenta de novo após pequeno delay
+  if (wasEmptyOnStart || !ok) {
+    setLoader('Gerando documento...');
+    await new Promise(r => setTimeout(r, 1200));
+    ok = await gerarContratoOnce(code);
+  }
+
+  hideLoader();
+  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
+  try { hideAll && hideAll(); } catch (_) {}
+};
+
 
     // --- (NADA MAIS AQUI) ---
     // Importante: NÃO deixe blocos soltos depois do onclick.
