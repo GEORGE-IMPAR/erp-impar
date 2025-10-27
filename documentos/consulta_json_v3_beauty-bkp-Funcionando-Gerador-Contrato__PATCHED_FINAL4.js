@@ -180,7 +180,7 @@ q('cj_btn_gerar').onclick = async function () {
 // Importante: NÃO deixe blocos soltos depois do onclick.
 // A próxima linha já é a exportação dos elementos criados nesta build:
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-
+  }
   function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
