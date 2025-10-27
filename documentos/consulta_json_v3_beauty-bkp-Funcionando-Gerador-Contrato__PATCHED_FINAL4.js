@@ -88,13 +88,54 @@
     function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
     q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
 
-    // Atualizar
+    /* --- Atualizar documento --- */
     q('cj_btn_atualizar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
-      if(!code){ hideAll(); return; }
-      var inp=q('codigo'); if(inp){ inp.value=code; try{inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){} }
-      fetchDoc(code).then(function(item){ fillForm(item); hideAll(); window.scrollTo({top:0,behavior:'smooth'}); }).catch(function(){ hideAll(); });
+      if(!code){ _hideAll(); return; }
+      var inp=q('codigo'); if (inp) inp.value=code;
+      fetchDoc(code).then(function(item){
+        try { fillForm(item); } catch(_){}
+        try { if (typeof goTo==='function') goTo(2); } catch(_){}
+        _hideAll();
+        window.scrollTo({top:0,behavior:'smooth'});
+      }).catch(function(){ _hideAll(); });
     };
+
+    /* --- Pré-carrega como “Atualizar” para garantir código e dados no form --- */
+    function __preloadDocForContract(code){
+      return (async function(){
+        const codeUpper = (code || '').toUpperCase();
+
+        // 1) injeta no input principal e dispara eventos
+        const inp = q('codigo');
+        if (inp) {
+          inp.value = codeUpper;
+          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+        }
+
+        // 2) espelhos
+        try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
+
+        // 3) busca item e preenche, sem navegar
+        let savedGoTo = window.goTo;
+        window.goTo = function(){}; // no-op temporário
+        let item = null;
+        try {
+          if (typeof fetchDoc === 'function') {
+            item = await fetchDoc(codeUpper);
+            try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
+          }
+          await Promise.resolve();
+          await new Promise(r => requestAnimationFrame(r));
+          await new Promise(r => requestAnimationFrame(r));
+        } finally {
+          window.goTo = savedGoTo;
+        }
+        return item;
+      })();
+    }
+
 
 /* --- Gerar contrato (com pré-carregamento) --- */
 // GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
