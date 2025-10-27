@@ -210,7 +210,6 @@ async function gerarContratoOnce(c) {
     try {
       const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
       const j = await res.json();
-      \1
         try {
           const onMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
           if (onMobile) {
