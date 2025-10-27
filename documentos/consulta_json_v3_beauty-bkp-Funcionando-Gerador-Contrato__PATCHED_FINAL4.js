@@ -174,7 +174,7 @@ q('cj_btn_gerar').onclick = async function () {
   }
 
   // ⬇️ PAUSA 1 — precisa estar DENTRO do async
-  await new Promise(r => setTimeout(r, 900));
+  await new Promise(r => setTimeout(r, ,900));
 
   // tentativa 1
   let ok = await gerarContratoOnce(code);
