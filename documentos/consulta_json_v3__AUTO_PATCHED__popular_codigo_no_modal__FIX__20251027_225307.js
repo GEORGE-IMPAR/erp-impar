@@ -293,4 +293,72 @@ window.__CJFIX_API__ = {
   fetchList,   // busca a listagem completa
   fetchDoc     // busca 1 documento pelo código
 };
+
+/* === MOBILE SHARE NATIVO – COLAR NO FINAL DO JS === */
+
+async function tryShareContractFile(fileUrl, fileName, message) {
+  // roda só no mobile
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (!isMobile) return;
+
+  // garante parâmetros válidos
+  fileName = fileName || 'Contrato.docx';
+  message  = message  || 'Segue o contrato.';
+
+  try {
+    const resp = await fetch(fileUrl, { mode: 'cors', credentials: 'include' });
+    if (!resp.ok) throw new Error('Erro ao baixar contrato');
+    const blob = await resp.blob();
+
+    const mime = blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const file = new File([blob], fileName, { type: mime });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: fileName,
+        text: message
+      });
+      return true;
+    } else {
+      // fallback: link no WhatsApp
+      const txt = encodeURIComponent(`${message}\n\n${fileUrl}`);
+      window.location.href = `https://wa.me/?text=${txt}`;
+    }
+  } catch (e) {
+    console.warn('[MOBILE SHARE] Falha ao compartilhar:', e);
+  }
+}
+
+/* intercepta apenas o contrato gerado e aciona o compartilhamento */
+(function attachMobileShareForMakeContract() {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (!isMobile) return;
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    const url = typeof input === 'string' ? input : input?.url || '';
+    const isMakeContract = url.includes('/api/gerador/make_contract.php');
+
+    const p = originalFetch(input, init);
+
+    if (isMakeContract) {
+      p.then(res => {
+        try {
+          res.clone().json().then(async j => {
+            if (j && j.ok && j.url) {
+              // nome exato igual ao que você já gera no download:
+              const codigo = (document.getElementById('codigo')?.value || '').trim();
+              const contratante = (document.getElementById('nomeContratante')?.value || '').trim();
+              const nomeArquivo = `CONTRATO_${codigo}_${contratante}.docx`;
+              const mensagem = `Contrato do código ${codigo} - ${contratante}`;
+              await tryShareContractFile(j.url, nomeArquivo, mensagem);
+            }
+          }).catch(() => {});
+        } catch (_) {}
+      }).catch(() => {});
+    }
+
+    return p;
+  };
 })();
