@@ -236,7 +236,7 @@ async function gerarContratoOnce(c) {
         try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
       }
 
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 900));
 
       // Primeira tentativa (equivale ao 1º clique)
       let ok = await gerarContratoOnce(code);
@@ -249,7 +249,7 @@ async function gerarContratoOnce(c) {
           try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
           try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
         }
-        await new Promise(r => setTimeout(r, 350));
+        await new Promise(r => setTimeout(r, 1200));
         ok = await gerarContratoOnce(code);
       }
 
