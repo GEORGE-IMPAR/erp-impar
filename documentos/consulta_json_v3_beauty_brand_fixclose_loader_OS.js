@@ -256,7 +256,8 @@ q('cj_btn_os').onclick = async function () {
   setLoader('Gerando Ordem de Serviço...');
 
   // **IMPORTANTE**: chamar SEMPRE o host da API (PHP roda aqui)
-  const url = 'https://api.erpimpar.com.br/gerador/make_os.php?codigo=' + encodeURIComponent(code);
+  //const url = 'https://api.erpimpar.com.br/gerador/make_os.php?codigo=' + encodeURIComponent(code);
+  const res = await fetch('/api/gerador/make_os.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' }); 
 
   try {
     const res = await fetch(url, { cache: 'no-store' });
@@ -481,6 +482,7 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
 
 
