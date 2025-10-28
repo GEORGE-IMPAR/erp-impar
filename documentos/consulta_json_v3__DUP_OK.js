@@ -139,7 +139,7 @@
 
 /* --- Gerar contrato (com pré-carregamento) --- */
 // GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-q('cj_btn_gerar').onclick = async function () {
+q('cj_btn_gerar-1').onclick = async function () {
   var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
@@ -218,7 +218,7 @@ q('cj_btn_gerar').onclick = async function () {
 };
 
 /* --- Duplicado 1:1 (handler do botão Gerar contrato -1) --- */
-q('cj_btn_gerar-1').onclick = async function () {
+q('cj_btn_gerar').onclick = async function () {
   var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
