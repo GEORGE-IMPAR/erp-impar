@@ -235,44 +235,45 @@
       try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
     };
 
-    // --- GERAR ORDEM DE SERVIÇO (OS) — handler robusto, só para OS ---
-  q('cj_btn_os').onclick = async function () {
+// --- GERAR ORDEM DE SERVIÇO (OS) — igual ao contrato, apontando para make_os.php
+q('cj_btn_os').onclick = async function () {
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) return;
 
+  // Pré-carrega o campo código, como no contrato
   const inp = q('codigo');
   if (inp) {
     inp.value = code.toUpperCase();
-    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
-    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
+    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
 
+  // Loader já existente
   const loader = q('cj_loader_back');
   const setLoader = (msg) => { if (!loader) return; loader.style.display = 'flex'; const t = loader.querySelector('.cj-loader-text'); if (t && msg) t.textContent = msg; };
   const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
+  setLoader('Gerando Ordem de Serviço...');
+
+  // **IMPORTANTE**: chamar SEMPRE o host da API (PHP roda aqui)
+  const url = 'https://api.erpimpar.com.br/gerador/make_os.php?codigo=' + encodeURIComponent(code);
+
   try {
-    setLoader('Gerando Ordem de Serviço...');
-
-    // URL correta (sem “gerador” duplicado)
-    const url = '/api/gerador/make_os.php?codigo=' + encodeURIComponent(code);
-    console.log('[OS] Fetch =>', url);
-
     const res = await fetch(url, { cache: 'no-store' });
 
-    // Se o servidor respondeu erro HTTP, mostra texto cru (pode ser HTML do PHP)
+    // Falha HTTP? Mostra texto cru para diagnóstico
     if (!res.ok) {
       const txt = await res.text();
-      console.error('[OS] HTTP', res.status, txt.slice(0, 300));
+      console.error('[OS] HTTP', res.status, txt.slice(0, 400));
       alert('Falha ao gerar OS (HTTP ' + res.status + '). Veja o Console.');
       return;
     }
 
-    // Espera JSON; se vier HTML, alerta
-    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    // Espera JSON igual ao contrato
+    const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
       const txt = await res.text();
-      console.error('[OS] Resposta não-JSON:', txt.slice(0, 300));
+      console.error('[OS] Resposta não-JSON:', txt.slice(0, 400));
       alert('A resposta não é JSON. Veja o Console (pode ser erro de template/PHP).');
       return;
     }
@@ -281,20 +282,20 @@
     console.log('[OS] JSON =>', j);
 
     if (j && j.ok && j.url) {
+      // Abre o DOCX gerado (mesmo comportamento do contrato)
       const win = window.open(j.url, '_blank');
-      if (!win) {
-        const a = document.createElement('a');
-        a.href = j.url; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
-      }
+      if (!win) { const a = document.createElement('a'); a.href = j.url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
+
       try {
         const nome = (q('nomeContratante')?.value || '').trim();
         window.contratoSucesso?.({ titulo: 'OS gerada com sucesso', codigo: code.toUpperCase(), nome });
-      } catch(_) {}
-      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
+      } catch (_) {}
+
+      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
       return;
     }
 
-    alert('Erro do servidor: ' + (j?.msg || j?.message || 'Não foi possível gerar a OS.'));
+    alert(j?.msg || j?.message || 'Não foi possível gerar a OS.');
   } catch (e) {
     console.error('[OS] Exceção:', e);
     alert('Erro inesperado ao gerar OS. Veja o Console.');
@@ -480,6 +481,7 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
 
 
