@@ -75,7 +75,7 @@
 
     var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
     var card=el('div',{class:'cj-card'});
-    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_os">Gerar OS</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
     // Loader
@@ -135,6 +135,78 @@
         return item;
       })();
     }
+
+// --- GERAR ORDEM DE SERVIÇO (OS) ---
+q('cj_btn_os').onclick = async function () {
+  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
+
+  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
+  const inp = q('codigo');
+  if (inp) inp.value = '';
+
+  const loader = q('cj_loader_back');
+  const setLoader = (msg) => {
+    if (!loader) return;
+    loader.style.display = 'flex';
+    const t = loader.querySelector('.cj-loader-text');
+    if (t && msg) t.textContent = msg;
+  };
+  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+
+  const originalAlert = window.alert;
+  let sawNotFound = false;
+  window.alert = function (msg) {
+    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
+      sawNotFound = true;
+      setLoader('Gerando Ordem de Serviço...');
+    }
+    return originalAlert.call(window, msg);
+  };
+
+  async function gerarOSOnce(c) {
+    try {
+      // Ajuste a rota se no seu projeto o path for diferente
+      const res = await fetch('/api/gerador/make_OS.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+      const j = await res.json();
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+        try {
+          const nome = (q('nomeContratante')?.value || '').trim();
+          window.contratoSucesso?.({ titulo: 'OS gerada com sucesso', codigo: c.toUpperCase(), nome });
+        } catch (_) {}
+        return true;
+      }
+    } catch (e) {
+      console.error('Erro ao gerar OS:', e);
+    }
+    return false;
+  }
+
+  setLoader('Processando... aguarde...');
+  if (inp) {
+    inp.value = code.toUpperCase();
+    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+  }
+  await new Promise(r => setTimeout(r, 500));
+  let ok = await gerarOSOnce(code);
+
+  if (!ok || sawNotFound) {
+    if (inp && !inp.value) {
+      inp.value = code.toUpperCase();
+      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
+      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
+    }
+    setLoader('Gerando Ordem de Serviço...');
+    await new Promise(r => setTimeout(r, 350));
+    ok = await gerarOSOnce(code);
+  }
+
+  window.alert = originalAlert;
+  hideLoader();
+  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
+};
 
 
 /* --- Gerar contrato (com pré-carregamento) --- */
@@ -299,7 +371,7 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
 // --- EXPORTA helpers do módulo de consulta para uso externo ---
 window.__CJFIX_API__ = {
   openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
-  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
+  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Gerar OS)
   fetchList,   // busca a listagem completa
   fetchDoc     // busca 1 documento pelo código
 };
