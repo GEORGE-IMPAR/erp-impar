@@ -1,8 +1,8 @@
 <?php
-// make_os.php — Gera uma Ordem de Serviço (.docx) a partir de um template com placeholders iniciados por #
-// RISCO ZERO: cópia idêntica do make_contract.php, apenas ajustando nomes e rótulos
+// make_os.php â€” Gera uma Ordem de ServiÃ§o (.docx) a partir de um template com placeholders iniciados por #
+// RISCO ZERO: cÃ³pia idÃªntica do make_contract.php, apenas ajustando nomes e rÃ³tulos
 
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/vendor/autoload.php'; 
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -22,11 +22,11 @@ $TOKEN    = '8ce29ab4b2d531b0eca93b9cfc4538042a6b9f3a8882e543cbad73663b77';
 $codigo = isset($_GET['codigo']) ? trim($_GET['codigo']) : '';
 if ($codigo === '') {
   http_response_code(400);
-  echo json_encode(['ok'=>false,'msg'=>'Parâmetro "codigo" é obrigatório']);
+  echo json_encode(['ok'=>false,'msg'=>'ParÃ¢metro "codigo" Ã© obrigatÃ³rio']);
   exit;
 }
 
-// Log próprio
+// Log prÃ³prio
 file_put_contents(__DIR__.'/log_make_os.txt', "Start code={$codigo} ".date('Y-m-d H:i:s')."\n", FILE_APPEND);
 
 // ====================== BUSCA DADOS NO JSON EXISTENTE ======================
@@ -37,7 +37,7 @@ $json = ob_get_clean();
 $data = @json_decode($json, true);
 if (!$data || empty($data['ok']) || empty($data['item'])) {
   http_response_code(404);
-  echo json_encode(['ok'=>false,'msg'=>'Registro não encontrado para o código informado']);
+  echo json_encode(['ok'=>false,'msg'=>'Registro nÃ£o encontrado para o cÃ³digo informado']);
   exit;
 }
 $item = $data['item'];
@@ -51,20 +51,20 @@ foreach ($item as $k => $v) {
 // Campo dataExtenso
 if (!isset($replacements['#dataExtenso'])) {
   setlocale(LC_ALL, 'pt_BR.UTF-8', 'pt_BR', 'Portuguese_Brazil');
-  $meses = [1=>'janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  $meses = [1=>'janeiro','fevereiro','marÃ§o','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   $d = new DateTime();
   $replacements['#dataExtenso'] = $d->format('d') . ' de ' . $meses[(int)$d->format('n')] . ' de ' . $d->format('Y');
 }
 
-// ====================== VALIDAÇÃO DE AMBIENTE ======================
+// ====================== VALIDAÃ‡ÃƒO DE AMBIENTE ======================
 if (!file_exists($TEMPLATE)) {
   http_response_code(500);
-  echo json_encode(['ok'=>false,'msg'=>'Template não encontrado']);
+  echo json_encode(['ok'=>false,'msg'=>'Template nÃ£o encontrado']);
   exit;
 }
 if ($SAVE_DIR === false || !is_dir($SAVE_DIR) || !is_writable($SAVE_DIR)) {
   http_response_code(500);
-  echo json_encode(['ok'=>false,'msg'=>'Diretório de saída inválido ou sem permissão de escrita']);
+  echo json_encode(['ok'=>false,'msg'=>'DiretÃ³rio de saÃ­da invÃ¡lido ou sem permissÃ£o de escrita']);
   exit;
 }
 
@@ -72,7 +72,7 @@ if ($SAVE_DIR === false || !is_dir($SAVE_DIR) || !is_writable($SAVE_DIR)) {
 $tmpBase = sys_get_temp_dir() . '/docx_' . uniqid();
 if (!@mkdir($tmpBase, 0700, true)) {
   http_response_code(500);
-  echo json_encode(['ok'=>false,'msg'=>'Falha ao criar diretório temporário']);
+  echo json_encode(['ok'=>false,'msg'=>'Falha ao criar diretÃ³rio temporÃ¡rio']);
   exit;
 }
 $workDocx = $tmpBase . '/work.docx';
@@ -98,7 +98,7 @@ $xml = $zip->getFromName($xmlPath);
 if ($xml === false) {
   $zip->close();
   http_response_code(500);
-  echo json_encode(['ok'=>false,'msg'=>'document.xml não encontrado no template']);
+  echo json_encode(['ok'=>false,'msg'=>'document.xml nÃ£o encontrado no template']);
   exit;
 }
 
@@ -111,7 +111,7 @@ foreach ($replacements as $needle => $value) {
 $zip->addFromString($xmlPath, $replaced);
 $zip->close();
 
-// ====================== GRAVA SAÍDA ======================
+// ====================== GRAVA SAÃDA ======================
 $nomeContratante = isset($item['nomeContratante']) ? $item['nomeContratante'] : 'CLIENTE';
 $nomeSeguro = preg_replace('/[^\w\-\.\s]+/u', '', $nomeContratante);
 $codigo = strtoupper(trim($codigo));
@@ -120,6 +120,6 @@ $finalName = 'OS_' . $codigo . '_' . $nomeSeguro . '.docx';
 $finalPath = $SAVE_DIR . DIRECTORY_SEPARATOR . $finalName;
 @copy($workDocx, $finalPath);
 
-// URL pública
+// URL pÃºblica
 $publicUrl = '/api/storage/docs/' . rawurlencode($finalName);
 echo json_encode(['ok'=>true,'file'=>$finalName,'url'=>$publicUrl]);
