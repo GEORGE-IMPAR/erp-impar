@@ -236,7 +236,7 @@
     };
 
     // --- GERAR ORDEM DE SERVIÇO (OS) — handler robusto, só para OS ---
-q('cj_btn_os').onclick = async function () {
+  q('cj_btn_os').onclick = async function () {
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) return;
 
@@ -302,47 +302,6 @@ q('cj_btn_os').onclick = async function () {
     hideLoader();
   }
 };
-
-      async function gerarOSOnce(c) {
-        try {
-          const res = await fetch('/api/gerador/make_os.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
-          const j = await res.json();
-          if (j && j.ok && j.url) {
-            window.open(j.url, '_blank');
-            try {
-              const nome = (q('nomeContratante')?.value || '').trim();
-              window.contratoSucesso?.({ titulo: 'OS gerada com sucesso', codigo: c.toUpperCase(), nome });
-            } catch(_) {}
-            return true;
-          }
-        } catch(e) { console.error('Erro ao gerar OS:', e); }
-        return false;
-      }
-
-      setLoader('Processando... aguarde...');
-      if (inp) {
-        inp.value = code.toUpperCase();
-        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-      }
-      await new Promise(r => setTimeout(r, 500));
-      let ok = await gerarOSOnce(code);
-
-      if (!ok || sawNotFound) {
-        if (inp && !inp.value) {
-          inp.value = code.toUpperCase();
-          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-        }
-        setLoader('Gerando Ordem de Serviço...');
-        await new Promise(r => setTimeout(r, 350));
-        ok = await gerarOSOnce(code);
-      }
-
-      window.alert = originalAlert;
-      hideLoader();
-      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
-    };
 
     // Exporta os elementos criados nesta build:
     window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
@@ -521,6 +480,7 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
 
 
