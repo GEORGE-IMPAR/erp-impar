@@ -235,34 +235,87 @@
       try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
     };
 
-    /* --- Gerar Ordem de Serviço (OS) --- */
-    // MESMA LÓGICA DO CONTRATO: comportamento idêntico, apenas chama make_os.php
-    q('cj_btn_os').onclick = async function () {
-      var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-      if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_){} return; }
+    // --- GERAR ORDEM DE SERVIÇO (OS) — handler robusto, só para OS ---
+q('cj_btn_os').onclick = async function () {
+  const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  if (!code) return;
 
-      const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
-      const inp = q('codigo');
-      if (inp) inp.value = '';
+  const inp = q('codigo');
+  if (inp) {
+    inp.value = code.toUpperCase();
+    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
+    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
+  }
 
-      const loader = q('cj_loader_back');
-      const setLoader = (msg) => {
-        if (!loader) return;
-        loader.style.display = 'flex';
-        const t = loader.querySelector('.cj-loader-text');
-        if (t && msg) t.textContent = msg;
-      };
-      const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+  const loader = q('cj_loader_back');
+  const setLoader = (msg) => { if (!loader) return; loader.style.display = 'flex'; const t = loader.querySelector('.cj-loader-text'); if (t && msg) t.textContent = msg; };
+  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-      const originalAlert = window.alert;
-      let sawNotFound = false;
-      window.alert = function (msg) {
-        if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-          sawNotFound = true;
-          setLoader('Gerando Ordem de Serviço...');
-        }
-        return originalAlert.call(window, msg);
-      };
+  try {
+    setLoader('Gerando Ordem de Serviço...');
+
+    // ⬇️ URL FINAL (sem “gerador” duplicado)
+    const url = '/api/gerador/make_os.php?codigo=' + encodeURIComponent(code);
+    console.log('[OS] Fetch =>', url);
+
+    const res = await fetch(url, { cache: 'no-store' });
+
+    // Se o servidor respondeu erro HTTP, mostra texto cru (pode ser HTML de erro do PHP)
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error('[OS] HTTP', res.status, txt.slice(0, 300));
+      alert('Falha ao gerar OS (HTTP ' + res.status + '). Ver Console para detalhes.');
+      return;
+    }
+
+    // Tenta JSON; se vier HTML, avisa
+    let j;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      const txt = await res.text();
+      console.error('[OS] Resposta não-JSON:', txt.slice(0, 300));
+      alert('A resposta não é JSON. Veja o Console (pode ser erro de template ou PHP).');
+      return;
+    } else {
+      j = await res.json();
+    }
+
+    console.log('[OS] JSON =>', j);
+
+    // Backend feliz
+    if (j && j.ok && j.url) {
+      // tenta abrir em nova aba; se bloqueado, faz fallback de download
+      const win = window.open(j.url, '_blank');
+      if (!win) {
+        const a = document.createElement('a');
+        a.href = j.url;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+
+      try {
+        const nome = (q('nomeContratante')?.value || '').trim();
+        window.contratoSucesso?.({ titulo: 'OS gerada com sucesso', codigo: code.toUpperCase(), nome });
+      } catch(_) {}
+
+      // fecha o modal “decidir”
+      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
+      return;
+    }
+
+    // Backend respondeu JSON de erro
+    const msg = (j && (j.msg || j.message)) ? String(j.msg || j.message) : 'Não foi possível gerar a OS.';
+    alert('Erro do servidor: ' + msg);
+
+  } catch (e) {
+    console.error('[OS] Exceção:', e);
+    alert('Erro inesperado ao gerar OS. Veja o Console.');
+  } finally {
+    hideLoader();
+  }
+};
 
       async function gerarOSOnce(c) {
         try {
@@ -482,6 +535,7 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
 
 
