@@ -177,7 +177,17 @@ q('cj_btn_gerar').onclick = async function () {
       const j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
-        try {
+
+         // === MOBILE SHARE: só no celular, usando mesmo nome do download ===
+         if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+         const codigo = (document.getElementById('codigo')?.value || '').trim();
+         const contratante = (document.getElementById('nomeContratante')?.value || '').trim();
+         const nomeArquivo = `CONTRATO_${codigo}_${contratante}.docx`;
+         __mobileShare(j.url, nomeArquivo, `Contrato do código ${codigo} - ${contratante}`);
+         }
+         // === FIM MOBILE SHARE ===
+
+         try {
           const nome = (q('nomeContratante')?.value || '').trim();
           window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
         } catch (_) {}
@@ -362,4 +372,36 @@ async function tryShareContractFile(fileUrl, fileName, message) {
     return p;
   };
  })();
+
+   /* === MOBILE SHARE (helper) – colar no FINAL do JS === */
+async function __mobileShare(fileUrl, fileName, message) {
+  try {
+    // Só roda no mobile
+    if (!/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
+
+    // Tenta compartilhar o ARQUIVO (precisa CORS no domínio do DOCX)
+    if (navigator.share && navigator.canShare) {
+      const resp = await fetch(fileUrl, { mode: 'cors', credentials: 'include' });
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const file = new File(
+          [blob],
+          fileName || 'Contrato.docx',
+          { type: blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+        );
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: fileName, text: message || '' });
+          return;
+        }
+      }
+    }
+
+    // Fallback: WhatsApp com LINK (funciona mesmo sem canShare)
+    const txt = encodeURIComponent(`${message || ''}\n\n${fileUrl}`);
+    window.location.href = `https://wa.me/?text=${txt}`;
+  } catch (e) {
+    console.warn('mobile share falhou:', e);
+  }
+}
+   
 })();
