@@ -238,7 +238,6 @@
     // --- GERAR ORDEM DE SERVIÇO (OS) — handler robusto, só para OS ---
 q('cj_btn_os').onclick = async function () {
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  const res = await fetch(url, { cache: 'no-store' }); 
   if (!code) return;
 
   const inp = q('codigo');
@@ -255,61 +254,47 @@ q('cj_btn_os').onclick = async function () {
   try {
     setLoader('Gerando Ordem de Serviço...');
 
-    // ⬇️ URL FINAL (sem “gerador” duplicado)
+    // URL correta (sem “gerador” duplicado)
     const url = '/api/gerador/make_os.php?codigo=' + encodeURIComponent(code);
     console.log('[OS] Fetch =>', url);
 
     const res = await fetch(url, { cache: 'no-store' });
 
-    // Se o servidor respondeu erro HTTP, mostra texto cru (pode ser HTML de erro do PHP)
+    // Se o servidor respondeu erro HTTP, mostra texto cru (pode ser HTML do PHP)
     if (!res.ok) {
       const txt = await res.text();
       console.error('[OS] HTTP', res.status, txt.slice(0, 300));
-      alert('Falha ao gerar OS (HTTP ' + res.status + '). Ver Console para detalhes.');
+      alert('Falha ao gerar OS (HTTP ' + res.status + '). Veja o Console.');
       return;
     }
 
-    // Tenta JSON; se vier HTML, avisa
-    let j;
-    const ct = res.headers.get('content-type') || '';
+    // Espera JSON; se vier HTML, alerta
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
     if (!ct.includes('application/json')) {
       const txt = await res.text();
       console.error('[OS] Resposta não-JSON:', txt.slice(0, 300));
-      alert('A resposta não é JSON. Veja o Console (pode ser erro de template ou PHP).');
+      alert('A resposta não é JSON. Veja o Console (pode ser erro de template/PHP).');
       return;
-    } else {
-      j = await res.json();
     }
 
+    const j = await res.json();
     console.log('[OS] JSON =>', j);
 
-    // Backend feliz
     if (j && j.ok && j.url) {
-      // tenta abrir em nova aba; se bloqueado, faz fallback de download
       const win = window.open(j.url, '_blank');
       if (!win) {
         const a = document.createElement('a');
-        a.href = j.url;
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        a.href = j.url; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
       }
-
       try {
         const nome = (q('nomeContratante')?.value || '').trim();
         window.contratoSucesso?.({ titulo: 'OS gerada com sucesso', codigo: code.toUpperCase(), nome });
       } catch(_) {}
-
-      // fecha o modal “decidir”
       try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
       return;
     }
 
-    // Backend respondeu JSON de erro
-    const msg = (j && (j.msg || j.message)) ? String(j.msg || j.message) : 'Não foi possível gerar a OS.';
-    alert('Erro do servidor: ' + msg);
-
+    alert('Erro do servidor: ' + (j?.msg || j?.message || 'Não foi possível gerar a OS.'));
   } catch (e) {
     console.error('[OS] Exceção:', e);
     alert('Erro inesperado ao gerar OS. Veja o Console.');
@@ -536,6 +521,7 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
 
 
