@@ -266,7 +266,7 @@
 
       async function gerarOSOnce(c) {
         try {
-          const res = await fetch('https://api.erpimpar.com.br/gerador/make_os.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+          const res = await fetch('/api/gerador/gerador/make_os.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
           const j = await res.json();
           if (j && j.ok && j.url) {
             window.open(j.url, '_blank');
@@ -482,4 +482,5 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
