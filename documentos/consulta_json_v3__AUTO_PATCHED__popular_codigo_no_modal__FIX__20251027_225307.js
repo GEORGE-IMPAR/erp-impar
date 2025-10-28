@@ -85,8 +85,8 @@
     lback.appendChild(lbox);
     document.body.appendChild(lback);
 
-    function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
-    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
+    //function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
+    //q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
 
     /* --- Atualizar documento --- */
     q('cj_btn_atualizar').onclick=function(){
@@ -305,7 +305,7 @@ q('cj_btn_gerar').onclick = async function () {
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
   function openList(){
-    build(); hideLegacy();
+    build(); //hideLegacy();
     window.__CJFIX__.b2.style.display='none';
     window.__CJFIX__.b1.style.display='flex';
   }
