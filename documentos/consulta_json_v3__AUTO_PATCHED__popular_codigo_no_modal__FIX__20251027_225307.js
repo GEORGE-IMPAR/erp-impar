@@ -75,7 +75,7 @@
 
     var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
     var card=el('div',{class:'cj-card'});
-    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_os">Gerar OS</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
     // Loader
@@ -85,8 +85,8 @@
     lback.appendChild(lbox);
     document.body.appendChild(lback);
 
-    //function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
-    //q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
+    function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
+    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
 
     /* --- Atualizar documento --- */
     q('cj_btn_atualizar').onclick=function(){
@@ -136,78 +136,6 @@
       })();
     }
 
-// --- GERAR ORDEM DE SERVIÇO (OS) ---
-q('cj_btn_os').onclick = async function () {
-  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
-
-  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
-  const inp = q('codigo');
-  if (inp) inp.value = '';
-
-  const loader = q('cj_loader_back');
-  const setLoader = (msg) => {
-    if (!loader) return;
-    loader.style.display = 'flex';
-    const t = loader.querySelector('.cj-loader-text');
-    if (t && msg) t.textContent = msg;
-  };
-  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
-
-  const originalAlert = window.alert;
-  let sawNotFound = false;
-  window.alert = function (msg) {
-    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-      sawNotFound = true;
-      setLoader('Gerando Ordem de Serviço...');
-    }
-    return originalAlert.call(window, msg);
-  };
-
-  async function gerarOSOnce(c) {
-    try {
-      // Ajuste a rota se no seu projeto o path for diferente
-      const res = await fetch('/api/gerador/make_OS.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
-      const j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
-        try {
-          const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({ titulo: 'OS gerada com sucesso', codigo: c.toUpperCase(), nome });
-        } catch (_) {}
-        return true;
-      }
-    } catch (e) {
-      console.error('Erro ao gerar OS:', e);
-    }
-    return false;
-  }
-
-  setLoader('Processando... aguarde...');
-  if (inp) {
-    inp.value = code.toUpperCase();
-    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-  }
-  await new Promise(r => setTimeout(r, 500));
-  let ok = await gerarOSOnce(code);
-
-  if (!ok || sawNotFound) {
-    if (inp && !inp.value) {
-      inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-    }
-    setLoader('Gerando Ordem de Serviço...');
-    await new Promise(r => setTimeout(r, 350));
-    ok = await gerarOSOnce(code);
-  }
-
-  window.alert = originalAlert;
-  hideLoader();
-  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-};
-
 
 /* --- Gerar contrato (com pré-carregamento) --- */
 // GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
@@ -249,17 +177,7 @@ q('cj_btn_gerar').onclick = async function () {
       const j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
-
-         // === MOBILE SHARE: só no celular, usando mesmo nome do download ===
-         if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-         const codigo = (document.getElementById('codigo')?.value || '').trim();
-         const contratante = (document.getElementById('nomeContratante')?.value || '').trim();
-         const nomeArquivo = `CONTRATO_${codigo}_${contratante}.docx`;
-         __mobileShare(j.url, nomeArquivo, `Contrato do código ${codigo} - ${contratante}`);
-         }
-         // === FIM MOBILE SHARE ===
-
-         try {
+        try {
           const nome = (q('nomeContratante')?.value || '').trim();
           window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
         } catch (_) {}
@@ -305,7 +223,7 @@ q('cj_btn_gerar').onclick = async function () {
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
   function openList(){
-    build(); //hideLegacy();
+    build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
     window.__CJFIX__.b1.style.display='flex';
   }
@@ -371,109 +289,8 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
 // --- EXPORTA helpers do módulo de consulta para uso externo ---
 window.__CJFIX_API__ = {
   openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
-  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Gerar OS)
+  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
   fetchList,   // busca a listagem completa
   fetchDoc     // busca 1 documento pelo código
 };
-
-/* === MOBILE SHARE NATIVO – COLAR NO FINAL DO JS === */
-
-async function tryShareContractFile(fileUrl, fileName, message) {
-  // roda só no mobile
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (!isMobile) return;
-
-  // garante parâmetros válidos
-  fileName = fileName || 'Contrato.docx';
-  message  = message  || 'Segue o contrato.';
-
-  try {
-    const resp = await fetch(fileUrl, { mode: 'cors', credentials: 'include' });
-    if (!resp.ok) throw new Error('Erro ao baixar contrato');
-    const blob = await resp.blob();
-
-    const mime = blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    const file = new File([blob], fileName, { type: mime });
-
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        files: [file],
-        title: fileName,
-        text: message
-      });
-      return true;
-    } else {
-      // fallback: link no WhatsApp
-      const txt = encodeURIComponent(`${message}\n\n${fileUrl}`);
-      window.location.href = `https://wa.me/?text=${txt}`;
-    }
-  } catch (e) {
-    console.warn('[MOBILE SHARE] Falha ao compartilhar:', e);
-  }
-}
-
-/* intercepta apenas o contrato gerado e aciona o compartilhamento */
-(function attachMobileShareForMakeContract() {
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (!isMobile) return;
-
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = function(input, init) {
-    const url = typeof input === 'string' ? input : input?.url || '';
-    const isMakeContract = url.includes('/api/gerador/make_contract.php');
-
-    const p = originalFetch(input, init);
-
-    if (isMakeContract) {
-      p.then(res => {
-        try {
-          res.clone().json().then(async j => {
-            if (j && j.ok && j.url) {
-              // nome exato igual ao que você já gera no download:
-              const codigo = (document.getElementById('codigo')?.value || '').trim();
-              const contratante = (document.getElementById('nomeContratante')?.value || '').trim();
-              const nomeArquivo = `CONTRATO_${codigo}_${contratante}.docx`;
-              const mensagem = `Contrato do código ${codigo} - ${contratante}`;
-              await tryShareContractFile(j.url, nomeArquivo, mensagem);
-            }
-          }).catch(() => {});
-        } catch (_) {}
-      }).catch(() => {});
-    }
-
-    return p;
-  };
- })();
-
-   /* === MOBILE SHARE (helper) – colar no FINAL do JS === */
-async function __mobileShare(fileUrl, fileName, message) {
-  try {
-    // Só roda no mobile
-    if (!/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
-
-    // Tenta compartilhar o ARQUIVO (precisa CORS no domínio do DOCX)
-    if (navigator.share && navigator.canShare) {
-      const resp = await fetch(fileUrl, { mode: 'cors', credentials: 'include' });
-      if (resp.ok) {
-        const blob = await resp.blob();
-        const file = new File(
-          [blob],
-          fileName || 'Contrato.docx',
-          { type: blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
-        );
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: fileName, text: message || '' });
-          return;
-        }
-      }
-    }
-
-    // Fallback: WhatsApp com LINK (funciona mesmo sem canShare)
-    const txt = encodeURIComponent(`${message || ''}\n\n${fileUrl}`);
-    window.location.href = `https://wa.me/?text=${txt}`;
-  } catch (e) {
-    console.warn('mobile share falhou:', e);
-  }
-}
-   
 })();
