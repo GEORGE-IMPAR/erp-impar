@@ -238,6 +238,7 @@
     // --- GERAR ORDEM DE SERVIÇO (OS) — handler robusto, só para OS ---
 q('cj_btn_os').onclick = async function () {
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  const res = await fetch(url, { cache: 'no-store' }); 
   if (!code) return;
 
   const inp = q('codigo');
@@ -535,6 +536,7 @@ async function __mobileShare(fileUrl, fileName, message) {
 }
 
 })();
+
 
 
 
