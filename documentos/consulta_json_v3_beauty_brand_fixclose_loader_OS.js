@@ -4,7 +4,7 @@
    - Loader preto “Processando... aguarde...” com borda e texto brancos
    - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antigas
 */
-(function(){
+;(async function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
   var JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
   var SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
@@ -75,7 +75,14 @@
 
     var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
     var card=el('div',{class:'cj-card'});
-    card.innerHTML = '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_os" type="button">Gerar OS</button><button class="btn ghost" id="cj_btn_gerar" type="button">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar" type="button">Atualizar documento</button></div>';
+    card.innerHTML =
+      '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
+      '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
+      '<div class="cj-actions">' +
+        '<button class="btn ghost" id="cj_btn_os" type="button">Gerar OS</button>' +
+        '<button class="btn ghost" id="cj_btn_gerar" type="button">Gerar contrato</button>' +
+        '<button class="btn primary" id="cj_btn_atualizar" type="button">Atualizar documento</button>' +
+      '</div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
     // Loader
@@ -92,8 +99,6 @@
     }
     q('cj_x1').onclick = hideAll;
     q('cj_x2').onclick = hideAll;
-
-    // proteção: só conecta se o botão existir
     var _close = q('cj_btn_close');
     if (_close) _close.onclick = hideAll;
 
@@ -114,25 +119,18 @@
     function __preloadDocForContract(code){
       return (async function(){
         const codeUpper = (code || '').toUpperCase();
-
-        // 1) injeta no input principal e dispara eventos
         const inp = q('codigo');
         if (inp) {
           inp.value = codeUpper;
           try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
           try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
         }
-
-        // 2) espelhos
         try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
-
-        // 3) busca item e preenche, sem navegar
         let savedGoTo = window.goTo;
-        window.goTo = function(){}; // no-op temporário
-        let item = null;
+        window.goTo = function(){};
         try {
           if (typeof fetchDoc === 'function') {
-            item = await fetchDoc(codeUpper);
+            const item = await fetchDoc(codeUpper);
             try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
           }
           await Promise.resolve();
@@ -141,128 +139,71 @@
         } finally {
           window.goTo = savedGoTo;
         }
-        return item;
       })();
     }
 
     /* --- Gerar Ordem de Serviço (OS) --- */
-    // MESMA LÓGICA DO CONTRATO: comportamento idêntico, apenas chama make_os.php
-const _osBtn = q('cj_btn_os');
-if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
-  ev.preventDefault();              // evita submit do form
-  ev.stopPropagation();             // evita listeners legados
-  // === seu código como já está, mantendo tudo igual ===
-  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
+    const _osBtn = q('cj_btn_os');
+    if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
 
-  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
+      var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+      if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
-  const inp = q('codigo');
-  if (inp) inp.value = '';
+      const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
-  const loader = q('cj_loader_back');
-  const setLoader = (msg) => {
-    if (!loader) return;
-    loader.style.display = 'flex';
-    const t = loader.querySelector('.cj-loader-text');
-    if (t && msg) t.textContent = msg;
-  };
-  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+      const inp = q('codigo');
+      if (inp) inp.value = '';
 
-  const originalAlert = window.alert;
-  let sawNotFound = false;
-  window.alert = function (msg) {
-    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-      sawNotFound = true;
-      setLoader('Gerando documento...');
-    }
-    return originalAlert.call(window, msg);
-  };
+      const loader = q('cj_loader_back');
+      const setLoader = (msg) => {
+        if (!loader) return;
+        loader.style.display = 'flex';
+        const t = loader.querySelector('.cj-loader-text');
+        if (t && msg) t.textContent = msg;
+      };
+      const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-  async function gerarOSOnce(c) {
-    try {
-      const res = await fetch('/api/gerador/make_os.php?codigo=' + encodeURIComponent(c) + '&t=' + Date.now(), { cache: 'no-store', redirect: 'follow' });
-      const j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
-        try {
-          const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-        } catch (_) {}
-        return true;
-      } else {
-        console.warn('[OS] JSON inesperado:', j);
-      }
-    } catch (e) {
-      console.error('[OS] Erro ao gerar:', e);
-    }
-    return false;
-  }
-
-  setLoader('Processando... aguarde...');
-  if (inp) {
-    inp.value = code.toUpperCase();
-    try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-    try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-  }
-  await new Promise(r => setTimeout(r, 500));
-  let ok = await gerarOSOnce(code);
-
-  if (!ok || sawNotFound) {
-    if (inp && !inp.value) {
-      inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-    }
-    setLoader('Gerando documento...');
-    await new Promise(r => setTimeout(r, 350));
-    ok = await gerarOSOnce(code);
-  }
-
-  window.alert = originalAlert;
-  hideLoader();
-  try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-}, true); // capture=true para pegar antes de qualquer form legacy
+      const originalAlert = window.alert;
+      let sawNotFound = false;
+      window.alert = function (msg) {
+        if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
+          sawNotFound = true;
+          setLoader('Gerando documento...');
+        }
+        return originalAlert.call(window, msg);
+      };
 
       async function gerarOSOnce(c) {
         try {
-          const res = await fetch('/api/gerador/make_os.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+          const res = await fetch('/api/gerador/make_os.php?codigo=' + encodeURIComponent(c) + '&t=' + Date.now(), { cache: 'no-store', redirect: 'follow' });
           const j = await res.json();
           if (j && j.ok && j.url) {
             window.open(j.url, '_blank');
-
-            // === MOBILE SHARE: só no celular, usando mesmo nome do download ===
-            if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-              const codigo = (document.getElementById('codigo')?.value || '').trim();
-              const contratante = (document.getElementById('nomeContratante')?.value || '').trim();
-              const nomeArquivo = `OS_${codigo}_${contratante}.docx`;
-              __mobileShare(j.url, nomeArquivo, `Contrato do código ${codigo} - ${contratante}`);
-            }
-            // === FIM MOBILE SHARE ===
-
             try {
               const nome = (q('nomeContratante')?.value || '').trim();
               window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
             } catch (_) {}
             return true;
+          } else {
+            console.warn('[OS] JSON inesperado:', j);
           }
         } catch (e) {
-          console.error('Erro ao gerar contrato:', e);
+          console.error('[OS] Erro ao gerar:', e);
         }
         return false;
       }
 
-      // 4) Primeira tentativa
       setLoader('Processando... aguarde...');
       if (inp) {
         inp.value = code.toUpperCase();
         try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
         try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
       }
-      await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+      await new Promise(r => setTimeout(r, 500));
       let ok = await gerarOSOnce(code);
 
-      // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
       if (!ok || sawNotFound) {
         if (inp && !inp.value) {
           inp.value = code.toUpperCase();
@@ -274,12 +215,11 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
         ok = await gerarOSOnce(code);
       }
 
-      // 6) Restaura alert/loader e fecha UI da consulta
       window.alert = originalAlert;
       hideLoader();
       try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-    };
-   
+    }, true); // capture=true
+
     // Exporta os elementos criados nesta build:
     window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
@@ -290,44 +230,31 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
     window.__CJFIX__.b1.style.display='flex';
   }
   function openDecide(code){
-    // === CJ PATCH: popular campo "codigo" da Etapa 1 assim que o modal abre ===
     (function(){
       try {
         const codeUpper = (typeof code === 'string' ? code : (code?.toString?.() ?? '')).toUpperCase();
-        // Mantém o chip do modal coerente (idempotente; não quebra se já existir em outro ponto)
         try { q('cj_code_chip').textContent = codeUpper; } catch(e){}
         try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(e){}
-
         const inp = q('codigo');
         if (inp) {
           inp.value = codeUpper;
           try { inp.dispatchEvent(new Event('input',  { bubbles: true })); } catch(_) {}
           try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch(_) {}
         }
-
-        // (Opcional) espelhos do código em spans/labels que seguem padrão "codigoVal*"
-        try {
-          document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; });
-        } catch(_){}
+        try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; }); } catch(_){}
       } catch(_){}
     })();
-    // === FIM CJ PATCH ===
 
-     
     /* --- Gerar contrato (com pré-carregamento) --- */
-    // GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
     q('cj_btn_gerar').onclick = async function () {
       var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
       if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
-      // Regex para as mensagens de alerta que você descreveu
       const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
-      // 1) LIMPA o input antes da 1ª tentativa (evita código antigo)
       const inp = q('codigo');
       if (inp) inp.value = '';
 
-      // 2) Loader preto já existente
       const loader = q('cj_loader_back');
       const setLoader = (msg) => {
         if (!loader) return;
@@ -337,7 +264,6 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
       };
       const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-      // 3) Patch do alert apenas durante ESTA ação
       const originalAlert = window.alert;
       let sawNotFound = false;
       window.alert = function (msg) {
@@ -354,16 +280,6 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
           const j = await res.json();
           if (j && j.ok && j.url) {
             window.open(j.url, '_blank');
-
-            // === MOBILE SHARE: só no celular, usando mesmo nome do download ===
-            if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-              const codigo = (document.getElementById('codigo')?.value || '').trim();
-              const contratante = (document.getElementById('nomeContratante')?.value || '').trim();
-              const nomeArquivo = `CONTRATO_${codigo}_${contratante}.docx`;
-              __mobileShare(j.url, nomeArquivo, `Contrato do código ${codigo} - ${contratante}`);
-            }
-            // === FIM MOBILE SHARE ===
-
             try {
               const nome = (q('nomeContratante')?.value || '').trim();
               window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
@@ -376,17 +292,15 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
         return false;
       }
 
-      // 4) Primeira tentativa
       setLoader('Processando... aguarde...');
       if (inp) {
         inp.value = code.toUpperCase();
         try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
         try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
       }
-      await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+      await new Promise(r => setTimeout(r, 500));
       let ok = await gerarContratoOnce(code);
 
-      // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
       if (!ok || sawNotFound) {
         if (inp && !inp.value) {
           inp.value = code.toUpperCase();
@@ -398,12 +312,10 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
         ok = await gerarContratoOnce(code);
       }
 
-      // 6) Restaura alert/loader e fecha UI da consulta
       window.alert = originalAlert;
       hideLoader();
       try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
     };
-
 
     build();
     q('cj_code_chip').textContent=code;
@@ -440,13 +352,11 @@ if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
 
-// --- EXPORTA helpers do módulo de consulta para uso externo ---
-window.__CJFIX_API__ = {
-  openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
-  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Gerar OS)
-  fetchList,   // busca a listagem completa
-  fetchDoc     // busca 1 documento pelo código
-};
-
+  // --- EXPORTA helpers do módulo de consulta para uso externo ---
+  window.__CJFIX_API__ = {
+    openList,
+    openDecide,
+    fetchList,
+    fetchDoc
+  };
 })();
-
