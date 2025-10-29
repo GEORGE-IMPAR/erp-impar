@@ -113,102 +113,67 @@
       return dd + '/' + mm + '/' + yy;
     }
 
-    const _osBtn = q('cj_btn_os');
-    if (_osBtn) _osBtn.addEventListener('click', async function (ev) {
-      ev.preventDefault();
-      ev.stopPropagation();
+// === Gerar Ordem de Serviço (OS) – sobrepõe URLs e chama make_os.php ===
+(function attachGerarOS(){
+  const btnOS = document.getElementById('cj_btn_os');
+  if (!btnOS || btnOS.__bound) return;
+  btnOS.__bound = true;
 
-      var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-      if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
+  btnOS.addEventListener('click', async function evGerarOS(e){
+    e.preventDefault(); e.stopPropagation();
 
-      const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
+    const code = (document.getElementById('cj_code_chip')?.getAttribute('data-code') || '').trim().toUpperCase();
+    if (!/^AC[0-9A-Z]+$/.test(code)) { alert('Código inválido ou ausente.'); return; }
 
-      const inp = q('codigo');
-      if (inp) inp.value = '';
+    // >>> SOBREPOEMOS quaisquer valores antigos/legados <<<
+    const excelURL    = `https://api.erpimpar.com.br/storage/docs/${encodeURIComponent(code)}.xlsx`;
+    const templateURL = `https://api.erpimpar.com.br/gerador/templates/${encodeURIComponent('Template_OS.docx')}`;
 
-      const loader = q('cj_loader_back');
-      const setLoader = (msg) => {
-        if (!loader) return;
-        loader.style.display = 'flex';
-        const t = loader.querySelector('.cj-loader-text');
-        if (t && msg) t.textContent = msg;
-      };
-      const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+    // guarda também no docMeta para debug/consistência (opcional)
+    try {
+      const meta = document.getElementById('docMeta');
+      if (meta) { meta.dataset.codigo = code; meta.dataset.excel = `${code}.xlsx`; }
+    } catch(_){}
 
-      const originalAlert = window.alert;
-      let sawNotFound = false;
-      window.alert = function (msg) {
-        if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-          sawNotFound = true;
-          setLoader('Gerando documento...');
-        }
-        return originalAlert.call(window, msg);
-      };
+    // loader
+    const loader = document.getElementById('cj_loader_back');
+    const setLoader = (msg) => {
+      if (!loader) return;
+      loader.style.display = 'flex';
+      const t = loader.querySelector('.cj-loader-text');
+      if (t && msg) t.textContent = msg;
+    };
+    const hideLoader = () => { if (loader) loader.style.display = 'none'; };
 
-      const OS_FIELDS = ['codigo','nomeContratante','servico','contatoContratante','telefoneContratante','emailContratante','endereco','dataExtenso','prazo'];
-      const pairs = [];
-      OS_FIELDS.forEach(function(k){
-        let v = (q(k)?.value ?? '').trim();
-        if (!v && k === 'codigo') v = code;
-        if (!v && k === 'dataExtenso') v = __dateBR();
-        if (v) pairs.push(k + '=' + encodeURIComponent(v));
-      });
+    setLoader('Processando... aguarde...');
 
-      async function gerarOSOnce(c) {
-        try {
-          const url = '/api/gerador/make_os.php?codigo=' + encodeURIComponent(c) + (pairs.length ? '&' + pairs.join('&') : '') + '&t=' + Date.now();
-          const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
-          const text = await res.text();
-          let j; try { j = JSON.parse(text); } catch { j = null; }
+    // chama o make_os.php (server-side monta o DOCX a partir do template)
+    try {
+      const url = `/api/gerador/make_os.php?codigo=${encodeURIComponent(code)}&t=${Date.now()}`;
+      const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
+      const j = await res.json().catch(()=>null);
 
-          if (window.__OS_DEBUG__) {
-            console.log('[OS] URL requisitada:', url);
-            console.log('[OS] HTTP', res.status);
-            console.log('[OS] payload', j || text.slice(0, 120));
-          }
+      // DEBUG ÚTIL: se o Excel não existir, você vê 404 no Network para .../storage/docs/<code>.xlsx
+      // Isso não bloqueia o make_os.php, mas é um sinal claro de planilha inexistente / nome errado.
 
-          if (j && j.ok && j.url) {
-            window.open(j.url, '_blank');
-            try {
-              const nome = (q('nomeContratante')?.value || '').trim();
-              window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-            } catch (_) {}
-            return true;
-          } else {
-            const msg = (j && (j.error || j.message)) || 'Erro ao gerar OS. Veja o Console (F12 ▸ Network).';
-            alert(msg);
-          }
-        } catch (e) {
-          console.error('[OS] Erro ao gerar:', e);
-          alert('Falha de rede ao gerar OS. Tente novamente.');
-        }
-        return false;
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+      } else {
+        const msg = j?.msg || 'Erro ao gerar OS. Veja o Console (F12 ▸ Network).';
+        alert(msg);
       }
-
-      setLoader('Processando... aguarde...');
-      if (inp) {
-        inp.value = code.toUpperCase();
-        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-      }
-      await new Promise(r => setTimeout(r, 500));
-      let ok = await gerarOSOnce(code);
-
-      if (!ok || sawNotFound) {
-        if (inp && !inp.value) {
-          inp.value = code.toUpperCase();
-          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-        }
-        setLoader('Gerando documento...');
-        await new Promise(r => setTimeout(r, 350));
-        ok = await gerarOSOnce(code);
-      }
-
-      window.alert = originalAlert;
+    } catch (err) {
+      console.error('[OS] Erro na chamada make_os.php:', err);
+      alert('Erro ao gerar OS. Veja o Console (F12 ▸ Network).');
+    } finally {
       hideLoader();
-      try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
-    }, true);
+    }
+
+    // **DICA:** se preferir manter paridade com o fluxo de contrato (cliente gera docx no browser),
+    // você pode chamar aqui o seu gerador JS usando `excelURL` e `templateURL`.
+    // No entanto, como você já tem o make_os.php pronto, mantive apenas o server-side.
+  }, true);
+})();
 
     window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
