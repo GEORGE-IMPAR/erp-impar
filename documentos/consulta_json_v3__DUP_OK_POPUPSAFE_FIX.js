@@ -175,7 +175,7 @@ q('cj_btn_gerar').onclick = async function () {
 
   async function gerarContratoOnce(c) {
     try {
-      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+      const res = await fetch('/api/gerador/make_contract-1.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
       const j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
