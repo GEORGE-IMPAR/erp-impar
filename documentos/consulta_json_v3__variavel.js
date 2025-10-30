@@ -101,7 +101,7 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
       fetchDoc(code).then(function(item){
         try { fillForm(item); } catch(_){}
         try { if (typeof goTo==='function') goTo(2); } catch(_){}
-        _hideAll();
+        hideAll();
         window.scrollTo({top:0,behavior:'smooth'});
       }).catch(function(){ hideAll(); });
     };
@@ -373,8 +373,7 @@ q('cj_btn_os').onclick = async function () {
 // --- (NADA MAIS AQUI) ---
 // Importante: NÃO deixe blocos soltos depois do onclick.
 // A próxima linha já é a exportação dos elementos criados nesta build:
-window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-  }
+
   async function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
