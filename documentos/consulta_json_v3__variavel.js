@@ -232,7 +232,7 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
     window.__CJFIX__.b2.style.display='none';
     window.__CJFIX__.b1.style.display='flex';
   }
-  function openDecide(code){
+  async function openDecide(code){
   // === CJ PATCH: popular campo "codigo" da Etapa 1 assim que o modal abre ===
   (function(){
     try {
@@ -291,7 +291,7 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
 
 /* --- Gerar OS (com pré-carregamento) --- */
 // GERAR OS — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-q('cj_btn_gerar').onclick = async function () {
+q('cj_btn_os').onclick = async function () {
   window.__DOC_KIND__ = 'OS';
   var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
@@ -380,7 +380,7 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
     window.__CJFIX__.b2.style.display='none';
     window.__CJFIX__.b1.style.display='flex';
   }
-  function openDecide(code){
+  async function openDecide(code){
   // === CJ PATCH: popular campo "codigo" da Etapa 1 assim que o modal abre ===
   (function(){
     try {
