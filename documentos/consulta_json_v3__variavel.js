@@ -149,7 +149,7 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
     if (_btnGerar && !_btnGerar.__hooked) {
       _btnGerar.__hooked = true;
       _btnGerar.onclick = async function () {
-        window.__DOC_KIND__ = 'CONTRATO';
+        window.__DOC_KIND__ = 'Template_Contrato.docx';
         var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
         if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
@@ -226,7 +226,7 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
     if (_btnOS && !_btnOS.__hooked) {
       _btnOS.__hooked = true;
       _btnOS.onclick = async function () {
-        window.__DOC_KIND__ = 'OS';
+        window.__DOC_KIND__ = 'Template_OS.docx';
         var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
         if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
