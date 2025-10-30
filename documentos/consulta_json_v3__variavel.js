@@ -204,7 +204,7 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
-  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+  //await new Promise(r => setTimeout(r, 500)); // pequena estabilização
   let ok = await gerarContratoOnce(code);
 
   // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
@@ -354,7 +354,7 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
-  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+  //await new Promise(r => setTimeout(r, 500)); // pequena estabilização
   let ok = await gerarContratoOnce(code);
 
   // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
