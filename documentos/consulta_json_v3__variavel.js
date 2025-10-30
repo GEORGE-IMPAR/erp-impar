@@ -91,7 +91,7 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
     document.body.appendChild(lback);
 
     function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
-    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
+    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll;
 
     /* --- Atualizar documento --- */
     q('cj_btn_atualizar').onclick=function(){
