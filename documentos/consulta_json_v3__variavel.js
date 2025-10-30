@@ -144,13 +144,11 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
 
 /* --- Gerar contrato (com pré-carregamento) --- */
 // GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-q('cj_btn_gerar')?.addEventListener('click', function(){
-  window.__DOC_KIND__ = 'CONTRATO';
-  window.__DOC_MAKE__ = '/api/gerador/make_contract.php';
-}, true);  
-var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+q('cj_btn_gerar').onclick = async function () {
+  window.__DOC_KIND__ = 'CONTRATO';                         // 'CONTRATO' ou 'OS'
+  window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a chamar  
+  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
-
   // Regex para as mensagens de alerta que você descreveu
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
@@ -204,8 +202,8 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
-  //await new Promise(r => setTimeout(r, 500)); // pequena estabilização
-  //let ok = await gerarContratoOnce(code);
+  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+  let ok = await gerarContratoOnce(code);
 
   // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
   if (!ok || sawNotFound) {
@@ -215,8 +213,8 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
       try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
     }
     setLoader('Gerando documento...');
-    //await new Promise(r => setTimeout(r, 350));
-    //ok = await gerarContratoOnce(code);
+    await new Promise(r => setTimeout(r, 350));
+    ok = await gerarContratoOnce(code);
   }
 
   // 6) Restaura alert/loader e fecha UI da consulta
@@ -229,7 +227,7 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
 // Importante: NÃO deixe blocos soltos depois do onclick.
 // A próxima linha já é a exportação dos elementos criados nesta build:
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-  
+  }
   function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
@@ -294,12 +292,12 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
 
 /* --- Gerar OS (com pré-carregamento) --- */
 // GERAR OS — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-q('cj_btn_os')?.addEventListener('click', function(){
-  window.__DOC_KIND__ = 'OS';
-  window.__DOC_MAKE__ = '/api/gerador/make_os.php';
-}, true);  
-var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+  window.__DOC_KIND__ = 'OS';                         // 'CONTRATO' ou 'OS'
+  window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a chamar  
+  var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
+  // Regex para as mensagens de alerta que você descreveu
+  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
   // Regex para as mensagens de alerta que você descreveu
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
@@ -354,8 +352,8 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
   }
-  //await new Promise(r => setTimeout(r, 500)); // pequena estabilização
-  //let ok = await gerarContratoOnce(code);
+  await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+  let ok = await gerarContratoOnce(code);
 
   // 5) Se falhou OU se houve alerta "não encontrado", re-tenta UMA vez
   if (!ok || sawNotFound) {
@@ -365,8 +363,8 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
       try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
     }
     setLoader('Gerando documento...');
-    //await new Promise(r => setTimeout(r, 350));
-    //ok = await gerarContratoOnce(code);
+    await new Promise(r => setTimeout(r, 350));
+    ok = await gerarContratoOnce(code);
   }
 
   // 6) Restaura alert/loader e fecha UI da consulta
@@ -379,7 +377,7 @@ var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
 // Importante: NÃO deixe blocos soltos depois do onclick.
 // A próxima linha já é a exportação dos elementos criados nesta build:
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
-  
+  }
   function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
