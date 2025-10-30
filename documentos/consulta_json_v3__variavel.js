@@ -227,7 +227,7 @@ q('cj_btn_gerar').onclick = async function () {
 // A próxima linha já é a exportação dos elementos criados nesta build:
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
-  function openList(){
+  async function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
     window.__CJFIX__.b1.style.display='flex';
@@ -375,7 +375,7 @@ q('cj_btn_os').onclick = async function () {
 // A próxima linha já é a exportação dos elementos criados nesta build:
 window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
   }
-  function openList(){
+  async function openList(){
     build(); hideLegacy();
     window.__CJFIX__.b2.style.display='none';
     window.__CJFIX__.b1.style.display='flex';
