@@ -141,14 +141,13 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
       })();
     }
 
-
 /* --- Gerar contrato (com pré-carregamento) --- */
 // GERAR CONTRATO — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
 q('cj_btn_gerar').onclick = async function () {
-  window.__DOC_KIND__ = 'CONTRATO';                         // 'CONTRATO' ou 'OS'
-  window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a chamar  
+  window.__DOC_KIND__ = 'CONTRATO';
   var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
+
   // Regex para as mensagens de alerta que você descreveu
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
@@ -292,12 +291,10 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
 
 /* --- Gerar OS (com pré-carregamento) --- */
 // GERAR OS — auto-retry transparente: limpa código, mostra loader e, se der "não encontrado", tenta 1x de novo
-  window.__DOC_KIND__ = 'OS';                         // 'CONTRATO' ou 'OS'
-  window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a chamar  
+q('cj_btn_gerar').onclick = async function () {
+  window.__DOC_KIND__ = 'OS';
   var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
-  // Regex para as mensagens de alerta que você descreveu
-  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
 
   // Regex para as mensagens de alerta que você descreveu
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
