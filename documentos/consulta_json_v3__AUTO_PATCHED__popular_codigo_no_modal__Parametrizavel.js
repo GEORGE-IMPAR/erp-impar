@@ -140,8 +140,8 @@
     }
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
-     setTemplateSomenteNoIndex('Template_OS.docx');
-     gerarContrato('make_os.php', 'Template_OS.docx');
+     setTemplateSomenteNoIndex('Template_Contrato.docx');
+     gerarContrato('make_contract.php', 'Template_Contrato.docx');
     });
  }
 
