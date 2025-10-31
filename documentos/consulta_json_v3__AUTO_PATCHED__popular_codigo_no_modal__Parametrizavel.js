@@ -5,12 +5,18 @@
    - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga s
 */
 
-if (typeof window.TEMPLATE_ATUAL === 'undefined') {
-  window.TEMPLATE_ATUAL = 'Template_OS.docx'; // default
+function aplicarTemplateNoIndex(templateName){
+  const tpl = String(templateName || 'Template_OS.docx').trim();
+  window.TEMPLATE_ATUAL = tpl;
+  window.nomeTemplatePadrao = () => tpl;
+
+  const btnIndex = document.getElementById('btnGerar');
+  if (btnIndex) {
+    btnIndex.dataset.templateUrl =
+      `/api/gerador/templates/${encodeURIComponent(tpl)}`;
+  }
 }
-if (typeof window.nomeTemplatePadrao !== 'function') {
-  window.nomeTemplatePadrao = () => window.TEMPLATE_ATUAL;
-}
+
 
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
@@ -166,10 +172,7 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
     btnContrato.replaceWith(clean);
     clean.onclick = null;
     clean.addEventListener('click', () => {
-      // ATENÇÃO: use o MESMO nome que está no servidor (underline ou hífen)
-      aplicarTemplateNoIndex('Template-Contrato.docx');   // se no servidor for com underline
       gerarContrato('make_contract.php', 'Template-Contrato.docx');
-      // Se o arquivo no servidor for com hífen, troque as duas linhas acima por 'Template-Contrato.docx'
     });
   }
 }
@@ -182,7 +185,6 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
     btnOS.replaceWith(clean);
     clean.onclick = null;
     clean.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template_OS.docx');
       gerarContrato('make_os.php', 'Template_OS.docx');
     });
   }
