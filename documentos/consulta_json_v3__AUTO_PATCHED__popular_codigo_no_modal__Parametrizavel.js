@@ -139,7 +139,10 @@
       
     }
     const btnGerar = card.querySelector('#cj_btn_gerar');
-    btnGerar?.addEventListener('click', () => gerarContrato('make_os.php', 'Template_OS.docx'));
+    btnGerar?.addEventListener('click', () => {
+     setTemplateSomenteNoIndex('Template_OS.docx');
+     gerarContrato('make_os.php', 'Template_OS.docx');
+    });
  }
 
 // helper p/ atualizar as 2 linhas do index
