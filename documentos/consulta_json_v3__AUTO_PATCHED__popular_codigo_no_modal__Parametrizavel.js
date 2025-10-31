@@ -162,9 +162,8 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
   const btnGerar = card.querySelector('#cj_btn_gerar');
   if (btnGerar) {
     btnGerar.addEventListener('click', () => {
-      // USE exatamente o nome que existe no FTP:
-      aplicarTemplateNoIndex('Template-Contrato.docx');          // ou 'Template-Contrato.docx' se no servidor for com hífen
-      gerarContrato('make_contract.php', 'Template-Contrato.docx'); // alinhe o nome nas DUAS linhas
+      aplicarTemplateNoIndex('Template-Contrato.docx');
+      gerarContrato('make_contract.php', 'Template-Contrato.docx');
     });
   }
 
@@ -175,19 +174,8 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       gerarContrato('make_os.php', 'Template_OS.docx');
     });
   }
-} // <-- fecha o bloco e acabou (não coloque mais "});" depois)
+}
 
-// helper p/ atualizar as 2 linhas do index
-function aplicarTemplateNoIndex(templateName){
-  const tpl = String(templateName || 'Template_OS.docx').trim();
-  window.TEMPLATE_ATUAL = tpl;
-  window.nomeTemplatePadrao = () => tpl;
-  const btnIndex = document.getElementById('btnGerar');
-  if (btnIndex) {
-    btnIndex.dataset.templateUrl =
-      `/api/gerador/templates/${encodeURIComponent(tpl)}`;
-  }
- }
 
 
 /* === Gerar contrato (agora com template) ============================== */
