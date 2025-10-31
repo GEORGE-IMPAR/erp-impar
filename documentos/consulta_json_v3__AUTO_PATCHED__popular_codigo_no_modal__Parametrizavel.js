@@ -139,48 +139,56 @@
       
     }
     const btnGerar = card.querySelector('#cj_btn_gerar');
-    btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
+    btnGerar?.addEventListener('click', () => gerarContrato('make_os.php', 'Template_OS.docx'));
  }
 
-/* === Gerar contrato (agora como função) =============================== */
+// helper p/ atualizar as 2 linhas do index
+function aplicarTemplateNoIndex(templateName){
+  const tpl = String(templateName || 'Template_OS.docx');
+
+  // (a) sobrescreve a função global
+  window.nomeTemplatePadrao = function(){ return tpl; };
+
+  // (b) atualiza o dataset.templateUrl do botão do INDEX (id="btnGerar")
+  //     se não existir, tenta cair no próprio botão do modal como fallback
+  const API_BASE = (typeof API !== 'undefined' && API) ? API : '/api';
+  const btnIndex = document.getElementById('btnGerar') || document.querySelector('#btnGerar');
+  const btnFallback = document.getElementById('cj_btn_gerar') || document.querySelector('#cj_btn_gerar');
+
+  const alvo = btnIndex || btnFallback;
+  if (alvo) {
+    alvo.dataset.templateUrl = `${API_BASE}/gerador/templates/${encodeURIComponent(tpl)}`;
+  }
+}
+
+/* === Gerar contrato (agora com template) ============================== */
 /**
- * Gera o documento chamando um endpoint PHP (ex.: "make_os.php" ou "make_contract.php").
- * @param {string} ArquivoPHP - nome do arquivo PHP (ex.: "make_os.php")
+ * @param {string} ArquivoPHP    ex.: "make_os.php"
+ * @param {string} TemplateDocx  ex.: "Template_OS.docx"
  */
-async function gerarContrato(ArquivoPHP) {
-  // Captura do código no chip
+async function gerarContrato(ArquivoPHP, TemplateDocx) {
+  // >>> aplica o template nas 2 linhas do index ANTES de gerar
+  aplicarTemplateNoIndex(TemplateDocx);
+
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
-  // Regex p/ alertas que disparam re-tentativa
   const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
+  const inp = q('codigo'); if (inp) inp.value = '';
 
-  // 1) Limpa input antes da 1ª tentativa
-  const inp = q('codigo');
-  if (inp) inp.value = '';
-
-  // 2) Loader preto existente
   const loader = q('cj_loader_back');
-  const setLoader = (msg) => {
-    if (!loader) return;
-    loader.style.display = 'flex';
-    const t = loader.querySelector('.cj-loader-text');
-    if (t && msg) t.textContent = msg;
-  };
-  const hideLoader = () => { if (loader) loader.style.display = 'none'; };
+  const setLoader = (msg) => { if (!loader) return; loader.style.display='flex'; const t=loader.querySelector('.cj-loader-text'); if(t&&msg) t.textContent=msg; };
+  const hideLoader = () => { if (loader) loader.style.display='none'; };
 
-  // 3) Patch do alert apenas durante ESTA ação
   const originalAlert = window.alert;
   let sawNotFound = false;
   window.alert = function (msg) {
     if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-      sawNotFound = true;
-      setLoader('Gerando documento...');
+      sawNotFound = true; setLoader('Gerando documento...');
     }
     return originalAlert.call(window, msg);
   };
 
-  // Sanitiza o nome do PHP (evita path traversal e caracteres estranhos)
   const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
   const endpointBase = '/api/gerador/';
 
@@ -193,27 +201,25 @@ async function gerarContrato(ArquivoPHP) {
         try {
           const nome = (q('nomeContratante')?.value || '').trim();
           window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-        } catch (_) {}
+        } catch(_) {}
         return true;
       }
-    } catch (e) {
+    } catch(e) {
       console.error('Erro ao gerar contrato:', e);
     }
     return false;
   }
 
   try {
-    // 4) Primeira tentativa
     setLoader('Processando... aguarde...');
     if (inp) {
       inp.value = code.toUpperCase();
       try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
       try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
     }
-    await new Promise(r => setTimeout(r, 500)); // pequena estabilização
+    await new Promise(r => setTimeout(r, 500));
     let ok = await gerarContratoOnce(code);
 
-    // 5) Se falhou OU houve alerta "não encontrado", re-tenta UMA vez
     if (!ok || sawNotFound) {
       if (inp && !inp.value) {
         inp.value = code.toUpperCase();
@@ -225,14 +231,11 @@ async function gerarContrato(ArquivoPHP) {
       ok = await gerarContratoOnce(code);
     }
   } finally {
-    // 6) Restaura alert/loader e fecha UI da consulta
     window.alert = originalAlert;
     hideLoader();
-    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {}
+    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
   }
 }
-
-// Torna acessível globalmente, se precisar chamar fora deste escopo
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 
