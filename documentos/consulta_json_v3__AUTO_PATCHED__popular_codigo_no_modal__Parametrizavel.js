@@ -5,11 +5,16 @@
    - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga s
 */
 
-if (typeof window.TEMPLATE_ATUAL === 'undefined') {
-  window.TEMPLATE_ATUAL = 'Template_OS.docx'; // default
-}
-if (typeof window.nomeTemplatePadrao !== 'function') {
-  window.nomeTemplatePadrao = () => window.TEMPLATE_ATUAL;
+function aplicarTemplateNoIndex(templateName){
+  const tpl = String(templateName || 'Template_OS.docx').trim();
+  window.TEMPLATE_ATUAL = tpl;
+  window.nomeTemplatePadrao = () => tpl;
+
+  const btnIndex = document.getElementById('btnGerar');
+  if (btnIndex) {
+    btnIndex.dataset.templateUrl =
+      `/api/gerador/templates/${encodeURIComponent(tpl)}`;
+  }
 }
 
 (function(){
@@ -162,16 +167,16 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
   const btnGerar = card.querySelector('#cj_btn_gerar');
   if (btnGerar) {
     btnGerar.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template-Contrato.docx');
-      gerarContrato('make_contract.php', 'Template-Contrato.docx');
+      // NÃO chama aplicarTemplateNoIndex aqui
+      gerarContrato('make_contract.php', 'Template-Contrato.docx'); // hífen
     });
   }
 
   const btnOS = card.querySelector('#cj_btn_gerar_os');
   if (btnOS) {
     btnOS.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template_OS.docx');
-      gerarContrato('make_os.php', 'Template_OS.docx');
+      // NÃO chama aplicarTemplateNoIndex aqui
+      gerarContrato('make_os.php', 'Template_OS.docx'); // underline
     });
   }
 }
@@ -206,10 +211,23 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
     return originalAlert.call(window, msg);
   };
 
-  const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
-  const endpointBase = '/api/gerador/';
-  const tpl = String(TemplateDocx || window.TEMPLATE_ATUAL || '').trim();
+    let phpName = 'make_contract.php';
+    if (typeof ArquivoPHP === 'string' && ArquivoPHP.trim().length > 0) {
+     phpName = ArquivoPHP.trim();
+    }
+    
+   const endpointBase = '/api/gerador/';
+   // >>> define tpl com fallback seguro
+   let tpl = 'Template-Contrato.docx';
+   if (typeof TemplateDocx === 'string' && TemplateDocx.trim().length > 0) {
+    tpl = TemplateDocx.trim();
+   } else if (window.TEMPLATE_ATUAL && window.TEMPLATE_ATUAL.trim().length > 0) {
+    tpl = window.TEMPLATE_ATUAL.trim();
+   } console.debug('[GERAR]', { phpName, tpl });
+
+  aplicarTemplateNoIndex(tpl);
   console.debug('[GERAR]', { phpName, tpl });
+
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
   async function gerarContratoOnce(c) {
@@ -253,7 +271,8 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
 }
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
-}
+
+
 function openList(){
   build(); hideLegacy();
   const b1 = q('cj_list_back');
