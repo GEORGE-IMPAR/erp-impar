@@ -4,6 +4,14 @@
    - Loader preto “Processando... aguarde...” com borda e texto brancos
    - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga s
 */
+
+if (typeof window.TEMPLATE_ATUAL === 'undefined') {
+  window.TEMPLATE_ATUAL = 'Template_OS.docx'; // default
+}
+if (typeof window.nomeTemplatePadrao !== 'function') {
+  window.nomeTemplatePadrao = () => window.TEMPLATE_ATUAL;
+}
+
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
   var JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
@@ -140,27 +148,22 @@
     }
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
-    gerarContrato('make_contract.php', 'Template_Contrato.docx');
+      aplicarTemplateNoIndex('Template_Contrato.docx');
+      gerarContrato('make_contract.php', 'Template_Contrato.docx');
     });
  }
 
 // helper p/ atualizar as 2 linhas do index
 function aplicarTemplateNoIndex(templateName){
-  const tpl = String(templateName || 'Template_OS.docx');
-  window.TEMPLATE_ATUAL = tpl;
+  const tpl = String(templateName || 'Template_OS.docx').trim();
+  window.TEMPLATE_ATUAL = tpl;                    // fonte da verdade (lido no index)
+  window.nomeTemplatePadrao = () => tpl;          // a função que o index chama
 
-  // (a) sobrescreve a função global
-  window.nomeTemplatePadrao = function(){ return tpl; };
-
-  // (b) atualiza o dataset.templateUrl do botão do INDEX (id="btnGerar")
-  //     se não existir, tenta cair no próprio botão do modal como fallback
   const API_BASE = (typeof API !== 'undefined' && API) ? API : '/api';
-  const btnIndex = document.getElementById('btnGerar') || document.querySelector('#btnGerar');
-  const btnFallback = document.getElementById('cj_btn_gerar') || document.querySelector('#cj_btn_gerar');
-
-  const alvo = btnIndex || btnFallback;
-  if (alvo) {
-    alvo.dataset.templateUrl = `${API_BASE}/gerador/templates/${encodeURIComponent(tpl)}`;
+  const btnIndex = document.getElementById('btnGerar'); // botão do index
+  if (btnIndex) {
+    btnIndex.dataset.templateUrl =
+      `${API_BASE}/gerador/templates/${encodeURIComponent(tpl)}`;
   }
 }
 
@@ -195,6 +198,7 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
   const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
   const endpointBase = '/api/gerador/';
   const tpl = String(TemplateDocx || window.TEMPLATE_ATUAL || '').trim();
+  console.debug('[GERAR]', { phpName, tpl });
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
   async function gerarContratoOnce(c) {
