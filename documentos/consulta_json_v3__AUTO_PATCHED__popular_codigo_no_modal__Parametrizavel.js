@@ -219,9 +219,16 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
     return originalAlert.call(window, msg);
   };
 
-  const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
+  const phpName = (typeof ArquivoPHP === 'string' && ArquivoPHP.trim()) 
+  ? ArquivoPHP.trim() 
+  : 'make_contract.php'; // usa contrato como padrão
+
   const endpointBase = '/api/gerador/';
-  const tpl = String(TemplateDocx || window.TEMPLATE_ATUAL || '').trim();
+  
+  const tpl = (typeof TemplateDocx === 'string' && TemplateDocx.trim()) 
+  ? TemplateDocx.trim() 
+  : (window.TEMPLATE_ATUAL || 'Template-Contrato.docx');
+
   console.debug('[GERAR]', { phpName, tpl });
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
