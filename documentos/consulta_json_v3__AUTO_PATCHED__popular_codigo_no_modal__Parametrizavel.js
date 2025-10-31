@@ -157,17 +157,22 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       })();
       
     }
+   	
+{
+  const btnGerar = card.querySelector('#cj_btn_gerar');
+  btnGerar?.addEventListener('click', () => {
+    // ATENÇÃO: use exatamente o nome do arquivo que existe no FTP
+    aplicarTemplateNoIndex('Template-Contrato.docx');        // se o arquivo for com underline
+    gerarContrato('make_contract.php', 'Template-Contrato.docx');
+    // Se no servidor estiver "Template-Contrato.docx" (com hífen), troque as DUAS linhas acima pelo nome com hífen.
+  });
 
-    const btnGerar = card.querySelector('#cj_btn_gerar');
-    btnGerar?.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template-Contrato.docx');
-      gerarContrato('make_contract.php', 'Template-Contrato.docx');
-
-    const btnOS = card.querySelector('#cj_btn_gerar_os');
-    btnOS?.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template_OS.docx');
-      gerarContrato('make_os.php', 'Template_OS.docx');
-
+  const btnOS = card.querySelector('#cj_btn_gerar_os');
+  btnOS?.addEventListener('click', () => {
+    aplicarTemplateNoIndex('Template_OS.docx');
+    gerarContrato('make_os.php', 'Template_OS.docx');
+  });
+}
     });
  }
 
