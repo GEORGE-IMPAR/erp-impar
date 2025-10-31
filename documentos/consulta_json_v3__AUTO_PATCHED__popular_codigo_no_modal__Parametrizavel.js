@@ -134,12 +134,12 @@
           window.goTo = savedGoTo;
         }
         return item;
-	const btnGerar = card.querySelector('#cj_btn_gerar');
-        btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
+	
       })();
       
     }
-
+    const btnGerar = card.querySelector('#cj_btn_gerar');
+    btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
  }
 
 /* === Gerar contrato (agora como função) =============================== */
@@ -236,24 +236,24 @@ async function gerarContrato(ArquivoPHP) {
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 
-//function openList(){
-  //build(); hideLegacy();
-  //const b1 = q('cj_list_back');
-  //const b2 = q('cj_decide_back');
-  //if (b2) b2.style.display = 'none';
-  //if (b1) b1.style.display = 'flex';
-//}
+function openList(){
+  build(); hideLegacy();
+  const b1 = q('cj_list_back');
+  const b2 = q('cj_decide_back');
+  if (b2) b2.style.display = 'none';
+  if (b1) b1.style.display = 'flex';
+}
 
-//function openDecide(code){
-  //build(); hideLegacy();
-  //const codeUpper = (code || '').toUpperCase();
-  //try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
-  //try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
-  //const b1 = q('cj_list_back');
-  //const b2 = q('cj_decide_back');
-  //if (b1) b1.style.display = 'none';
-  //if (b2) b2.style.display = 'flex';
-//}
+function openDecide(code){
+  build(); hideLegacy();
+  const codeUpper = (code || '').toUpperCase();
+  try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
+  try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
+  const b1 = q('cj_list_back');
+  const b2 = q('cj_decide_back');
+  if (b1) b1.style.display = 'none';
+  if (b2) b2.style.display = 'flex';
+}
 
   function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
   function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
