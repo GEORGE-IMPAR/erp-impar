@@ -146,24 +146,34 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       })();
       
     }
+
+   const old = card.querySelector('#cj_btn_gerar');
+   if (old) {
+     const clean = old.cloneNode(true);
+     old.replaceWith(clean);
+     clean.onclick = null;
+     clean.addEventListener('click', () => {
+    aplicarTemplateNoIndex('Template_Contrato.docx');
+    gerarContrato('make_contract.php', 'Template_Contrato.docx');
+  });
+ }
+
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template_Contrato.docx');
-      gerarContrato('make_contract.php', 'Template_Contrato.docx');
+      aplicarTemplateNoIndex('Template-Contrato.docx');
+      gerarContrato('make_contract.php', 'Template-Contrato.docx');
     });
  }
 
 // helper p/ atualizar as 2 linhas do index
 function aplicarTemplateNoIndex(templateName){
   const tpl = String(templateName || 'Template_OS.docx').trim();
-  window.TEMPLATE_ATUAL = tpl;                    // fonte da verdade (lido no index)
-  window.nomeTemplatePadrao = () => tpl;          // a função que o index chama
-
-  const API_BASE = (typeof API !== 'undefined' && API) ? API : '/api';
-  const btnIndex = document.getElementById('btnGerar'); // botão do index
+  window.TEMPLATE_ATUAL = tpl;
+  window.nomeTemplatePadrao = () => tpl;
+  const btnIndex = document.getElementById('btnGerar');
   if (btnIndex) {
     btnIndex.dataset.templateUrl =
-      `${API_BASE}/gerador/templates/${encodeURIComponent(tpl)}`;
+      `/api/gerador/templates/${encodeURIComponent(tpl)}`;
   }
 }
 
