@@ -149,24 +149,26 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
 
 // CONTRATO
 {
-  const oldContrato = card.querySelector('#cj_btn_gerar');
-  if (oldContrato) {
-    const clean = oldContrato.cloneNode(true);
-    oldContrato.replaceWith(clean);
+  const btnContrato = card.querySelector('#cj_btn_gerar');
+  if (btnContrato) {
+    const clean = btnContrato.cloneNode(true);   // remove listeners antigos
+    btnContrato.replaceWith(clean);
     clean.onclick = null;
     clean.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template-Contrato.docx');
+      // ATENÇÃO: use o MESMO nome que está no servidor (underline ou hífen)
+      aplicarTemplateNoIndex('Template-Contrato.docx');   // se no servidor for com underline
       gerarContrato('make_contract.php', 'Template-Contrato.docx');
+      // Se o arquivo no servidor for com hífen, troque as duas linhas acima por 'Template-Contrato.docx'
     });
   }
 }
 
 // OS
 {
-  const oldOS = card.querySelector('#cj_btn_gerar_os');
-  if (oldOS) {
-    const clean = oldOS.cloneNode(true);
-    oldOS.replaceWith(clean);
+  const btnOS = card.querySelector('#cj_btn_gerar_os');
+  if (btnOS) {
+    const clean = btnOS.cloneNode(true);        // remove listeners antigos
+    btnOS.replaceWith(clean);
     clean.onclick = null;
     clean.addEventListener('click', () => {
       aplicarTemplateNoIndex('Template_OS.docx');
@@ -184,6 +186,7 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
     btnOS?.addEventListener('click', () => {
       aplicarTemplateNoIndex('Template_OS.docx');
       gerarContrato('make_os.php', 'Template_OS.docx');
+
     });
  }
 
@@ -197,7 +200,8 @@ function aplicarTemplateNoIndex(templateName){
     btnIndex.dataset.templateUrl =
       `/api/gerador/templates/${encodeURIComponent(tpl)}`;
   }
-}
+ }
+
 
 /* === Gerar contrato (agora com template) ============================== */
 /**
