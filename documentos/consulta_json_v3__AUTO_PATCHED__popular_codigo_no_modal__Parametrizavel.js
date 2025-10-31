@@ -6,7 +6,7 @@
 */
 
 if (typeof window.TEMPLATE_ATUAL === 'undefined') {
-  window.TEMPLATE_ATUAL = 'Template_OS.docx'; // default
+  window.TEMPLATE_ATUAL = 'Template_Contrato.docx'; // default
 }
 if (typeof window.nomeTemplatePadrao !== 'function') {
   window.nomeTemplatePadrao = () => window.TEMPLATE_ATUAL;
