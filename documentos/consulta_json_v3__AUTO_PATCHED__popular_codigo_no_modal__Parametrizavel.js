@@ -6,7 +6,7 @@
 */
 
 if (typeof window.TEMPLATE_ATUAL === 'undefined') {
-  window.TEMPLATE_ATUAL = 'Template_OS.docx'; // default
+  window.TEMPLATE_ATUAL = 'Template-Contrato.docx'; // default
 }
 if (typeof window.nomeTemplatePadrao !== 'function') {
   window.nomeTemplatePadrao = () => window.TEMPLATE_ATUAL;
@@ -158,20 +158,30 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       
     }
    	
-{ // listeners do modal (contrato e OS) – não duplique este bloco
+// CONTRATO
+{
   const btnContrato = card.querySelector('#cj_btn_gerar');
   if (btnContrato) {
-    btnContrato.addEventListener('click', () => {
-      // CONTRATO: usa hífen
-      aplicarTemplateNoIndex('Template-Contrato.docx');               // atualiza as 2 linhas do index
-      gerarContrato('make_contract.php', 'Template-Contrato.docx');  // chama o PHP com o mesmo template
+    const clean = btnContrato.cloneNode(true);   // remove listeners antigos
+    btnContrato.replaceWith(clean);
+    clean.onclick = null;
+    clean.addEventListener('click', () => {
+      // ATENÇÃO: use o MESMO nome que está no servidor (underline ou hífen)
+      aplicarTemplateNoIndex('Template-Contrato.docx');   // se no servidor for com underline
+      gerarContrato('make_contract.php', 'Template-Contrato.docx');
+      // Se o arquivo no servidor for com hífen, troque as duas linhas acima por 'Template-Contrato.docx'
     });
   }
+}
 
+// OS
+{
   const btnOS = card.querySelector('#cj_btn_gerar_os');
   if (btnOS) {
-    btnOS.addEventListener('click', () => {
-      // OS: usa underline
+    const clean = btnOS.cloneNode(true);        // remove listeners antigos
+    btnOS.replaceWith(clean);
+    clean.onclick = null;
+    clean.addEventListener('click', () => {
       aplicarTemplateNoIndex('Template_OS.docx');
       gerarContrato('make_os.php', 'Template_OS.docx');
     });
