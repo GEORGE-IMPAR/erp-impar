@@ -134,10 +134,10 @@
           window.goTo = savedGoTo;
         }
         return item;
+	const btnGerar = card.querySelector('#cj_btn_gerar');
+        btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
       })();
-      const btnGerar = card.querySelector('#cj_btn_gerar');
-      btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
-
+      
     }
 
  }
