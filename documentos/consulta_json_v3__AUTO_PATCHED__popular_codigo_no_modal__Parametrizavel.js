@@ -78,6 +78,9 @@
     card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
+    const btnGerar = card.querySelector('#cj_btn_gerar');
+    btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
+
     // Loader
     var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
     var lbox=el('div',{class:'cj-loader-box'});
@@ -96,7 +99,7 @@
       fetchDoc(code).then(function(item){
         try { fillForm(item); } catch(_){}
         try { if (typeof goTo==='function') goTo(2); } catch(_){}
-        _hideAll();
+        hideAll();
         window.scrollTo({top:0,behavior:'smooth'});
       }).catch(function(){ hideAll(); });
     };
@@ -136,8 +139,7 @@
       })();
     }
 
-const btnGerar = card.querySelector('#cj_btn_gerar');
-btnGerar?.addEventListener('click', () => gerarContrato('make_os.php')); // <- chama sua função
+ }
 
 /* === Gerar contrato (agora como função) =============================== */
 /**
@@ -233,6 +235,24 @@ async function gerarContrato(ArquivoPHP) {
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 
+function openList(){
+  build(); hideLegacy();
+  const b1 = q('cj_list_back');
+  const b2 = q('cj_decide_back');
+  if (b2) b2.style.display = 'none';
+  if (b1) b1.style.display = 'flex';
+}
+
+function openDecide(code){
+  build(); hideLegacy();
+  const codeUpper = (code || '').toUpperCase();
+  try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
+  try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
+  const b1 = q('cj_list_back');
+  const b2 = q('cj_decide_back');
+  if (b1) b1.style.display = 'none';
+  if (b2) b2.style.display = 'flex';
+}
 
   function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
   function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
