@@ -253,7 +253,7 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
 }
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
-
+}
 function openList(){
   build(); hideLegacy();
   const b1 = q('cj_list_back');
