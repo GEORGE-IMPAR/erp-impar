@@ -158,23 +158,24 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       
     }
    	
-{
+{ // listeners do modal
   const btnGerar = card.querySelector('#cj_btn_gerar');
-  btnGerar?.addEventListener('click', () => {
-    // ATENÇÃO: use exatamente o nome do arquivo que existe no FTP
-    aplicarTemplateNoIndex('Template-Contrato.docx');        // se o arquivo for com underline
-    gerarContrato('make_contract.php', 'Template-Contrato.docx');
-    // Se no servidor estiver "Template-Contrato.docx" (com hífen), troque as DUAS linhas acima pelo nome com hífen.
-  });
+  if (btnGerar) {
+    btnGerar.addEventListener('click', () => {
+      // USE exatamente o nome que existe no FTP:
+      aplicarTemplateNoIndex('Template-Contrato.docx');          // ou 'Template-Contrato.docx' se no servidor for com hífen
+      gerarContrato('make_contract.php', 'Template-Contrato.docx'); // alinhe o nome nas DUAS linhas
+    });
+  }
 
   const btnOS = card.querySelector('#cj_btn_gerar_os');
-  btnOS?.addEventListener('click', () => {
-    aplicarTemplateNoIndex('Template_OS.docx');
-    gerarContrato('make_os.php', 'Template_OS.docx');
-  });
-}
+  if (btnOS) {
+    btnOS.addEventListener('click', () => {
+      aplicarTemplateNoIndex('Template_OS.docx');
+      gerarContrato('make_os.php', 'Template_OS.docx');
     });
- }
+  }
+} // <-- fecha o bloco e acabou (não coloque mais "});" depois)
 
 // helper p/ atualizar as 2 linhas do index
 function aplicarTemplateNoIndex(templateName){
