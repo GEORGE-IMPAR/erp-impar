@@ -140,14 +140,14 @@
     }
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
-     setTemplateSomenteNoIndex('Template_Contrato.docx');
-     gerarContrato('make_contract.php', 'Template_Contrato.docx');
+    gerarContrato('make_contract.php', 'Template_Contrato.docx');
     });
  }
 
 // helper p/ atualizar as 2 linhas do index
 function aplicarTemplateNoIndex(templateName){
   const tpl = String(templateName || 'Template_OS.docx');
+  window.TEMPLATE_ATUAL = tpl;
 
   // (a) sobrescreve a função global
   window.nomeTemplatePadrao = function(){ return tpl; };
@@ -173,8 +173,6 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
   // >>> aplica o template nas 2 linhas do index ANTES de gerar
   aplicarTemplateNoIndex(TemplateDocx);
 
-  setTemplateSomenteNoIndex(TemplateDocx);
-
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
@@ -196,7 +194,8 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
 
   const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
   const endpointBase = '/api/gerador/';
-  const tpl = (window.TEMPLATE_ATUAL || TemplateDocx || '').trim();
+  const tpl = String(TemplateDocx || window.TEMPLATE_ATUAL || '').trim();
+  window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
   async function gerarContratoOnce(c) {
     const url =
