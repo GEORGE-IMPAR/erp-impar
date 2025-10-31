@@ -141,7 +141,7 @@
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
      setTemplateSomenteNoIndex('Template_Contrato.docx');
-     gerarContrato('make-contract.php', 'Template_Contrato.docx');
+     gerarContrato('make_contract.php', 'Template_Contrato.docx');
     });
  }
 
@@ -196,22 +196,18 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
 
   const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
   const endpointBase = '/api/gerador/';
-
+  const tpl = (window.TEMPLATE_ATUAL || TemplateDocx || '').trim();
+  
   async function gerarContratoOnce(c) {
+    const url =
+      `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}` +
+      (tpl ? `&template=${encodeURIComponent(tpl)}` : '');
+
     try {
-      const res = await fetch(`${endpointBase}${phpName}?codigo=` + encodeURIComponent(c), { cache: 'no-store' });
+      const res = await fetch(url, { cache: 'no-store' });
       const j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
-        try {
-          const nome = (q('nomeContratante')?.value || '').trim();
-          window.contratoSucesso?.({ titulo: 'Documento gerado com sucesso', codigo: c.toUpperCase(), nome });
-        } catch(_) {}
-        return true;
-      }
-    } catch(e) {
-      console.error('Erro ao gerar contrato:', e);
-    }
+      if (j?.ok && j.url) { window.open(j.url, '_blank'); return true; }
+    } catch (e) { console.error('Erro ao gerar contrato:', e); }
     return false;
   }
 
