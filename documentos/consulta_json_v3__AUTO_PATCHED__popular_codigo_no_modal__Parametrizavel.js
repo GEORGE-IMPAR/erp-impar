@@ -147,27 +147,33 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       
     }
 
-   const old = card.querySelector('#cj_btn_gerar');
-   if (old) {
-     const clean = old.cloneNode(true);
-     old.replaceWith(clean);
-     clean.onclick = null;
-     clean.addEventListener('click', () => {
-    aplicarTemplateNoIndex('Template_Contrato.docx');
-    gerarContrato('make_contract.php', 'Template_Contrato.docx');
-  });
- }
+// CONTRATO
+{
+  const oldContrato = card.querySelector('#cj_btn_gerar');
+  if (oldContrato) {
+    const clean = oldContrato.cloneNode(true);
+    oldContrato.replaceWith(clean);
+    clean.onclick = null;
+    clean.addEventListener('click', () => {
+      aplicarTemplateNoIndex('Template-Contrato.docx');
+      gerarContrato('make_contract.php', 'Template-Contrato.docx');
+    });
+  }
+}
 
-  const old = card.querySelector('#cj_btn_gerar_os');
-   if (old) {
-     const clean = old.cloneNode(true);
-     old.replaceWith(clean);
-     clean.onclick = null;
-     clean.addEventListener('click', () => {
-    aplicarTemplateNoIndex('Template_OS.docx');
-    gerarContrato('make_os.php', 'Template_OS.docx');
-  });
- }
+// OS
+{
+  const oldOS = card.querySelector('#cj_btn_gerar_os');
+  if (oldOS) {
+    const clean = oldOS.cloneNode(true);
+    oldOS.replaceWith(clean);
+    clean.onclick = null;
+    clean.addEventListener('click', () => {
+      aplicarTemplateNoIndex('Template_OS.docx');
+      gerarContrato('make_os.php', 'Template_OS.docx');
+    });
+  }
+}
 
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
