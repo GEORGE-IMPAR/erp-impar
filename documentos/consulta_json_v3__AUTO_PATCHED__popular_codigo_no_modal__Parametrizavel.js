@@ -85,13 +85,13 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
 
     var card=el('div',{class:'cj-card'});
     card.innerHTML =
-     '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
-     '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
-     '<div class="cj-actions">' +
-     '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
-     '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
-     '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +   // << NOVO
-     '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
+      '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
+      '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
+      '<div class="cj-actions">' +
+      '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
+      '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
+      '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +   // << NOVO
+      '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
     '</div>';
     
 
@@ -158,24 +158,25 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
       
     }
    	
-{ // listeners do modal
-  const btnGerar = card.querySelector('#cj_btn_gerar');
-  if (btnGerar) {
-    btnGerar.addEventListener('click', () => {
-      aplicarTemplateNoIndex('Template-Contrato.docx');
-      gerarContrato('make_contract.php', 'Template-Contrato.docx');
+{ // listeners do modal (contrato e OS) – não duplique este bloco
+  const btnContrato = card.querySelector('#cj_btn_gerar');
+  if (btnContrato) {
+    btnContrato.addEventListener('click', () => {
+      // CONTRATO: usa hífen
+      aplicarTemplateNoIndex('Template-Contrato.docx');               // atualiza as 2 linhas do index
+      gerarContrato('make_contract.php', 'Template-Contrato.docx');  // chama o PHP com o mesmo template
     });
   }
 
   const btnOS = card.querySelector('#cj_btn_gerar_os');
   if (btnOS) {
     btnOS.addEventListener('click', () => {
+      // OS: usa underline
       aplicarTemplateNoIndex('Template_OS.docx');
       gerarContrato('make_os.php', 'Template_OS.docx');
     });
   }
 }
-
 
 
 /* === Gerar contrato (agora com template) ============================== */
@@ -253,6 +254,7 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
 }
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
+}
 
 function openList(){
   build(); hideLegacy();
