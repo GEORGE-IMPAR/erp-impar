@@ -83,7 +83,7 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
 
     var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
     var card=el('div',{class:'cj-card'});
-    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button><button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
     
@@ -158,10 +158,26 @@ if (typeof window.nomeTemplatePadrao !== 'function') {
   });
  }
 
+  const old = card.querySelector('#cj_btn_gerar_os');
+   if (old) {
+     const clean = old.cloneNode(true);
+     old.replaceWith(clean);
+     clean.onclick = null;
+     clean.addEventListener('click', () => {
+    aplicarTemplateNoIndex('Template_OS.docx');
+    gerarContrato('make_os.php', 'Template_OS.docx');
+  });
+ }
+
     const btnGerar = card.querySelector('#cj_btn_gerar');
     btnGerar?.addEventListener('click', () => {
       aplicarTemplateNoIndex('Template-Contrato.docx');
       gerarContrato('make_contract.php', 'Template-Contrato.docx');
+
+    const btnOS = card.querySelector('#cj_btn_gerar_os');
+    btnOS?.addEventListener('click', () => {
+      aplicarTemplateNoIndex('Template_OS.docx');
+      gerarContrato('make_os.php', 'Template_OS.docx');
     });
  }
 
