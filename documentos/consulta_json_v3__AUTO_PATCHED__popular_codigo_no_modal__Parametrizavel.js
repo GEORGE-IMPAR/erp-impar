@@ -5,18 +5,12 @@
    - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga s
 */
 
-function aplicarTemplateNoIndex(templateName){
-  const tpl = String(templateName || 'Template_OS.docx').trim();
-  window.TEMPLATE_ATUAL = tpl;
-  window.nomeTemplatePadrao = () => tpl;
-
-  const btnIndex = document.getElementById('btnGerar');
-  if (btnIndex) {
-    btnIndex.dataset.templateUrl =
-      `/api/gerador/templates/${encodeURIComponent(tpl)}`;
-  }
+if (typeof window.TEMPLATE_ATUAL === 'undefined') {
+  window.TEMPLATE_ATUAL = 'Template_OS.docx'; // default
 }
-
+if (typeof window.nomeTemplatePadrao !== 'function') {
+  window.nomeTemplatePadrao = () => window.TEMPLATE_ATUAL;
+}
 
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
@@ -91,13 +85,13 @@ function aplicarTemplateNoIndex(templateName){
 
     var card=el('div',{class:'cj-card'});
     card.innerHTML =
-      '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
-      '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
-      '<div class="cj-actions">' +
-      '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
-      '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
-      '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +   // << NOVO
-      '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
+     '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
+     '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
+     '<div class="cj-actions">' +
+     '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
+     '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
+     '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +   // << NOVO
+     '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
     '</div>';
     
 
@@ -164,31 +158,24 @@ function aplicarTemplateNoIndex(templateName){
       
     }
    	
-// CONTRATO
-{
-  const btnContrato = card.querySelector('#cj_btn_gerar');
-  if (btnContrato) {
-    const clean = btnContrato.cloneNode(true);   // remove listeners antigos
-    btnContrato.replaceWith(clean);
-    clean.onclick = null;
-    clean.addEventListener('click', () => {
+{ // listeners do modal
+  const btnGerar = card.querySelector('#cj_btn_gerar');
+  if (btnGerar) {
+    btnGerar.addEventListener('click', () => {
+      aplicarTemplateNoIndex('Template-Contrato.docx');
       gerarContrato('make_contract.php', 'Template-Contrato.docx');
     });
   }
-}
 
-// OS
-{
   const btnOS = card.querySelector('#cj_btn_gerar_os');
   if (btnOS) {
-    const clean = btnOS.cloneNode(true);        // remove listeners antigos
-    btnOS.replaceWith(clean);
-    clean.onclick = null;
-    clean.addEventListener('click', () => {
+    btnOS.addEventListener('click', () => {
+      aplicarTemplateNoIndex('Template_OS.docx');
       gerarContrato('make_os.php', 'Template_OS.docx');
     });
   }
 }
+
 
 
 /* === Gerar contrato (agora com template) ============================== */
@@ -198,7 +185,7 @@ function aplicarTemplateNoIndex(templateName){
  */
 async function gerarContrato(ArquivoPHP, TemplateDocx) {
   // >>> aplica o template nas 2 linhas do index ANTES de gerar
-  aplicarTemplateNoIndex(TemplateDocx);
+  //aplicarTemplateNoIndex(TemplateDocx);
 
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
@@ -219,16 +206,9 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
     return originalAlert.call(window, msg);
   };
 
-  const phpName = (typeof ArquivoPHP === 'string' && ArquivoPHP.trim()) 
-  ? ArquivoPHP.trim() 
-  : 'make_contract.php'; // usa contrato como padrão
-
+  const phpName = String(ArquivoPHP || '').replace(/[^a-zA-Z0-9_.-]/g, '') || 'make_os.php';
   const endpointBase = '/api/gerador/';
-  
-  const tpl = (typeof TemplateDocx === 'string' && TemplateDocx.trim()) 
-  ? TemplateDocx.trim() 
-  : (window.TEMPLATE_ATUAL || 'Template-Contrato.docx');
-
+  const tpl = String(TemplateDocx || window.TEMPLATE_ATUAL || '').trim();
   console.debug('[GERAR]', { phpName, tpl });
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
@@ -273,7 +253,6 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
 }
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
-}
 
 function openList(){
   build(); hideLegacy();
