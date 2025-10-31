@@ -249,11 +249,23 @@ function openDecide(code){
   const codeUpper = (code || '').toUpperCase();
   try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
   try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
+ // >>> Popular o input principal e disparar eventos (restaura comportamento antigo)
+ try {
+   const inp = q('codigo');
+  if (inp) {
+     inp.value = codeUpper;
+     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
+     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
+   }
+   // espelhos do código (labels/spans tipo id="codigoVal*")
+   document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; });
+ } catch(_) {}
   const b1 = q('cj_list_back');
   const b2 = q('cj_decide_back');
   if (b1) b1.style.display = 'none';
   if (b2) b2.style.display = 'flex';
 }
+
 
   function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
   function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
