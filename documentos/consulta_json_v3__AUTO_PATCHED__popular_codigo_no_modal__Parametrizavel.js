@@ -97,7 +97,7 @@
       fetchDoc(code).then(function(item){
         try { fillForm(item); } catch(_){}
         try { if (typeof goTo==='function') goTo(2); } catch(_){}
-        _hideAll();
+        hideAll();
         window.scrollTo({top:0,behavior:'smooth'});
       }).catch(function(){ hideAll(); });
     };
