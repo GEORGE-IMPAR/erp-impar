@@ -232,45 +232,32 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
   console.debug('[GERAR]', { phpName, tpl });
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
-  async function gerarContratoOnce(c) {
-    const url =
-      `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}` +
-      (tpl ? `&template=${encodeURIComponent(tpl)}` : '');
-
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      const j = await res.json();
-      if (j?.ok && j.url) { window.open(j.url, '_blank'); return true; }
-    } catch (e) { console.error('Erro ao gerar contrato:', e); }
-    return false;
-  }
+async function gerarContratoOnce(c) {
+  const url =
+    `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}` +
+    (tpl ? `&template=${encodeURIComponent(tpl)}` : '');
 
   try {
-    setLoader('Processando... aguarde...');
-    if (inp) {
-      inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-    }
-    await new Promise(r => setTimeout(r, 500));
-    let ok = await gerarContratoOnce(code);
+    const res = await fetch(url, { cache: 'no-store' });
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
 
-    if (!ok || sawNotFound) {
-      if (inp && !inp.value) {
-        inp.value = code.toUpperCase();
-        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-      }
-      setLoader('Gerando documento...');
-      await new Promise(r => setTimeout(r, 350));
-      ok = await gerarContratoOnce(code);
+    // Caso A: backend responde JSON { ok:true, url:"..." }
+    if (ct.includes('application/json')) {
+      const j = await res.json();
+      if (j?.ok && j.url) { window.open(j.url, '_blank'); return true; }
+      return false;
     }
-  } finally {
-    window.alert = originalAlert;
-    hideLoader();
-    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
+
+    // Caso B: backend inicia download direto / redireciona (sem JSON)
+    window.open(url, '_blank');
+    return true;
+
+  } catch (e) {
+    console.error('Erro ao gerar contrato/OS:', e);
+    return false;
   }
 }
+
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 }
