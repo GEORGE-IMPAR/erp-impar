@@ -190,7 +190,7 @@ function aplicarTemplateNoIndex(templateName){
  */
 async function gerarContrato(ArquivoPHP, TemplateDocx) {
   // >>> aplica o template nas 2 linhas do index ANTES de gerar
-  //aplicarTemplateNoIndex(TemplateDocx);
+  aplicarTemplateNoIndex(TemplateDocx);
 
   const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
   if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
