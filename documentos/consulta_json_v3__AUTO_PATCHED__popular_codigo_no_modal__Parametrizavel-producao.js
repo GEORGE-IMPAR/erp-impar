@@ -233,33 +233,23 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
 async function gerarContratoOnce(c) {
-  var url = endpointBase + phpName + '?codigo=' + encodeURIComponent(c)
-          + (tpl ? '&template=' + encodeURIComponent(tpl) : '');
+  const url =
+    `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}` +
+    (tpl ? `&template=${encodeURIComponent(tpl)}` : '');
 
   try {
-    var res = await fetch(url, { cache: 'no-store' });
-    var ct = (res.headers.get('content-type') || '').toLowerCase();
-
-    // A) Backend responde JSON { ok:true, url:"..." }
-    if (ct.indexOf('application/json') !== -1) {
-      var j = await res.json();
-      if (j && j.ok && j.url) {
-        window.open(j.url, '_blank');
-        return true;
-      }
-      return false;
+    const res = await fetch(url, { cache: 'no-store' });
+    const j = await res.json();
+    if (j && j.ok && j.url) {
+      window.open(j.url, '_blank');
+      return true;
     }
-
-    // B) Sem JSON (download direto/redireciona)
-    window.open(url, '_blank');
-    return true;
-
+    return false;
   } catch (e) {
     console.error('Erro ao gerar contrato/OS:', e);
     return false;
   }
 }
-
 
 
 window.gerarContrato = gerarContrato;
