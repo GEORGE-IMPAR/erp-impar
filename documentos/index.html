@@ -2699,7 +2699,7 @@ function baixarExcel(codigo){
   if (b) b.addEventListener('click', abrirConsultaModal);
 })();
 </script>
-//<script src="consulta_json_v3__AUTO_PATCHED__popular_codigo_no_modal__Parametrizavel.js"></script>
+<script src="consulta_json_v3__AUTO_PATCHED__popular_codigo_no_modal__Parametrizavel.js"></script>
 
 <!-- ===== Add-on ROBUSTO: garante captura do código certo e geração do DOCX ===== -->
 <script>
@@ -2717,7 +2717,6 @@ function baixarExcel(codigo){
       .find(el => regex.test((el.textContent||el.value||'').trim()));
   }
 
-<script src="consulta_json_v3__AUTO_PATCHED__popular_codigo_no_modal__Parametrizavel.js"></script>
 
   // ---------- persistir código escolhido assim que o usuário clicar no resultado ----------
   // Estratégia: delegação de eventos — se sua lista tiver classe/contêiner identificado, troque '.consulta-lista'
@@ -2778,12 +2777,19 @@ function baixarExcel(codigo){
     if (!btn) { console.warn('[Gerar Contrato] botão não encontrado.'); return; }
 
     const meta = document.getElementById('docMeta');
-    const excelName    = (meta?.dataset?.excel)    || nomeExcelPorCodigo(codigo);
-    const templateName = (meta?.dataset?.template) || nomeTemplatePadrao();
-
+    // 1) Excel continua igual
+    const excelName = (meta?.dataset?.excel) || nomeExcelPorCodigo(codigo);
+   // 2) TEMPLATE: quem manda é o que o modal definiu por último
+   //    (aplicarTemplateNoIndex/gerarContrato atualizam window.TEMPLATE_ATUAL)
+   //    Se não houver, NÃO caia para "OS" — deixe vazio para o JS decidir.
+  const templateName =
+     (window.TEMPLATE_ATUAL && window.TEMPLATE_ATUAL.trim()) ||
+     (meta?.dataset?.template && meta.dataset.template.trim()) ||
+     ''; // sem fallback aqui
     const excelURL    = `${API_ORIGIN}${PATH_EXCEL}/${encodeURIComponent(excelName)}`;
-    const templateURL = `${API_ORIGIN}${PATH_TEMPLATE}/${encodeURIComponent(templateName)}`;
-
+    const templateURL = templateName
+     ? `${API_ORIGIN}${PATH_TEMPLATE}/${encodeURIComponent(templateName)}`
+     : ''; // deixa em branco se não definido
     btn.dataset.excelUrl    = excelURL;
     btn.dataset.templateUrl = templateURL;
     console.log('[Gerar Contrato] pronto | codigo:', codigo, '| excel:', excelURL, '| template:', templateURL);
@@ -2958,10 +2964,12 @@ function pushCodeToEtapa1(code){
       btnGerar.dataset.excelUrl    = `${API}/storage/docs/${encodeURIComponent(`${codigo}.xlsx`)}`;
       // usa a função se existir; senão cai para TEMPLATE_ATUAL; senão "Template_OS.docx"
       const __tplSafe = (typeof window.nomeTemplatePadrao === 'function'
-       ? window.nomeTemplatePadrao()
-       : (window.TEMPLATE_ATUAL || 'Template_OS.docx')).trim();
+      ? String(window.nomeTemplatePadrao() || '').trim()
+      : String(window.TEMPLATE_ATUAL || '').trim());
 
-      btnGerar.dataset.templateUrl = `/api/gerador/templates/${encodeURIComponent(__tplSafe)}`;
+      btn.dataset.templateUrl = __tplSafe
+       ? `${API_ORIGIN}${PATH_TEMPLATE}/${encodeURIComponent(__tplSafe)}`
+       : '';
 
       // se tiver aquele preparador, chamamos com o código correto
       if (typeof window.prepararGerarContrato === 'function'){
