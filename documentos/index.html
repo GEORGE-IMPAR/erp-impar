@@ -3524,40 +3524,51 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 
 })();
 </script>
+
 <script>
-  // Hook mínimo para espelhar a "linha montada" também no Gerar OS
-  (function () {
-    const API = window.API || '/api/gerador'; // mantém compatível com o que já existe
-    const hookGerarOS = () => {
-      try {
-        const btnOS = document.querySelector('#btnGerarOS'); // id do botão "Gerar OS"
-        const chip  = document.querySelector('#cj_code_chip'); // onde fica o código selecionado
-        if (!btnOS || !chip) return;
+/* Hook VISUAL para mostrar a “linha montada” também no botão Gerar OS
+   - NÃO altera o envio; apenas preenche data-* e faz log no console.
+   - Usa os mesmos seletores do modal atual.
+*/
+(function () {
+  const API_BASE = 'https://api.erpimpar.com.br';
+  const TEMPLATE_OS = 'Template_OS.docx'; // ajuste se o nome do seu template for outro
 
-        const codigo   = chip.dataset.code || chip.getAttribute('data-code');
-        const template = 'Template_OS.docx'; // mesmo nome que você já usa no JS do modal
-        if (!codigo) return; // sem código selecionado, não monta
+  function montarLinhaOS() {
+    try {
+      const btnOS  = document.querySelector('#cj_btn_gerar_os');
+      const chip   = document.querySelector('#cj_code_chip');
+      if (!btnOS || !chip) return;
 
-        // Apenas para visualização no Inspect (espelha o do contrato)
-        btnOS.dataset.codigo      = codigo;
-        btnOS.dataset.template    = template;
-        btnOS.dataset.endpointPhp = 'make_os.php';
-        btnOS.dataset.urlPreview  = `${API}/gerador/make_os.php?codigo=${encodeURIComponent(codigo)}&template=${encodeURIComponent(template)}`;
+      const codigo = (chip.getAttribute('data-code') || chip.dataset.code || '').trim();
+      if (!codigo) return;
 
-        // Log igual ao do contrato para você ver a “linha montada”
-        if (!btnOS.dataset._logged) {
-          console.log('[GerarOS] codigo=', codigo,
-                      ' template=', template,
-                      ' url=', btnOS.dataset.urlPreview);
-          btnOS.dataset._logged = '1';
-        }
-      } catch (_) {}
-    };
-    // Mantém o mesmo padrão do contrato (checagem periódica leve)
-    setInterval(hookGerarOS, 300);
-  })();
+      // Mesmo padrão de atributos do botão “Gerar contrato”
+      const excelUrl    = `${API_BASE}/storage/docs/${encodeURIComponent(codigo)}.xlsx`;
+      const templateUrl = `${API_BASE}/gerador/templates/${encodeURIComponent(TEMPLATE_OS)}`;
+
+      // Apenas para o Inspetor (visual/telemetria)
+      btnOS.dataset.excelUrl     = excelUrl;
+      btnOS.dataset.templateUrl  = templateUrl;
+      btnOS.dataset.endpointPhp  = 'make_os.php';
+      btnOS.dataset.urlPreview   =
+        `/api/gerador/make_os.php?codigo=${encodeURIComponent(codigo)}&template=${encodeURIComponent(TEMPLATE_OS)}`;
+
+      // Loga uma vez por abertura de modal
+      if (!btnOS.dataset._logged) {
+        console.log('[GerarOS][linha montada]', {
+          codigo, excelUrl, templateUrl, endpoint: btnOS.dataset.endpointPhp,
+          urlPreview: btnOS.dataset.urlPreview
+        });
+        btnOS.dataset._logged = '1';
+      }
+    } catch(e) { /* silencioso */ }
+  }
+
+  // Verifica periodicamente enquanto o modal está aberto (leve)
+  setInterval(montarLinhaOS, 300);
+})();
 </script>
-
 
 </body>
 </html>
