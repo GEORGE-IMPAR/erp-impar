@@ -241,14 +241,15 @@ async function gerarContratoOnce(c) {
     const res = await fetch(url, { cache: 'no-store' });
     const ct = (res.headers.get('content-type') || '').toLowerCase();
 
-    // Caso A: backend responde JSON { ok:true, url:"..." }
     if (ct.includes('application/json')) {
       const j = await res.json();
-      if (j?.ok && j.url) { window.open(j.url, '_blank'); return true; }
+      if (j && j.ok && j.url) {
+        window.open(j.url, '_blank');
+        return true;
+      }
       return false;
     }
 
-    // Caso B: backend inicia download direto / redireciona (sem JSON)
     window.open(url, '_blank');
     return true;
 
@@ -258,9 +259,11 @@ async function gerarContratoOnce(c) {
   }
 }
 
+
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 
+}
 
 function openList(){
   build(); hideLegacy();
