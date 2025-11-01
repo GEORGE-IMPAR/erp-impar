@@ -233,16 +233,16 @@ async function gerarContrato(ArquivoPHP, TemplateDocx) {
   window.TEMPLATE_ATUAL = tpl; // força sincronização global
   
 async function gerarContratoOnce(c) {
-  const url =
-    `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}` +
-    (tpl ? `&template=${encodeURIComponent(tpl)}` : '');
+  var url = endpointBase + phpName + '?codigo=' + encodeURIComponent(c)
+          + (tpl ? '&template=' + encodeURIComponent(tpl) : '');
 
   try {
-    const res = await fetch(url, { cache: 'no-store' });
-    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    var res = await fetch(url, { cache: 'no-store' });
+    var ct = (res.headers.get('content-type') || '').toLowerCase();
 
-    if (ct.includes('application/json')) {
-      const j = await res.json();
+    // A) Backend responde JSON { ok:true, url:"..." }
+    if (ct.indexOf('application/json') !== -1) {
+      var j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
         return true;
@@ -250,6 +250,7 @@ async function gerarContratoOnce(c) {
       return false;
     }
 
+    // B) Sem JSON (download direto/redireciona)
     window.open(url, '_blank');
     return true;
 
@@ -258,6 +259,7 @@ async function gerarContratoOnce(c) {
     return false;
   }
 }
+
 
 
 window.gerarContrato = gerarContrato;
@@ -330,4 +332,5 @@ window.__CJFIX_API__ = {
   fetchList,   // busca a listagem completa
   fetchDoc     // busca 1 documento pelo código
 };
+
 })();
