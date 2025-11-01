@@ -1,6 +1,6 @@
 /* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
    - UI moderna azul‑marinho (lista + decisão)
-   - Suprime qualquer modal legado ao abrir/fechar (FixClose)
+   - Suprime qualquer modal legado ao abrir/makefechar (FixClose)
    - Loader preto “Processando... aguarde...” com borda e texto brancos
    - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga sake_
 */
@@ -173,7 +173,7 @@ q('cj_btn_gerar').onclick = async function () {
 
   async function gerarContratoOnce(c) {
     try {
-      const res = await fetch('/api/gerador/make_contracto.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
+      const res = await fetch('/api/gerador/make_contract.php?codigo=' + encodeURIComponent(c), { cache: 'no-store' });
       const j = await res.json();
       if (j && j.ok && j.url) {
         window.open(j.url, '_blank');
