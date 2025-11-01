@@ -1,21 +1,17 @@
-/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: loader preto + fetch fix)
-   - UI moderna azul‑marinho (lista + decisão)
-   - Suprime qualquer modal legado ao abrir/fechar (FixClose)
-   - Loader preto “Processando... aguarde...” com borda e texto brancos
-   - RISCO ZERO: usa somente #searchJsonBtn, não mexe nas rotinas antiga s
+/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO final)
+   - UI moderna (lista + decisão)
+   - Fonte única do template: window.TEMPLATE_ATUAL + window.nomeTemplatePadrao()
+   - Botões do card: Contrato ↔ OS, sincronizando o index (2 linhas) antes de gerar
 */
 
-function aplicarTemplateNoIndex(templateName){
-  const tpl = String(templateName || 'Template_OS.docx').trim();
-  window.TEMPLATE_ATUAL = tpl;
-  window.nomeTemplatePadrao = () => tpl;
-
-  const btnIndex = document.getElementById('btnGerar');
-  if (btnIndex) {
-    btnIndex.dataset.templateUrl =
-      `/api/gerador/templates/${encodeURIComponent(tpl)}`;
-  }
+/* ========= FONTE ÚNICA DO TEMPLATE (global) ========================= */
+if (typeof window.TEMPLATE_ATUAL === 'undefined') {
+  window.TEMPLATE_ATUAL = 'Template-Contrato.docx';
 }
+if (typeof window.nomeTemplatePadrao !== 'function') {
+  window.nomeTemplatePadrao = () => String(window.TEMPLATE_ATUAL || 'Template-Contrato.docx').trim();
+}
+/* ==================================================================== */
 
 (function(){
   var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
@@ -25,29 +21,22 @@ function aplicarTemplateNoIndex(templateName){
   function el(t,a,h){var e=document.createElement(t);if(a){for(var k in a){if(a.hasOwnProperty(k))e.setAttribute(k,a[k]);}}if(h!=null)e.innerHTML=h;return e;}
   function q(id){return document.getElementById(id);}
 
+  /* ——— esconder qualquer modal legado ——— */
   function hideLegacy(){
     ['cj_modal','cj_actions','consultaModal','consulta_modal','consulta_json_modal'].forEach(function(id){
       var n=q(id); if(n){ n.style.setProperty('display','none','important'); n.hidden=true; }
     });
-    try{
-      var nodes=document.querySelectorAll('div,section,aside');
-      for(var i=0;i<nodes.length;i++){
-        var n=nodes[i]; var txt=(n.textContent||'').trim();
-        if(txt && txt.indexOf('Consulta de documentos (Excel)')!==-1){
-          n.style.setProperty('display','none','important'); n.hidden=true;
-        }
-      }
-    }catch(_){}
   }
 
+  /* ——— estilos do overlay / card ——— */
   function injectCSS(){
     if(q('cj_fix_css')) return;
     var css=[
       '@keyframes cjfade{from{opacity:0}to{opacity:1}}',
       '@keyframes cjscale{from{transform:translate(-50%,-46%) scale(.96);opacity:.03}to{transform:translate(-50%,-50%) scale(1);opacity:1}}',
       '@keyframes cjspin{to{transform:rotate(360deg)}}',
-      '.cj-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:cjfade .2s ease-out}',
-      '.cj-box{position:relative;width:92%;max-width:980px;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);box-shadow:0 28px 80px rgba(2,6,23,.35)}',
+      '.cj-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(8px)}',
+      '.cj-box{position:relative;width:92%;max-width:980px;border-radius:20px;overflow:hidden;background:#fff;border:1px solid #e2e8f0;box-shadow:0 28px 80px rgba(2,6,23,.35)}',
       '.cj-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff}',
       '.cj-title{font-weight:900;letter-spacing:.3px}',
       '.cj-x{background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 10px;border-radius:12px}',
@@ -58,8 +47,7 @@ function aplicarTemplateNoIndex(templateName){
       '.cj-date{color:#475569;font-size:13px}',
       '.cj-client{color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.cj-empty{padding:20px;color:#64748b}',
-
-      '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s ease-out}',
+      '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s}',
       '.cj-card-head{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff;padding:16px 20px}',
       '.cj-chip{display:inline-block;background:'+BRAND.primaryDark+';color:#cbd5e1;border:1px solid #334155;padding:4px 12px;border-radius:999px;font-size:12px;margin-left:8px}',
       '.cj-card-body{padding:18px;color:#0f172a}',
@@ -67,8 +55,6 @@ function aplicarTemplateNoIndex(templateName){
       '.btn{border:none;border-radius:999px;padding:12px 16px;cursor:pointer;font-weight:800;letter-spacing:.2px}',
       '.btn.ghost{background:#e2e8f0;color:'+BRAND.primary+'}',
       '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
-
-      /* Loader preto com borda branca e texto branco */
       '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
       '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
       '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
@@ -87,22 +73,18 @@ function aplicarTemplateNoIndex(templateName){
     b1.appendChild(box); document.body.appendChild(b1);
 
     var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
-
     var card=el('div',{class:'cj-card'});
     card.innerHTML =
-     '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
-     '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
-     '<div class="cj-actions">' +
-     '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
-     '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
-     '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +   // << NOVO
-     '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
-    '</div>';
-    
-
+      '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
+      '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
+      '<div class="cj-actions">' +
+      '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
+      '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
+      '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +
+      '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
+      '</div>';
     b2.appendChild(card); document.body.appendChild(b2);
 
-    
     // Loader
     var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
     var lbox=el('div',{class:'cj-loader-box'});
@@ -113,7 +95,7 @@ function aplicarTemplateNoIndex(templateName){
     function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
     q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
 
-    /* --- Atualizar documento --- */
+    /* Atualizar: carrega o item no formulário e vai para etapa 2 (se houver) */
     q('cj_btn_atualizar').onclick=function(){
       var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
       if(!code){ hideAll(); return; }
@@ -126,186 +108,28 @@ function aplicarTemplateNoIndex(templateName){
       }).catch(function(){ hideAll(); });
     };
 
-    /* --- Pré-carrega como “Atualizar” para garantir código e dados no form --- */
-    function __preloadDocForContract(code){
-      return (async function(){
-        const codeUpper = (code || '').toUpperCase();
-
-        // 1) injeta no input principal e dispara eventos
-        const inp = q('codigo');
-        if (inp) {
-          inp.value = codeUpper;
-          try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-          try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-        }
-
-        // 2) espelhos
-        try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
-
-        // 3) busca item e preenche, sem navegar
-        let savedGoTo = window.goTo;
-        window.goTo = function(){}; // no-op temporário
-        let item = null;
-        try {
-          if (typeof fetchDoc === 'function') {
-            item = await fetchDoc(codeUpper);
-            try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
-          }
-          await Promise.resolve();
-          await new Promise(r => requestAnimationFrame(r));
-          await new Promise(r => requestAnimationFrame(r));
-        } finally {
-          window.goTo = savedGoTo;
-        }
-        return item;
-	
-      })();
-      
+    /* BOTÕES do modal: sincronizam template + chamam gerarContrato */
+    { // contrato
+      const b = card.querySelector('#cj_btn_gerar');
+      if (b) b.addEventListener('click', () => {
+        window.TEMPLATE_ATUAL = 'Template-Contrato.docx';
+        try { window.aplicarTemplateNoIndex && window.aplicarTemplateNoIndex('Template-Contrato.docx'); } catch(_){}
+        gerarContrato('make_contract.php', 'Template-Contrato.docx');
+      });
     }
-   	
-{ // listeners do modal
-  const btnGerar = card.querySelector('#cj_btn_gerar');
-  if (btnGerar) {
-    btnGerar.addEventListener('click', () => {
-      // NÃO chama aplicarTemplateNoIndex aqui
-      gerarContrato('make_contract.php', 'Template-Contrato.docx'); // hífen
-    });
+    { // OS
+      const b = card.querySelector('#cj_btn_gerar_os');
+      if (b) b.addEventListener('click', () => {
+        window.TEMPLATE_ATUAL = 'Template_OS.docx';
+        try { window.aplicarTemplateNoIndex && window.aplicarTemplateNoIndex('Template_OS.docx'); } catch(_){}
+        gerarContrato('make_os.php', 'Template_OS.docx');
+      });
+    }
   }
 
-  const btnOS = card.querySelector('#cj_btn_gerar_os');
-  if (btnOS) {
-    btnOS.addEventListener('click', () => {
-      // NÃO chama aplicarTemplateNoIndex aqui
-      gerarContrato('make_os.php', 'Template_OS.docx'); // underline
-    });
-  }
-}
-
-
-
-/* === Gerar contrato (agora com template) ============================== */
-/**
- * @param {string} ArquivoPHP    ex.: "make_os.php"
- * @param {string} TemplateDocx  ex.: "Template_OS.docx"
- */
-async function gerarContrato(ArquivoPHP, TemplateDocx) {
-  // >>> aplica o template nas 2 linhas do index ANTES de gerar
-  aplicarTemplateNoIndex(TemplateDocx);
-
-  const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
-  if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
-
-  const NOT_FOUND_REGEX = /não\s*encontr|nao\s*encontr|c[oó]digo.*n[aã]o.*exist|abra.*console|veja.*console/i;
-  const inp = q('codigo'); if (inp) inp.value = '';
-
-  const loader = q('cj_loader_back');
-  const setLoader = (msg) => { if (!loader) return; loader.style.display='flex'; const t=loader.querySelector('.cj-loader-text'); if(t&&msg) t.textContent=msg; };
-  const hideLoader = () => { if (loader) loader.style.display='none'; };
-
-  const originalAlert = window.alert;
-  let sawNotFound = false;
-  window.alert = function (msg) {
-    if (typeof msg === 'string' && NOT_FOUND_REGEX.test(msg)) {
-      sawNotFound = true; setLoader('Gerando documento...');
-    }
-    return originalAlert.call(window, msg);
-  };
-
-    let phpName = 'make_contract.php';
-    if (typeof ArquivoPHP === 'string' && ArquivoPHP.trim().length > 0) {
-     phpName = ArquivoPHP.trim();
-    }
-    
-   const endpointBase = '/api/gerador/';
-   // >>> define tpl com fallback seguro
-   let tpl = 'Template-Contrato.docx';
-   if (typeof TemplateDocx === 'string' && TemplateDocx.trim().length > 0) {
-    tpl = TemplateDocx.trim();
-   } else if (window.TEMPLATE_ATUAL && window.TEMPLATE_ATUAL.trim().length > 0) {
-    tpl = window.TEMPLATE_ATUAL.trim();
-   } console.debug('[GERAR]', { phpName, tpl });
-
-  aplicarTemplateNoIndex(tpl);
-  console.debug('[GERAR]', { phpName, tpl });
-
-  window.TEMPLATE_ATUAL = tpl; // força sincronização global
-  
-  async function gerarContratoOnce(c) {
-    const url =
-      `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}` +
-      (tpl ? `&template=${encodeURIComponent(tpl)}` : '');
-
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      const j = await res.json();
-      if (j?.ok && j.url) { window.open(j.url, '_blank'); return true; }
-    } catch (e) { console.error('Erro ao gerar contrato:', e); }
-    return false;
-  }
-
-  try {
-    setLoader('Processando... aguarde...');
-    if (inp) {
-      inp.value = code.toUpperCase();
-      try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-      try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-    }
-    await new Promise(r => setTimeout(r, 500));
-    let ok = await gerarContratoOnce(code);
-
-    if (!ok || sawNotFound) {
-      if (inp && !inp.value) {
-        inp.value = code.toUpperCase();
-        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_) {}
-        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_) {}
-      }
-      setLoader('Gerando documento...');
-      await new Promise(r => setTimeout(r, 350));
-      ok = await gerarContratoOnce(code);
-    }
-  } finally {
-    window.alert = originalAlert;
-    hideLoader();
-    try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch(_) {}
-  }
-}
-window.gerarContrato = gerarContrato;
-/* ===================================================================== */
-}
-
-function openList(){
-  build(); hideLegacy();
-  const b1 = q('cj_list_back');
-  const b2 = q('cj_decide_back');
-  if (b2) b2.style.display = 'none';
-  if (b1) b1.style.display = 'flex';
-}
-
-function openDecide(code){
-  build(); hideLegacy();
-  const codeUpper = (code || '').toUpperCase();
-  try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
-  try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
- // >>> Popular o input principal e disparar eventos (restaura comportamento antigo)
- try {
-   const inp = q('codigo');
-  if (inp) {
-     inp.value = codeUpper;
-     try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
-     try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
-   }
-   // espelhos do código (labels/spans tipo id="codigoVal*")
-   document.querySelectorAll('[id^="codigoVal"]').forEach(el => { el.textContent = codeUpper; });
- } catch(_) {}
-  const b1 = q('cj_list_back');
-  const b2 = q('cj_decide_back');
-  if (b1) b1.style.display = 'none';
-  if (b2) b2.style.display = 'flex';
-}
-
-
-  function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
-  function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
+  /* ==== API simples ==== */
+  function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(r=>r.json()); }
+  function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(r=>r.json()).then(j=>{ if(!j||!j.ok) throw 0; return j.item; }); }
   function fillForm(d){ if(!d) return; for(var k in d){ if(!d.hasOwnProperty(k)) continue; var f=q(k); if(f&&'value' in f){ f.value=d[k]; } } }
 
   function render(items){
@@ -331,11 +155,58 @@ function openDecide(code){
   function init(){ var btn=q('searchJsonBtn'); if(!btn) return; btn.addEventListener('click', onSearch); }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
 
-// --- EXPORTA helpers do módulo de consulta para uso externo ---
-window.__CJFIX_API__ = {
-  openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
-  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
-  fetchList,   // busca a listagem completa
-  fetchDoc     // busca 1 documento pelo código
-};
+  /* ==== Abertura dos overlays ==== */
+  function openList(){ build(); hideLegacy(); q('cj_decide_back').style.display='none'; q('cj_list_back').style.display='flex'; }
+  function openDecide(code){
+    build(); hideLegacy();
+    const c = (code||'').toUpperCase();
+    try { q('cj_code_chip').textContent = c; q('cj_code_chip').setAttribute('data-code', c); } catch(_){}
+    // popular input principal para manter comportamento antigo
+    try {
+      const inp = q('codigo'); if (inp){ inp.value=c; inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true})); }
+      document.querySelectorAll('[id^="codigoVal"]').forEach(e=>e.textContent=c);
+    } catch(_){}
+    q('cj_list_back').style.display='none';
+    q('cj_decide_back').style.display='flex';
+  }
+
+  /* ==== Gerar (sincroniza index e chama o PHP) ==== */
+  async function gerarContrato(ArquivoPHP, TemplateDocx){
+    // sincroniza as DUAS linhas do index antes de gerar
+    try { window.aplicarTemplateNoIndex && window.aplicarTemplateNoIndex(TemplateDocx); } catch(_){}
+    window.TEMPLATE_ATUAL = String(TemplateDocx||window.nomeTemplatePadrao()).trim();
+
+    const code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
+    if (!code) return;
+
+    const loader = q('cj_loader_back');
+    const setLoader=(msg)=>{ if(!loader) return; loader.style.display='flex'; const t=loader.querySelector('.cj-loader-text'); if(t&&msg) t.textContent=msg; };
+    const hideLoader=()=>{ if(loader) loader.style.display='none'; };
+
+    const phpName = String(ArquivoPHP||'').replace(/[^a-zA-Z0-9_.-]/g,'') || 'make_contract.php';
+    const tpl     = String(TemplateDocx||window.nomeTemplatePadrao()).trim();
+    const endpointBase = '/api/gerador/';
+
+    async function once(c){
+      const url = `${endpointBase}${phpName}?codigo=${encodeURIComponent(c)}${tpl ? `&template=${encodeURIComponent(tpl)}`:''}`;
+      try{
+        const res = await fetch(url, {cache:'no-store'});
+        const j = await res.json();
+        if (j?.ok && j.url){ window.open(j.url,'_blank'); return true; }
+      }catch(e){ console.error('Erro ao gerar:', e); }
+      return false;
+    }
+
+    setLoader('Gerando documento...');
+    try{
+      let ok = await once(code);
+      if(!ok){ await new Promise(r=>setTimeout(r,300)); ok = await once(code); }
+    } finally {
+      hideLoader();
+    }
+  }
+  window.gerarContrato = gerarContrato;
+
+  // Export para debug externo (opcional)
+  window.__CJFIX_API__ = { openList, openDecide, fetchList, fetchDoc };
 })();
