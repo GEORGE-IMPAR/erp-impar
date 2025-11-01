@@ -260,7 +260,7 @@ async function gerarContratoOnce(c) {
 
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
-}
+
 
 function openList(){
   build(); hideLegacy();
