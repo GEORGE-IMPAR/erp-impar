@@ -177,7 +177,7 @@
 
       async function gerarOSOnce(c) {
         try {
-          const res = await fetch('/api/gerador/make_os.php?codigo=' + encodeURIComponent(c) + '&t=' + Date.now(), { cache: 'no-store', redirect: 'follow' });
+          const res = await fetch('/api/gerador/make_contracto.php?codigo=' + encodeURIComponent(c) + '&t=' + Date.now(), { cache: 'no-store', redirect: 'follow' });
           const j = await res.json();
           if (j && j.ok && j.url) {
             window.open(j.url, '_blank');
@@ -360,3 +360,4 @@
     fetchDoc
   };
 })();
+
