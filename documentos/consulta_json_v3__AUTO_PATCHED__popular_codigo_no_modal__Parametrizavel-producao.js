@@ -249,8 +249,8 @@ async function gerarContratoOnce(c) {
     console.error('Erro ao gerar contrato/OS:', e);
     return false;
   }
+ }
 }
-
 
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
