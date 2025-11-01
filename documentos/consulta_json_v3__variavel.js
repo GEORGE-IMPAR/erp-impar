@@ -149,7 +149,7 @@ window.__DOC_MAKE__ = '/api/gerador/make_contract.php';   // endpoint do PHP a c
     if (_btnGerar && !_btnGerar.__hooked) {
       _btnGerar.__hooked = true;
       _btnGerar.onclick = async function () {
-        window.__DOC_KIND__ = 'Template-Contrato.docx';
+        window.__DOC_TEMPLATE__= 'Template-Contrato.docx';
         var code = (q('cj_code_chip')?.getAttribute('data-code') || '').trim();
         if (!code) { try { __forceCloseConsultaUI && __forceCloseConsultaUI(); } catch (_) {} return; }
 
