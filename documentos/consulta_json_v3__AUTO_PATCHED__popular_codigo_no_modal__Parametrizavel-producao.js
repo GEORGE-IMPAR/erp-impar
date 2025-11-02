@@ -337,15 +337,18 @@ window.__CJFIX_API__ = {
     try { var bOS = document.getElementById('cj_btn_gerar_os'); if (bOS) bOS.style.display = 'none'; } catch(_){}
 
     // Aplica as duas linhas no index
-    function aplicarDuasLinhas(nomeTpl){
-      var s = document.createElement('script');
-      s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
-      document.head.appendChild(s);
-      var btn = document.getElementById('btnGerar');
-      if (btn) {
-        btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
-      }
+   function aplicarDuasLinhas(nomeTpl){
+    // (a) redefine a função do index (declaração literal)
+    var s = document.createElement('script');
+    s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
+    document.head.appendChild(s);
+
+    // (b) atualiza o dataset do botão do index (SEM usar variável global inexistente)
+    var btn = document.getElementById('btnGerar');
+    if (btn) {
+     btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
     }
+   }
 
     function abrirEscolha(onPick){
       var back=document.createElement('div');
