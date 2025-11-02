@@ -333,22 +333,33 @@ window.__CJFIX_API__ = {
     btnContrato.textContent = 'Escolher documento para download';
 
     // Esconde o botão OS do card
-    try { var bOS = document.getElementById('cj_btn_gerar_os'); if (bOS) bOS.style.display = 'none'; } catch(_){}
+    try {
+     const bOS = document.getElementById('cj_btn_gerar_os');
+     if (bOS) { bOS.style.display = 'none'; bOS.disabled = true; }
+    } catch(_){}
 
     // === APLICA AS DUAS LINHAS DO INDEX *SEM* EDITAR O HTML ===
-    function aplicarDuasLinhas(nomeTpl){
-      // (a) redefine a função declarada no index
-      var s = document.createElement('script');
-      s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
-      document.head.appendChild(s);
+    // >>> SUBSTITUA por esta versão
+ function aplicarDuasLinhas(nomeTpl){
+  // (1) usa a MESMA linha do index para a função:
+  try {
+    // redefine a função exatamente como você quer
+    eval("function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }");
+  } catch(_){}
 
-      // (b) atualiza o dataset do BOTÃO DO INDEX (#btnGerar)
-      var btnIndex = document.getElementById('btnGerar');
-      if (btnIndex) {
-        // API já existe no escopo do index; usamos template escolhido
-        btnIndex.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
-      }
+  // (2) usa a MESMA linha do index para o dataset:
+  try {
+    btnGerar.dataset.templateUrl =
+      `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
+  } catch(_){
+    // airbag opcional para timing: não muda comportamento do index
+    var el = document.getElementById('btnGerar');
+    if (el) {
+      var base = (typeof API === 'string' && API) ? API : '/api';
+      el.dataset.templateUrl = `${base}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
     }
+  }
+ }
 
     // Modal minimalista de escolha (só UI)
     function abrirEscolha(onPick){
@@ -364,36 +375,46 @@ window.__CJFIX_API__ = {
         '</div>';
       back.appendChild(box); document.body.appendChild(back);
       function fechar(){ back.remove(); }
-      box.querySelector('#cj_pick_ct').onclick = function(){ fechar(); onPick('Template-Contrato.docx'); };
-      box.querySelector('#cj_pick_os').onclick = function(){ fechar(); onPick('Template_OS.docx'); };
+      box.querySelector('#cj_pick_os').onclick = function(e){
+       e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+       fechar(); onPick('Template_OS.docx');
+      };
+      box.querySelector('#cj_pick_ct').onclick = function(e){
+       e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+       fechar(); onPick('Template-Contrato.docx');
+      };
+      
       back.addEventListener('click', function(e){ if (e.target===back) fechar(); });
     }
 
-    // Intercepta o clique do botão do card e redireciona para o fluxo do index
-    function handlerIntercept(ev){
-      ev.preventDefault();
-      abrirEscolha(function(nomeTpl){
-        aplicarDuasLinhas(nomeTpl);
+  // >>> SUBSTITUA por esta versão
+function handlerIntercept(ev){
+  // bloqueia totalmente o clique do card (não deixa “vazar”)
+  ev.preventDefault();
+  ev.stopPropagation();
+  ev.stopImmediatePropagation();
 
-        // DISPARA o botão do INDEX (é ele que gera de verdade)
-        var btnIndex = document.getElementById('btnGerar');
-        if (btnIndex) {
-          // pausa o intercept só para este clique
-          btnContrato.removeEventListener('click', handlerIntercept, true);
-          try { btnIndex.click(); } finally {
-            setTimeout(()=>btnContrato.addEventListener('click', handlerIntercept, true),0);
-          }
-        }
+  abrirEscolha(function(nomeTpl){
+    // aplica o template escolhido nas duas linhas do index
+    aplicarDuasLinhas(nomeTpl);
 
-        // Fecha overlays e volta à etapa 1 (visual)
-        try {
-          var b1=document.getElementById('cj_list_back'); if(b1) b1.style.display='none';
-          var b2=document.getElementById('cj_decide_back'); if(b2) b2.style.display='none';
-          if (typeof goTo === 'function') goTo(1);
-          window.scrollTo({top:0,behavior:'smooth'});
-        } catch(_){}
-      });
-    }
+    // fecha os overlays e volta para etapa 1 (visual)
+    try {
+      var b1=document.getElementById('cj_list_back'); if (b1) b1.style.display='none';
+      var b2=document.getElementById('cj_decide_back'); if (b2) b2.style.display='none';
+      if (typeof goTo==='function') goTo(1);
+      window.scrollTo({top:0,behavior:'smooth'});
+    } catch(_) {}
+
+    // dispara o fluxo nativo do index: click no #btnGerar
+    try {
+      var btnIndex = document.getElementById('btnGerar');
+      if (btnIndex) {
+        btnIndex.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+      }
+    } catch(_) {}
+  });
+ }
 
     btnContrato.addEventListener('click', handlerIntercept, true);
     return true;
