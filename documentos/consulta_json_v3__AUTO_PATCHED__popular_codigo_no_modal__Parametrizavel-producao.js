@@ -254,6 +254,8 @@ async function gerarContratoOnce(c) {
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 
+}
+
 function openList(){
   build(); hideLegacy();
   const b1 = q('cj_list_back');
