@@ -323,33 +323,34 @@ window.__CJFIX_API__ = {
 };
 
 (function(){
+  // Vincula o botão do card “Gerar contrato” para virar “Escolher documento…”
   function bindEscolha(){
     var btnContrato = document.getElementById('cj_btn_gerar');
-    if (!btnContrato) return false;
-    if (btnContrato.__escolhaBound) return true;
-
+    if (!btnContrato || btnContrato.__escolhaBound) return !!btnContrato;
     btnContrato.__escolhaBound = true;
 
-    // 👉 altera apenas o texto visível do botão
+    // Só troca o rótulo visual
     btnContrato.textContent = 'Escolher documento para download';
 
-    // (opcional) esconde o botão de OS
+    // Esconde o botão OS do card
     try { var bOS = document.getElementById('cj_btn_gerar_os'); if (bOS) bOS.style.display = 'none'; } catch(_){}
 
-    // Aplica as duas linhas no index
-   function aplicarDuasLinhas(nomeTpl){
-    // (a) redefine a função do index (declaração literal)
-    var s = document.createElement('script');
-    s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
-    document.head.appendChild(s);
+    // === APLICA AS DUAS LINHAS DO INDEX *SEM* EDITAR O HTML ===
+    function aplicarDuasLinhas(nomeTpl){
+      // (a) redefine a função declarada no index
+      var s = document.createElement('script');
+      s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
+      document.head.appendChild(s);
 
-    // (b) atualiza o dataset do botão do index (SEM usar variável global inexistente)
-    var btn = document.getElementById('btnGerar');
-    if (btn) {
-     btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
+      // (b) atualiza o dataset do BOTÃO DO INDEX (#btnGerar)
+      var btnIndex = document.getElementById('btnGerar');
+      if (btnIndex) {
+        // API já existe no escopo do index; usamos template escolhido
+        btnIndex.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
+      }
     }
-   }
 
+    // Modal minimalista de escolha (só UI)
     function abrirEscolha(onPick){
       var back=document.createElement('div');
       back.style.cssText='position:fixed;inset:0;background:rgba(2,6,23,.55);display:flex;align-items:center;justify-content:center;z-index:100000;backdrop-filter:blur(6px)';
@@ -368,14 +369,23 @@ window.__CJFIX_API__ = {
       back.addEventListener('click', function(e){ if (e.target===back) fechar(); });
     }
 
+    // Intercepta o clique do botão do card e redireciona para o fluxo do index
     function handlerIntercept(ev){
       ev.preventDefault();
       abrirEscolha(function(nomeTpl){
         aplicarDuasLinhas(nomeTpl);
-        btnContrato.removeEventListener('click', handlerIntercept, true);
-        try { btnContrato.click(); } finally {
-          setTimeout(()=>btnContrato.addEventListener('click', handlerIntercept, true),0);
+
+        // DISPARA o botão do INDEX (é ele que gera de verdade)
+        var btnIndex = document.getElementById('btnGerar');
+        if (btnIndex) {
+          // pausa o intercept só para este clique
+          btnContrato.removeEventListener('click', handlerIntercept, true);
+          try { btnIndex.click(); } finally {
+            setTimeout(()=>btnContrato.addEventListener('click', handlerIntercept, true),0);
+          }
         }
+
+        // Fecha overlays e volta à etapa 1 (visual)
         try {
           var b1=document.getElementById('cj_list_back'); if(b1) b1.style.display='none';
           var b2=document.getElementById('cj_decide_back'); if(b2) b2.style.display='none';
@@ -389,7 +399,7 @@ window.__CJFIX_API__ = {
     return true;
   }
 
-  // tenta bindar agora e re-tenta até o botão existir (card visível)
+  // Tenta bindar já e re-tenta até o card existir
   if (!bindEscolha()){
     var __cjBindTimer = setInterval(function(){
       if (bindEscolha()) clearInterval(__cjBindTimer);
