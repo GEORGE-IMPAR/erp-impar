@@ -8,7 +8,6 @@
 function aplicarTemplateNoIndex(templateName){
   const tpl = String(templateName || 'Template_OS.docx').trim();
   window.TEMPLATE_ATUAL = tpl;
-  window.nomeTemplatePadrao = () => tpl;
 
   const btnIndex = document.getElementById('btnGerar');
   if (btnIndex) {
@@ -165,30 +164,30 @@ function aplicarTemplateNoIndex(templateName){
     }
    	
 // CONTRATO
-{
-  const btnContrato = card.querySelector('#cj_btn_gerar');
-  if (btnContrato) {
-    const clean = btnContrato.cloneNode(true);   // remove listeners antigos
-    btnContrato.replaceWith(clean);
-    clean.onclick = null;
-    clean.addEventListener('click', () => {
-      gerarContrato('make_contract.php', 'Template-Contrato.docx');
-    });
-  }
-}
+//{
+  //const btnContrato = card.querySelector('#cj_btn_gerar');
+  //if (btnContrato) {
+    //const clean = btnContrato.cloneNode(true);   // remove listeners antigos
+    //btnContrato.replaceWith(clean);
+    //clean.onclick = null;
+    //clean.addEventListener('click', () => {
+      //gerarContrato('make_contract.php', 'Template-Contrato.docx');
+    //});
+  //}
+//}
 
 // OS
-{
-  const btnOS = card.querySelector('#cj_btn_gerar_os');
-  if (btnOS) {
-    const clean = btnOS.cloneNode(true);        // remove listeners antigos
-    btnOS.replaceWith(clean);
-    clean.onclick = null;
-    clean.addEventListener('click', () => {
-      gerarContrato('make_os.php', 'Template_OS.docx');
-    });
-  }
-}
+//{
+  //const btnOS = card.querySelector('#cj_btn_gerar_os');
+  //if (btnOS) {
+    //const clean = btnOS.cloneNode(true);        // remove listeners antigos
+    //btnOS.replaceWith(clean);
+    //clean.onclick = null;
+    //clean.addEventListener('click', () => {
+      //gerarContrato('make_os.php', 'Template_OS.docx');
+    //});
+  //}
+//}
 
 
 /* === Gerar contrato (agora com template) ============================== */
@@ -255,8 +254,6 @@ async function gerarContratoOnce(c) {
 window.gerarContrato = gerarContrato;
 /* ===================================================================== */
 
-}
-
 function openList(){
   build(); hideLegacy();
   const b1 = q('cj_list_back');
@@ -322,5 +319,75 @@ window.__CJFIX_API__ = {
   fetchList,   // busca a listagem completa
   fetchDoc     // busca 1 documento pelo código
 };
+
+(function(){
+  function bindEscolha(){
+    var btnContrato = document.getElementById('cj_btn_gerar');
+    if (!btnContrato) return false;
+    if (btnContrato.__escolhaBound) return true;
+
+    btnContrato.__escolhaBound = true;
+
+    // 👉 altera apenas o texto visível do botão
+    btnContrato.textContent = 'Escolher documento para download';
+
+    // (opcional) esconde o botão de OS
+    try { var bOS = document.getElementById('cj_btn_gerar_os'); if (bOS) bOS.style.display = 'none'; } catch(_){}
+
+    // Aplica as duas linhas no index
+    function aplicarDuasLinhas(nomeTpl){
+      var s = document.createElement('script');
+      s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
+      document.head.appendChild(s);
+      eval("btnGerar.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('"+ nomeTpl +"')}`;");
+    }
+
+    function abrirEscolha(onPick){
+      var back=document.createElement('div');
+      back.style.cssText='position:fixed;inset:0;background:rgba(2,6,23,.55);display:flex;align-items:center;justify-content:center;z-index:100000;backdrop-filter:blur(6px)';
+      var box=document.createElement('div');
+      box.style.cssText='background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;width:90%;max-width:420px;font-family:sans-serif';
+      box.innerHTML =
+        '<div style="background:linear-gradient(90deg,#0A1A3A,#08142E);color:#fff;font-weight:900;padding:16px 18px">Escolha o documento</div>'+
+        '<div style="padding:20px;display:flex;gap:10px;justify-content:center">'+
+          '<button id="cj_pick_ct" style="background:#0A1A3A;color:#fff;border:0;border-radius:999px;padding:10px 20px;font-weight:700;cursor:pointer">Contrato</button>'+
+          '<button id="cj_pick_os" style="background:#e2e8f0;color:#0A1A3A;border:0;border-radius:999px;padding:10px 20px;font-weight:700;cursor:pointer">Ordem de serviço</button>'+
+        '</div>';
+      back.appendChild(box); document.body.appendChild(back);
+      function fechar(){ back.remove(); }
+      box.querySelector('#cj_pick_ct').onclick = function(){ fechar(); onPick('Template-Contrato.docx'); };
+      box.querySelector('#cj_pick_os').onclick = function(){ fechar(); onPick('Template_OS.docx'); };
+      back.addEventListener('click', function(e){ if (e.target===back) fechar(); });
+    }
+
+    function handlerIntercept(ev){
+      ev.preventDefault();
+      abrirEscolha(function(nomeTpl){
+        aplicarDuasLinhas(nomeTpl);
+        btnContrato.removeEventListener('click', handlerIntercept, true);
+        try { btnContrato.click(); } finally {
+          setTimeout(()=>btnContrato.addEventListener('click', handlerIntercept, true),0);
+        }
+        try {
+          var b1=document.getElementById('cj_list_back'); if(b1) b1.style.display='none';
+          var b2=document.getElementById('cj_decide_back'); if(b2) b2.style.display='none';
+          if (typeof goTo === 'function') goTo(1);
+          window.scrollTo({top:0,behavior:'smooth'});
+        } catch(_){}
+      });
+    }
+
+    btnContrato.addEventListener('click', handlerIntercept, true);
+    return true;
+  }
+
+  // tenta bindar agora e re-tenta até o botão existir (card visível)
+  if (!bindEscolha()){
+    var __cjBindTimer = setInterval(function(){
+      if (bindEscolha()) clearInterval(__cjBindTimer);
+    }, 200);
+  }
+})();
+
 
 })();
