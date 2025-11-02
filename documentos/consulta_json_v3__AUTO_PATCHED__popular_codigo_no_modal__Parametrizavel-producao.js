@@ -325,43 +325,34 @@ window.__CJFIX_API__ = {
 (function(){
   // Vincula o botão do card “Gerar contrato” para virar “Escolher documento…”
   function bindEscolha(){
-    var btnContrato = document.getElementById('cj_btn_gerar');
-    if (!btnContrato || btnContrato.__escolhaBound) return !!btnContrato;
-    btnContrato.__escolhaBound = true;
+    var btnEscolher = document.getElementById('cj_btn_gerar'); // o do CARD
+    if (!btnEscolher || btnEscolher.__escolhaBound) return !!btnEscolher;
+    btnEscolher.__escolhaBound = true;
 
     // Só troca o rótulo visual
-    btnContrato.textContent = 'Escolher documento para download';
+    btnEscolher.textContent = 'Escolher documento para download';
 
-    // Esconde o botão OS do card
+    // Esconde/neutraliza o botão "Gerar OS" do card (para não confundir)
     try {
-     const bOS = document.getElementById('cj_btn_gerar_os');
-     if (bOS) { bOS.style.display = 'none'; bOS.disabled = true; }
+      var bOS = document.getElementById('cj_btn_gerar_os');
+      if (bOS) { bOS.style.display = 'none'; bOS.disabled = true; }
     } catch(_){}
 
-    // === APLICA AS DUAS LINHAS DO INDEX *SEM* EDITAR O HTML ===
-    // >>> SUBSTITUA por esta versão
- function aplicarDuasLinhas(nomeTpl){
-  // (1) usa a MESMA linha do index para a função:
-  try {
-    // redefine a função exatamente como você quer
-    eval("function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }");
-  } catch(_){}
+    // === APLICA AS DUAS LINHAS DO INDEX *só depois da escolha* ===
+    function aplicarDuasLinhas(nomeTpl){
+      // (1) função global que o index usa
+      window.nomeTemplatePadrao = function(){ return nomeTpl; };
 
-  // (2) usa a MESMA linha do index para o dataset:
-  try {
-    btnGerar.dataset.templateUrl =
-      `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
-  } catch(_){
-    // airbag opcional para timing: não muda comportamento do index
-    var el = document.getElementById('btnGerar');
-    if (el) {
-      var base = (typeof API === 'string' && API) ? API : '/api';
-      el.dataset.templateUrl = `${base}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
+      // (2) dataset no botão ORIGINAL do index
+      var btnIndex = document.getElementById('btnGerar');
+      var base = (typeof API === 'string' && API) ? API : '';
+      if (btnIndex) {
+        btnIndex.dataset.templateUrl =
+          `${base}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
+      }
     }
-  }
- }
 
-    // Modal minimalista de escolha (só UI)
+    // Mini-modal de escolha (UI simples)
     function abrirEscolha(onPick){
       var back=document.createElement('div');
       back.style.cssText='position:fixed;inset:0;background:rgba(2,6,23,.55);display:flex;align-items:center;justify-content:center;z-index:100000;backdrop-filter:blur(6px)';
@@ -374,49 +365,53 @@ window.__CJFIX_API__ = {
           '<button id="cj_pick_os" style="background:#e2e8f0;color:#0A1A3A;border:0;border-radius:999px;padding:10px 20px;font-weight:700;cursor:pointer">Ordem de serviço</button>'+
         '</div>';
       back.appendChild(box); document.body.appendChild(back);
+
       function fechar(){ back.remove(); }
-      box.querySelector('#cj_pick_os').onclick = function(e){
-       e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-       fechar(); onPick('Template_OS.docx');
-      };
+
       box.querySelector('#cj_pick_ct').onclick = function(e){
-       e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-       fechar(); onPick('Template-Contrato.docx');
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        fechar(); onPick('Template-Contrato.docx');
       };
-      
+      box.querySelector('#cj_pick_os').onclick = function(e){
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        fechar(); onPick('Template_OS.docx');
+      };
       back.addEventListener('click', function(e){ if (e.target===back) fechar(); });
     }
 
-  // >>> SUBSTITUA por esta versão
-function handlerIntercept(ev){
-  // bloqueia totalmente o clique do card (não deixa “vazar”)
-  ev.preventDefault();
-  ev.stopPropagation();
-  ev.stopImmediatePropagation();
+    // Intercepta o clique do botão do CARD e só abre a escolha
+    function handlerIntercept(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
 
-  abrirEscolha(function(nomeTpl){
-    // aplica o template escolhido nas duas linhas do index
-    aplicarDuasLinhas(nomeTpl);
+      abrirEscolha(function(nomeTpl){
+        // 1) só agora aplicamos as DUAS LINHAS no index
+        aplicarDuasLinhas(nomeTpl);
 
-    // fecha os overlays e volta para etapa 1 (visual)
-    try {
-      var b1=document.getElementById('cj_list_back'); if (b1) b1.style.display='none';
-      var b2=document.getElementById('cj_decide_back'); if (b2) b2.style.display='none';
-      if (typeof goTo==='function') goTo(1);
-      window.scrollTo({top:0,behavior:'smooth'});
-    } catch(_) {}
+        // 2) fecha overlays visuais do card
+        try {
+          var b1=document.getElementById('cj_list_back'); if(b1) b1.style.display='none';
+          var b2=document.getElementById('cj_decide_back'); if(b2) b2.style.display='none';
+          if (typeof goTo==='function') goTo(1);
+          window.scrollTo({top:0,behavior:'smooth'});
+        } catch(_){}
 
-    // dispara o fluxo nativo do index: click no #btnGerar
-    try {
-      var btnIndex = document.getElementById('btnGerar');
-      if (btnIndex) {
-        btnIndex.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
-      }
-    } catch(_) {}
-  });
- }
+        // 3) dispara o fluxo nativo do index: **sempre** no #btnGerar
+        try {
+          var btnIndex = document.getElementById('btnGerar');
+          if (btnIndex) {
+            btnIndex.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+          } else {
+            console.warn('[CJ] btnGerar não encontrado.');
+          }
+        } catch(err){
+          console.error('[CJ] Erro ao disparar btnGerar:', err);
+        }
+      });
+    }
 
-    btnContrato.addEventListener('click', handlerIntercept, true);
+    btnEscolher.addEventListener('click', handlerIntercept, true);
     return true;
   }
 
@@ -427,6 +422,7 @@ function handlerIntercept(ev){
     }, 200);
   }
 })();
+
 
 
 })();
