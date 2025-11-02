@@ -289,7 +289,7 @@ window.__CJFIX__ = { b1:b1, b2:b2, loaderBack:lback };
 // --- EXPORTA helpers do módulo de consulta para uso externo ---
 window.__CJFIX_API__ = {
   openList,    // abre a lista moderna (se quiser manter o botão Pesquisar)
-  openDecide,  // abre o card de ação (Atualizar / Gerar contrato / Fechar)
+  openDecide,  // abre o card de ação (Atualizar / Escolher documentos para download / Fechar)
   fetchList,   // busca a listagem completa
   fetchDoc     // busca 1 documento pelo código
 };
