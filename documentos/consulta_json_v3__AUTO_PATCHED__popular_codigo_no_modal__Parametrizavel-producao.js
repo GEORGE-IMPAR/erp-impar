@@ -341,7 +341,10 @@ window.__CJFIX_API__ = {
       var s = document.createElement('script');
       s.text = "function nomeTemplatePadrao(){ return '" + nomeTpl.replace(/'/g,"\\'") + "'; }";
       document.head.appendChild(s);
-      eval("btnGerar.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent('"+ nomeTpl +"')}`;");
+      var btn = document.getElementById('btnGerar');
+      if (btn) {
+        btn.dataset.templateUrl = `${API}/gerador/templates/${encodeURIComponent(nomeTpl)}`;
+      }
     }
 
     function abrirEscolha(onPick){
