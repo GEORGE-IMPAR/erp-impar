@@ -2703,6 +2703,126 @@ function baixarExcel(codigo){
 <script src="consulta_json_v3__AUTO_PATCHED__popular_codigo_no_modal__FIX__20251027_225307.js"></script>
 
 <script>
+(() => {
+  // --- util simples ---
+  const findByText = (sel, regex) => {
+    const list = document.querySelectorAll(sel);
+    for (const el of list) {
+      const txt = (el.textContent || '').trim();
+      if (regex.test(txt)) return el;
+    }
+    return null;
+  };
+
+  // abre a janelinha "Gerar Contrato / Gerar OS"
+  function abrirEscolhaTemplate() {
+    return new Promise((resolve) => {
+      const back = document.createElement('div');
+      Object.assign(back.style, {
+        position:'fixed', inset:0, display:'flex', alignItems:'center',
+        justifyContent:'center', background:'rgba(0,0,0,.45)', zIndex: 100002
+      });
+
+      const box = document.createElement('div');
+      box.style.cssText = "background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.25);min-width:320px;font-family:system-ui,-apple-system,Segoe UI,Roboto";
+      box.innerHTML = `
+        <div style="font-weight:700;margin-bottom:14px">Escolha o tipo de documento para gerar</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button id="btnEscolherContrato" style="padding:10px 12px;border-radius:999px;border:0;background:#0A1A3A;color:#fff;font-weight:700">Gerar Contrato</button>
+          <button id="btnEscolherOS" style="padding:10px 12px;border-radius:999px;border:0;background:#e2e8f0;color:#0A1A3A;font-weight:800">Gerar OS</button>
+        </div>`;
+      back.appendChild(box);
+      document.body.appendChild(back);
+
+      const close = (v)=>{ try{ document.body.removeChild(back);}catch(_){ } resolve(v); };
+      box.querySelector('#btnEscolherContrato').onclick = ()=> close('contrato');
+      box.querySelector('#btnEscolherOS').onclick      = ()=> close('os');
+    });
+  }
+
+  // substitui o nome do template nas DUAS linhas do index
+  function substituirTemplate(de, para) {
+    const meta = document.querySelector('#docMeta'); // se existir (não é obrigatório)
+    if (meta) {
+      const tplURL = meta.dataset.template || '';
+      if (tplURL.includes(de)) meta.dataset.template = tplURL.replaceAll(de, para);
+    }
+    // linha que define o dataset do botão (se existir)
+    const btnGerar = document.getElementById('btnGerarContrato') || document.getElementById('btnGerar');
+    if (btnGerar?.dataset?.templateUrl) {
+      btnGerar.dataset.templateUrl = btnGerar.dataset.templateUrl.replaceAll(de, para);
+    }
+    // fallback: percorre todos os scripts inline e troca o texto em memória (não persiste em arquivo)
+    document.querySelectorAll('script').forEach(s=>{
+      if (s.textContent && s.textContent.includes(de)) {
+        s.textContent = s.textContent.replaceAll(de, para);
+      }
+    });
+    // atualização do “rótulo” do botão principal (opcional)
+    const btnLabel = document.getElementById('btnGerar');
+    if (btnLabel) btnLabel.textContent = 'Escolher documentos para download';
+  }
+
+  // guarda referência do preparador original, se existir
+  const prepararOriginal = window.prepararGerarContrato;
+
+  // hook: quando o modal de decisão abrir, troca o handler do “Gerar contrato”
+  function hookBotaoGerar() {
+    const modal = document.querySelector('#cj_decide_back');
+    if (!modal || modal.style.display !== 'flex') return false;
+
+    // botão “Gerar contrato” dentro do modal moderno
+    const btn = modal.querySelector('#cj_btn_gerar') ||
+                findByText('button, a[role="button"]', /escolher documentos para download/i);
+    if (!btn || btn.__hooked) return false;
+    btn.__hooked = true;
+
+    // remove qualquer handler antigo clonando o botão
+    const clean = btn.cloneNode(true);
+    btn.replaceWith(clean);
+
+    clean.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      // 1) pergunta antes de gerar
+      const escolha = await abrirEscolhaTemplate();
+      if (!escolha) return;
+
+      // 2) faz a substituição (apenas texto)
+      if (escolha === 'contrato') {
+        substituirTemplate('Template_OS.docx', 'Template-Contrato.docx');
+      } else {
+        substituirTemplate('Template-Contrato.docx', 'Template_OS.docx');
+      }
+
+      // 3) chama o fluxo original (agora SIM pode gerar)
+      if (typeof prepararOriginal === 'function') {
+        // tenta descobrir o código atual da UI
+        const code = (document.getElementById('cj_code_chip')?.getAttribute('data-code')
+                      || document.getElementById('codigo')?.value || '').trim();
+        try { await prepararOriginal(code); } catch (_) { prepararOriginal(code); }
+      } else {
+        // fallback: dispara o clique “antigo” do gerador se existir
+        const legacy = document.getElementById('btnGerarContrato') || document.getElementById('btnGerar');
+        legacy?.click();
+      }
+    });
+
+    return true;
+  }
+
+  // observa abertura do modal para aplicar o hook exatamente na hora certa
+  const obs = new MutationObserver(() => { hookBotaoGerar(); });
+  obs.observe(document.body, { attributes:true, childList:true, subtree:true });
+
+  // também tenta uma vez agora (se o modal já estiver aberto)
+  hookBotaoGerar();
+})();
+</script>
+
+
+<script>
 /* ==========================================================
    INTERCEPTA O GERADOR E ESCOLHE O TEMPLATE ANTES DE EXECUTAR
    ========================================================== */
