@@ -2704,6 +2704,143 @@ function baixarExcel(codigo){
 
 <script>
 (function(){
+  const $ = (s,ctx=document)=>ctx.querySelector(s);
+  const $$= (s,ctx=document)=>Array.from(ctx.querySelectorAll(s));
+
+  // --- Mini-modal de escolha (1x) ---
+  function ensureChoiceModal(){
+    let modal = $('#miniChoiceModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'miniChoiceModal';
+    modal.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:99999;background:rgba(15,23,42,.45);backdrop-filter:blur(4px)';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);min-width:360px">
+        <div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;font-weight:800;color:#0f172a">
+          Escolha o tipo de documento para gerar
+        </div>
+        <div style="padding:16px;display:flex;gap:12px;justify-content:center">
+          <button id="btnChoiceContrato" class="btn primary">Gerar Contrato</button>
+          <button id="btnChoiceOS" class="btn ghost">Gerar OS</button>
+        </div>
+        <div style="padding:10px 16px 16px;display:flex;justify-content:center">
+          <button id="btnChoiceFechar" class="btn ghost">Cancelar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  // --- Força o template em TODAS as fontes que o HTML usa ---
+  function forceTemplate(tplName){
+    // a) dataset do(s) botão(ões)
+    const btns = [
+      '#btnGerarContrato','#btnGerar','#btnGerarDoc','#btnGerarDocumento'
+    ].map(sel => $(sel)).filter(Boolean);
+
+    btns.forEach(btn=>{
+      if (btn.dataset.templateUrl){
+        const base = btn.dataset.templateUrl.replace(/\/[^\/]+$/,'');
+        btn.dataset.templateUrl = `${base}/${encodeURIComponent(tplName)}`;
+      }
+    });
+
+    // b) meta auxiliar
+    const meta = $('#docMeta');
+    if (meta) meta.dataset.template = tplName;
+
+    // c) globals que o seu index consulta
+    try { window.TEMPLATE_ATUAL = tplName; } catch(_){}
+    try { window.nomeTemplatePadrao = () => tplName; } catch(_){}
+  }
+
+  // --- Dispara o gerador original (após a escolha) ---
+  function fireOriginal(){
+    const btn = $('#btnGerarContrato') || $('#btnGerar') || $('#btnGerarDoc') || $('#btnGerarDocumento');
+    if (btn) btn.click();
+  }
+
+  // --- Intercepta o botão "Escolher…" para não gerar nada até escolher ---
+  function armGenerateIntercept(){
+    const original =
+      $('#btnGerarContrato') || $('#btnGerar') || $('#btnGerarDoc') || $('#btnGerarDocumento');
+    if (!original || original.__armed) return;
+    original.__armed = true;
+
+    // Clona pra matar listeners antigos
+    const clone = original.cloneNode(true);
+    // Rótulo amigável
+    try { clone.textContent = 'Escolher documentos para download'; } catch(_){}
+    original.replaceWith(clone);
+
+    const modal = ensureChoiceModal();
+    const show = ()=>{ modal.style.display = 'flex'; };
+    const hide = ()=>{ modal.style.display = 'none'; };
+
+    // Abrir mini-modal em vez de gerar
+    clone.addEventListener('click', (ev)=>{
+      ev.preventDefault();
+      ev.stopPropagation();
+      show();
+    });
+
+    // Ações do mini-modal
+    $('#btnChoiceFechar', modal).onclick = hide;
+
+    $('#btnChoiceContrato', modal).onclick = ()=>{
+      hide();
+      forceTemplate('Template-Contrato.docx');
+      // rearmar o botão (garante datasets ajustados antes do clique real)
+      setTimeout(fireOriginal, 50);
+    };
+    $('#btnChoiceOS', modal).onclick = ()=>{
+      hide();
+      forceTemplate('Template_OS.docx');
+      setTimeout(fireOriginal, 50);
+    };
+  }
+
+  // --- Hook no "Pesquisar": quando a lista renderiza, rearmar intercept ---
+  function hookPesquisar(){
+    // 1) clique explícito no botão Pesquisar
+    const pesq = $$( 'button, input[type="button"], input[type="submit"], a[role="button"]' )
+      .find(el => /pesquisar/i.test((el.textContent||el.value||'').trim()));
+    if (pesq && !pesq.__hooked){
+      pesq.__hooked = true;
+      pesq.addEventListener('click', ()=>{
+        // dá tempo do HTML montar datasets do gerador
+        setTimeout(armGenerateIntercept, 350);
+      });
+    }
+
+    // 2) fallback: quando o contêiner da lista muda, rearmar
+    const list = $('#cj_list_body') || document.body;
+    if (!list.__obs){
+      const obs = new MutationObserver(()=>{
+        // sempre que re-renderiza a lista, rearmar
+        setTimeout(armGenerateIntercept, 150);
+      });
+      obs.observe(list, {childList:true, subtree:true});
+      list.__obs = obs;
+    }
+  }
+
+  function init(){
+    ensureChoiceModal();
+    armGenerateIntercept(); // caso já esteja montado
+    hookPesquisar();        // e após pesquisas
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+
+<script>
+(function(){
   // Utilidades
   const $ = (sel, ctx=document) => ctx.querySelector(sel);
   const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
