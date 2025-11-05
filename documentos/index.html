@@ -3435,6 +3435,10 @@ function pushCodeToEtapa1(code){
         // return;
       // }
 
+       function nomeTemplatePadrao(){
+       return (window.__DOC_TPL__ || ''); // vazio até escolher
+      }
+
       // monta URLs para o gerador que você já validou
       const API = 'https://api.erpimpar.com.br';
       const ymd = (d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());})(new Date());
@@ -4168,6 +4172,118 @@ function armInterceptPrimeiroClique(){
 (function init(){
   trocarRotuloEscolher();      // atualiza rótulo do botão
   armInterceptPrimeiroClique(); // intercepta 1º clique e aplica fluxo novo
+})();
+</script>
+
+<script>
+// Atualiza o template no botão "principal" (é o que o HTML usa na hora de gerar)
+function setTemplateChoice(tplName){
+  const btn = document.getElementById('btnGerarContrato') ||
+              document.getElementById('btnGerar') ||
+              Array.from(document.querySelectorAll('button, a[role="button"]'))
+                   .find(el => /escolher documentos para download|gerar contrato/i.test((el.textContent||'').trim()));
+  if (!btn) {
+    console.warn('[setTemplateChoice] botão principal não encontrado');
+    return;
+  }
+  const API = 'https://api.erpimpar.com.br';
+  const path = '/gerador/templates';
+  const tpl  = String(tplName || '').trim();
+
+  // ATUALIZA SOMENTE O TEMPLATE AGORA
+  btn.dataset.templateUrl = `${API}${path}/${encodeURIComponent(tpl)}`;
+  // opcional: manter referência na janela (caso algum utilitário use)
+  window.__DOC_TPL__ = tpl;
+
+  console.log('[Template definido]', tpl, '->', btn.dataset.templateUrl);
+}
+</script>
+
+<script>
+// 1) Função que acha o botão pelo texto atual
+function findEscolherBtn(){
+  return document.getElementById('btnGerarContrato') ||
+         document.getElementById('btnGerar') ||
+         Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
+              .find(el => /escolher documentos para download/i.test((el.textContent||el.value||'').trim()));
+}
+
+// 2) Intercepta o clique padrão (impede o “disparo automático”)
+function armEscolhaIntercept(){
+  const btn = findEscolherBtn();
+  if (!btn || btn.__escolhaHooked) return;
+  btn.__escolhaHooked = true;
+
+  // Remover listeners antigos via clone é arriscado; aqui fazemos o mais seguro:
+  btn.addEventListener('click', function intercept(e){
+    // Se ainda não escolhemos (não há templateUrl armado), barramos a execução
+    const tplSetado = (btn.dataset.templateUrl && btn.dataset.templateUrl.trim() !== '');
+    if (!tplSetado) {
+      e.preventDefault();
+      e.stopImmediatePropagation(); // mata qualquer listener antigo que faça o submit/gerar
+      abrirMiniEscolha();           // abre os 2 botões (OS/Contrato)
+      return false;
+    }
+    // Se já tiver templateUrl armado, deixamos seguir normalmente (geração acontece)
+    return true;
+  }, true); // useCapture = true: intercepta antes dos outros
+}
+
+// 3) Abre mini-escolha (use seu modal/overlay; aqui vai um modal mínimo inline)
+function abrirMiniEscolha(){
+  if (document.getElementById('miniEscolhaTpl')) { 
+    document.getElementById('miniEscolhaTpl').style.display = 'flex';
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.id = 'miniEscolhaTpl';
+  wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);z-index:99999;';
+  wrap.innerHTML = `
+    <div style="background:#fff; padding:16px 18px; border-radius:12px; min-width:280px; box-shadow:0 10px 40px rgba(0,0,0,.25)">
+      <div style="font-weight:700; margin-bottom:10px;">Escolher documentos para download</div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button id="btnEscolherOS" style="padding:10px 12px; border-radius:999px; border:1px solid #ddd; background:#f5f5f5; cursor:pointer;">Gerar OS</button>
+        <button id="btnEscolherContrato" style="padding:10px 12px; border-radius:999px; border:0; background:#0A1A3A; color:#fff; cursor:pointer;">Gerar Contrato</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  // Liga os dois botões
+  const btnContrato = wrap.querySelector('#btnEscolherContrato');
+  const btnOS = wrap.querySelector('#btnEscolherOS');
+  const btnPrincipal = findEscolherBtn();
+
+  btnContrato.addEventListener('click', () => {
+    setTemplateChoice('Template-Contrato.docx');    // hífen (contrato)
+    wrap.style.display = 'none';
+    // Agora sim, dispare a geração (clique de verdade no botão original)
+    btnPrincipal.click();
+  });
+
+  btnOS.addEventListener('click', () => {
+    setTemplateChoice('Template_OS.docx');          // underline (OS)
+    wrap.style.display = 'none';
+    // Agora sim, dispare a geração (clique de verdade no botão original)
+    btnPrincipal.click();
+  });
+}
+
+// 4) Troca o rótulo do botão (somente texto) — sem mexer em handlers
+function trocarRotuloEscolher(){
+  const btn = findEscolherBtn();
+  if (!btn) return;
+  try {
+    if ('textContent' in btn) btn.textContent = 'Escolher documentos para download';
+    else if ('value' in btn) btn.value = 'Escolher documentos para download';
+  } catch(_){}
+}
+
+// 5) Inicializa quando a página estiver pronta
+(function initEscolha(){
+  trocarRotuloEscolher();
+  armEscolhaIntercept();
 })();
 </script>
 
