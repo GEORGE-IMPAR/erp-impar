@@ -462,7 +462,7 @@ window.__CONSULTA_CFG__ = {
 <!-- TELA 1 -->
 <div class="card" id="screen1">
 <div class="header">
-<h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.6 - 05-11-2025</span></h2>
+<h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.7 - 05-11-2025</span></h2>
 <p class="user" id="userInfo1">Usuário</p>
 </div>
 <div class="body">
@@ -508,7 +508,7 @@ window.__CONSULTA_CFG__ = {
 <div class="bar disabled" id="bar1">Continuar</div>
 <!-- TELA 2 -->
 <div class="card hidden" id="screen2">
-<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.6 - 05-11-2025</span></h2><p class="user" id="userInfo2">Usuário</p><p class="code">Código Projeto: <b id="codigoVal">AC00025</b></p></div>
+<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.7 - 05-11-2025</span></h2><p class="user" id="userInfo2">Usuário</p><p class="code">Código Projeto: <b id="codigoVal">AC00025</b></p></div>
 <div class="body">
 <div class="block"><div class="cap">SERVIÇO <span class="req">*</span></div><div class="content"><textarea class="textarea" id="servico" oninput="validate2()" placeholder="Digite o serviço do projeto"></textarea></div></div>
 <div class="block"><div class="cap">ENDEREÇO DA OBRA <span class="req">*</span></div><div class="content"><input class="input" id="endereco" oninput="validate2()" placeholder="Digite o endereço da obra"/></div></div>
@@ -518,7 +518,7 @@ window.__CONSULTA_CFG__ = {
 <div class="back hidden" id="back2" onclick="goTo(1)"><span class="chev">◀</span> Voltar</div>
 <!-- TELA 3 -->
 <div class="card hidden" id="screen3">
-<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.6 - 05-11-2025</span></h2><p class="user" id="userInfo3">Usuário</p><p class="code">Código Projeto: <b id="codigoVal3">AC00025</b></p></div>
+<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.7 - 05-11-2025</span></h2><p class="user" id="userInfo3">Usuário</p><p class="code">Código Projeto: <b id="codigoVal3">AC00025</b></p></div>
 <div class="body">
 <div class="block"><div class="cap">DADOS DO CONTRATANTE</div></div>
 <div class="grid-2">
@@ -606,7 +606,7 @@ window.__CONSULTA_CFG__ = {
 <div class="back hidden" id="back4" onclick="goTo(3)"><span class="chev">◀</span> Voltar</div>
 <!-- TELA 5 -->
 <div class="card hidden" id="screen5">
-<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.6 - 05-11-2025</span></h2><p class="user" id="userInfo5">Usuário</p><p class="code">Código Projeto: <b id="codigoVal5">AC00025</b></p></div>
+<div class="header"><h2 class="title">Gerador de documentos <span class="version-tag">Versão 10.7 - 05-11-2025</span></h2><p class="user" id="userInfo5">Usuário</p><p class="code">Código Projeto: <b id="codigoVal5">AC00025</b></p></div>
 <div class="body">
 <div class="grid-2">
 <div class="block"><div class="cap">CLÁUSULAS <span class="req">*</span></div><div class="content"><textarea class="textarea" id="clausulas" oninput="validate5()" placeholder="Digite as cláusulas do documento"></textarea></div></div>
@@ -4045,6 +4045,130 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
       });
     }
   }
+</script>
+
+<script>
+// ========= util =========
+function findEscolherBtn(){
+  return document.getElementById('btnGerarContrato') ||
+         document.getElementById('btnGerar') ||
+         Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
+              .find(el => /escolher documentos para download|gerar contrato/i.test((el.textContent||el.value||'').trim()));
+}
+function findPesquisarBtn(){
+  return Array.from(document.querySelectorAll('button, a[role="button"], input[type="button"], input[type="submit"]'))
+         .find(el => /pesquisar/i.test((el.textContent||el.value||'').trim()));
+}
+function getCodigoAtual(){
+  const chip = document.getElementById('cj_code_chip');
+  const valFromChip = (chip && chip.getAttribute('data-code')) ? chip.getAttribute('data-code').trim() : '';
+  const inp = document.getElementById('codigo');
+  const valFromInput = (inp && inp.value) ? String(inp.value).trim().toUpperCase() : '';
+  return (valFromChip || valFromInput || '').toUpperCase();
+}
+function setTemplateChoice(tplName){
+  const btn = findEscolherBtn();
+  if (!btn) { console.warn('[setTemplateChoice] botão principal não encontrado'); return; }
+  const API = 'https://api.erpimpar.com.br';
+  const path = '/gerador/templates';
+  const tpl  = String(tplName || '').trim();
+  btn.dataset.templateUrl = `${API}${path}/${encodeURIComponent(tpl)}`;
+  window.__DOC_TPL__ = tpl;
+  console.log('[Template definido]', tpl, '->', btn.dataset.templateUrl);
+}
+function trocarRotuloEscolher(){
+  const btn = findEscolherBtn();
+  if (!btn) return;
+  try {
+    if ('textContent' in btn) btn.textContent = 'Escolher documentos para download';
+    else if ('value' in btn) btn.value = 'Escolher documentos para download';
+  } catch(_){}
+}
+
+// ========= mini modal de escolha =========
+function abrirMiniEscolha(onPick){
+  let wrap = document.getElementById('miniEscolhaTpl');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'miniEscolhaTpl';
+    wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);z-index:99999;';
+    wrap.innerHTML = `
+      <div style="background:#fff; padding:16px 18px; border-radius:12px; min-width:280px; box-shadow:0 10px 40px rgba(0,0,0,.25)">
+        <div style="font-weight:700; margin-bottom:10px;">Escolher documentos para download</div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btnEscolherOS" style="padding:10px 12px; border-radius:999px; border:1px solid #ddd; background:#f5f5f5; cursor:pointer;">Gerar OS</button>
+          <button id="btnEscolherContrato" style="padding:10px 12px; border-radius:999px; border:0; background:#0A1A3A; color:#fff; cursor:pointer;">Gerar Contrato</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+  } else {
+    wrap.style.display = 'flex';
+  }
+  const close = ()=>{ wrap.style.display='none'; };
+  wrap.querySelector('#btnEscolherContrato').onclick = ()=>{ close(); onPick('Template-Contrato.docx'); };
+  wrap.querySelector('#btnEscolherOS').onclick       = ()=>{ close(); onPick('Template_OS.docx'); };
+}
+
+// ========= fluxo principal: intercepta 1º clique, escolhe, re-prepara, gera =========
+function armInterceptPrimeiroClique(){
+  const btn = findEscolherBtn();
+  if (!btn || btn.__armado) return;
+  btn.__armado = true;
+
+  btn.addEventListener('click', function intercept(e){
+    // Se ainda não temos templateUrl armado, bloqueia o fluxo antigo
+    const temTpl = !!(btn.dataset.templateUrl && btn.dataset.templateUrl.trim());
+    if (!temTpl) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      abrirMiniEscolha(async (tplEscolhido)=>{
+        // 1) define template escolhido
+        setTemplateChoice(tplEscolhido);
+
+        // 2) re-prepara “como se” a pesquisa tivesse sido feita novamente
+        const codigo = getCodigoAtual();
+        console.log('[Re-prepare] codigo:', codigo, 'tpl:', tplEscolhido);
+
+        // Tenta o caminho curto (sua função, se existir)
+        let refeito = false;
+        try {
+          if (typeof window.prepararGerarContrato === 'function' && codigo) {
+            window.prepararGerarContrato(codigo);
+            refeito = true;
+          }
+        } catch(_){}
+
+        // Se não há prepararGerarContrato, tente acionar o botão de Pesquisa
+        if (!refeito) {
+          const btnPesquisar = findPesquisarBtn();
+          if (btnPesquisar) {
+            btnPesquisar.click();
+            // aguarda o dataset ser rearmado (template agora já está setado)
+            await new Promise(r => setTimeout(r, 500));
+          }
+        } else {
+          // dar um tick para os listeners internos atualizarem dataset
+          await new Promise(r => setTimeout(r, 200));
+        }
+
+        // 3) agora sim, dispara a geração (segundo clique “real”)
+        //    como já temos templateUrl armado e dataset refeitos, não entra de novo aqui.
+        btn.click();
+      });
+      return false;
+    }
+    // Se já tem template, deixa seguir normal (gera)
+    return true;
+  }, true); // capture: intercepta antes do handler antigo
+}
+
+// ========= inicialização =========
+(function init(){
+  trocarRotuloEscolher();      // atualiza rótulo do botão
+  armInterceptPrimeiroClique(); // intercepta 1º clique e aplica fluxo novo
+})();
 </script>
 
 </body>
