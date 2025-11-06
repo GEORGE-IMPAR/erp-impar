@@ -1,164 +1,280 @@
-'use strict';
+/* consulta_json_v3_beauty_brand_fixclose_loader.js  (VERSÃO: chooser OS/Contrato + loader preto + RISCO ZERO)
+   - UI moderna azul-marinho (lista + decisão)
+   - Suprime modais legados
+   - Pesquisa só arma EXCEL (template vazio); geração só após escolha (OS ou Contrato)
+   - “Duas linhas” do HTML obedecem window.__DOC_TPL__ e data-template-url
+*/
+(function(){
+  var BRAND = { primary:'#0A1A3A', primaryDark:'#08142E', accent:'#3B82F6' };
+  var JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
+  var SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
 
-function $(sel, ctx) { return (ctx || document).querySelector(sel); }
-function el(tag, cls) {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  return n;
-}
-
-function ensureOverlay() {
-  let o = $('#cj_overlay_busy');
-  if (o) return o;
-  o = el('div');
-  o.id = 'cj_overlay_busy';
-  o.setAttribute('style', [
-    'position:fixed', 'inset:0', 'background:rgba(0,0,0,.6)', 'backdrop-filter: blur(2px)',
-    'display:none', 'align-items:center', 'justify-content:center', 'z-index:99999'
-  ].join(';'));
-  const box = el('div');
-  box.setAttribute('style', [
-    'min-width:260px', 'padding:22px 26px', 'border:2px solid #fff', 'border-radius:14px',
-    'color:#fff', 'font:600 15px/1.2 system-ui,Segoe UI,Roboto,Arial',
-    'background:rgba(0,0,0,.85)', 'box-shadow:0 10px 30px rgba(0,0,0,.5)',
-    'display:flex', 'gap:12px', 'align-items:center', 'justify-content:center'
-  ].join(';'));
-  const spinner = el('div', 'cj-spin');
-  spinner.setAttribute('style', [
-    'width:22px', 'height:22px', 'border:3px solid #fff', 'border-top-color:transparent',
-    'border-radius:50%', 'animation:cj_spin 0.8s linear infinite'
-  ].join(';'));
-  const msg = el('div');
-  msg.textContent = 'Processando... aguarde';
-  box.appendChild(spinner);
-  box.appendChild(msg);
-  o.appendChild(box);
-  const css = document.createElement('style');
-  css.id = 'cj_spin_css';
-  css.textContent = '@keyframes cj_spin{to{transform:rotate(360deg)}}';
-  document.head.appendChild(css);
-  document.body.appendChild(o);
-  return o;
-}
-
-function showBusy() { ensureOverlay().style.display = 'flex'; }
-function hideBusy() {
-  const o = $('#cj_overlay_busy');
-  if (o) o.style.display = 'none';
-}
-
-function makeContract(code) {
-  if (!code) {
-    alert('Código não informado.');
-    return;
+  // ===== helpers base
+  function el(t,a,h){var e=document.createElement(t);if(a){for(var k in a){if(a.hasOwnProperty(k))e.setAttribute(k,a[k]);}}if(h!=null)e.innerHTML=h;return e;}
+  function q(id){return document.getElementById(id);}
+  function findByText(selector, regex){
+    return Array.from(document.querySelectorAll(selector))
+      .find(el => regex.test((el.textContent||el.value||'').trim()));
   }
-  const url = 'https://api.erpimpar.com.br/gerador/make_contract.php?codigo=' + encodeURIComponent(code);
-  showBusy();
-  return fetch(url, { cache: 'no-store' })
-    .then(r => r.text())
-    .then(txt => {
-      let j = null;
-      try { j = JSON.parse(txt); } catch (e) { }
-      if (!j || !j.ok || !j.url) {
-        console.warn('Resposta inesperada:', txt);
-        alert((j && j.msg) ? j.msg : 'Falha ao gerar o contrato.');
-        return;
-      }
-      const w = window.open(j.url, '_blank');
-      if (!w || w.closed || typeof w.closed === 'undefined') {
-        window.location.href = j.url;
-      }
-    })
-    .catch(() => alert('Erro de rede ao gerar o contrato.'))
-    .finally(hideBusy);
-}
-
-function bindDefaultButton() {
-  const btn = $('#cj_btn_gerar');
-  if (!btn) return;
-  if (btn.__bound_make_contract__) return;
-  btn.__bound_make_contract__ = true;
-  btn.addEventListener('click', function (ev) {
-    ev.preventDefault();
-    const code = (this.getAttribute('data-code') || '').trim();
-    makeContract(code);
-  });
-}
-
-window.__CJ_MAKE_CONTRACT__ = makeContract;
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bindDefaultButton, { once: true });
-} else {
-  bindDefaultButton();
-}
-
-// === Patch para ação automática ao clicar na linha ===
-(function () {
-  const btnPdf = document.getElementById('btnActionPdf');
-  const btnUpdate = document.getElementById('btnActionUpdate');
-  const actDocCode = document.getElementById('actDocCode');
-
-  if (btnPdf) {
-    btnPdf.addEventListener('click', function () {
-      const codigo = (actDocCode?.textContent || '').trim();
-      if (!codigo) {
-        alert('Código do documento não encontrado.');
-        return;
-      }
-
-      console.log('[Gerar Contrato] Código:', codigo);
-      if (typeof window.__CJ_MAKE_CONTRACT__ === 'function') {
-        window.__CJ_MAKE_CONTRACT__(codigo);
-      } else {
-        alert('Função de geração de contrato não disponível.');
-      }
+  function hideLegacy(){
+    ['cj_modal','cj_actions','consultaModal','consulta_modal','consulta_json_modal'].forEach(function(id){
+      var n=q(id); if(n){ n.style.setProperty('display','none','important'); n.hidden=true; }
     });
-  }
-
-  if (btnUpdate) {
-    btnUpdate.addEventListener('click', function () {
-      const codigo = (actDocCode?.textContent || '').trim();
-      if (!codigo) {
-        alert('Código do documento não encontrado.');
-        return;
+    try{
+      var nodes=document.querySelectorAll('div,section,aside');
+      for(var i=0;i<nodes.length;i++){
+        var n=nodes[i]; var txt=(n.textContent||'').trim();
+        if(txt && txt.indexOf('Consulta de documentos (Excel)')!==-1){
+          n.style.setProperty('display','none','important'); n.hidden=true;
+        }
       }
-
-      const input = document.getElementById('codigo');
-      if (input) input.value = codigo;
-
-      const modal = document.getElementById('actionModal');
-      if (modal) modal.style.display = 'none';
-
-      const btnGerar = document.getElementById('btnGerarContrato');
-      if (btnGerar) btnGerar.style.display = 'inline-block';
-    });
+    }catch(_){}
   }
 
-  // 🔧 Chuncho: clique automático no botão "Atualizar documento"
-  const table = document.getElementById('consBodyInline');
-  if (table) {
-    table.onclick = function (e) {
-      const row = e.target.closest('tr');
-      if (!row) return;
-      const dados = row.__dados__;
-      if (!dados || !dados.codigo) return;
+  // ===== CSS do módulo
+  function injectCSS(){
+    if(q('cj_fix_css')) return;
+    var css=[
+      '@keyframes cjfade{from{opacity:0}to{opacity:1}}',
+      '@keyframes cjscale{from{transform:translate(-50%,-46%) scale(.96);opacity:.03}to{transform:translate(-50%,-50%) scale(1)} }',
+      '@keyframes cjspin{to{transform:rotate(360deg)}}',
+      '.cj-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100000;background:rgba(2,6,23,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:cjfade .2s ease-out}',
+      '.cj-box{position:relative;width:92%;max-width:980px;border-radius:20px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);box-shadow:0 28px 80px rgba(2,6,23,.35)}',
+      '.cj-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff}',
+      '.cj-title{font-weight:900;letter-spacing:.3px}',
+      '.cj-x{background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px 10px;border-radius:12px}',
+      '.cj-x:hover{background:rgba(255,255,255,.12)}',
+      '.cj-body{padding:6px 0 10px;max-height:66vh;overflow:auto;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
+      '.cj-row{display:grid;grid-template-columns:200px 170px 1fr;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid #e2e8f0;cursor:pointer}',
+      '.cj-code{font-weight:800;color:'+BRAND.primary+'}',
+      '.cj-date{color:#475569;font-size:13px}',
+      '.cj-client{color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.cj-empty{padding:20px;color:#64748b}',
+      '.cj-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.9));border:1px solid rgba(226,232,240,.75);border-radius:20px;box-shadow:0 28px 80px rgba(2,6,23,.35);width:92%;max-width:520px;overflow:hidden;animation:cjscale .2s ease-out}',
+      '.cj-card-head{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,'+BRAND.primary+','+BRAND.primaryDark+');color:#fff;padding:16px 20px}',
+      '.cj-chip{display:inline-block;background:'+BRAND.primaryDark+';color:#cbd5e1;border:1px solid #334155;padding:4px 12px;border-radius:999px;font-size:12px;margin-left:8px}',
+      '.cj-card-body{padding:18px;color:#0f172a}',
+      '.cj-actions{display:flex;gap:12px;justify-content:flex-end;padding:14px 20px;border-top:1px solid #e2e8f0;background:linear-gradient(180deg,#f8fafc,#eef2f7)}',
+      '.btn{border:none;border-radius:999px;padding:12px 16px;cursor:pointer;font-weight:800;letter-spacing:.2px}',
+      '.btn.ghost{background:#e2e8f0;color:'+BRAND.primary+'}',
+      '.btn.primary{background:linear-gradient(90deg,'+BRAND.primaryDark+','+BRAND.primary+');color:#fff}',
+      '.cj-loader-back{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:100001;background:rgba(0,0,0,.8)}',
+      '.cj-loader-box{display:flex;flex-direction:column;align-items:center;gap:14px;background:#000;color:#fff;border:2px solid #fff;padding:26px 28px;border-radius:18px;box-shadow:0 22px 60px rgba(0,0,0,.6)}',
+      '.cj-spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:cjspin .9s linear infinite}',
+      '.cj-loader-text{font-weight:800;letter-spacing:.2px;color:#fff}'
+    ].join('');
+    document.head.appendChild(el('style',{id:'cj_fix_css'},css));
+  }
 
-      // 1. Atualiza o campo oculto que o botão usa
-      const actDocCode = document.getElementById('actDocCode');
-      if (actDocCode) actDocCode.textContent = dados.codigo;
+  // ===== Estrutura dos modais (lista + decidir + loader)
+  function build(){
+    if(q('cj_list_back')) return;
+    injectCSS();
 
-      // 2. Aciona automaticamente o botão "Atualizar documento"
-      setTimeout(() => {
-        const btnUpdate = document.getElementById('btnActionUpdate');
-        if (btnUpdate) btnUpdate.click();
-      }, 50); // 50ms para garantir que o código foi setado
+    var b1=el('div',{id:'cj_list_back',class:'cj-back'});
+    var box=el('div',{class:'cj-box'});
+    box.innerHTML='<div class="cj-head"><div class="cj-title">Consulta de documentos</div><button class="cj-x" id="cj_x1">×</button></div><div class="cj-body" id="cj_list_body"><div class="cj-empty">Carregando...</div></div>';
+    b1.appendChild(box); document.body.appendChild(b1);
 
-      // 3. Fecha o modal de ação pouco depois (usuário nem vê)
-      setTimeout(() => {
-        const modal = document.getElementById('actionModal');
-        if (modal) modal.style.display = 'none';
-      }, 300); // quase imperceptível para o usuário
+    var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
+    var card=el('div',{class:'cj-card'});
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">O que você deseja fazer com este documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Escolher documentos para download</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    b2.appendChild(card); document.body.appendChild(b2);
+
+    var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
+    var lbox=el('div',{class:'cj-loader-box'});
+    lbox.innerHTML='<div class="cj-spinner"></div><div class="cj-loader-text">Processando... aguarde...</div>';
+    lback.appendChild(lbox);
+    document.body.appendChild(lback);
+
+    function hideAll(){ b1.style.display='none'; b2.style.display='none'; hideLegacy(); }
+    q('cj_x1').onclick=hideAll; q('cj_x2').onclick=hideAll; q('cj_btn_close').onclick=hideAll;
+
+    // ===== Ação: Atualizar (leva para Etapa 2 sem mexer no restante)
+    q('cj_btn_atualizar').onclick=function(){
+      var code=(q('cj_code_chip').getAttribute('data-code')||'').trim();
+      if(!code){ hideAll(); return; }
+      var inp=q('codigo'); if (inp) inp.value=code;
+      fetchDoc(code).then(function(item){
+        try { fillForm(item); } catch(_){}
+        try { if (typeof goTo==='function') goTo(2); } catch(_){}
+        hideAll();
+        window.scrollTo({top:0,behavior:'smooth'});
+      }).catch(function(){ hideAll(); });
+    };
+
+    // ===== Hooka o botão “Escolher documentos para download” para abrir o mini-chooser (OS/Contrato)
+    (function addChooserBeforeGenerate(){
+      const btn = document.getElementById('cj_btn_gerar');
+      if (!btn || btn.__hookedChooser) return;
+      btn.__hookedChooser = true;
+
+      const previousHandler = btn.onclick; // guardamos – mas NÃO queremos disparar geração antes
+      btn.onclick = async function(e){
+        e?.preventDefault();
+        e?.stopPropagation();
+
+        // mini modal
+        const back = document.createElement('div');
+        back.style.position='fixed';
+        back.style.inset='0';
+        back.style.background='rgba(0,0,0,.5)';
+        back.style.display='flex';
+        back.style.alignItems='center';
+        back.style.justifyContent='center';
+        back.style.zIndex='999999';
+
+        const box = document.createElement('div');
+        box.style.background='#fff';
+        box.style.padding='18px';
+        box.style.borderRadius='14px';
+        box.style.minWidth='300px';
+        box.style.boxShadow='0 20px 60px rgba(0,0,0,.35)';
+        box.innerHTML = `
+          <div style="font-weight:800; margin-bottom:10px; color:#0A1A3A">Escolher documento</div>
+          <div style="display:flex; gap:10px; justify-content:flex-end">
+            <button id="cj_escolher_os" class="btn ghost">Gerar OS</button>
+            <button id="cj_escolher_contrato" class="btn primary">Gerar Contrato</button>
+          </div>
+        `;
+        back.appendChild(box);
+        document.body.appendChild(back);
+
+        // helper: aplica as 2 linhas do HTML (apenas template!)
+        function aplicarTemplateNoIndex(templateName){
+          const tpl = String(templateName || '').trim();
+
+          // 1) variável global lida pelo HTML (nomeTemplatePadrao)
+          window.__DOC_TPL__ = tpl;
+
+          // 2) dataset no botão nativo do HTML (btnGerar/btnGerarContrato)
+          const API = 'https://api.erpimpar.com.br';
+          const btnIndex =
+            document.getElementById('btnGerar') ||
+            document.getElementById('btnGerarContrato');
+          if (btnIndex) {
+            btnIndex.dataset.templateUrl =
+              `${API}/gerador/templates/${encodeURIComponent(tpl)}`;
+          }
+        }
+
+        // definição de fluxo pós-escolha:
+        const seguirFluxo = (tplEscolhido) => {
+          try { aplicarTemplateNoIndex(tplEscolhido); } catch(_){}
+
+          // fecha chooser
+          try { document.body.removeChild(back); } catch(_){}
+
+          // Agora sim: dispara o fluxo de geração que o HTML espera (via clique no botão real)
+          const realBtn = document.getElementById('btnGerar') ||
+                          document.getElementById('btnGerarContrato') ||
+                          findByText('button, a[role="button"]', /gerar contrato|escolher documentos para download/i);
+          if (realBtn){
+            // garantimos que o realBtn NÃO tenha listeners antigos duplicados
+            const clone = realBtn.cloneNode(true);
+            try { clone.textContent = 'Gerar (executar)'; } catch(_){}
+            realBtn.replaceWith(clone);
+            // clica de fato
+            clone.click();
+          }else{
+            // fallback: se não achou, tenta recarregar só o dataset do nosso próprio botão
+            if (typeof previousHandler === 'function') previousHandler.call(btn, e);
+          }
+        };
+
+        box.querySelector('#cj_escolher_os')?.addEventListener('click', () => {
+          seguirFluxo('Template_OS.docx');        // underline
+        });
+        box.querySelector('#cj_escolher_contrato')?.addEventListener('click', () => {
+          seguirFluxo('Template-Contrato.docx');  // hífen
+        });
+      };
+
+      // rotula o botão do card
+      try { btn.textContent = 'Escolher documentos para download'; } catch(_){}
+    })();
+
+    // ===== Loader helpers (reutilizados no fluxo nativo do HTML)
+    window.__CJ_LOADER__ = {
+      show: (msg) => {
+        const back = q('cj_loader_back'); if (!back) return;
+        back.style.display = 'flex';
+        const t = back.querySelector('.cj-loader-text'); if (t && msg) t.textContent = msg;
+      },
+      hide: () => { const back = q('cj_loader_back'); if (back) back.style.display = 'none'; }
     };
   }
+
+  // ===== Aberturas
+  function openList(){ build(); hideLegacy(); window.__CJFIX__.b2.style.display='none'; window.__CJFIX__.b1.style.display='flex'; }
+  function openDecide(code){
+    // popular campo "codigo" assim que abrir
+    try {
+      const codeUpper = (typeof code === 'string' ? code : (code?.toString?.() ?? '')).toUpperCase();
+      try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
+      try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
+      const inp = q('codigo');
+      if (inp) {
+        inp.value = codeUpper;
+        try { inp.dispatchEvent(new Event('input',  { bubbles: true })); } catch(_){}
+        try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch(_){}
+      }
+      try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
+    } catch(_){}
+    build();
+    q('cj_code_chip').textContent=code;
+    q('cj_code_chip').setAttribute('data-code',code);
+    window.__CJFIX__.b1.style.display='none';
+    window.__CJFIX__.b2.style.display='flex';
+    hideLegacy();
+  }
+
+  // ====== Fetchers
+  function fetchList(){ var u=JSON_URL+'?op=list'+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}); }
+  function fetchDoc(c){ var u=JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+(SAVE_TOKEN?'&token='+encodeURIComponent(SAVE_TOKEN):''); return fetch(u).then(function(r){return r.json();}).then(function(j){ if(!j||!j.ok) throw 0; return j.item; }); }
+  function fillForm(d){ if(!d) return; for(var k in d){ if(!d.hasOwnProperty(k)) continue; var f=q(k); if(f&&'value' in f){ f.value=d[k]; } } }
+
+  // ====== Render listagem
+  function render(items){
+    var body=q('cj_list_body'); body.innerHTML='';
+    if(!items||!items.length){ body.innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
+    items.forEach(function(r){
+      var d=el('div',{class:'cj-row'});
+      d.innerHTML='<div class="cj-code">'+(r.codigo||'')+'</div><div class="cj-date">'+((r.data_criacao||"").slice(0,10))+'</div><div class="cj-client">'+(r.nomeContratante||"")+'</div>';
+      d.onclick=function(){ openDecide(r.codigo||''); };
+      body.appendChild(d);
+    });
+  }
+
+  // ====== Handler do botão “Pesquisar” (único ponto que usamos do legado)
+  function onSearch(ev){
+    ev&&ev.preventDefault();
+    openList();
+    fetchList().then(function(j){
+      if(!j||!j.ok){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; return; }
+      render(j.items||[]);
+    }).catch(function(){ q('cj_list_body').innerHTML='<div class="cj-empty">Sem registros.</div>'; });
+  }
+
+  // ====== Init
+  function init(){
+    // botão “Pesquisar” (id canônico que você já tem no HTML de produção)
+    var btn=q('searchJsonBtn');
+    if(!btn) return;
+    btn.addEventListener('click', onSearch);
+
+    // Segurança: garantir que o texto do botão no card de ação esteja certo quando o modal abrir
+    const mo = new MutationObserver(()=> {
+      const b = q('cj_btn_gerar'); if (b) { try{ b.textContent='Escolher documentos para download'; }catch(_){ } }
+    });
+    mo.observe(document.body,{subtree:true,childList:true});
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init); } else { init(); }
+
+  // ===== Exporta API (útil pra debug)
+  window.__CJFIX__ = window.__CJFIX__ || { };
+  window.__CJFIX__.openList  = openList;
+  window.__CJFIX__.openDecide= openDecide;
+  window.__CJFIX__.fetchList = fetchList;
+  window.__CJFIX__.fetchDoc  = fetchDoc;
 })();
