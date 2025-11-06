@@ -206,27 +206,24 @@
   }
 
   // ===== Aberturas
-  function openList(){ build(); hideLegacy(); window.__CJFIX__.b2.style.display='none'; window.__CJFIX__.b1.style.display='flex'; }
-  function openDecide(code){
-    // popular campo "codigo" assim que abrir
-    try {
-      const codeUpper = (typeof code === 'string' ? code : (code?.toString?.() ?? '')).toUpperCase();
-      try { q('cj_code_chip').textContent = codeUpper; } catch(_){}
-      try { q('cj_code_chip').setAttribute('data-code', codeUpper); } catch(_){}
-      const inp = q('codigo');
-      if (inp) {
-        inp.value = codeUpper;
-        try { inp.dispatchEvent(new Event('input',  { bubbles: true })); } catch(_){}
-        try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch(_){}
-      }
-      try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
-    } catch(_){}
-    build();
-    q('cj_code_chip').textContent=code;
-    q('cj_code_chip').setAttribute('data-code',code);
-    window.__CJFIX__.b1.style.display='none';
-    window.__CJFIX__.b2.style.display='flex';
-    hideLegacy();
+  function openList(){
+  build(); hideLegacy();
+  if (!window.__CJFIX__ || !window.__CJFIX__.b1 || !window.__CJFIX__.b2) return;
+  window.__CJFIX__.b2.style.display='none';
+  window.__CJFIX__.b1.style.display='flex';
+  }
+
+ function openDecide(code){
+  build();
+  const c=(code||'').toUpperCase();
+  q('cj_code_chip').textContent=c;
+  q('cj_code_chip').setAttribute('data-code',c);
+  const inp=q('codigo'); 
+  if(inp){inp.value=c; try{inp.dispatchEvent(new Event('input',{bubbles:true}));}catch(_){}}
+  if (!window.__CJFIX__ || !window.__CJFIX__.b1 || !window.__CJFIX__.b2) return;
+  window.__CJFIX__.b1.style.display='none';
+  window.__CJFIX__.b2.style.display='flex';
+  hideLegacy();
   }
 
   // ====== Fetchers
