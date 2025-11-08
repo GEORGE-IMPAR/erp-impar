@@ -3,7 +3,7 @@
 <html data-theme="light" lang="pt-br">
 <head>
 <meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1" name="viewport"/>v3
+<meta content="width=device-width, initial-scale=1" name="viewport"/>v3pesquisa
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
@@ -140,6 +140,18 @@
 }
 
 </style>
+
+<style>
+  /* Oculta o botão de pesquisa legado (o que ficava na Etapa 1) */
+  #openConsultaBtn { display:none !important; visibility:hidden !important; }
+  /* Modal leve p/ a pesquisa nova */
+  #docSearchModal { position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,.55); z-index:99999; }
+  #docSearchModal .box { width:min(1024px,96vw); height:min(680px,90vh); background:#fff; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 20px 70px rgba(0,0,0,.45) }
+  #docSearchModal .head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#0a1a3a; color:#fff }
+  #docSearchModal .head button { background:#fff; color:#0a1a3a; border:none; border-radius:8px; padding:6px 10px; cursor:pointer }
+  #docSearchFrame { flex:1; border:0 }
+</style>
+
 
 <style>
 button[type="submit"] {
@@ -437,11 +449,7 @@ window.__CONSULTA_CFG__ = {
 </style>
 </head>
 <body>
-  <div style="position:fixed; top:14px; right:14px; z-index:9999">
-    <button id="searchJsonBtn" style="background:#0A1A3A;color:#fff;border:none;border-radius:10px;padding:8px 12px;cursor:pointer;box-shadow:0 6px 20px rgba(2,6,23,.25)">
-      🔎 Pesquisar documentos (novo)
-    </button>
-  </div>
+
 <!-- Busy / Processando -->
 <div aria-busy="true" aria-live="assertive" class="busy" id="busy" role="alert">
 <div class="panel">
@@ -479,8 +487,11 @@ window.__CONSULTA_CFG__ = {
 <div class="content">
 <input class="input" id="codigo" oninput="validate1()" placeholder="Digite o código do projeto"/>
 <div style="text-align:right; margin-top:6px;">
-  <button id="searchJsonBtn" type="button" style="background:#000; color:#fff; font-weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;">Pesquisar</button>
+  <button id="searchJsonBtn" type="button" style="background:#000; color:#fff; font-style="background:#000; color:#fff; font-weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;">Pesquisar</button>
 </div>
+<button id="searchJsonBtn" type="button" class="btn ghost" title="Pesquisar documentos (novo)">
+  <span style="margin-right:6px">🔎</span> Pesquisar documentos (novo)
+</button>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn" id="openConsultaBtn" style="display:none!important; visibility:hidden!important;" type="button">Pesquisar documentos cadastrados</button>
 </div>
@@ -2810,6 +2821,8 @@ function baixarExcel(codigo){
     return true;
   }
 
+
+
   // ---------- gerador DOCX (mesma lógica aprovada) ----------
   function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
   function makeDocxSafeRegex(ph){const esc=ph.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&'); const between='(?:<[^>]+>)*'; return new RegExp(esc.split('').join(between),'gi');}
@@ -3702,7 +3715,144 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
   injectNovoBotao();
 })();
 </script>
+
+<script>
+(function(){
+  // ---- CONFIG ----
+  const SEARCH_URL = '/documentos/pesquisa.html'; // sua pesquisa nova (a mesma que você já usa)
+  const BTN_NEW_ID = 'searchJsonBtn';
+  const BTN_OLD_ID = 'openConsultaBtn';
+  const MODAL_ID   = 'docSearchModal';
+  const IFRAME_ID  = 'docSearchFrame';
+
+  // 1) Neutraliza qualquer função legada que abra nova guia
+  //    (se existir, não dispara mais nada)
+  window.abrirConsulta = function(){ /* neutralizado */ };
+
+  // 2) Garante que o botão novo está exatamente no lugar do antigo
+  function placeNewButton(){
+    const oldBtn = document.getElementById(BTN_OLD_ID);
+    let newBtn = document.getElementById(BTN_NEW_ID);
+
+    if (!newBtn){
+      newBtn = document.createElement('button');
+      newBtn.id = BTN_NEW_ID;
+      newBtn.type = 'button';
+      newBtn.className = oldBtn ? oldBtn.className : 'btn ghost';
+      newBtn.title = 'Pesquisar documentos (novo)';
+      newBtn.innerHTML = '<span style="margin-right:6px">🔎</span> Pesquisar documentos (novo)';
+    }
+
+    if (oldBtn){
+      oldBtn.style.display = 'none';           // esconde o antigo
+      oldBtn.removeAttribute('onclick');       // e neutraliza
+      if (!newBtn.isConnected) oldBtn.insertAdjacentElement('afterend', newBtn);
+    }else{
+      // fallback: insere depois do primeiro botão com texto "Pesquisar"
+      const btn = [...document.querySelectorAll('button, a[role="button"]')]
+        .find(b => /pesquisar/i.test((b.textContent||'').trim()));
+      if (btn && !newBtn.isConnected) btn.insertAdjacentElement('afterend', newBtn);
+    }
+    return newBtn;
+  }
+
+  // 3) Modal
+  function openModal(){
+    const m = document.getElementById(MODAL_ID);
+    const fr = document.getElementById(IFRAME_ID);
+    if (fr.src === 'about:blank') fr.src = SEARCH_URL; // carrega a pesquisa nova
+    m.style.display = 'grid';
+    m.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal(){
+    const m = document.getElementById(MODAL_ID);
+    m.style.display = 'none';
+    m.setAttribute('aria-hidden', 'true');
+  }
+
+  // 4) Listener do botão novo (SEM abrir nova guia)
+  function hookNew(){
+    const newBtn = placeNewButton();
+    if (!newBtn.__hooked){
+      newBtn.__hooked = true;
+      newBtn.addEventListener('click', function(ev){
+        ev.preventDefault(); ev.stopPropagation();
+        openModal();
+        return false;
+      });
+    }
+    const closeBtn = document.getElementById('docSearchClose');
+    if (closeBtn && !closeBtn.__hooked){
+      closeBtn.__hooked = true;
+      closeBtn.addEventListener('click', (e)=>{ e.preventDefault(); closeModal(); });
+    }
+  }
+
+  // 5) Recebe o postMessage do iframe (quando clicar em "Atualizar" na pesquisa)
+  //    IMPORTANTE: a pesquisa nova deve enviar window.parent.postMessage({type:'docSelecionado', item: <dados>}, '*')
+  window.addEventListener('message', function(ev){
+    const d = ev.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.type !== 'docSelecionado' || !d.item) return;
+
+    const item = d.item;
+    const setVal = (sel,val)=>{
+      const el = document.querySelector(sel);
+      if (el){
+        el.value = val ?? '';
+        el.dispatchEvent(new Event('input', {bubbles:true}));
+        el.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    };
+
+    // Preenche Etapa 1 (ajuste os seletores abaixo caso seus IDs sejam diferentes)
+    setVal('#codigo',            item.codigo);
+    setVal('#servico',           item.servico);
+    setVal('#endereco',          item.endereco);
+    setVal('#valor',             item.valor);
+    setVal('#prazo',             item.prazo);
+    setVal('#nomeContratante',   item.nomeContratante);
+    setVal('#docContratante',    item.docContratante);
+    setVal('#telefoneContratante', item.telefoneContratante);
+    setVal('#emailContratante',  item.emailContratante);
+
+    // Avança para a etapa 2 como antes (usa seu botão "Continuar")
+    const nextBtn = [...document.querySelectorAll('button, a')].find(b => /continuar/i.test((b.textContent||'')));
+    if (nextBtn) nextBtn.click();
+
+    // Fecha modal
+    closeModal();
+
+    // Toast simples de sucesso
+    const t=document.createElement('div');
+    t.textContent='Dados carregados com sucesso!';
+    t.style.cssText='position:fixed;right:20px;bottom:20px;background:#16a34a;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:100000;font-weight:700';
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(), 2200);
+  }, false);
+
+  // 6) Inicialização
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', hookNew);
+  } else {
+    hookNew();
+  }
+})();
+</script>
+
+
 <!-- ====== /Pesquisa NOVA integrada ====== -->
+
+<!-- Modal da pesquisa nova (iframe) -->
+<div id="docSearchModal" aria-hidden="true">
+  <div class="box">
+    <div class="head">
+      <strong>Pesquisa de documentos</strong>
+      <button type="button" id="docSearchClose">Fechar</button>
+    </div>
+    <iframe id="docSearchFrame" src="about:blank" allow="clipboard-write"></iframe>
+  </div>
+</div>
 
 </body>
 
