@@ -72,7 +72,7 @@
             res(ok ? 'contrato' : 'os');
           });
           if(escolha === 'contrato') await gerar(code,'make_contract.php',TPL_CONTRATO);
-          else                        await gerar(code,'make_os.php',TPL_OS);
+          else                        await gerar(code,'make_contract.php',TPL_OS);
         });
         list.appendChild(d);
       });
