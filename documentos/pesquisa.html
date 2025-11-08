@@ -102,6 +102,12 @@
   const setLoader = (v) => loader.style.display = v ? 'grid' : 'none';
   const showBack = v => back.style.display = v ? 'grid':'none';
 
+  function bind(btn, fn){
+    btn.replaceWith(btn.cloneNode(true));
+    const neo = document.getElementById(btn.id);
+    neo.onclick = fn;
+  }
+
  function toast(msg){
   let t = document.getElementById('toast');
   if(!t){
@@ -157,71 +163,73 @@
   }
 
   // ====== MODAL ======
-  function openModal(code){
-    $('#mcode').textContent = (code||'').toUpperCase();
-    showBack(true);
+  window.openModal = function(code){
+    document.getElementById('mcode').textContent = (code||'').toUpperCase();
+    document.getElementById('back').style.display = 'grid';
 
-    // Liga botões (idempotente)
-    $('#x').onclick = () => showBack(false);
-    $('#btnFechar').onclick = () => showBack(false);
-    $('#btnAtualizar').onclick = () => {
-      // Abre o index com o código (se ele não ler a querystring, você decide depois)
-      const c = encodeURIComponent(($('#mcode').textContent||'').trim());
+    bind(document.getElementById('x'),        () => document.getElementById('back').style.display='none');
+    bind(document.getElementById('btnFechar'),() => document.getElementById('back').style.display='none');
+    bind(document.getElementById('btnAtualizar'), () => {
+      const c = encodeURIComponent((document.getElementById('mcode').textContent||'').trim());
       window.open('/documentos/index.html?codigo='+c, '_blank');
-    };
-   $('#btnGerarContrato').onclick = ()=> gerar('make_contract_json.php', TPL_CONTRATO);
-   $('#btnGerarOS').onclick       = ()=> gerar('make_contract_json.php', TPL_OS);
- }
+    });
+    bind(document.getElementById('btnGerarContrato'), () => gerar('make_contract_json.php','Template-Contrato.docx'));
+    bind(document.getElementById('btnGerarOS'),       () => gerar('make_contract_json.php','Template_OS.docx'));
+  };
 
-async function gerar(php, template){
-  const code = (document.querySelector('#mcode')?.textContent||'').trim();
-  if(!code){ showBack(false); return; }
+  async function gerar(php, template){
+    const code = (document.querySelector('#mcode')?.textContent||'').trim();
+    if(!code){ document.getElementById('back').style.display='none'; return; }
 
-  setLoader(true);
-  try{
-    const url = `${API_BASE}/${php}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}`;
-    const r = await fetch(url, { cache:'no-store' });
+    const loader = document.getElementById('loader');
+    const showBack = v => document.getElementById('back').style.display = v ? 'grid' : 'none';
+    const setLoader = v => loader.style.display = v ? 'grid' : 'none';
 
-    // Decide pelo Content-Type
-    const ct = (r.headers.get('content-type')||'').toLowerCase();
+    setLoader(true);
+    try{
+      const ts = Date.now();
+      const url = `https://api.erpimpar.com.br/gerador/${php}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}&_ts=${ts}`;
+      const r = await fetch(url, { cache:'no-store' });
+      const ct = (r.headers.get('content-type')||'').toLowerCase();
 
-    if (ct.includes('application/json')) {
-      const j = await r.json();
-      if (j && j.ok && j.url){
-        window.open(j.url, '_blank');
-        toast('Gerado com sucesso!');
+      if (ct.includes('application/json')) {
+        const j = await r.json();
+        if (j && j.ok && j.url){
+          // Abre a URL já com cache-busting
+          const u = j.url + (j.url.includes('?') ? '&' : '?') + '_ts=' + ts;
+          window.open(u, '_blank');
+          toast('Gerado com sucesso!');
+        } else {
+          alert('Falha ao gerar documento. Verifique o código/template.');
+          console.warn('Resposta do gerador:', j);
+        }
       } else {
-        alert('Falha ao gerar documento. Verifique o código/template.');
-        console.warn('Resposta do gerador:', j);
+        // Blob (download direto)
+        const blob = await r.blob();
+        const disp = r.headers.get('content-disposition') || '';
+        let name = (disp.match(/filename\*?=(?:UTF-8'')?("?)([^";]+)\1/i)||[])[2] || '';
+        if (!name) {
+          const isOS = /Template_OS\.docx/i.test(template);
+          const safe = code.replace(/[^\w.-]+/g,'_');
+          name = (isOS ? `OS-${safe}` : `Contrato-${safe}`) + '.docx';
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        URL.revokeObjectURL(a.href);
+        a.remove();
+        toast('Gerado com sucesso!');
       }
-    } else {
-      // trata como arquivo (Blob) – download direto
-      const blob = await r.blob();
-      // nome amigável: se vier do contrato/os “json”, o PHP já define; senão usa fallback
-      const disp = r.headers.get('content-disposition') || '';
-      let name = (disp.match(/filename\*?=(?:UTF-8'')?("?)([^";]+)\1/i)||[])[2] || '';
-      if (!name) {
-        const isOS = /Template_OS\.docx/i.test(template);
-        const cnpjName = code.replace(/[^\w.-]+/g,'_');
-        name = (isOS ? `OS-${cnpjName}` : `Contrato-${cnpjName}`) + '.docx';
-      }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(a.href);
-      a.remove();
-      toast('Gerado com sucesso!');
+    }catch(e){
+      console.error(e);
+      alert('Erro de rede durante a geração.');
+    }finally{
+      setLoader(false);
+      showBack(false);
     }
-  }catch(e){
-    console.error(e);
-    alert('Erro de rede durante a geração.');
-  }finally{
-    setLoader(false);
-    showBack(false);
   }
-}
 
   // ====== BARRA DE BUSCA ======
   $('#btnListarTodos').addEventListener('click', async ()=>{
