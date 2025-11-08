@@ -88,44 +88,19 @@
 <script>
 (function(){
   // ====== CONFIG ======
-  const JSON_URL = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
+  const JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
   const SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
-  const API_BASE = 'https://api.erpimpar.com.br/gerador';
+  const API_BASE   = 'https://api.erpimpar.com.br/gerador';
   const TPL_CONTRATO = 'Template-Contrato.docx';
-  const TPL_OS = 'Template_OS.docx';
+  const TPL_OS       = 'Template_OS.docx';
 
   // ====== UTILS ======
   const $ = sel => document.querySelector(sel);
   const listEl = $('#list');
-  const back = $('#back');
+  const back   = $('#back');
   const loader = $('#loader');
-  const setLoader = (v) => loader.style.display = v ? 'grid' : 'none';
-  const showBack = v => back.style.display = v ? 'grid':'none';
-
-  function bind(btn, fn){
-    btn.replaceWith(btn.cloneNode(true));
-    const neo = document.getElementById(btn.id);
-    neo.onclick = fn;
-  }
-
- function toast(msg){
-  let t = document.getElementById('toast');
-  if(!t){
-    t = document.createElement('div');
-    t.id = 'toast';
-    Object.assign(t.style,{
-      position:'fixed',right:'16px',bottom:'16px',zIndex:2000,
-      background:'#0b0f19',color:'#d1fae5',border:'1px solid #10b981',
-      padding:'10px 14px',borderRadius:'10px',boxShadow:'0 10px 30px rgba(0,0,0,.35)',
-      fontWeight:'700',letterSpacing:'.2px'
-    });
-    document.body.appendChild(t);
-  }
-  t.textContent = msg||'OK';
-  t.style.opacity='1';
-  clearTimeout(t._hide);
-  t._hide = setTimeout(()=>{ t.style.opacity='0'; }, 2200);
- }
+  const setLoader = v => loader.style.display = v ? 'grid' : 'none';
+  const showBack  = v => back.style.display = v ? 'grid' : 'none';
 
   function row(r){
     const div = document.createElement('div');
@@ -138,7 +113,6 @@
     div.addEventListener('click', ()=> openModal(r.codigo||''));
     return div;
   }
-
   function render(items){
     listEl.innerHTML='';
     if(!items || !items.length){
@@ -148,80 +122,78 @@
     items.forEach(r=> listEl.appendChild(row(r)));
   }
 
+  async function fetchJSON(url){
+    const r = await fetch(url, { cache:'no-store' });
+    return await r.json().catch(()=>null);
+  }
   async function fetchList(){
-    const u = `${JSON_URL}?op=list${SAVE_TOKEN?('&token='+encodeURIComponent(SAVE_TOKEN)):""}`;
-    const r = await fetch(u, {cache:'no-store'});
-    const j = await r.json().catch(()=>null);
+    const u = `${JSON_URL}?op=list${SAVE_TOKEN?('&token='+encodeURIComponent(SAVE_TOKEN)):""}&t=${Date.now()}`;
+    const j = await fetchJSON(u);
     return (j && j.ok) ? (j.items||[]) : [];
   }
-
   async function fetchGet(codigo){
-    const u = `${JSON_URL}?op=get&codigo=${encodeURIComponent(codigo)}${SAVE_TOKEN?('&token='+encodeURIComponent(SAVE_TOKEN)):""}`;
-    const r = await fetch(u, {cache:'no-store'});
-    const j = await r.json().catch(()=>null);
+    const u = `${JSON_URL}?op=get&codigo=${encodeURIComponent(codigo)}${SAVE_TOKEN?('&token='+encodeURIComponent(SAVE_TOKEN)):""}&t=${Date.now()}`;
+    const j = await fetchJSON(u);
     return (j && j.ok) ? j.item : null;
   }
 
   // ====== MODAL ======
-  window.openModal = function(code){
-    document.getElementById('mcode').textContent = (code||'').toUpperCase();
-    document.getElementById('back').style.display = 'grid';
+  function openModal(code){
+    $('#mcode').textContent = (code||'').toUpperCase();
+    showBack(true);
 
-    bind(document.getElementById('x'),        () => document.getElementById('back').style.display='none');
-    bind(document.getElementById('btnFechar'),() => document.getElementById('back').style.display='none');
-    bind(document.getElementById('btnAtualizar'), () => {
-      const c = encodeURIComponent((document.getElementById('mcode').textContent||'').trim());
+    $('#x').onclick          = () => showBack(false);
+    $('#btnFechar').onclick  = () => showBack(false);
+    $('#btnAtualizar').onclick = () => {
+      const c = encodeURIComponent(($('#mcode').textContent||'').trim());
       window.open('/documentos/index.html?codigo='+c, '_blank');
-    });
-    bind(document.getElementById('btnGerarContrato'), () => gerar('make_contract_json.php','Template-Contrato.docx'));
-    bind(document.getElementById('btnGerarOS'),       () => gerar('make_contract_json.php','Template_OS.docx'));
-  };
+    };
 
+    // >>> CHAMANDO O PHP NOVO SEM JSON (download direto)
+    $('#btnGerarContrato').onclick = () => gerar('make_contract_json.php', TPL_CONTRATO);
+    $('#btnGerarOS').onclick       = () => gerar('make_contract_json.php', TPL_OS);
+  }
+
+  // ====== DOWNLOAD ROBUSTO (DOCX) ======
   async function gerar(php, template){
     const code = (document.querySelector('#mcode')?.textContent||'').trim();
-    if(!code){ document.getElementById('back').style.display='none'; return; }
-
-    const loader = document.getElementById('loader');
-    const showBack = v => document.getElementById('back').style.display = v ? 'grid' : 'none';
-    const setLoader = v => loader.style.display = v ? 'grid' : 'none';
+    if(!code){ showBack(false); return; }
 
     setLoader(true);
     try{
-      const ts = Date.now();
-      const url = `https://api.erpimpar.com.br/gerador/${php}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}&_ts=${ts}`;
-      const r = await fetch(url, { cache:'no-store' });
-      const ct = (r.headers.get('content-type')||'').toLowerCase();
+      const url = `${API_BASE}/${php}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}&t=${Date.now()}`;
+      const res = await fetch(url, { cache:'no-store' });
 
-      if (ct.includes('application/json')) {
-        const j = await r.json();
-        if (j && j.ok && j.url){
-          // Abre a URL já com cache-busting
-          const u = j.url + (j.url.includes('?') ? '&' : '?') + '_ts=' + ts;
-          window.open(u, '_blank');
-          toast('Gerado com sucesso!');
-        } else {
-          alert('Falha ao gerar documento. Verifique o código/template.');
-          console.warn('Resposta do gerador:', j);
-        }
-      } else {
-        // Blob (download direto)
-        const blob = await r.blob();
-        const disp = r.headers.get('content-disposition') || '';
-        let name = (disp.match(/filename\*?=(?:UTF-8'')?("?)([^";]+)\1/i)||[])[2] || '';
-        if (!name) {
-          const isOS = /Template_OS\.docx/i.test(template);
-          const safe = code.replace(/[^\w.-]+/g,'_');
-          name = (isOS ? `OS-${safe}` : `Contrato-${safe}`) + '.docx';
-        }
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        URL.revokeObjectURL(a.href);
-        a.remove();
-        toast('Gerado com sucesso!');
+      // Se voltar JSON (erro/debug), tratamos com alerta
+      const ctype = (res.headers.get('content-type')||'').toLowerCase();
+      if (ctype.includes('application/json')) {
+        const j = await res.json().catch(()=>null);
+        console.warn('Resposta do gerador:', j);
+        alert('Falha ao gerar documento. Verifique o código/template.');
+        return;
       }
+
+      if (!res.ok) {
+        alert('Erro de rede durante a geração.');
+        return;
+      }
+
+      // Pega filename do header quando possível
+      let fname = 'documento.docx';
+      const dispo = res.headers.get('content-disposition') || '';
+      const m = dispo.match(/filename="?([^"]+)"?/i);
+      if (m && m[1]) fname = m[1];
+
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+
+      // toast simples
+      toast('Gerado com sucesso!');
     }catch(e){
       console.error(e);
       alert('Erro de rede durante a geração.');
@@ -231,29 +203,35 @@
     }
   }
 
-  // ====== BARRA DE BUSCA ======
+  // ====== barra de busca ======
   $('#btnListarTodos').addEventListener('click', async ()=>{
     setLoader(true);
-    try{
-      render(await fetchList());
-    } finally { setLoader(false); }
+    try{ render(await fetchList()); } finally{ setLoader(false); }
   });
 
   $('#btnListar').addEventListener('click', async ()=>{
     const c = ($('#codigo').value||'').trim();
-    if(!c){
-      $('#btnListarTodos').click();
-      return;
-    }
+    if(!c){ $('#btnListarTodos').click(); return; }
     setLoader(true);
-    try {
-      const item = await fetchGet(c);
-      render(item ? [item] : []);
-    } finally { setLoader(false); }
+    try{ const item = await fetchGet(c); render(item ? [item] : []); }
+    finally{ setLoader(false); }
   });
 
   // Auto: listar últimos na carga
   $('#btnListarTodos').click();
+
+  // ====== toast básico ======
+  function toast(msg){
+    const box = document.createElement('div');
+    box.style.cssText = `
+      position:fixed;right:16px;bottom:16px;z-index:1200;
+      background:#0f172a;color:#22c55e;border:1px solid #22c55e;
+      padding:10px 14px;border-radius:10px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.35)
+    `;
+    box.textContent = msg;
+    document.body.appendChild(box);
+    setTimeout(()=> box.remove(), 1800);
+  }
 })();
 </script>
 </body>
