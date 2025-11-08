@@ -102,6 +102,25 @@
   const setLoader = (v) => loader.style.display = v ? 'grid' : 'none';
   const showBack = v => back.style.display = v ? 'grid':'none';
 
+ function toast(msg){
+  let t = document.getElementById('toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'toast';
+    Object.assign(t.style,{
+      position:'fixed',right:'16px',bottom:'16px',zIndex:2000,
+      background:'#0b0f19',color:'#d1fae5',border:'1px solid #10b981',
+      padding:'10px 14px',borderRadius:'10px',boxShadow:'0 10px 30px rgba(0,0,0,.35)',
+      fontWeight:'700',letterSpacing:'.2px'
+    });
+    document.body.appendChild(t);
+  }
+  t.textContent = msg||'OK';
+  t.style.opacity='1';
+  clearTimeout(t._hide);
+  t._hide = setTimeout(()=>{ t.style.opacity='0'; }, 2200);
+ }
+
   function row(r){
     const div = document.createElement('div');
     div.className = 'item';
@@ -154,7 +173,7 @@
    $('#btnGerarOS').onclick       = ()=> gerar('make_contract_json.php', TPL_OS);
  }
 
- async function gerar(php, template){
+async function gerar(php, template){
   const code = (document.querySelector('#mcode')?.textContent||'').trim();
   if(!code){ showBack(false); return; }
 
@@ -162,12 +181,38 @@
   try{
     const url = `${API_BASE}/${php}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}`;
     const r = await fetch(url, { cache:'no-store' });
-    const j = await r.json();
-    if(j && j.ok && j.url){
-      window.open(j.url, '_blank');
-    }else{
-      alert('Falha ao gerar documento. Verifique o código/template.');
-      console.warn('Resposta do gerador:', j);
+
+    // Decide pelo Content-Type
+    const ct = (r.headers.get('content-type')||'').toLowerCase();
+
+    if (ct.includes('application/json')) {
+      const j = await r.json();
+      if (j && j.ok && j.url){
+        window.open(j.url, '_blank');
+        toast('Gerado com sucesso!');
+      } else {
+        alert('Falha ao gerar documento. Verifique o código/template.');
+        console.warn('Resposta do gerador:', j);
+      }
+    } else {
+      // trata como arquivo (Blob) – download direto
+      const blob = await r.blob();
+      // nome amigável: se vier do contrato/os “json”, o PHP já define; senão usa fallback
+      const disp = r.headers.get('content-disposition') || '';
+      let name = (disp.match(/filename\*?=(?:UTF-8'')?("?)([^";]+)\1/i)||[])[2] || '';
+      if (!name) {
+        const isOS = /Template_OS\.docx/i.test(template);
+        const cnpjName = code.replace(/[^\w.-]+/g,'_');
+        name = (isOS ? `OS-${cnpjName}` : `Contrato-${cnpjName}`) + '.docx';
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(a.href);
+      a.remove();
+      toast('Gerado com sucesso!');
     }
   }catch(e){
     console.error(e);
@@ -176,7 +221,7 @@
     setLoader(false);
     showBack(false);
   }
- }
+}
 
   // ====== BARRA DE BUSCA ======
   $('#btnListarTodos').addEventListener('click', async ()=>{
