@@ -87,14 +87,12 @@
 
 <script>
 (function(){
-  // ====== CONFIG ======
   const JSON_URL   = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
   const SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
   const API_BASE   = 'https://api.erpimpar.com.br/gerador';
   const TPL_CONTRATO = 'Template-Contrato.docx';
   const TPL_OS       = 'Template_OS.docx';
 
-  // ====== UTILS ======
   const $ = sel => document.querySelector(sel);
   const listEl = $('#list');
   const back   = $('#back');
@@ -110,7 +108,7 @@
       <div class="date">${(r.data_criacao||'').slice(0,10)}</div>
       <div class="client">${r.nomeContratante||''}</div>
     `;
-    div.addEventListener('click', ()=> openModal(r.codigo||''));
+    div.addEventListener('click', ()=> openModal(r.codigo||'', r.nomeContratante||''));
     return div;
   }
   function render(items){
@@ -137,62 +135,45 @@
     return (j && j.ok) ? j.item : null;
   }
 
-  // ====== MODAL ======
-  function openModal(code){
+  function openModal(code, nome){
     $('#mcode').textContent = (code||'').toUpperCase();
+    $('#mcode').setAttribute('data-nome', nome||'');
     showBack(true);
 
-    $('#x').onclick          = () => showBack(false);
-    $('#btnFechar').onclick  = () => showBack(false);
+    $('#x').onclick = () => showBack(false);
+    $('#btnFechar').onclick = () => showBack(false);
     $('#btnAtualizar').onclick = () => {
       const c = encodeURIComponent(($('#mcode').textContent||'').trim());
       window.open('/documentos/index.html?codigo='+c, '_blank');
     };
-
-    // >>> CHAMANDO O PHP NOVO SEM JSON (download direto)
     $('#btnGerarContrato').onclick = () => gerar('make_contract_json.php', TPL_CONTRATO);
     $('#btnGerarOS').onclick       = () => gerar('make_contract_json.php', TPL_OS);
   }
 
-  // ====== DOWNLOAD ROBUSTO (DOCX) ======
   async function gerar(php, template){
-    const code = (document.querySelector('#mcode')?.textContent||'').trim();
+    const code = ($('#mcode').textContent||'').trim();
+    const nome = ($('#mcode').getAttribute('data-nome')||'').trim();
     if(!code){ showBack(false); return; }
 
     setLoader(true);
     try{
       const url = `${API_BASE}/${php}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}&t=${Date.now()}`;
       const res = await fetch(url, { cache:'no-store' });
-
-      // Se voltar JSON (erro/debug), tratamos com alerta
-      const ctype = (res.headers.get('content-type')||'').toLowerCase();
-      if (ctype.includes('application/json')) {
-        const j = await res.json().catch(()=>null);
-        console.warn('Resposta do gerador:', j);
-        alert('Falha ao gerar documento. Verifique o código/template.');
-        return;
-      }
-
-      if (!res.ok) {
-        alert('Erro de rede durante a geração.');
-        return;
-      }
-
-      // Pega filename do header quando possível
-      let fname = 'documento.docx';
-      const dispo = res.headers.get('content-disposition') || '';
-      const m = dispo.match(/filename="?([^"]+)"?/i);
-      if (m && m[1]) fname = m[1];
+      if (!res.ok) { alert('Erro ao gerar documento.'); return; }
 
       const blob = await res.blob();
+      // define prefixo pelo template
+      const prefix = template.includes('OS') ? 'O.S.' : 'Contrato';
+      let fname = `${prefix}-${code}`;
+      if (nome) fname += `-${nome}`;
+      fname = fname.replace(/[\\/:*?"<>|]+/g,'').trim() + '.docx';
+
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = fname;
       document.body.appendChild(a);
       a.click();
       setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
-
-      // toast simples
       toast('Gerado com sucesso!');
     }catch(e){
       console.error(e);
@@ -203,7 +184,6 @@
     }
   }
 
-  // ====== barra de busca ======
   $('#btnListarTodos').addEventListener('click', async ()=>{
     setLoader(true);
     try{ render(await fetchList()); } finally{ setLoader(false); }
@@ -217,16 +197,15 @@
     finally{ setLoader(false); }
   });
 
-  // Auto: listar últimos na carga
   $('#btnListarTodos').click();
 
-  // ====== toast básico ======
   function toast(msg){
     const box = document.createElement('div');
     box.style.cssText = `
       position:fixed;right:16px;bottom:16px;z-index:1200;
       background:#0f172a;color:#22c55e;border:1px solid #22c55e;
-      padding:10px 14px;border-radius:10px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.35)
+      padding:10px 14px;border-radius:10px;font-weight:700;
+      box-shadow:0 8px 24px rgba(0,0,0,.35)
     `;
     box.textContent = msg;
     document.body.appendChild(box);
@@ -234,5 +213,6 @@
   }
 })();
 </script>
+
 </body>
 </html>
