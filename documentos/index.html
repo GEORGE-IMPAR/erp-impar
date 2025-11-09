@@ -3549,312 +3549,234 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 })();
 </script>
 
-<!-- ===== INTEGRAÇÃO DA NOVA PESQUISA (fix posicionamento, 1 botão, sem abrir nova guia) ===== -->
-<script>
-(function(){
-  function once(el, type, handler){
-    if(!el) return;
-    const key = "__bound_"+type;
-    if(el[key]) return;
-    el[key] = true;
-    el.addEventListener(type, handler);
-  }
-  function hide(el){ if(el){ el.style.setProperty('display','none','important'); el.hidden = true; } }
-
-  function init(){
-    // 1) Esconde qualquer botão legado "abrirConsulta()" e o antigo #openConsultaBtn
-    document.querySelectorAll('.top-actions button[onclick="abrirConsulta()"], #openConsultaBtn')
-      .forEach(hide);
-
-    // 2) Garante que só exista UM botão de pesquisa: o #searchJsonBtn da Etapa 1
-    const btn = document.getElementById('searchJsonBtn');
-    if(btn){
-      // remove estilos que jogam o botão pro topo
-      btn.style.removeProperty('position');
-      // limpa handlers antigos conflitantes clonando o botão
-      const clone = btn.cloneNode(true);
-      btn.parentNode.replaceChild(clone, btn);
-    }
-
-    const btn2 = document.getElementById('searchJsonBtn');
-    if(btn2){
-      once(btn2, 'click', function(ev){
-        ev.preventDefault(); ev.stopPropagation();
-        // Abre a UI moderna da pesquisa (sem nova guia)
-        try{
-          if (window.__CJFIX_API__ && typeof window.__CJFIX_API__.openList === 'function'){
-            window.__CJFIX_API__.openList(); // nossa lista moderna
-          }else{
-            // fallback: mostra modal legado de consulta, caso ainda exista
-            const cm = document.getElementById('consultaModal');
-            if(cm){ cm.style.display = 'flex'; }
-          }
-        }catch(e){ console.warn('Falha ao abrir lista moderna:', e); }
-      });
-    }
-
-    // 3) Impede qualquer navegação para /documentos/pesquisa.html
-    document.querySelectorAll('a[href*="pesquisa.html"]').forEach(a=>{
-      a.addEventListener('click', function(ev){ ev.preventDefault(); });
-      a.setAttribute('tabindex','-1');
-      hide(a);
-    });
-
-    // 4) Após “Atualizar” (feito dentro do módulo), dá foco na Etapa 2 e rola pro topo
-    const restoreFocus = function(){
-      const s2 = document.getElementById('screen2');
-      if(s2 && !s2.classList.contains('hidden')){
-        const first = s2.querySelector('textarea, input, select');
-        if(first){ try{ first.focus({preventScroll:true}); }catch(_){ } }
-        window.scrollTo({top:0, behavior:'smooth'});
-      }
-    };
-    window.addEventListener('impar:update_done', restoreFocus);
-
-    // 5) Fecha modal legado sem “vazar” na tela
-    const btnClose = document.getElementById('btnCloseConsulta');
-    if(btnClose){
-      once(btnClose, 'click', function(){
-        const cm = document.getElementById('consultaModal');
-        if(cm){ cm.style.display = 'none'; }
-      });
-    }
-  }
-
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
-})();
-</script>
-
-<!-- ====== PESQUISA (Widget interno) ====== -->
-<style>
-  .gv-back{position:fixed;inset:0;display:none;place-items:center;background:rgba(2,6,23,.50);z-index:9999}
-  .gv-modal{width:min(560px,94vw);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 25px 80px rgba(2,6,23,.35);border:1px solid #e5e7eb}
-  .gv-head{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(90deg,#0A1A3A,#08142E);color:#fff;padding:14px 16px}
-  .gv-title{font-weight:800}
-  .gv-x{background:transparent;border:none;color:#fff;font-size:20px;cursor:pointer;padding:6px}
-  .gv-body{padding:14px}
-  .gv-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-  .gv-row input{flex:1 1 220px;padding:10px;border:1px solid #e5e7eb;border-radius:12px}
-  .gv-btn{border:none;border-radius:999px;padding:10px 14px;font-weight:700;cursor:pointer}
-  .gv-btn.primary{background:linear-gradient(90deg,#08142E,#0A1A3A);color:#fff}
-  .gv-btn.ghost{background:#e5e7eb;color:#0A1A3A}
-  .gv-list{border-top:1px solid #e5e7eb;max-height:60vh;overflow:auto}
-  .gv-item{display:grid;grid-template-columns:160px 160px 1fr;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e5e7eb;cursor:pointer}
-  .gv-item:hover{background:#f9fafb}
-  .gv-code{font-weight:900;color:#0A1A3A}
-  .gv-date{color:#475569}
-  .gv-client{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-  .gv-actions{display:flex;gap:8px;justify-content:flex-end;padding:12px;border-top:1px solid #e5e7eb;background:#f8fafc}
-  .gv-chip{display:inline-block;margin-left:8px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);padding:2px 8px;border-radius:999px}
-  .gv-loader{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.75);z-index:10000}
-  .gv-box{display:flex;flex-direction:column;gap:10px;align-items:center;background:#000;color:#fff;border:2px solid #fff;padding:20px;border-radius:14px}
-  .gv-spin{width:40px;height:40px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:gvspin .9s linear infinite}
-  @keyframes gvspin{to{transform:rotate(360deg)}}
-  .gv-toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#d1fae5;border-left:6px solid #10b981;padding:10px 14px;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.25);z-index:10001;display:none}
+<!-- ====== PESQUISA (NOVO) - BLOCO AUTO-CONTIDO ====== -->
+<style id="imp-pesquisa-css">
+  .imp-modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.55);z-index:9999}
+  .imp-box{width:min(920px,96vw);max-height:90vh;background:#0b0f12;border:1px solid #1f2937;border-radius:14px;
+           overflow:hidden;box-shadow:0 26px 90px rgba(0,0,0,.45);display:flex;flex-direction:column;color:#e5e7eb}
+  .imp-hd{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#0A1A3A}
+  .imp-title{font-weight:900;letter-spacing:.3px}
+  .imp-bd{padding:16px;overflow:auto;background:#0f1720}
+  .imp-ft{padding:12px 16px;border-top:1px solid #1f2937;display:flex;justify-content:flex-end;gap:8px;background:#0f1720}
+  .imp-btn{border:none;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}
+  .imp-btn.primary{background:linear-gradient(135deg,#0A1A3A,#3B82F6);color:#fff}
+  .imp-btn.ghost{background:#1f2937;color:#e5e7eb}
+  .imp-row{display:flex;gap:10px;align-items:end;margin-bottom:12px;flex-wrap:wrap}
+  .imp-input{flex:1 1 220px;padding:10px;border:1px solid #1f2937;border-radius:10px;background:#0b1117;color:#e5e7eb}
+  .imp-label{font:12px/1.2 system-ui;color:#93a4b2;margin-bottom:6px}
+  .imp-table{width:100%;border-collapse:collapse}
+  .imp-table th,.imp-table td{border:1px solid #1f2937;padding:10px;font-size:14px}
+  .imp-table th{background:#0b1117;text-transform:uppercase;font-size:11px;color:#93a4b2}
+  .imp-link{color:#60a5fa;text-decoration:none}
+  .imp-toast{position:fixed;right:20px;bottom:20px;background:#0b1117;color:#d1fae5;border-left:6px solid #22c55e;
+             box-shadow:0 12px 50px rgba(0,0,0,.5);padding:12px 14px;border-radius:12px;display:none;min-width:340px;z-index:10000}
+  .imp-toast .tt{font-weight:900;margin-bottom:4px}
+  .imp-toast .tx{font-size:13px;color:#a7f3d0}
 </style>
 
-<div class="gv-back" id="gvBack" aria-hidden="true">
-  <div class="gv-modal" role="dialog" aria-modal="true" aria-labelledby="gvTitle">
-    <div class="gv-head">
-      <div class="gv-title" id="gvTitle">Consulta de documentos <span id="gvCode" class="gv-chip">—</span></div>
-      <button class="gv-x" id="gvClose">×</button>
+<div class="imp-toast" id="imp-toast">
+  <div class="tt">Documento gerado com sucesso</div>
+  <div class="tx" id="imp-toast-msg"></div>
+</div>
+
+<div class="imp-modal" id="imp-consulta" aria-hidden="true">
+  <div class="imp-box" role="dialog" aria-modal="true" aria-label="Consulta de documentos">
+    <div class="imp-hd">
+      <div class="imp-title">Consulta de documentos</div>
+      <button class="imp-btn ghost" id="impClose">Fechar</button>
     </div>
-    <div class="gv-body">
-      <div class="gv-row">
-        <input id="gvInput" placeholder="Digite o código (ex.: AC05925)" />
-        <button class="gv-btn primary" id="gvBtnListar">Listar</button>
-        <button class="gv-btn ghost" id="gvBtnTodos">Listar todos</button>
+    <div class="imp-bd">
+      <div class="imp-row">
+        <div style="flex:1 1 260px">
+          <div class="imp-label">Código (opcional)</div>
+          <input id="impCodigo" class="imp-input" placeholder="Ex.: AC05925">
+        </div>
+        <button class="imp-btn primary" id="impBuscar">Buscar</button>
       </div>
-      <div id="gvList" class="gv-list"></div>
+      <table class="imp-table">
+        <thead><tr>
+          <th style="width:120px">DATA</th>
+          <th style="width:120px">CÓDIGO</th>
+          <th>CONTRATANTE</th>
+          <th>CONTRATADA</th>
+          <th>SERVIÇO</th>
+          <th style="width:220px">AÇÕES</th>
+        </tr></thead>
+        <tbody id="impBody"><tr><td colspan="6" style="color:#93a4b2">Sem resultados.</td></tr></tbody>
+      </table>
     </div>
-    <div class="gv-actions">
-      <button class="gv-btn ghost" id="gvBtnFechar">Fechar</button>
-      <button class="gv-btn ghost" id="gvBtnAtualizar">Atualizar</button>
-      <button class="gv-btn ghost" id="gvBtnOS">Gerar OS</button>
-      <button class="gv-btn primary" id="gvBtnContrato">Gerar contrato</button>
+    <div class="imp-ft">
+      <button class="imp-btn ghost" id="impFechar">Fechar</button>
     </div>
   </div>
 </div>
-<div class="gv-loader" id="gvLoader"><div class="gv-box"><div class="gv-spin"></div><div>Processando... aguarde...</div></div></div>
-<div class="gv-toast" id="gvToast">Gerado com sucesso.</div>
 
 <script>
 (function(){
-  // ===== CONFIG =====
-  const JSON_URL = 'https://api.erpimpar.com.br/gerador/json_table_cors.php';
+  /* ===== CONFIG ===== */
+  const API = {
+    JSON: 'https://api.erpimpar.com.br/gerador/json_table_cors.php',
+    MAKE: 'https://api.erpimpar.com.br/gerador/make_contract_json.php'
+  };
   const SAVE_TOKEN = '8ce29ab4b2d531b0eca93b9f3a8882e543cbad73663b77';
-  const API_BASE = 'https://api.erpimpar.com.br/gerador';
-  const TPL_CONTRATO = 'Template-Contrato.docx';
-  const TPL_OS = 'Template_OS.docx';
+  const TEMPLATE_CONTRATO = 'Template-Contrato.docx';
+  const TEMPLATE_OS       = 'Template_OS.docx';
 
-  // ===== HELPERS =====
-  const $ = (s, r=document)=>r.querySelector(s);
-  const back   = $('#gvBack');
-  const listEl = $('#gvList');
-  const codeEl = $('#gvCode');
-  const loader = $('#gvLoader');
-  const toast  = $('#gvToast');
+  const $ = (s,root)=> (root||document).querySelector(s);
+  const $$ = (s,root)=> Array.from((root||document).querySelectorAll(s));
 
-  function showBack(v){ back.style.display = v?'grid':'none'; }
-  function setLoader(v){ loader.style.display = v?'grid':'none'; }
-  function toastOK(msg){ toast.textContent = msg||'OK'; toast.style.display='block'; setTimeout(()=>toast.style.display='none', 2200); }
-
-  async function jget(op, extra=''){
-    const url = `${JSON_URL}?op=${op}${extra}${SAVE_TOKEN?('&token='+encodeURIComponent(SAVE_TOKEN)):""}`;
-    const r = await fetch(url,{cache:'no-store'});
-    return await r.json().catch(()=>null);
+  /* ===== TOAST ===== */
+  function toastOk(codigo, nome){
+    const box = $('#imp-toast'), msg = $('#imp-toast-msg');
+    msg.textContent = `Código: ${codigo}${nome ? ' — ' + nome : ''}.`;
+    box.style.display = 'block';
+    clearTimeout(box._h); box._h = setTimeout(()=> box.style.display='none', 3500);
   }
 
-  function render(items){
-    listEl.innerHTML='';
-    if(!items || !items.length){ listEl.innerHTML='<div style="padding:10px;color:#6b7280">Sem registros.</div>'; return; }
-    for(const it of items){
-      const li = document.createElement('div');
-      li.className='gv-item';
-      li.innerHTML = `
-        <div class="gv-code">${it.codigo||'-'}</div>
-        <div class="gv-date">${(it.data_criacao||'').slice(0,10)}</div>
-        <div class="gv-client">${it.nomeContratante||''}</div>
-      `;
-      li.addEventListener('click', ()=>{ codeEl.textContent = (it.codigo||'').toUpperCase(); });
-      listEl.appendChild(li);
+  /* ===== API ===== */
+  async function apiList(){
+    const u = `${API.JSON}?op=list&token=${encodeURIComponent(SAVE_TOKEN)}`;
+    const r = await fetch(u,{cache:'no-store'}); const j = await r.json().catch(()=>null);
+    return (j && j.ok) ? (j.items||[]) : [];
+  }
+  async function apiGet(codigo){
+    const u = `${API.JSON}?op=get&codigo=${encodeURIComponent(codigo)}&token=${encodeURIComponent(SAVE_TOKEN)}`;
+    const r = await fetch(u,{cache:'no-store'}); const j = await r.json().catch(()=>null);
+    return (j && j.ok) ? j.item : null;
+  }
+
+  /* ===== RENDER ===== */
+  function renderRows(items){
+    const tb = $('#impBody'); tb.innerHTML = '';
+    if(!items || !items.length){
+      tb.innerHTML = '<tr><td colspan="6" style="color:#93a4b2">Sem resultados.</td></tr>'; return;
     }
+    for(const it of items){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${(it.data_criacao||'').slice(0,10)}</td>
+        <td><a href="#" class="imp-link code" data-code="${it.codigo||''}">${it.codigo||''}</a></td>
+        <td>${it.nomeContratante||''}</td>
+        <td>${it.nomeContratada||''}</td>
+        <td>${it.servico||''}</td>
+        <td>
+          <button class="imp-btn ghost" data-act="update" data-code="${it.codigo||''}">Atualizar</button>
+          <button class="imp-btn primary" data-act="contrato" data-code="${it.codigo||''}">Gerar Contrato</button>
+          <button class="imp-btn primary" data-act="os" data-code="${it.codigo||''}">Gerar OS</button>
+        </td>`;
+      tb.appendChild(tr);
+    }
+    // Ações de linha
+    $$('.code', tb).forEach(a => a.onclick = (e)=>{ e.preventDefault(); $('#impCodigo').value = a.dataset.code; });
+    $$('[data-act="update"]', tb).forEach(btn => btn.onclick = onAtualizar);
+    $$('[data-act="contrato"]', tb).forEach(btn => btn.onclick = (e)=> onGerar(e, TEMPLATE_CONTRATO));
+    $$('[data-act="os"]', tb).forEach(btn => btn.onclick = (e)=> onGerar(e, TEMPLATE_OS));
   }
 
-  // ===== ATUALIZAR ETAPAS (aponte para seus campos/funções) =====
-  function preencherEtapasCom(item){
-    // Ex.: Etapa 1
-    try {
-      // Ajuste estes seletores conforme seu HTML das Etapas:
-      $('#codigo')?.value = item.codigo || '';
-      // Etapa 2..5 – preencha seus campos:
-      // $('#nomeContratante')?.value = item.nomeContratante || '';
-      // $('#endereco')?.value = item.endereco || '';
-      // ...
-      // Se você já tem funções utilitárias, chame aqui:
-      // setDadosDoDocumento(item);
-      // avançar para etapa 2:
-      // gotoStep(2);
-    } catch(e){ console.warn('Preenchimento etapas:', e); }
-  }
+  /* ===== PREENCHER ETAPAS 2..5 ===== */
+  function fillEtapas(item){
+    if(!item) return;
+    const id = s => document.getElementById(s);
+    // mapeamento direto: só preenche se o campo existir no seu formulário
+    const map = {
+      servico:'servico', endereco:'endereco', valor:'valor', Extenso_Valor:'Extenso_Valor', prazo:'prazo', dataExtenso:'dataExtenso',
+      clausulas:'clausulas', condicoes:'condicoes',
+      nomeContratante:'nomeContratante', docContratante:'docContratante', contatoContratante:'contatoContratante',
+      telefoneContratante:'telefoneContratante', emailContratante:'emailContratante',
+      cepContratante:'cepContratante', numeroContratante:'numeroContratante', logradouroContratante:'logradouroContratante',
+      complementoContratante:'complementoContratante', bairroContratante:'bairroContratante',
+      cidadeContratante:'cidadeContratante', ufContratante:'ufContratante',
+      nomeContratada:'nomeContratada', docContratada:'docContratada', contatoContratada:'contatoContratada',
+      telefoneContratada:'telefoneContratada', emailContratada:'emailContratada',
+      cepContratada:'cepContratada', numeroContratada:'numeroContratada', logradouroContratada:'logradouroContratada',
+      complementoContratada:'complementoContratada', bairroContratada:'bairroContratada',
+      cidadeContratada:'cidadeContratada', ufContratada:'ufContratada'
+    };
+    if(id('codigo')){ id('codigo').value = item.codigo || ''; id('codigo').dispatchEvent(new Event('input',{bubbles:true})); }
 
-  async function gerar(qual){
-    const codigo = (codeEl.textContent||'').trim();
-    if(!codigo){ toastOK('Selecione um documento.'); return; }
-    const tpl = qual==='os' ? TPL_OS : TPL_CONTRATO;
-    setLoader(true);
-    try{
-      const url = `${API_BASE}/make_contract_json.php?codigo=${encodeURIComponent(codigo)}&template=${encodeURIComponent(tpl)}`;
-      const r = await fetch(url, { cache:'no-store' });
-      if(!r.ok){
-        // Quando é attachment, r.json() falha; precisamos baixar como blob sempre.
-        const blob = await r.blob(); // fallback
-        // tentativa de download mesmo assim
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'documento.docx';
-        document.body.appendChild(a); a.click(); a.remove();
-        toastOK('Documento gerado.');
-        return;
+    Object.keys(map).forEach(k=>{
+      const el = id(map[k]);
+      if(el && item[k]!=null){
+        el.value = String(item[k]);
+        el.dispatchEvent(new Event('input',{bubbles:true}));
+        el.dispatchEvent(new Event('change',{bubbles:true}));
       }
-      // Se o endpoint devolve attachment diretamente (sem JSON), baixe como blob:
-      const ct = r.headers.get('content-type')||'';
-      if(ct.includes('application/vnd.openxmlformats-officedocument')){
-        const blob = await r.blob();
-        const a = document.createElement('a');
-        // nome vem do próprio cabeçalho Content-Disposition (o browser usa sozinho),
-        // mas para garantir, damos um nome padrão:
-        a.href = URL.createObjectURL(blob);
-        a.download = 'documento.docx';
-        document.body.appendChild(a); a.click(); a.remove();
-        toastOK('Documento gerado.');
-      }else{
-        // em modo debug virá JSON – só em testes
-        const j = await r.json().catch(()=>null);
-        if(j && j.ok){ toastOK('OK (debug)'); }
-        else { alert('Falha ao gerar documento.'); console.warn(j); }
-      }
-    }catch(e){
-      console.error(e); alert('Erro ao gerar documento.');
-    }finally{ setLoader(false); }
-  }
-
-  async function atualizarSelecionado(){
-    const codigo = (codeEl.textContent||'').trim();
-    if(!codigo){ toastOK('Selecione um documento.'); return; }
-    setLoader(true);
-    try{
-      const j = await jget('get', '&codigo='+encodeURIComponent(codigo));
-      if(j && j.ok && j.item){
-        preencherEtapasCom(j.item);
-        toastOK('Dados aplicados.');
-        showBack(false);
-      }else{
-        alert('Não foi possível carregar o documento escolhido.');
-      }
-    }catch(e){
-      console.error(e); alert('Erro ao atualizar.');
-    }finally{ setLoader(false); }
-  }
-
-  // ===== WIRING =====
-  $('#gvClose').onclick = ()=> showBack(false);
-  $('#gvBtnFechar').onclick = ()=> showBack(false);
-  $('#gvBtnContrato').onclick = ()=> gerar('contrato');
-  $('#gvBtnOS').onclick = ()=> gerar('os');
-  $('#gvBtnAtualizar').onclick = ()=> atualizarSelecionado();
-
-  $('#gvBtnTodos').addEventListener('click', async ()=>{
-    setLoader(true); try{
-      const j = await jget('list');
-      render((j && j.ok)?(j.items||[]):[]);
-    } finally{ setLoader(false); }
-  });
-
-  $('#gvBtnListar').addEventListener('click', async ()=>{
-    const c = ($('#gvInput').value||'').trim();
-    setLoader(true); try{
-      if(!c){ const j = await jget('list'); render((j&&j.ok)?(j.items||[]):[]); return; }
-      const j = await jget('get', '&codigo='+encodeURIComponent(c));
-      render((j && j.ok && j.item)? [j.item] : []);
-    } finally{ setLoader(false); }
-  });
-
-  // ===== INTEGRAÇÃO COM A ETAPA 1 =====
-  // 1) esconder o botão de pesquisa antigo (seletor original):
-  const botaoAntigo = document.querySelector('#btnPesquisar, button[onclick*="pesquisar"]');
-  if (botaoAntigo){ botaoAntigo.style.display='none'; }
-
-  // 2) criar um botão NOVO exatamente na mesma área da Etapa 1
-  const inputCodigo = document.querySelector('#codigo') || document.querySelector('input[name="codigo"]');
-  if(inputCodigo && inputCodigo.parentElement){
-    const btnNovo = document.createElement('button');
-    btnNovo.type = 'button';
-    btnNovo.id = 'btnPesquisaNovo';
-    btnNovo.className = (botaoAntigo?.className)||'btn btn-primary';
-    btnNovo.style.marginLeft = '8px';
-    btnNovo.innerHTML = 'Pesquisar documentos (novo)';
-    inputCodigo.parentElement.appendChild(btnNovo);
-
-    btnNovo.addEventListener('click', ()=>{
-      // Pré-preenche o campo da pesquisa com o que estiver digitado na etapa 1
-      const v = (inputCodigo.value||'').trim();
-      $('#gvInput').value = v;
-      codeEl.textContent = v ? v.toUpperCase() : '—';
-      showBack(true);
-      // auto listar se não houver código
-      if(!v) $('#gvBtnTodos').click();
     });
   }
 
-  // 3) Se existir algum outro atalho “novo” no topo, remova para não duplicar
-  const topoNovo = document.querySelector('[data-legacy-top-search]');
-  if (topoNovo) topoNovo.remove();
+  /* ===== AÇÕES ===== */
+  async function onBuscar(){
+    const code = ($('#impCodigo').value||'').trim();
+    let items = [];
+    if(code){ const one = await apiGet(code); items = one ? [one] : []; }
+    else { items = await apiList(); }
+    renderRows(items);
+  }
 
+  async function onAtualizar(e){
+    const code = e.currentTarget.dataset.code;
+    const item = await apiGet(code);
+    if(item){
+      $('#imp-consulta').style.display='none';
+      fillEtapas(item);
+      if(typeof window.goTo === 'function'){ window.goTo(2); }
+    }
+  }
+
+  async function onGerar(e, template){
+    const code = e.currentTarget.dataset.code;
+    const url  = `${API.MAKE}?codigo=${encodeURIComponent(code)}&template=${encodeURIComponent(template)}`;
+    try{
+      const r = await fetch(url,{cache:'no-store'}); const j = await r.json();
+      if(j && j.ok && j.url){
+        window.open(j.url, '_blank');
+        toastOk(code);
+      }else{
+        alert('Falha ao gerar documento.'); console.warn(j);
+      }
+    }catch(err){ alert('Erro de rede durante a geração.'); }
+  }
+
+  /* ===== INTEGRAR NO INDEX (substituir o botão antigo) ===== */
+  function openModal(prefill){
+    const m = $('#imp-consulta'); m.style.display='grid';
+    if(typeof prefill === 'string'){ $('#impCodigo').value = prefill; onBuscar(); }
+  }
+
+  function wire(){
+    // Fechar
+    $('#impClose').onclick = $('#impFechar').onclick = ()=> $('#imp-consulta').style.display='none';
+    $('#impBuscar').onclick = onBuscar;
+
+    // 1) Oculta botão “Pesquisar” antigo e reaproveita o clique
+    const oldBtn = document.getElementById('searchJsonBtn') || document.querySelector('button#searchJsonBtn')
+                 || document.querySelector('button.btn-primary[type="button"][onclick*="pesquisar"]')
+                 || document.querySelector('button, a[role="button"]');
+    if(oldBtn){
+      // posiciona no MESMO lugar e evita abrir nova aba
+      oldBtn.type = 'button';
+      oldBtn.addEventListener('click', e=>{ e.preventDefault(); openModal(($('#codigo')?.value||'').trim()); });
+    }
+    // Caso haja outro gatilho legado para “abrir consulta”, anulamos:
+    const legacy = document.querySelectorAll('[onclick*="abrirConsulta"], [href*="pesquisa.html"]');
+    legacy.forEach(el=>{
+      el.removeAttribute('href');
+      el.onclick = (ev)=>{ ev.preventDefault(); openModal(($('#codigo')?.value||'').trim()); return false; };
+      // e podemos ocultar se quiser:
+      el.style.display = 'none';
+    });
+
+    // 2) ENTER no campo #codigo abre a pesquisa já filtrando
+    const inp = document.getElementById('codigo');
+    if(inp){ inp.addEventListener('keydown', ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); openModal((inp.value||'').trim()); } }); }
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
 })();
 </script>
+<!-- ====== /PESQUISA (NOVO) ====== -->
+
 
 </body>
 </html>
-
