@@ -140,21 +140,29 @@
 }
 
 
-#searchJsonBtn{ display:none !important; }
-#abrirPesquisaHTML{ display:inline-flex; align-items:center; gap:8px; background:#0b2240; color:#fff; font-weight:700; border:none; padding:6px 12px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px; }
-#abrirPesquisaHTML svg{ width:16px; height:16px; }
-#modal-pesquisa{ position:fixed; inset:0; display:none; place-items:center; z-index:9999; background:transparent; }
-#modal-pesquisa .caixa{ width:min(1100px, 96vw); height:min(700px, 92vh); background:#fff; border-radius:14px; box-shadow:0 10px 40px rgba(0,0,0,.25); overflow:hidden; position:relative; }
-#modal-pesquisa .fechar{ position:absolute; top:8px; right:12px; background:#0b2240; color:#fff; border:none; border-radius:999px; padding:6px 10px; cursor:pointer; font-weight:700; z-index:2;}
-#modal-pesquisa iframe{ width:100%; height:100%; border:0; display:block; }
-
-
-/* v5: neutraliza modal/backdrop legado */
-#legacyModal, .modal-backdrop, .swal2-container, #modalPesquisaAntigo, .dupe-modal, .backdrop, .overlay { display:none !important; visibility:hidden !important; opacity:0 !important; }
-
-
-/* v6 kill overlays */
-#legacyModal, .modal-backdrop, .swal2-container, #modalPesquisaAntigo, .dupe-modal, .backdrop, .overlay, .swal2-shown, .swal2-container * { pointer-events:none !important; opacity:0 !important; display:none !important; }
+/* === SUB-MODAL para escolher tipo (Contrato / OS) — v8 === */
+#subChoiceBack{ position:fixed; inset:0; display:none; place-items:center; z-index:2000; background:transparent; }
+#subChoiceBack .box{
+  width:min(520px,94vw);
+  background:rgba(255,255,255,0.88);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  box-shadow:0 18px 48px rgba(0,0,0,.25);
+  overflow:hidden;
+}
+#subChoiceBack .hd{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px; font-weight:900;
+  background:#0A1A3A; color:#fff;
+}
+#subChoiceBack .bd{ padding:16px; color:#0f172a; }
+#subChoiceBack .ft{ padding:12px 16px; border-top:1px solid #e5e7eb; display:flex; gap:10px; justify-content:flex-end; }
+#subClose{ background:transparent; border:none; color:#fff; font-size:20px; cursor:pointer; }
+.subbtn{ border:none; border-radius:999px; padding:10px 16px; font-weight:700; cursor:pointer; }
+.subbtn.primary{ background:linear-gradient(135deg,#4db4e2,#63C2EA); color:#fff; }
+.subbtn.ghost{ background:#e5e7eb; color:#0A1A3A; }
 
 </style>
 
@@ -492,14 +500,6 @@ window.__CONSULTA_CFG__ = {
 <input class="input" id="codigo" oninput="validate1()" placeholder="Digite o código do projeto"/>
 <div style="text-align:right; margin-top:6px;">
   <button id="searchJsonBtn" type="button" style="background:#000; color:#fff; font-weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;">Pesquisar</button>
-
-<button id="abrirPesquisaHTML" type="button" title="Pesquisar (novo)">
-  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.71.71l.27.28v.79L20 21.5 21.5 20l-6-6zM10 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z" stroke="currentColor" stroke-width="1" />
-  </svg>
-  Pesquisar
-</button>
-
 </div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn" id="openConsultaBtn" style="display:none!important; visibility:hidden!important;" type="button">Pesquisar documentos cadastrados</button>
@@ -3576,132 +3576,100 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 
 
 
-<div id="modal-pesquisa">
-  <div class="caixa">
-    <button class="fechar" id="fecharPesquisa" type="button">Fechar</button>
-    <iframe id="iframePesquisa" src="pesquisa_patched_v2.html"></iframe>
+<!-- SUB-ESCOLHA (Contrato / OS) -->
+<div id="subChoiceBack">
+  <div class="box">
+    <div class="hd">Escolha o documento <button id="subClose" title="Fechar">×</button></div>
+    <div class="bd">
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="subbtn primary" id="btnSubContrato" type="button">Contrato</button>
+        <button class="subbtn ghost" id="btnSubOS" type="button">Ordem de serviço</button>
+      </div>
+    </div>
+    <div class="ft">
+      <button class="subbtn" id="btnSubCancelar" type="button">Cancelar</button>
+    </div>
   </div>
 </div>
 
 
 <script>
 (function(){
-  function abrir(ev){ if(ev){ev.preventDefault(); ev.stopPropagation();} var m=document.getElementById('modal-pesquisa'); if(m) m.style.display='grid'; return false; }
-  function fechar(ev){ if(ev){ev.preventDefault(); ev.stopPropagation();} var m=document.getElementById('modal-pesquisa'); if(m) m.style.display='none'; return false; }
-  window.abrirPesquisaModal = abrir;
+  const API_BASE = 'https://api.erpimpar.com.br/gerador';
+  const TPL_CONTRATO = 'Template-Contrato.docx';
+  const TPL_OS       = 'Template_OS.docx';
 
-  var btn = document.getElementById('abrirPesquisaHTML'); if(btn) btn.addEventListener('click', abrir);
-  var closeBtn = document.getElementById('fecharPesquisa'); if(closeBtn) closeBtn.addEventListener('click', fechar);
+  function $(sel){ return document.querySelector(sel); }
+  function openSub(){ $('#subChoiceBack').style.display='grid'; }
+  function closeSub(){ $('#subChoiceBack').style.display='none'; }
 
-  // postMessage listener: recebe {type:'pesquisa:atualizar', codigo}
-  window.addEventListener('message', function(ev){
+  // Obtém código atual (campo da etapa 1 ou badge da etapa)
+  function getCodigoAtual(){
+    var v = (document.getElementById('codigo')?.value || '').trim();
+    if(!v){
+      var el = document.querySelector('#codigoVal, #codigoVal3, #codigoVal4, #codigoVal5');
+      v = (el?.textContent || '').trim();
+    }
+    return v;
+  }
+
+  async function gerar(template){
+    const codigo = getCodigoAtual();
+    if(!codigo){ alert('Código não definido.'); return; }
     try{
-      var d = ev.data || {};
-      if(d.type === 'pesquisa:atualizar'){
-        var codigo = d.codigo;
-        var inp = document.getElementById('codigo'); if(inp) inp.value = codigo;
-        if(typeof validate1 === 'function') validate1();
-        if(typeof carregarPorCodigo === 'function') carregarPorCodigo(codigo);
-        if(typeof carregarDadosPorCodigo === 'function') carregarDadosPorCodigo(codigo);
-        if(typeof goTo === 'function') goTo(2);
-        fechar();
-      }
-    }catch(e){ console.warn(e); }
-  }, false);
-
-  // Hook no "Continuar" da etapa 1 (bar1)
-  function ligarBar1(){
-    var b=document.getElementById('bar1');
-    if(!b) return;
-    b.addEventListener('click', function(ev){
-      var codigoEl=document.getElementById('codigo');
-      var hasCodigo=codigoEl && codigoEl.value && codigoEl.value.trim().length>0;
-      if(hasCodigo){ abrir(ev); }
-    }, true);
-  }
-  if(document.readyState!=='loading') ligarBar1();
-  else document.addEventListener('DOMContentLoaded', ligarBar1);
-})();
-</script>
-
-
-<script>
-(function(){
-  // Força qualquer chamada a openDupeModal(exact) a abrir a pesquisa nova
-  window.openDupeModal = function(){ try{ if(typeof abrirPesquisaModal==='function') abrirPesquisaModal(); }catch(e){} };
-
-  // Intercepta clique no bar1 ANTES do handler antigo
-  function interceptBar1(){
-    var b = document.getElementById('bar1');
-    if(!b) return;
-    b.addEventListener('click', function(ev){
-      var codigoEl = document.getElementById('codigo');
-      var hasCodigo = codigoEl && codigoEl.value && codigoEl.value.trim().length>0;
-      if(hasCodigo){
-        // Bloqueia handlers antigos e abre a pesquisa nova
-        ev.stopImmediatePropagation();
-        if(typeof abrirPesquisaModal==='function') abrirPesquisaModal();
-      }
-    }, true); // useCapture=true garante prioridade
-  }
-  if(document.readyState!=='loading') interceptBar1();
-  else document.addEventListener('DOMContentLoaded', interceptBar1);
-})();
-</script>
-
-
-<script>
-(function(){
-  async function verificarCodigoExiste(codigo){
-    try{
-      if(typeof fetchConsulta === 'function'){
-        const j = await fetchConsulta(codigo);
-        const rows = (j && j.rows) ? j.rows : [];
-        return rows.some(r => String(r.codigo||'').toUpperCase() === String(codigo||'').toUpperCase());
-      }
-    }catch(e){ console.warn('verificarCodigoExiste error', e); }
-    return false;
+      const url = `${API_BASE}/make_contract_json.php?codigo=${encodeURIComponent(codigo)}&template=${encodeURIComponent(template)}&t=${Date.now()}`;
+      const res = await fetch(url, { cache:'no-store' });
+      if(!res.ok){ alert('Erro ao gerar documento.'); return; }
+      const blob = await res.blob();
+      const prefix = template.includes('OS') ? 'O.S.' : 'Contrato';
+      const fname = `${prefix}-${codigo}.docx`.replace(/[\\/:*?"<>|]+/g,'');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+      // Fecha tudo e volta para etapa 1
+      try{
+        closeSub();
+        // fecha o modal antigo se estiver aberto
+        var antigos = document.querySelectorAll('#actionModal, .modal, .backdrop, .swal2-container');
+        antigos.forEach(el=>{ if(el.style) el.style.display='none'; });
+      }catch(e){}
+      if(typeof goTo==='function') goTo(1);
+    }catch(e){
+      console.error(e);
+      alert('Erro de rede durante a geração.');
+    }
   }
 
-  function abrir(){ var m=document.getElementById('modal-pesquisa'); if(m) m.style.display='grid'; }
-  function fechar(){ var m=document.getElementById('modal-pesquisa'); if(m) m.style.display='none'; }
-  window._fecharPesquisaModal = fechar;
+  // Liga botões do sub-modal
+  document.addEventListener('DOMContentLoaded', function(){
+    $('#subClose')?.addEventListener('click', closeSub);
+    $('#btnSubCancelar')?.addEventListener('click', closeSub);
+    $('#btnSubContrato')?.addEventListener('click', ()=>gerar(TPL_CONTRATO));
+    $('#btnSubOS')?.addEventListener('click', ()=>gerar(TPL_OS));
+  });
 
-  // bar1: decide entre abrir pesquisa (existe) ou seguir para etapa 2 (novo)
-  function interceptBar1(){
-    var b = document.getElementById('bar1');
-    if(!b) return;
-    b.addEventListener('click', async function(ev){
-      var codigoEl = document.getElementById('codigo');
-      var codigo = codigoEl && codigoEl.value ? codigoEl.value.trim() : '';
-      if(!codigo) return; // sem código, deixa o fluxo padrão
-      ev.stopImmediatePropagation();
-      var existe = await verificarCodigoExiste(codigo);
-      if(existe){ abrir(); }
-      else { if(typeof goTo==='function') goTo(2); }
-    }, true);
-  }
-  if(document.readyState!=='loading') interceptBar1();
-  else document.addEventListener('DOMContentLoaded', interceptBar1);
-
-  // Mensagens vindas do iframe
-  window.addEventListener('message', function(ev){
-    var d = ev.data || {};
-    try{
-      if(d.type==='pesquisa:fechar'){ fechar(); return; }
-      if(d.type==='pesquisa:voltar'){ fechar(); if(typeof goTo==='function') goTo(1); return; }
-      if(d.type==='pesquisa:atualizar'){
-        var codigo = d.codigo;
-        var inp = document.getElementById('codigo'); if(inp) inp.value = codigo;
-        if(typeof validate1 === 'function') validate1();
-        if(typeof carregarPorCodigo === 'function') carregarPorCodigo(codigo);
-        if(typeof carregarDadosPorCodigo === 'function') carregarDadosPorCodigo(codigo);
-        if(typeof goTo === 'function') goTo(2);
-        fechar();
-        return;
+  // Observa aberturas do modal "Escolher documento para download"
+  // e injeta o openSub no botão correspondente
+  const mo = new MutationObserver(()=>{
+    // Botões com texto "Escolher documento para download"
+    document.querySelectorAll('button, a').forEach(btn=>{
+      const t = (btn.innerText||btn.value||'').trim().toLowerCase();
+      if(t === 'escolher documento para download' && !btn.__subBound){
+        btn.__subBound = true;
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          openSub();
+          return false;
+        }, true);
       }
-    }catch(e){ console.warn('postMessage handler error', e); }
-  }, false);
+    });
+  });
+  mo.observe(document.documentElement, {subtree:true, childList:true});
+
 })();
 </script>
 
