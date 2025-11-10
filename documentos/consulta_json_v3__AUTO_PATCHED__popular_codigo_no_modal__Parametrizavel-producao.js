@@ -91,11 +91,8 @@ function aplicarTemplateNoIndex(templateName){
     var card=el('div',{class:'cj-card'});
     card.innerHTML =
       '<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div>' +
-      '<div class="cj-card-body">O que você deseja fazer com este documento?</div>' +
+      '<div class="cj-card-body">Você atualizar informações neste documento?</div>' +
       '<div class="cj-actions">' +
-      '<button class="btn ghost" id="cj_btn_close">Fechar</button>' +
-      '<button class="btn ghost" id="cj_btn_gerar">Gerar contrato</button>' +
-      '<button class="btn ghost" id="cj_btn_gerar_os">Gerar OS</button>' +   // << NOVO
       '<button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button>' +
     '</div>';
     
