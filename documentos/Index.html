@@ -474,7 +474,7 @@ window.__CONSULTA_CFG__ = {
 <div class="content">
 <input class="input" id="codigo" oninput="validate1()" placeholder="Digite o código do projeto"/>
 <div style="text-align:right; margin-top:6px;">
-  <button id="searchJsonBtn" type="button" style="background:#000; color:#fff; font-weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;">Atualizar documentos</button>
+  <button id="searchJsonBtn" type="button" style="background:#000; color:#fff; font-weight:700; border:none; padding:4px 10px; border-radius:999px; cursor:pointer; line-height:1.0; font-size:13px;">Pesquisar</button>
 </div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn" id="openConsultaBtn" style="display:none!important; visibility:hidden!important;" type="button">Pesquisar documentos cadastrados</button>
@@ -2700,7 +2700,6 @@ function baixarExcel(codigo){
 })();
 </script>
 <script src="consulta_json_v3__AUTO_PATCHED__popular_codigo_no_modal__Parametrizavel-producao.js"></script>
-<script src="consulta_json_v3__AUTO_PATCHED__popular_codigo_no_modal__Parametrizavel-producao__AUTOUPDATE.js"></script>
 
 <!-- ===== Add-on ROBUSTO: garante captura do código certo e geração do DOCX ===== -->
 <script>
@@ -3550,186 +3549,6 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 })();
 </script>
 
-<script>
-/* Auto: ao escolher o código na consulta, clicar sozinho em "Atualizar documento" assim que o botão existir */
-(function(){
-  // Observador que clica uma única vez quando o botão aparecer
-  function clickQuandoAparecer(){
-    const alvo = document.getElementById('cj_btn_atualizar');
-    if (alvo) { 
-      try { alvo.click(); } catch(_) {}
-      return; 
-    }
-    const mo = new MutationObserver(function(){
-      const btn = document.getElementById('cj_btn_atualizar');
-      if (btn){
-        try { btn.click(); } catch(_) {}
-        try { mo.disconnect(); } catch(_) {}
-      }
-    });
-    mo.observe(document.body, {childList:true, subtree:true});
-  }
-
-  // Se houver uma openDecide global, embrulhamos para acionar o observador logo após abrir o card
-  if (typeof window.openDecide === 'function'){
-    const oldOpenDecide = window.openDecide;
-    window.openDecide = function(code){
-      const r = oldOpenDecide.apply(this, arguments);
-      // não usamos timeout; acionamos o observador (clica assim que o botão existir)
-      clickQuandoAparecer();
-      return r;
-    };
-  } else {
-    // fallback: se a função for definida depois, ainda garantimos o comportamento
-    const mo2 = new MutationObserver(function(){
-      if (typeof window.openDecide === 'function'){
-        try { mo2.disconnect(); } catch(_) {}
-        const orig = window.openDecide;
-        window.openDecide = function(code){
-          const r = orig.apply(this, arguments);
-          clickQuandoAparecer();
-          return r;
-        };
-      }
-    });
-    mo2.observe(document.documentElement, {childList:true, subtree:true});
-  }
-})();
-</script>
-<script>
-/* Atualizar em background ao clicar no código da consulta (sem abrir card) */
-(function(){
-  let armando = false; // anti-duplo
-
-  function extrairCodigo(node){
-    // tenta data-codigo, href ou texto; padrão AC05925 / AC05299R1 etc.
-    const raw = (node.getAttribute?.('data-codigo') || node.getAttribute?.('href') || node.textContent || '') + '';
-    const m = raw.match(/[A-Z]{2}\d{5}[A-Z0-9]*/);
-    return m ? m[0] : null;
-  }
-
-  async function atualizarPorCodigo(code){
-    if(!code || armando) return;
-    armando = true;
-
-    // 1) Fecha consulta e qualquer overlay legado
-    try { document.getElementById('consultaModal').style.display = 'none'; } catch(_){}
-    try { document.getElementById('cj_back1').style.display = 'none'; } catch(_){}
-    try { document.getElementById('cj_back2').style.display = 'none'; } catch(_){}
-    try { document.querySelectorAll('.swal2-container,.modal,.modal-backdrop,.backdrop').forEach(el => el.style.display='none'); } catch(_){}
-
-    // 2) Preenche campo CÓDIGO (como se tivesse escolhido e clicado em "Atualizar documento")
-    const codeUpper = String(code).trim().toUpperCase();
-    try {
-      const inp = document.getElementById('codigo');
-      if (inp){
-        inp.value = codeUpper;
-        // dispare eventos caso sua validação escute input/change
-        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
-        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
-      }
-      // espelhos (se existirem)
-      try { document.querySelectorAll('[id^="codigoVal"]').forEach(el => el.textContent = codeUpper); } catch(_){}
-    } catch(_){}
-
-    // 3) Mesma rotina que o botão "Atualizar documento" já faz
-    try{
-      if (typeof fetchDoc === 'function'){
-        const item = await fetchDoc(codeUpper);
-        try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
-      }
-    }catch(_){}
-
-    // 4) Vai direto para a Etapa 2
-    try { if (typeof goTo === 'function') goTo(2); } catch(_){}
-
-    // 5) Scroll topo e libera trava
-    try { window.scrollTo({top:0, behavior:'smooth'}); } catch(_){}
-    setTimeout(()=>{ armando = false; }, 500);
-  }
-
-  // Captura clique em qualquer linha/ancora da LISTA DE CONSULTA quando a consulta estiver aberta
-  document.addEventListener('click', function(e){
-    const consultaAberta = document.getElementById('consultaModal');
-    if (!consultaAberta || consultaAberta.style.display !== 'flex') return;
-
-    let n = e.target;
-    while(n && n !== document.body){
-      const cod = extrairCodigo(n);
-      if (cod){
-        // Impede que abra o card de opções; já atualiza em background
-        e.preventDefault(); e.stopImmediatePropagation();
-        atualizarPorCodigo(cod);
-        return false;
-      }
-      n = n.parentElement;
-    }
-  }, true);
-
-})();
-</script>
-<script>
-/* Auto-atualizar: assim que o chip cj_code_chip existir com o código,
-   executa a MESMA lógica do botão "Atualizar documento" e fecha tudo. */
-(function(){
-  function runAtualizarDoJeitoCerto(){
-    const chip = document.getElementById('cj_code_chip');
-    const code = (chip && chip.getAttribute('data-code') || '').trim();
-    if (!code) return false;
-
-    // === É exatamente o que o seu cj_btn_atualizar.onclick já faz ===
-    try { const inp = document.getElementById('codigo'); if (inp) inp.value = code; } catch(_) {}
-    (typeof fetchDoc === 'function' ? fetchDoc(code) : Promise.resolve(null))
-      .then(function(item){
-        try { if (typeof fillForm === 'function') fillForm(item); } catch(_){}
-        try { if (typeof goTo === 'function') goTo(2); } catch(_){}
-        // fecha overlays/card
-        try { document.getElementById('cj_back1').style.display = 'none'; } catch(_){}
-        try { document.getElementById('cj_back2').style.display = 'none'; } catch(_){}
-        try { document.getElementById('consultaModal').style.display = 'none'; } catch(_){}
-        try { window.scrollTo({top:0, behavior:'smooth'}); } catch(_){}
-      })
-      .catch(function(){
-        // mesmo fallback de fechar
-        try { document.getElementById('cj_back1').style.display = 'none'; } catch(_){}
-        try { document.getElementById('cj_back2').style.display = 'none'; } catch(_){}
-        try { document.getElementById('consultaModal').style.display = 'none'; } catch(_){}
-      });
-
-    return true;
-  }
-
-  // Patch em openDecide: deixa ela rodar e, em seguida, espera o chip existir para rodar atualizar
-  function armarWrapper(){
-    if (typeof window.openDecide !== 'function') return false;
-    const original = window.openDecide;
-    window.openDecide = function(code){
-      const r = original.apply(this, arguments);
-
-      // Espera o chip aparecer (até ~50 frames) e então atualiza
-      let tentativas = 0;
-      (function esperarChip(){
-        if (runAtualizarDoJeitoCerto()) return;
-        if (++tentativas > 50) return;          // ~1s em 60fps
-        requestAnimationFrame(esperarChip);
-      })();
-
-      return r;
-    };
-    return true;
-  }
-
-  if (!armarWrapper()){
-    // Caso openDecide seja definida depois, observa o DOM até conseguirmos armar o wrapper
-    const mo = new MutationObserver(function(){
-      if (armarWrapper()){
-        try { mo.disconnect(); } catch(_){}
-      }
-    });
-    mo.observe(document.documentElement, { childList:true, subtree:true });
-  }
-})();
-</script>
 
 </body>
 </html>
