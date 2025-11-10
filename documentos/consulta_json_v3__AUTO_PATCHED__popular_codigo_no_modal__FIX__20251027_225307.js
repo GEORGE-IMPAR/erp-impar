@@ -129,12 +129,19 @@
 
     var b2=el('div',{id:'cj_decide_back',class:'cj-back'});
     var card=el('div',{class:'cj-card'});
-    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">Você deseja atualizar informaçoes neste?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Escolher documentos para download</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
+    card.innerHTML='<div class="cj-card-head"><div class="cj-title">Documento <span id="cj_code_chip" class="cj-chip">—</span></div><button class="cj-x" id="cj_x2">×</button></div><div class="cj-card-body">Você deseja atualizar informaçoes neste documento?</div><div class="cj-actions"><button class="btn ghost" id="cj_btn_close">Fechar</button><button class="btn ghost" id="cj_btn_gerar">Escolher documentos para download</button><button class="btn primary" id="cj_btn_atualizar">Atualizar documento</button></div>';
     b2.appendChild(card); document.body.appendChild(b2);
-    document.getElementById('cj_btn_close').style.display = 'none';
-    document.getElementById('cj_btn_gerar').style.display = 'none';	
-    document.querySelector('.cj-actions').style.justifyContent = 'center';
 
+    // Oculta os botões "Fechar" e "Escolher documentos para download"
+    var btnClose = document.getElementById('cj_btn_close');
+    var btnGerar = document.getElementById('cj_btn_gerar');
+    if (btnClose) btnClose.style.display = 'none';
+    if (btnGerar) btnGerar.style.display = 'none';
+
+    // (Opcional) Centraliza o botão "Atualizar documento"
+    var actions = document.querySelector('.cj-actions');
+    if (actions) actions.style.justifyContent = 'center';
+    
     var lback=el('div',{id:'cj_loader_back',class:'cj-loader-back'});
     var lbox=el('div',{class:'cj-loader-box'});
     lbox.innerHTML='<div class="cj-spinner"></div><div class="cj-loader-text">Processando... aguarde...</div>';
