@@ -227,14 +227,42 @@
   function fetchList(){return fetch(JSON_URL+'?op=list&token='+encodeURIComponent(SAVE_TOKEN)).then(r=>r.json());}
   function fetchDoc(c){return fetch(JSON_URL+'?op=get&codigo='+encodeURIComponent(c)+'&token='+encodeURIComponent(SAVE_TOKEN)).then(r=>r.json()).then(j=>{if(!j||!j.ok)throw 0;return j.item;});}
   function fillForm(d){if(!d)return;for(var k in d){if(!d.hasOwnProperty(k))continue;var f=q(k);if(f&&'value'in f){f.value=d[k];}}}
+  /* Atualiza direto (sem card “Deseja atualizar?”) e fecha tudo */
+  async function atualizarDiretoEClose(code){
+    try{
+      const c = String(code||'').trim().toUpperCase();
+      if (!c) return;
 
+      // injeta no input principal
+      const inp = q('codigo');
+      if (inp){
+        inp.value = c;
+        try { inp.dispatchEvent(new Event('input',  { bubbles:true })); } catch(_){}
+        try { inp.dispatchEvent(new Event('change', { bubbles:true })); } catch(_){}
+      }
+
+      // busca dados e preenche
+      const item = await fetchDoc(c);
+      try { fillForm(item); } catch(_){}
+
+      // navega pra etapa 2 e fecha tudo
+      try { if (typeof goTo==='function') goTo(2); } catch(_){}
+    } finally {
+      try { window.__CJFIX__.b1.style.display='none'; } catch(_){}
+      try { window.__CJFIX__.b2.style.display='none'; } catch(_){}
+      try { hideLegacy(); } catch(_){}
+      // força esconder qualquer modal legado teimoso
+      const m = document.getElementById('consultaJsonModal');
+      if (m){ m.style.setProperty('display','none','important'); m.hidden = true; }
+    }
+  }
   function render(items){
     var body=q('cj_list_body'); body.innerHTML='';
     if(!items||!items.length){body.innerHTML='<div class="cj-empty">Sem registros.</div>';return;}
     items.forEach(function(r){
       var d=el('div',{class:'cj-row'});
       d.innerHTML='<div class="cj-code">'+(r.codigo||'')+'</div><div class="cj-date">'+((r.data_criacao||"").slice(0,10))+'</div><div class="cj-client">'+(r.nomeContratante||"")+'</div>';
-      d.onclick=function(){openDecide(r.codigo||'');};
+      d.onclick=function(){ atualizarDiretoEClose(r.codigo||''); };
       body.appendChild(d);
     });
   }

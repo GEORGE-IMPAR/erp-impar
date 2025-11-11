@@ -349,7 +349,10 @@ window.__CONSULTA_CFG__ = {
 .bar.disabled::after{ opacity: .4; }
 .bar.enabled{ background: var(--accent); color: var(--accentText); }
 
-
+.bar.disabled{
+  pointer-events: none;      /* não recebe clique */
+  cursor: not-allowed;
+}
 
 /* Exibe como flex apenas quando NÃO estiver oculto */
 .bar:not(.hidden){ display:flex; }
@@ -809,7 +812,7 @@ function goTo(step){
   updateStepper(step);
   showOnly('screen'+step);
 
-  const codigo=(document.getElementById('codigo').value||'').trim()||'AC00025';
+  const codigo = (document.getElementById('codigo').value || '').trim();
   ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.textContent=codigo;
@@ -833,7 +836,30 @@ function goTo(step){
 
 /* Validadores */
 function addrOk(prefix){return ['logradouro','numero','bairro','cidade','uf'].every(k => document.getElementById(k+prefix).value.trim());}
-function validate1(){const v=document.getElementById('codigo').value.trim(),b=document.getElementById('bar1');if(v){b.classList.remove('disabled');b.classList.add('enabled');}else{b.classList.add('disabled');b.classList.remove('enabled');}updateStepper(1);}
+// --- validate1 (versão fechando todas as brechas) ---
+function validate1(){
+  const inp = document.getElementById('codigo');
+  const b   = document.getElementById('bar1');
+  if (!inp || !b) return;
+
+  const v = (inp.value || '').trim().toUpperCase();
+  const PLACEHOLDER = 'AC00025';
+
+  // Aceita somente quando tem código e NÃO é o placeholder.
+  // (Regex opcional; mantenha se quiser formato tipo AC05925 etc.)
+  const ok = !!v && v !== PLACEHOLDER && /^[A-Z]{1,2}\d{3,}[A-Z0-9]*$/.test(v);
+
+  if (ok){
+    b.classList.remove('disabled'); 
+    b.classList.add('enabled');
+    b.onclick = () => goTo(2);
+  } else {
+    b.classList.add('disabled'); 
+    b.classList.remove('enabled');
+    b.onclick = noop;                 // trava qualquer clique
+  }
+  updateStepper(1);
+}
 function validate2(){const s=document.getElementById('servico').value.trim(),e=document.getElementById('endereco').value.trim(),b=document.getElementById('bar2');if(s&&e){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(3);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
 function validate3(){const d=document.getElementById('docContratante').value,t=document.getElementById('telefoneContratante').value,m=document.getElementById('emailContratante').value.trim(),cep=document.getElementById('cepContratante').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratanteErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratanteErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratanteErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratante','contatoContratante'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratante');const b=document.getElementById('bar3');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(4);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
 function validate4(){const d=document.getElementById('docContratada').value,t=document.getElementById('telefoneContratada').value,m=document.getElementById('emailContratada').value.trim(),cep=document.getElementById('cepContratada').value.trim();const docOk=(onlyDigits(d).length===11&&isValidCPF(d))||(onlyDigits(d).length===14&&isValidCNPJ(d));const telOk=onlyDigits(t).length===11;const emailOk=isValidEmail(m);const cepOk=onlyDigits(cep).length===8;document.getElementById('emailContratadaErr').classList.toggle('hidden',emailOk||m.length===0);document.getElementById('telContratadaErr').classList.toggle('hidden',telOk||onlyDigits(t).length===0);document.getElementById('cepContratadaErr').classList.toggle('hidden',cepOk||onlyDigits(cep).length===0);const ok=['nomeContratada','contatoContratada'].every(id=>document.getElementById(id).value.trim())&&docOk&&telOk&&emailOk&&cepOk&&addrOk('Contratada');const b=document.getElementById('bar4');if(ok){b.classList.remove('disabled');b.classList.add('enabled');b.onclick=()=>goTo(5);}else{b.classList.add('disabled');b.classList.remove('enabled');b.onclick=noop;}}
@@ -2904,7 +2930,7 @@ async function hookGerar(){
     if (!tr || !tr.closest('#consultaModal')) return;
 
     const code = cell.textContent.trim();
-    if (AC_RE.test(code) && code.toUpperCase() !== 'AC00025') {
+    if (AC_RE.test(code) && code.toUpperCase() !== '') {
       window.codigoSelecionado = code;
       console.log('[Consulta] Código selecionado:', code);
 
@@ -2958,7 +2984,7 @@ function pushCodeToEtapa1(code){
       // fallback: tenta do campo #codigo
       if (!codigo) {
         const v = readCodigoField();
-        if (AC_RE.test(v) && v.toUpperCase() !== 'AC00025') {
+        if (AC_RE.test(v) && v.toUpperCase() !== '') {
           codigo = v;
         }
       }
@@ -3166,7 +3192,7 @@ function __resetAllFields(){
       .forEach(function(k){ if (k in window) window[k] = null; });
   }catch(_){}
 
-  var codigo = (document.getElementById('codigo').value || '').trim() || 'AC00025';
+  var codigo = (document.getElementById('codigo').value || '').trim() || '';
   ['codigoVal','codigoVal3','codigoVal4','codigoVal5'].forEach(function(id){
     var span = document.getElementById(id);
     if (span) span.textContent = codigo;
@@ -3565,20 +3591,6 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
 })();
 <script>
 (function(){
-  // Bloqueia clique quando a barra estiver desabilitada (classe .disabled)
-  document.querySelectorAll('[id^="bar"]').forEach(bar=>{
-    bar.addEventListener('click', function(ev){
-      if (this.classList.contains('disabled')) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        return false;
-      }
-    }, true);
-  });
-})();
-</script>
-<script>
-(function(){
   const btn = document.getElementById('searchJsonBtn');
   if (!btn) return;
 
@@ -3603,8 +3615,23 @@ if (typeof window.__ALLOW_DECIDE__ === 'undefined') window.__ALLOW_DECIDE__ = fa
     btn.innerHTML += (btn.innerHTML.includes('Atualizar') ? '' : ' Atualizar documentos');
   }
 })();
-</script>
+<!-- … seu HTML … -->
 
+<script>
+  // se não existir, garante um noop seguro
+  window.noop = window.noop || function(){};
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const b1 = document.getElementById('bar1');
+    if (b1){
+      b1.classList.add('disabled');
+      b1.classList.remove('enabled');
+      b1.onclick = noop;                 // nada quando carregou
+    }
+    // chama a sua validação da etapa 1 para sincronizar estado
+    if (typeof validate1 === 'function') validate1();
+  });
+</script>
 
 </body>
 </html>
