@@ -549,6 +549,23 @@
     window.location.href = "farol.html";
   });
 
+// Gera o nome do arquivo usado pelo backend (carregar_cronograma.php, salvar_cronograma.php etc.)
+function slugifyObra(obra) {
+  return obra
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // tira acentos
+    .replace(/[^a-zA-Z0-9]+/g, "_")                  // troca tudo que não é letra/número por _
+    .replace(/^_+|_+$/g, "")                         // tira _ do começo/fim
+    .toUpperCase();
+}
+
+function getArquivoNome(obraNome, obraId) {
+  // se quiser, você pode padronizar por id. Mantive assim:
+  if (obraId) return `obra_${obraId}.json`;
+  if (!obraNome) return null;
+  return slugifyObra(obraNome) + ".json";
+}
+
+
   // ===== datas =====
   function parseDate(str) {
     if (!str) return null;
@@ -927,31 +944,100 @@
     atualizarResumoObra();
   }
 
-  async function salvarLinhaBase() {
-    if (atividades.length === 0) {
-      alert("Cadastre pelo menos uma atividade antes de salvar a linha de base.");
-      return;
-    }
-
-    atividades.forEach(a => {
-      a.baselineInicio      = new Date(a.inicio.getTime());
-      a.baselineFim         = new Date(a.fim.getTime());
-      a.baselineDuracaoDias = a.duracaoDias;
-      a.baselineInicioStr   = a.inicioStr;
-      a.baselineFimStr      = a.fimStr;
-    });
-
-    linhaBaseSalva = true;
-    document.getElementById("badge-base").style.display = "inline-block";
-
-    calcularPlanejadoEStatus();
-    renderTabela();
-    renderGantt();
-
-    await salvarNoServidor(true);
-
-    alert("Linha de base salva e cronograma enviado ao servidor.\nSe o Farol ainda não mostrar, os dados já estão guardados para integração.");
+async function salvarLinhaBase() {
+  if (atividades.length === 0) {
+    alert("Cadastre pelo menos uma atividade antes de salvar a linha de base.");
+    return;
   }
+
+  // salva baseline local
+  atividades.forEach(a => {
+    a.baselineInicio      = new Date(a.inicio.getTime());
+    a.baselineFim         = new Date(a.fim.getTime());
+    a.baselineDuracaoDias = a.duracaoDias;
+    a.baselineInicioStr   = a.inicioStr;
+    a.baselineFimStr      = a.fimStr;
+  });
+
+  linhaBaseSalva = true;
+  document.getElementById("badge-base").style.display = "inline-block";
+
+  calcularPlanejadoEStatus();
+  renderTabela();
+  renderGantt();
+
+  const obraNome = getObraSelecionadaNome();
+  const obraId   = getObraSelecionadaId();
+  const coordenador = document.getElementById("coordenador").value.trim();
+
+  if (!obraNome) {
+    alert("Selecione a Obra antes de salvar a linha de base.");
+    return;
+  }
+
+  const arquivo = getArquivoNome(obraNome, obraId);
+  if (!arquivo) {
+    alert("Não foi possível definir o nome do arquivo do cronograma.");
+    return;
+  }
+
+  const payload = {
+    obra: obraNome,
+    obraId: obraId || null,
+    coordenador,
+    linhaBaseSalva: true,
+    arquivo,
+    atividades: atividades.map(a => ({
+      id: a.id,
+      atividade: a.atividade,
+      responsavel: a.responsavel,
+      inicioStr: a.inicioStr,
+      fimStr: a.fimStr,
+      duracaoDias: a.duracaoDias,
+      diasComerciais: !!a.diasComerciais,
+      predecessorId: a.predecessorId,
+      realPercent: a.realPercent,
+      plannedPercent: a.plannedPercent,
+      baselineInicioStr: a.baselineInicioStr,
+      baselineFimStr: a.baselineFimStr,
+      baselineDuracaoDias: a.baselineDuracaoDias
+    }))
+  };
+
+  // 1) salva cronograma completo
+  try {
+    const resp = await fetch(
+      API_SAVE_URL + "?arquivo=" + encodeURIComponent(arquivo),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+    const data = await resp.json();
+    console.log("Resposta salvar_cronograma.php:", data);
+  } catch (e) {
+    console.error("Erro ao salvar cronograma:", e);
+  }
+
+  // 2) chama também salvar_baseline.php (usando o mesmo arquivo)
+  try {
+    const respBase = await fetch(
+      API_SAVE_BASELINE + "?arquivo=" + encodeURIComponent(arquivo),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+    const dataBase = await respBase.json();
+    console.log("Resposta salvar_baseline.php:", dataBase);
+  } catch (e) {
+    console.error("Erro ao salvar baseline:", e);
+  }
+
+  alert("Linha de base salva e cronograma enviados ao servidor.");
+}
 
   // ===== CRUD local =====
   function adicionarAtividade() {
@@ -1438,60 +1524,71 @@
     alert("Cronograma recalculado com base nas predecessoras (efeito dominó).");
   }
 
-  async function salvarNoServidor(silencioso = false) {
-    const obraNome = getObraSelecionadaNome();
-    const obraId   = getObraSelecionadaId();
-    const coordenador = document.getElementById("coordenador").value.trim();
+async function salvarNoServidor(silencioso = false) {
+  const obraNome = getObraSelecionadaNome();
+  const obraId   = getObraSelecionadaId();
+  const coordenador = document.getElementById("coordenador").value.trim();
 
-    if (!obraNome) {
-      if (!silencioso) alert("Selecione a Obra para salvar no servidor.");
-      return;
-    }
-    if (atividades.length === 0) {
-      if (!silencioso) alert("Não há atividades para salvar.");
-      return;
-    }
+  if (!obraNome) {
+    if (!silencioso) alert("Selecione a Obra para salvar no servidor.");
+    return;
+  }
+  if (atividades.length === 0) {
+    if (!silencioso) alert("Não há atividades para salvar.");
+    return;
+  }
 
-    const payload = {
-      obra: obraNome,
-      obraId: obraId || null,
-      coordenador,
-      linhaBaseSalva,
-      atividades: atividades.map(a => ({
-        id: a.id,
-        atividade: a.atividade,
-        responsavel: a.responsavel,
-        inicioStr: a.inicioStr,
-        fimStr: a.fimStr,
-        duracaoDias: a.duracaoDias,
-        diasComerciais: !!a.diasComerciais,
-        predecessorId: a.predecessorId,
-        realPercent: a.realPercent,
-        plannedPercent: a.plannedPercent,
-        baselineInicioStr: a.baselineInicioStr,
-        baselineFimStr: a.baselineFimStr,
-        baselineDuracaoDias: a.baselineDuracaoDias
-      }))
-    };
+  const arquivo = getArquivoNome(obraNome, obraId);
+  if (!arquivo) {
+    if (!silencioso) alert("Não foi possível definir o nome do arquivo do cronograma.");
+    return;
+  }
 
-    try {
-      const resp = await fetch(API_SAVE_URL, {
+  const payload = {
+    obra: obraNome,
+    obraId: obraId || null,
+    coordenador,
+    linhaBaseSalva,
+    arquivo,
+    atividades: atividades.map(a => ({
+      id: a.id,
+      atividade: a.atividade,
+      responsavel: a.responsavel,
+      inicioStr: a.inicioStr,
+      fimStr: a.fimStr,
+      duracaoDias: a.duracaoDias,
+      diasComerciais: !!a.diasComerciais,
+      predecessorId: a.predecessorId,
+      realPercent: a.realPercent,
+      plannedPercent: a.plannedPercent,
+      baselineInicioStr: a.baselineInicioStr,
+      baselineFimStr: a.baselineFimStr,
+      baselineDuracaoDias: a.baselineDuracaoDias
+    }))
+  };
+
+  try {
+    const resp = await fetch(
+      API_SAVE_URL + "?arquivo=" + encodeURIComponent(arquivo),
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      if (!resp.ok || data.sucesso === false) {
-        console.error("salvar_cronograma.php ->", data);
-        if (!silencioso) alert("Erro ao salvar cronograma no servidor: " + (data.mensagem || resp.statusText));
-        return;
       }
-      if (!silencioso) alert("Cronograma salvo no servidor com sucesso.");
-    } catch (e) {
-      console.error("Erro comunicação salvar_cronograma:", e);
-      if (!silencioso) alert("Falha na comunicação com o servidor ao salvar.");
+    );
+    const data = await resp.json();
+    if (!resp.ok || data.sucesso === false) {
+      console.error("salvar_cronograma.php ->", data);
+      if (!silencioso) alert("Erro ao salvar cronograma no servidor: " + (data.mensagem || resp.statusText));
+      return;
     }
+    if (!silencioso) alert("Cronograma salvo no servidor com sucesso.");
+  } catch (e) {
+    console.error("Erro comunicação salvar_cronograma:", e);
+    if (!silencioso) alert("Falha na comunicação com o servidor ao salvar.");
   }
+}
+
 
   async function salvarRealNoServidor(atividade) {
     const obraNome = getObraSelecionadaNome();
@@ -1753,61 +1850,74 @@
     };
   }
 
-  async function carregarCronogramaServidor(obraId, obraNome) {
-    if (!obraId && !obraNome) {
+async function carregarCronogramaServidor(obraId, obraNome) {
+  if (!obraId && !obraNome) {
+    limparCronogramaLocal();
+    return;
+  }
+
+  const arquivo = getArquivoNome(obraNome, obraId);
+  if (!arquivo) {
+    limparCronogramaLocal();
+    return;
+  }
+
+  try {
+    const url = API_LOAD_URL + "?arquivo=" + encodeURIComponent(arquivo);
+    const resp = await fetch(url);
+    const raw = await resp.json();
+    console.log("carregar_cronograma.php ->", raw);
+
+    if (raw.error) {
+      console.warn("Backend retornou erro:", raw.message);
       limparCronogramaLocal();
       return;
     }
-    try {
-      const url = new URL(API_LOAD_URL);
-      if (obraId) url.searchParams.set("obraId", obraId);
-      if (obraNome) url.searchParams.set("obra", obraNome);
 
-      const resp = await fetch(url.toString());
-      if (!resp.ok) throw new Error("HTTP " + resp.status);
-      const raw = await resp.json();
-      console.log("carregar_cronograma.php ->", raw);
+    let lista = [];
+    let coord = raw.coordenador || raw.coordinator || "";
+    let flagBase = !!(raw.linhaBaseSalva || raw.baselineSalva);
 
-      let lista = [];
-      let coord = raw.coordenador || raw.coordinator || "";
-      let flagBase = !!(raw.linhaBaseSalva || raw.baselineSalva);
-
-      if (Array.isArray(raw)) {
-        lista = raw;
-      } else if (Array.isArray(raw.atividades)) {
-        lista = raw.atividades;
-      } else if (Array.isArray(raw.dados)) {
-        lista = raw.dados;
-      } else if (Array.isArray(raw.cronograma)) {
-        lista = raw.cronograma;
-      }
-
-      if (!Array.isArray(lista) || lista.length === 0) {
-        limparCronogramaLocal();
-        return;
-      }
-
-      const mapped = lista.map(item => mapAtividadeServidor(item, obraNome, obraId, coord));
-      let maxId = 0;
-      mapped.forEach((a, idx) => {
-        if (!a.id) a.id = idx + 1;
-        if (a.id > maxId) maxId = a.id;
-      });
-
-      atividades = mapped;
-      nextId = maxId + 1;
-      linhaBaseSalva = flagBase || atividades.some(a => a.baselineInicio && a.baselineFim);
-      document.getElementById("badge-base").style.display = linhaBaseSalva ? "inline-block" : "none";
-
-      calcularPlanejadoEStatus();
-      renderTabela();
-      renderGantt();
-      atualizarListaPredecessoras();
-    } catch (e) {
-      console.error("Erro ao carregar cronograma do servidor:", e);
-      limparCronogramaLocal();
+    if (Array.isArray(raw)) {
+      lista = raw;
+    } else if (Array.isArray(raw.atividades)) {
+      lista = raw.atividades;
+    } else if (Array.isArray(raw.dados)) {
+      lista = raw.dados;
+    } else if (Array.isArray(raw.cronograma)) {
+      lista = raw.cronograma;
     }
+
+    if (!Array.isArray(lista) || lista.length === 0) {
+      limparCronogramaLocal();
+      return;
+    }
+
+    const mapped = lista.map(item =>
+      mapAtividadeServidor(item, obraNome, obraId, coord)
+    );
+
+    let maxId = 0;
+    mapped.forEach((a, idx) => {
+      if (!a.id) a.id = idx + 1;
+      if (a.id > maxId) maxId = a.id;
+    });
+
+    atividades = mapped;
+    nextId = maxId + 1;
+    linhaBaseSalva = flagBase || atividades.some(a => a.baselineInicio && a.baselineFim);
+    document.getElementById("badge-base").style.display = linhaBaseSalva ? "inline-block" : "none";
+
+    calcularPlanejadoEStatus();
+    renderTabela();
+    renderGantt();
+    atualizarListaPredecessoras();
+  } catch (e) {
+    console.error("Erro ao carregar cronograma do servidor:", e);
+    limparCronogramaLocal();
   }
+}
+
 
   function carregarCronogramaParaObraSelecionada() {
     const obraNome = getObraSelecionadaNome();
