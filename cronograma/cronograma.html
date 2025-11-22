@@ -261,9 +261,8 @@
       border-radius: 14px;
       padding: 10px;
       border: 1px solid #1f2937;
-      /* scroll interno */
-      overflow: auto;
-      max-height: 340px;
+      overflow: auto;      /* scroll horizontal + vertical */
+      max-height: 340px;   /* limita pra não invadir rodapé */
     }
 
     .gantt-header {
@@ -404,14 +403,12 @@
       <div class="form-row">
         <div>
           <label for="obra">Obra</label>
-          <!-- dropdown populado via API -->
           <select id="obra">
             <option value="">Selecione a obra</option>
           </select>
         </div>
         <div>
           <label for="coordenador">Coordenador</label>
-          <!-- dropdown populado via API -->
           <select id="coordenador">
             <option value="">Selecione o coordenador</option>
           </select>
@@ -426,7 +423,6 @@
         </div>
         <div>
           <label for="responsavel">Responsável</label>
-          <!-- dropdown populado via API -->
           <select id="responsavel">
             <option value="">Selecione o responsável</option>
           </select>
@@ -473,7 +469,6 @@
         <button class="btn-secondary" onclick="exportarJSON()">Exportar JSON</button>
       </div>
 
-      <!-- Info obra -->
       <div class="header-info" id="header-info"></div>
       <div class="header-info" id="resumo-obra"></div>
 
@@ -495,9 +490,7 @@
               <th>Ações</th>
             </tr>
           </thead>
-          <tbody>
-            <!-- linhas via JS -->
-          </tbody>
+          <tbody></tbody>
         </table>
       </div>
 
@@ -505,7 +498,6 @@
         Nenhuma atividade cadastrada ainda.
       </div>
 
-      <!-- Mini-Gantt -->
       <div class="gantt-container">
         <div class="gantt-header">
           Visão geral (dias) – barras da linha de base (azul) e real (laranja)
@@ -530,7 +522,7 @@
 </footer>
 
 <script>
-  // ================== CONFIG API (mesmo padrão do farol) ==================
+  // ================== CONFIG API ==================
   const API_BASE = "https://api.erpimpar.com.br/cronograma";
   const API_SAVE_URL = API_BASE + "/salvar_cronograma.php";
   const API_LOAD_URL = API_BASE + "/carregar_cronograma.php";
@@ -545,7 +537,6 @@
   let editingIndex = null;
   let linhaBaseSalva = false;
 
-  // cache de obras/coordenadores/responsáveis para mapear id x nome
   let cacheObras = [];
   let cacheCoordenadores = [];
   let cacheResponsaveis = [];
@@ -558,11 +549,25 @@
     window.location.href = "farol.html";
   });
 
-  // ===== Datas =====
+  // ===== datas =====
   function parseDate(str) {
     if (!str) return null;
-    const [y, m, d] = str.split("-").map(Number);
-    return new Date(y, m - 1, d);
+    // tenta yyyy-mm-dd
+    const partsDash = str.split("-");
+    if (partsDash.length === 3 && partsDash[0].length === 4) {
+      const [y, m, d] = partsDash.map(Number);
+      return new Date(y, m - 1, d);
+    }
+    // tenta dd/mm/yyyy
+    const partsSlash = str.split("/");
+    if (partsSlash.length === 3 && partsSlash[2].length === 4) {
+      const [d, m, y] = partsSlash.map(Number);
+      return new Date(y, m - 1, d);
+    }
+    // fallback: Date nativo
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
   }
   function formatDateToInput(date) {
     const y = date.getFullYear();
@@ -590,7 +595,7 @@
     return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
   }
 
-  // ===== Dias comerciais + feriados =====
+  // ===== dias úteis =====
   const FERIADOS_FIXOS = [
     "01-01","04-21","05-01","09-07","10-12","11-02","11-15","12-25"
   ];
@@ -600,7 +605,7 @@
     return FERIADOS_FIXOS.includes(md);
   }
   function isBusinessDay(date) {
-    const day = date.getDay(); // 0 dom, 6 sáb
+    const day = date.getDay();
     if (day === 0 || day === 6) return false;
     if (isHoliday(date)) return false;
     return true;
@@ -928,7 +933,6 @@
       return;
     }
 
-    // 1) salva baseline local
     atividades.forEach(a => {
       a.baselineInicio      = new Date(a.inicio.getTime());
       a.baselineFim         = new Date(a.fim.getTime());
@@ -944,8 +948,7 @@
     renderTabela();
     renderGantt();
 
-    // 2) envia cronograma completo para o backend
-    await salvarNoServidor(true); // true = modo silencioso
+    await salvarNoServidor(true);
 
     alert("Linha de base salva e cronograma enviado ao servidor.\nSe o Farol ainda não mostrar, os dados já estão guardados para integração.");
   }
@@ -1074,7 +1077,6 @@
     document.getElementById("duracao").value = "";
     document.getElementById("inicio").min = "";
     document.getElementById("predecessora").value = "";
-    // padrão: dias úteis marcados
     document.getElementById("diasComerciais").checked = true;
     limparDestaqueEdicao();
   }
@@ -1090,7 +1092,6 @@
     limparDestaqueEdicao();
     const item = atividades[index];
 
-    // obra / coordenador permanecem selecionados no topo
     const obraSelect = document.getElementById("obra");
     if (item.obraId) {
       for (let i=0;i<obraSelect.options.length;i++){
@@ -1259,7 +1260,6 @@
     a.realPercent = perc;
     calcularPlanejadoEStatus();
     renderTabela();
-    // salva automaticamente o % real no backend
     salvarRealNoServidor(a);
   }
 
@@ -1289,8 +1289,8 @@
         <td>${i + 1}</td>
         <td>${item.atividade}</td>
         <td>${item.responsavel || "-"}</td>
-        <td>${item.inicioStr}</td>
-        <td>${item.fimStr}</td>
+        <td>${item.inicioStr || ""}</td>
+        <td>${item.fimStr || ""}</td>
         <td><span class="tag-dia">${duracao} dia(s)</span></td>
         <td>${modo}</td>
         <td>${pr}%</td>
@@ -1496,7 +1496,6 @@
   async function salvarRealNoServidor(atividade) {
     const obraNome = getObraSelecionadaNome();
     const obraId   = getObraSelecionadaId();
-
     if (!obraNome || !atividade) return;
 
     const payload = {
@@ -1613,7 +1612,6 @@
       }
 
       if (!Array.isArray(lista)) lista = [];
-
       cacheCoordenadores = lista;
 
       const sel = document.getElementById("coordenador");
@@ -1625,7 +1623,6 @@
 
       lista.forEach(c => {
         let nome = "";
-
         if (typeof c === "string") {
           nome = c;
         } else {
@@ -1636,9 +1633,7 @@
             c.label ||
             "";
         }
-
         if (!nome) return;
-
         const opt = document.createElement("option");
         opt.value = nome;
         opt.textContent = nome;
@@ -1667,7 +1662,6 @@
       }
 
       if (!Array.isArray(lista)) lista = [];
-
       cacheResponsaveis = lista;
 
       const sel = document.getElementById("responsavel");
@@ -1679,7 +1673,6 @@
 
       lista.forEach(r => {
         let nome = "";
-
         if (typeof r === "string") {
           nome = r;
         } else {
@@ -1690,9 +1683,7 @@
             r.label ||
             "";
         }
-
         if (!nome) return;
-
         const opt = document.createElement("option");
         opt.value = nome;
         opt.textContent = nome;
@@ -1703,25 +1694,156 @@
     }
   }
 
+  // ===== Carregar cronograma salvo (carregar_cronograma.php) =====
+  function limparCronogramaLocal() {
+    atividades = [];
+    nextId = 1;
+    linhaBaseSalva = false;
+    document.getElementById("badge-base").style.display = "none";
+    renderTabela();
+    renderGantt();
+    atualizarListaPredecessoras();
+    atualizarResumoObra();
+  }
+
+  function mapAtividadeServidor(item, obraNome, obraId, coordenadorPadrao) {
+    const atividade = item.atividade || item.nome || item.descricao || "";
+    const responsavel = item.responsavel || item.resp || "";
+    const inicioStr = item.inicioStr || item.inicio || item.data_inicio;
+    const fimStr = item.fimStr || item.fim || item.data_fim;
+    const duracaoDias = Number(item.duracaoDias || item.duracao || 0) || null;
+    const diasComerciais = !!(item.diasComerciais || item.dias_uteis || item.modo === "Comercial" || item.modo === "Dias úteis");
+    const predecessorId = item.predecessorId ? Number(item.predecessorId) :
+                          (item.predecessora_id ? Number(item.predecessora_id) : null);
+    const realPercent = Number(item.realPercent || item.real || item.percentual_real || 0) || 0;
+    const plannedPercent = Number(item.plannedPercent || item.planejado || item.percentual_planejado || 0) || 0;
+
+    const baselineInicioStr = item.baselineInicioStr || item.baselineInicio || item.base_inicio;
+    const baselineFimStr = item.baselineFimStr || item.baselineFim || item.base_fim;
+    const baselineDuracaoDias = Number(item.baselineDuracaoDias || item.baseDuracao || 0) || null;
+
+    const inicio = inicioStr ? parseDate(inicioStr) : null;
+    const fim = fimStr ? parseDate(fimStr) : null;
+    const baselineInicio = baselineInicioStr ? parseDate(baselineInicioStr) : null;
+    const baselineFim = baselineFimStr ? parseDate(baselineFimStr) : null;
+
+    return {
+      id: item.id ? Number(item.id) : null,
+      obra: obraNome,
+      obraId,
+      coordenador: item.coordenador || coordenadorPadrao || "",
+      atividade,
+      responsavel,
+      inicioStr: inicioStr || (inicio ? formatDateToInput(inicio) : ""),
+      fimStr: fimStr || (fim ? formatDateToInput(fim) : ""),
+      inicio,
+      fim,
+      duracaoDias: duracaoDias || (inicio && fim ? diffInDays(inicio, fim) : 0),
+      predecessorId,
+      diasComerciais,
+      realPercent,
+      plannedPercent,
+      status: item.status || "Não iniciado",
+      statusClass: "",
+      baselineInicio,
+      baselineFim,
+      baselineDuracaoDias,
+      baselineInicioStr: baselineInicioStr || (baselineInicio ? formatDateToInput(baselineInicio) : null),
+      baselineFimStr: baselineFimStr || (baselineFim ? formatDateToInput(baselineFim) : null)
+    };
+  }
+
+  async function carregarCronogramaServidor(obraId, obraNome) {
+    if (!obraId && !obraNome) {
+      limparCronogramaLocal();
+      return;
+    }
+    try {
+      const url = new URL(API_LOAD_URL);
+      if (obraId) url.searchParams.set("obraId", obraId);
+      if (obraNome) url.searchParams.set("obra", obraNome);
+
+      const resp = await fetch(url.toString());
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const raw = await resp.json();
+      console.log("carregar_cronograma.php ->", raw);
+
+      let lista = [];
+      let coord = raw.coordenador || raw.coordinator || "";
+      let flagBase = !!(raw.linhaBaseSalva || raw.baselineSalva);
+
+      if (Array.isArray(raw)) {
+        lista = raw;
+      } else if (Array.isArray(raw.atividades)) {
+        lista = raw.atividades;
+      } else if (Array.isArray(raw.dados)) {
+        lista = raw.dados;
+      } else if (Array.isArray(raw.cronograma)) {
+        lista = raw.cronograma;
+      }
+
+      if (!Array.isArray(lista) || lista.length === 0) {
+        limparCronogramaLocal();
+        return;
+      }
+
+      const mapped = lista.map(item => mapAtividadeServidor(item, obraNome, obraId, coord));
+      let maxId = 0;
+      mapped.forEach((a, idx) => {
+        if (!a.id) a.id = idx + 1;
+        if (a.id > maxId) maxId = a.id;
+      });
+
+      atividades = mapped;
+      nextId = maxId + 1;
+      linhaBaseSalva = flagBase || atividades.some(a => a.baselineInicio && a.baselineFim);
+      document.getElementById("badge-base").style.display = linhaBaseSalva ? "inline-block" : "none";
+
+      calcularPlanejadoEStatus();
+      renderTabela();
+      renderGantt();
+      atualizarListaPredecessoras();
+    } catch (e) {
+      console.error("Erro ao carregar cronograma do servidor:", e);
+      limparCronogramaLocal();
+    }
+  }
+
+  function carregarCronogramaParaObraSelecionada() {
+    const obraNome = getObraSelecionadaNome();
+    const obraId   = getObraSelecionadaId();
+    if (!obraNome && !obraId) {
+      limparCronogramaLocal();
+      return;
+    }
+    carregarCronogramaServidor(obraId, obraNome);
+  }
+
   // ===== init =====
   document.getElementById("predecessora").addEventListener("change", onPredecessoraChange);
-  document.getElementById("obra").addEventListener("change", atualizarHeaderInfo);
   document.getElementById("coordenador").addEventListener("change", atualizarHeaderInfo);
   document.getElementById("inicio").addEventListener("change", onInicioChange);
   document.getElementById("fim").addEventListener("change", onFimChange);
   document.getElementById("duracao").addEventListener("change", onDuracaoChange);
 
+  document.getElementById("obra").addEventListener("change", () => {
+    atualizarHeaderInfo();
+    carregarCronogramaParaObraSelecionada();
+  });
+
   (async function initCronograma(){
     const params = new URLSearchParams(window.location.search);
-    const idObra = params.get("id"); // vindo do farol
+    const idObra = params.get("id"); // vindo do Farol
     await Promise.all([
       carregarObrasDropdown(idObra),
       carregarCoordenadoresDropdown(),
       carregarResponsaveisDropdown()
     ]);
     if (idObra) {
-      // próximo passo: aqui podemos chamar carregar_cronograma.php
-      // para buscar o cronograma salvo dessa obra, se você quiser.
+      const selObra = document.getElementById("obra");
+      const obraNome = selObra.value || getObraSelecionadaNome();
+      const obraId = getObraSelecionadaId() || idObra;
+      await carregarCronogramaServidor(obraId, obraNome);
     }
   })();
 </script>
