@@ -465,9 +465,6 @@
         <button class="btn-secondary" onclick="recalcularCronograma()">Recalcular (efeito dominó)</button>
         <button class="btn-secondary" onclick="salvarLinhaBase()">Concluir planejamento (salvar linha de base)</button>
 
-        <button class="btn-secondary" onclick="salvarNoServidor()">Salvar no servidor</button>
-        <button class="btn-secondary" onclick="carregarDoServidor()">Carregar do servidor</button>
-
         <button class="btn-secondary" onclick="limparFormulario()">Limpar campos</button>
         <button class="btn-secondary" onclick="exportarJSON()">Exportar JSON</button>
       </div>
@@ -1459,156 +1456,6 @@
     URL.revokeObjectURL(url);
   }
 
-  // ===== Integração com servidor =====
-  async function salvarNoServidor() {
-    const obraNome = getObraSelecionadaNome();
-    const obraId = getObraSelecionadaId();
-    const coordenador = document.getElementById("coordenador").value.trim();
-
-    if (!obraNome) {
-      alert("Selecione a Obra para salvar no servidor.");
-      return;
-    }
-    if (atividades.length === 0) {
-      alert("Não há atividades para salvar.");
-      return;
-    }
-
-    const payload = {
-      obra: obraNome,
-      obraId: obraId || null,
-      coordenador,
-      linhaBaseSalva,
-      atividades: atividades.map(a => ({
-        id: a.id,
-        atividade: a.atividade,
-        responsavel: a.responsavel,
-        inicioStr: a.inicioStr,
-        fimStr: a.fimStr,
-        duracaoDias: a.duracaoDias,
-        diasComerciais: !!a.diasComerciais,
-        predecessorId: a.predecessorId,
-        realPercent: a.realPercent,
-        plannedPercent: a.plannedPercent,
-        baselineInicioStr: a.baselineInicioStr,
-        baselineFimStr: a.baselineFimStr,
-        baselineDuracaoDias: a.baselineDuracaoDias
-      }))
-    };
-
-    try {
-      const resp = await fetch(API_SAVE_URL, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      if (!resp.ok || data.sucesso === false) {
-        alert("Erro ao salvar no servidor: " + (data.mensagem || resp.statusText));
-        return;
-      }
-      alert("Cronograma salvo no servidor com sucesso.");
-    } catch(e) {
-      console.error(e);
-      alert("Falha na comunicação com o servidor ao salvar.");
-    }
-  }
-
-  async function carregarDoServidor(idObraOpcional) {
-    let url = API_LOAD_URL;
-    if (idObraOpcional) {
-      url += "?id=" + encodeURIComponent(idObraOpcional);
-    } else {
-      const obraNome = getObraSelecionadaNome();
-      if (!obraNome) {
-        alert("Selecione a Obra para carregar o cronograma do servidor.");
-        return;
-      }
-      url += "?obra=" + encodeURIComponent(obraNome);
-    }
-
-    try {
-      const resp = await fetch(url, { method:"GET" });
-      const data = await resp.json();
-      if (!resp.ok || data.sucesso === false) {
-        alert("Erro ao carregar do servidor: " + (data.mensagem || resp.statusText));
-        return;
-      }
-
-      const obraNome = data.obra || getObraSelecionadaNome();
-      const coordenador = data.coordenador || "";
-      const atividadesServidor = data.atividades || [];
-      linhaBaseSalva = !!data.linhaBaseSalva;
-
-      // posiciona dropdown de obra se vier id
-      if (data.obraId) {
-        const obraSelect = document.getElementById("obra");
-        for (let i=0;i<obraSelect.options.length;i++){
-          if (obraSelect.options[i].getAttribute("data-id") == data.obraId){
-            obraSelect.selectedIndex = i;
-            break;
-          }
-        }
-      }
-      document.getElementById("coordenador").value = coordenador;
-
-      atividades = atividadesServidor.map(a => {
-        const inicio = parseDate(a.inicioStr);
-        const fim = parseDate(a.fimStr);
-        const diasComerciais = !!a.diasComerciais;
-        const duracaoDias = a.duracaoDias || (inicio && fim ? calcularDuracao(inicio, fim, diasComerciais) : 0);
-        let baselineInicio = null;
-        let baselineFim = null;
-        if (a.baselineInicioStr && a.baselineFimStr) {
-          baselineInicio = parseDate(a.baselineInicioStr);
-          baselineFim = parseDate(a.baselineFimStr);
-        }
-        return {
-          id: a.id,
-          obra: obraNome,
-          obraId: a.obraId || data.obraId || null,
-          coordenador,
-          atividade: a.atividade,
-          responsavel: a.responsavel || "",
-          inicioStr: a.inicioStr,
-          fimStr: a.fimStr,
-          inicio,
-          fim,
-          duracaoDias,
-          diasComerciais,
-          predecessorId: a.predecessorId || null,
-          realPercent: typeof a.realPercent === "number" ? a.realPercent : 0,
-          plannedPercent: 0,
-          status: "Não iniciado",
-          statusClass: "status-nao-iniciado",
-          baselineInicio,
-          baselineFim,
-          baselineDuracaoDias: a.baselineDuracaoDias || null,
-          baselineInicioStr: a.baselineInicioStr || null,
-          baselineFimStr: a.baselineFimStr || null
-        };
-      });
-
-      let maxId = 0;
-      atividades.forEach(a => { if (a.id > maxId) maxId = a.id; });
-      nextId = maxId + 1;
-
-      atualizarHeaderInfo();
-      atualizarListaPredecessoras();
-      calcularPlanejadoEStatus();
-      renderTabela();
-      renderGantt();
-      document.getElementById("badge-base").style.display =
-        linhaBaseSalva ? "inline-block" : "none";
-
-      if (!idObraOpcional) {
-        alert("Cronograma da obra carregado do servidor.");
-      }
-    } catch(e) {
-      console.error(e);
-      alert("Falha na comunicação com o servidor ao carregar.");
-    }
-  }
 
   // ===== Carregar combos do backend =====
   async function carregarObrasDropdown(idSelecionadoDaURL) {
@@ -1648,53 +1495,118 @@
     }
   }
 
-  async function carregarCoordenadoresDropdown() {
-    try{
-      const resp = await fetch(API_LIST_COORDENADORES);
-      const lista = await resp.json();
-      if (!Array.isArray(lista)) throw new Error("Resposta inesperada ao listar coordenadores.");
-      cacheCoordenadores = lista;
-      const sel = document.getElementById("coordenador");
-      sel.innerHTML = "";
-      const opt0 = document.createElement("option");
-      opt0.value = "";
-      opt0.textContent = "Selecione o coordenador";
-      sel.appendChild(opt0);
-      lista.forEach(c => {
-        const nome = c.nome || c.coordenador || c.label || "";
-        const opt = document.createElement("option");
-        opt.value = nome;
-        opt.textContent = nome;
-        sel.appendChild(opt);
-      });
-    }catch(e){
-      console.error(e);
-    }
-  }
+async function carregarCoordenadoresDropdown() {
+  try {
+    const resp = await fetch(API_LIST_COORDENADORES);
+    const raw = await resp.json();
+    console.log("listar_coordenadores.php ->", raw);
 
-  async function carregarResponsaveisDropdown() {
-    try{
-      const resp = await fetch(API_LIST_RESPONSAVEIS);
-      const lista = await resp.json();
-      if (!Array.isArray(lista)) throw new Error("Resposta inesperada ao listar responsáveis.");
-      cacheResponsaveis = lista;
-      const sel = document.getElementById("responsavel");
-      sel.innerHTML = "";
-      const opt0 = document.createElement("option");
-      opt0.value = "";
-      opt0.textContent = "Selecione o responsável";
-      sel.appendChild(opt0);
-      lista.forEach(r => {
-        const nome = r.nome || r.responsavel || r.label || "";
-        const opt = document.createElement("option");
-        opt.value = nome;
-        opt.textContent = nome;
-        sel.appendChild(opt);
-      });
-    }catch(e){
-      console.error(e);
+    // Pode vir array simples ["GUSTAVO", ...] ou objeto com campo de lista
+    let lista = [];
+    if (Array.isArray(raw)) {
+      lista = raw;
+    } else if (Array.isArray(raw.dados)) {
+      lista = raw.dados;
+    } else if (Array.isArray(raw.coordenadores)) {
+      lista = raw.coordenadores;
+    } else if (Array.isArray(raw.lista)) {
+      lista = raw.lista;
     }
+
+    if (!Array.isArray(lista)) lista = [];
+
+    cacheCoordenadores = lista;
+
+    const sel = document.getElementById("coordenador");
+    sel.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "Selecione o coordenador";
+    sel.appendChild(opt0);
+
+    lista.forEach(c => {
+      let nome = "";
+
+      if (typeof c === "string") {
+        nome = c;                         // <-- caso do seu PHP
+      } else {
+        nome =
+          c.nome ||
+          c.coordenador ||
+          c.nome_coordenador ||
+          c.label ||
+          "";
+      }
+
+      if (!nome) return;
+
+      const opt = document.createElement("option");
+      opt.value = nome;
+      opt.textContent = nome;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error("Erro ao carregar coordenadores:", e);
   }
+}
+
+
+
+async function carregarResponsaveisDropdown() {
+  try {
+    const resp = await fetch(API_LIST_RESPONSAVEIS);
+    const raw = await resp.json();
+    console.log("listar_responsaveis.php ->", raw);
+
+    let lista = [];
+    if (Array.isArray(raw)) {
+      lista = raw;                        // <-- caso do seu PHP
+    } else if (Array.isArray(raw.dados)) {
+      lista = raw.dados;
+    } else if (Array.isArray(raw.responsaveis)) {
+      lista = raw.responsaveis;
+    } else if (Array.isArray(raw.lista)) {
+      lista = raw.lista;
+    }
+
+    if (!Array.isArray(lista)) lista = [];
+
+    cacheResponsaveis = lista;
+
+    const sel = document.getElementById("responsavel");
+    sel.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "Selecione o responsável";
+    sel.appendChild(opt0);
+
+    lista.forEach(r => {
+      let nome = "";
+
+      if (typeof r === "string") {
+        nome = r;                         // <-- caso do seu PHP
+      } else {
+        nome =
+          r.nome ||
+          r.responsavel ||
+          r.nome_responsavel ||
+          r.label ||
+          "";
+      }
+
+      if (!nome) return;
+
+      const opt = document.createElement("option");
+      opt.value = nome;
+      opt.textContent = nome;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error("Erro ao carregar responsáveis:", e);
+  }
+}
+
+
 
   // ===== init =====
   document.getElementById("predecessora").addEventListener("change", onPredecessoraChange);
@@ -1713,8 +1625,6 @@
       carregarResponsaveisDropdown()
     ]);
     if (idObra) {
-      // se veio do farol, já tenta carregar o cronograma dessa obra
-      carregarDoServidor(idObra);
     }
   })();
 </script>
