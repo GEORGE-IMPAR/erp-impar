@@ -549,6 +549,43 @@
     window.location.href = "farol.html";
   });
 
+
+// === API ===
+const API_SAVE_BASELINE = "https://api.erpimpar.com.br/cronograma/salvar_baseline.php";
+const API_LOAD_URL      = "https://api.erpimpar.com.br/cronograma/carregar_cronograma.php";
+
+// Pega info da obra selecionada
+function getObraSelecionada() {
+  const select = document.getElementById("obra");
+  const opt = select.options[select.selectedIndex];
+  return {
+    id: opt ? (opt.getAttribute("data-id") || "").trim() : "",
+    nome: opt ? opt.textContent.trim() : ""
+  };
+}
+
+// Gera o nome do arquivo usado nos PHPs (ex.: obra_036.json)
+function getArquivoNome() {
+  const { id, nome } = getObraSelecionada();
+
+  if (id) {
+    // mantém o padrão que já apareceu no Network: obra_036.json
+    return "obra_" + String(id).padStart(3, "0") + ".json";
+  }
+
+  if (!nome) return null;
+
+  // fallback se um dia tiver obra sem id (quase improvável)
+  const slug = nome
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+
+  return "obra_" + slug + ".json";
+}
+
+
 // Gera o nome do arquivo usado pelo backend (carregar_cronograma.php, salvar_cronograma.php etc.)
 function slugifyObra(obra) {
   return obra
@@ -950,7 +987,7 @@ async function salvarLinhaBase() {
     return;
   }
 
-  // salva baseline local
+  // 1) Congela baseline localmente
   atividades.forEach(a => {
     a.baselineInicio      = new Date(a.inicio.getTime());
     a.baselineFim         = new Date(a.fim.getTime());
@@ -960,84 +997,73 @@ async function salvarLinhaBase() {
   });
 
   linhaBaseSalva = true;
-  document.getElementById("badge-base").style.display = "inline-block";
+  const badge = document.getElementById("badge-base");
+  if (badge) badge.style.display = "inline-block";
 
   calcularPlanejadoEStatus();
   renderTabela();
   renderGantt();
 
-  const obraNome = getObraSelecionadaNome();
-  const obraId   = getObraSelecionadaId();
+  // 2) Monta os dados para o backend
+  const { id: obraId, nome: obraNome } = getObraSelecionada();
   const coordenador = document.getElementById("coordenador").value.trim();
+  const arquivo = getArquivoNome();
 
   if (!obraNome) {
     alert("Selecione a Obra antes de salvar a linha de base.");
     return;
   }
-
-  const arquivo = getArquivoNome(obraNome, obraId);
   if (!arquivo) {
     alert("Não foi possível definir o nome do arquivo do cronograma.");
     return;
   }
 
-  const payload = {
+  // Formato das atividades da baseline que vamos mandar pro PHP
+  const atividadesBaseline = atividades.map(a => ({
+    id: a.id,
+    atividade: a.atividade,
+    responsavel: a.responsavel,
+    inicio: a.inicioStr,        // "yyyy-mm-dd"
+    fim: a.fimStr,              // "yyyy-mm-dd"
+    duracaoDias: a.duracaoDias,
+    diasUteis: !!a.diasComerciais,
+    predecessorId: a.predecessorId || null,
+    modo: a.modo || "Corridos"
+  }));
+
+  const payloadBaseline = {
+    arquivo: arquivo,
+    id: obraId || "",          // ex: "036"
     obra: obraNome,
-    obraId: obraId || null,
     coordenador,
-    linhaBaseSalva: true,
-    arquivo,
-    atividades: atividades.map(a => ({
-      id: a.id,
-      atividade: a.atividade,
-      responsavel: a.responsavel,
-      inicioStr: a.inicioStr,
-      fimStr: a.fimStr,
-      duracaoDias: a.duracaoDias,
-      diasComerciais: !!a.diasComerciais,
-      predecessorId: a.predecessorId,
-      realPercent: a.realPercent,
-      plannedPercent: a.plannedPercent,
-      baselineInicioStr: a.baselineInicioStr,
-      baselineFimStr: a.baselineFimStr,
-      baselineDuracaoDias: a.baselineDuracaoDias
-    }))
+    atividades: atividadesBaseline
   };
 
-  // 1) salva cronograma completo
-  try {
-    const resp = await fetch(
-      API_SAVE_URL + "?arquivo=" + encodeURIComponent(arquivo),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
-    );
-    const data = await resp.json();
-    console.log("Resposta salvar_cronograma.php:", data);
-  } catch (e) {
-    console.error("Erro ao salvar cronograma:", e);
-  }
+  console.log("Enviando baseline:", payloadBaseline);
 
-  // 2) chama também salvar_baseline.php (usando o mesmo arquivo)
+  // 3) Chama APENAS salvar_baseline.php
   try {
-    const respBase = await fetch(
-      API_SAVE_BASELINE + "?arquivo=" + encodeURIComponent(arquivo),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
-    );
+    const respBase = await fetch(API_SAVE_BASELINE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payloadBaseline)
+    });
+
     const dataBase = await respBase.json();
     console.log("Resposta salvar_baseline.php:", dataBase);
+
+    if (!respBase.ok || dataBase.error) {
+      alert("Erro ao salvar baseline no servidor: " + (dataBase.message || respBase.statusText));
+      return;
+    }
+
+    alert("Linha de base salva com sucesso e integrada ao Farol.");
   } catch (e) {
     console.error("Erro ao salvar baseline:", e);
+    alert("Falha na comunicação com o servidor ao salvar a baseline.");
   }
-
-  alert("Linha de base salva e cronograma enviados ao servidor.");
 }
+
 
   // ===== CRUD local =====
   function adicionarAtividade() {
