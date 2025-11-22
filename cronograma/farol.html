@@ -154,19 +154,6 @@
     font-size:12px;
     color:var(--text-soft);
   }
-  .grid-obras-actions{
-    display:flex;
-    align-items:center;
-    gap:8px;
-    flex-wrap:wrap;
-  }
-
-  .btn-primario-header{
-    padding:4px 10px;
-    font-size:10px;
-    box-shadow:0 8px 18px rgba(0,0,0,.7);
-  }
-
 
   .grid-obras{
     display:grid;
@@ -359,12 +346,7 @@
     <div class="grid-obras-wrapper">
       <div class="grid-obras-header">
         <div>Obras com cronograma</div>
-        <div class="grid-obras-actions">
-          <span id="infoResumoObras">Carregando...</span>
-          <button type="button" class="btn-primario btn-primario-header" id="btnNovoCronogramaHeader">
-            + Cadastrar cronograma
-          </button>
-        </div>
+        <div id="infoResumoObras">Carregando...</div>
       </div>
       <div class="grid-obras" id="gridObras"></div>
     </div>
@@ -386,18 +368,10 @@
   const gridObras = document.getElementById('gridObras');
   const infoResumoObras = document.getElementById('infoResumoObras');
   const btnVoltarMenu = document.getElementById('btnVoltarMenu');
-  const btnNovoCronogramaHeader = document.getElementById('btnNovoCronogramaHeader');
 
   btnVoltarMenu.addEventListener('click', () => {
     window.location.href = '../index.html';
   });
-
-  if (btnNovoCronogramaHeader) {
-    btnNovoCronogramaHeader.addEventListener('click', () => {
-      // Farol e cronograma estão na mesma pasta /cronograma/
-      window.location.href = 'cronograma.html';
-    });
-  }
 
   async function carregarFarol(){
     try{
@@ -429,22 +403,25 @@
     }
   }
 
-  function renderizarSemObras(){
-    infoResumoObras.textContent = 'Nenhuma obra com cronograma cadastrado.';
-    gridObras.innerHTML = '';
-
+  function renderizarCardNovoCronograma(temObras){
     const card = document.createElement('div');
     card.className = 'obra-card obra-card-empty';
 
     const titulo = document.createElement('div');
     titulo.className = 'obra-nome';
-    titulo.textContent = 'Nenhuma obra com cronograma';
+    titulo.textContent = temObras
+      ? 'Cadastrar cronograma de uma nova obra?'
+      : 'Nenhuma obra com cronograma';
 
     const p1 = document.createElement('p');
-    p1.textContent = 'Você ainda não cadastrou nenhum cronograma de obra.';
+    p1.textContent = temObras
+      ? 'Você já possui obras com cronograma cadastrado. Use o botão abaixo para cadastrar o cronograma de uma nova obra.'
+      : 'Você ainda não cadastrou nenhum cronograma de obra.';
 
     const p2 = document.createElement('p');
-    p2.textContent = 'Clique no botão abaixo para criar o primeiro planejamento.';
+    p2.textContent = temObras
+      ? 'Clique no botão abaixo para criar o planejamento da próxima obra.'
+      : 'Clique no botão abaixo para criar o primeiro planejamento.';
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -465,6 +442,12 @@
     gridObras.appendChild(card);
   }
 
+  function renderizarSemObras(){
+    infoResumoObras.textContent = 'Nenhuma obra com cronograma cadastrado.';
+    gridObras.innerHTML = '';
+    renderizarCardNovoCronograma(false);
+  }
+
   function renderizarObras(obras){
     gridObras.innerHTML = '';
     if(obras.length === 0){
@@ -473,6 +456,9 @@
     }
 
     infoResumoObras.textContent = obras.length + ' obras com cronograma';
+
+    // Card fixo para cadastrar cronograma de uma nova obra
+    renderizarCardNovoCronograma(true);
 
     obras.forEach(o => {
       const card = document.createElement('div');
@@ -559,30 +545,27 @@
   }
 
   function getCoresStatus(o){
-    const temBaseline = !!o.tem_baseline;
-    const status = (o.status || '').toString().toUpperCase();
+    const pl = isNaN(o.planejado) ? 0 : Number(o.planejado);
+    const re = isNaN(o.real) ? 0 : Number(o.real);
 
-    // Sem baseline: cinza/azul padrão
-    if (!temBaseline){
-      return { borda: 'var(--blue)', dotCor: 'var(--blue)' };
+    let borda = 'var(--blue)';
+    let dotCor = 'var(--blue)';
+
+    if(pl === 0 && re === 0 && !o.tem_baseline){
+      borda = 'var(--blue)';
+      dotCor = 'var(--blue)';
+    } else if(re >= pl){
+      borda = 'var(--green)';
+      dotCor = 'var(--green)';
+    } else if(re >= pl * 0.8){
+      borda = 'var(--yellow)';
+      dotCor = 'var(--yellow)';
+    } else {
+      borda = 'var(--red)';
+      dotCor = 'var(--red)';
     }
 
-    // Usa exatamente o status calculado no cronograma
-    if (status.includes('ADIANTADO') || status.includes('NO PRAZO')) {
-      return { borda: 'var(--green)', dotCor: 'var(--green)' };
-    }
-
-    if (status.includes('ATENÇÃO')) {
-      return { borda: 'var(--yellow)', dotCor: 'var(--yellow)' };
-    }
-
-    if (status.includes('ATRASADO')) {
-      return { borda: 'var(--red)', dotCor: 'var(--red)' };
-    }
-
-    // Qualquer outro caso: neutro
-    return { borda: 'var(--blue)', dotCor: 'var(--blue)' };
-  };
+    return { borda, dotCor };
   }
 
   carregarFarol();
