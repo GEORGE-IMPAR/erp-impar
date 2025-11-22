@@ -256,12 +256,16 @@
     }
 
     .gantt-container {
-      margin-top:14px;
-      background:#020617;
-      border-radius:14px;
-      padding:10px;
-      border:1px solid #1f2937;
+      margin-top: 14px;
+      background: #020617;
+      border-radius: 14px;
+      padding: 10px;
+      border: 1px solid #1f2937;
+      /* scroll interno */
+      overflow: auto;
+      max-height: 340px;
     }
+
     .gantt-header {
       font-size:12px;
       margin-bottom:6px;
@@ -451,8 +455,8 @@
         <div>
           <label>&nbsp;</label>
           <div class="check-inline">
-            <input type="checkbox" id="diasComerciais">
-            <span>Dias comerciais (seg–sex)</span>
+            <input type="checkbox" id="diasComerciais" checked>
+            <span>Dias úteis (seg–sex)</span>
           </div>
         </div>
       </div>
@@ -533,6 +537,8 @@
   const API_LIST_OBRAS = API_BASE + "/listar_obras.php";
   const API_LIST_COORDENADORES = API_BASE + "/listar_coordenadores.php";
   const API_LIST_RESPONSAVEIS = API_BASE + "/listar_responsaveis.php";
+  const API_SAVE_BASELINE = API_BASE + "/salvar_baseline.php";
+  const API_SAVE_REAL      = API_BASE + "/salvar_real.php";
 
   let atividades = [];
   let nextId = 1;
@@ -916,24 +922,32 @@
     atualizarResumoObra();
   }
 
-  function salvarLinhaBase() {
+  async function salvarLinhaBase() {
     if (atividades.length === 0) {
       alert("Cadastre pelo menos uma atividade antes de salvar a linha de base.");
       return;
     }
+
+    // 1) salva baseline local
     atividades.forEach(a => {
-      a.baselineInicio = new Date(a.inicio.getTime());
-      a.baselineFim = new Date(a.fim.getTime());
+      a.baselineInicio      = new Date(a.inicio.getTime());
+      a.baselineFim         = new Date(a.fim.getTime());
       a.baselineDuracaoDias = a.duracaoDias;
-      a.baselineInicioStr = a.inicioStr;
-      a.baselineFimStr = a.fimStr;
+      a.baselineInicioStr   = a.inicioStr;
+      a.baselineFimStr      = a.fimStr;
     });
+
     linhaBaseSalva = true;
     document.getElementById("badge-base").style.display = "inline-block";
+
     calcularPlanejadoEStatus();
     renderTabela();
     renderGantt();
-    alert("Linha de base salva. O % planejado agora é calculado automaticamente pela data de hoje.");
+
+    // 2) envia cronograma completo para o backend
+    await salvarNoServidor(true); // true = modo silencioso
+
+    alert("Linha de base salva e cronograma enviado ao servidor.\nSe o Farol ainda não mostrar, os dados já estão guardados para integração.");
   }
 
   // ===== CRUD local =====
@@ -1060,7 +1074,8 @@
     document.getElementById("duracao").value = "";
     document.getElementById("inicio").min = "";
     document.getElementById("predecessora").value = "";
-    document.getElementById("diasComerciais").checked = false;
+    // padrão: dias úteis marcados
+    document.getElementById("diasComerciais").checked = true;
     limparDestaqueEdicao();
   }
 
@@ -1244,6 +1259,8 @@
     a.realPercent = perc;
     calcularPlanejadoEStatus();
     renderTabela();
+    // salva automaticamente o % real no backend
+    salvarRealNoServidor(a);
   }
 
   function obterNomePredecessora(item) {
@@ -1421,6 +1438,90 @@
     alert("Cronograma recalculado com base nas predecessoras (efeito dominó).");
   }
 
+  async function salvarNoServidor(silencioso = false) {
+    const obraNome = getObraSelecionadaNome();
+    const obraId   = getObraSelecionadaId();
+    const coordenador = document.getElementById("coordenador").value.trim();
+
+    if (!obraNome) {
+      if (!silencioso) alert("Selecione a Obra para salvar no servidor.");
+      return;
+    }
+    if (atividades.length === 0) {
+      if (!silencioso) alert("Não há atividades para salvar.");
+      return;
+    }
+
+    const payload = {
+      obra: obraNome,
+      obraId: obraId || null,
+      coordenador,
+      linhaBaseSalva,
+      atividades: atividades.map(a => ({
+        id: a.id,
+        atividade: a.atividade,
+        responsavel: a.responsavel,
+        inicioStr: a.inicioStr,
+        fimStr: a.fimStr,
+        duracaoDias: a.duracaoDias,
+        diasComerciais: !!a.diasComerciais,
+        predecessorId: a.predecessorId,
+        realPercent: a.realPercent,
+        plannedPercent: a.plannedPercent,
+        baselineInicioStr: a.baselineInicioStr,
+        baselineFimStr: a.baselineFimStr,
+        baselineDuracaoDias: a.baselineDuracaoDias
+      }))
+    };
+
+    try {
+      const resp = await fetch(API_SAVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.sucesso === false) {
+        console.error("salvar_cronograma.php ->", data);
+        if (!silencioso) alert("Erro ao salvar cronograma no servidor: " + (data.mensagem || resp.statusText));
+        return;
+      }
+      if (!silencioso) alert("Cronograma salvo no servidor com sucesso.");
+    } catch (e) {
+      console.error("Erro comunicação salvar_cronograma:", e);
+      if (!silencioso) alert("Falha na comunicação com o servidor ao salvar.");
+    }
+  }
+
+  async function salvarRealNoServidor(atividade) {
+    const obraNome = getObraSelecionadaNome();
+    const obraId   = getObraSelecionadaId();
+
+    if (!obraNome || !atividade) return;
+
+    const payload = {
+      obra: obraNome,
+      obraId: obraId || null,
+      idAtividade: atividade.id,
+      atividade: atividade.atividade,
+      realPercent: atividade.realPercent
+    };
+
+    try {
+      const resp = await fetch(API_SAVE_REAL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.sucesso === false) {
+        console.error("salvar_real.php ->", data);
+      }
+    } catch (e) {
+      console.error("Erro comunicação salvar_real:", e);
+    }
+  }
+
   function exportarJSON() {
     if (atividades.length === 0) {
       alert("Não há atividades para exportar.");
@@ -1455,7 +1556,6 @@
     aTag.click();
     URL.revokeObjectURL(url);
   }
-
 
   // ===== Carregar combos do backend =====
   async function carregarObrasDropdown(idSelecionadoDaURL) {
@@ -1495,118 +1595,113 @@
     }
   }
 
-async function carregarCoordenadoresDropdown() {
-  try {
-    const resp = await fetch(API_LIST_COORDENADORES);
-    const raw = await resp.json();
-    console.log("listar_coordenadores.php ->", raw);
+  async function carregarCoordenadoresDropdown() {
+    try {
+      const resp = await fetch(API_LIST_COORDENADORES);
+      const raw = await resp.json();
+      console.log("listar_coordenadores.php ->", raw);
 
-    // Pode vir array simples ["GUSTAVO", ...] ou objeto com campo de lista
-    let lista = [];
-    if (Array.isArray(raw)) {
-      lista = raw;
-    } else if (Array.isArray(raw.dados)) {
-      lista = raw.dados;
-    } else if (Array.isArray(raw.coordenadores)) {
-      lista = raw.coordenadores;
-    } else if (Array.isArray(raw.lista)) {
-      lista = raw.lista;
-    }
-
-    if (!Array.isArray(lista)) lista = [];
-
-    cacheCoordenadores = lista;
-
-    const sel = document.getElementById("coordenador");
-    sel.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "Selecione o coordenador";
-    sel.appendChild(opt0);
-
-    lista.forEach(c => {
-      let nome = "";
-
-      if (typeof c === "string") {
-        nome = c;                         // <-- caso do seu PHP
-      } else {
-        nome =
-          c.nome ||
-          c.coordenador ||
-          c.nome_coordenador ||
-          c.label ||
-          "";
+      let lista = [];
+      if (Array.isArray(raw)) {
+        lista = raw;
+      } else if (Array.isArray(raw.dados)) {
+        lista = raw.dados;
+      } else if (Array.isArray(raw.coordenadores)) {
+        lista = raw.coordenadores;
+      } else if (Array.isArray(raw.lista)) {
+        lista = raw.lista;
       }
 
-      if (!nome) return;
+      if (!Array.isArray(lista)) lista = [];
 
-      const opt = document.createElement("option");
-      opt.value = nome;
-      opt.textContent = nome;
-      sel.appendChild(opt);
-    });
-  } catch (e) {
-    console.error("Erro ao carregar coordenadores:", e);
-  }
-}
+      cacheCoordenadores = lista;
 
+      const sel = document.getElementById("coordenador");
+      sel.innerHTML = "";
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "Selecione o coordenador";
+      sel.appendChild(opt0);
 
+      lista.forEach(c => {
+        let nome = "";
 
-async function carregarResponsaveisDropdown() {
-  try {
-    const resp = await fetch(API_LIST_RESPONSAVEIS);
-    const raw = await resp.json();
-    console.log("listar_responsaveis.php ->", raw);
+        if (typeof c === "string") {
+          nome = c;
+        } else {
+          nome =
+            c.nome ||
+            c.coordenador ||
+            c.nome_coordenador ||
+            c.label ||
+            "";
+        }
 
-    let lista = [];
-    if (Array.isArray(raw)) {
-      lista = raw;                        // <-- caso do seu PHP
-    } else if (Array.isArray(raw.dados)) {
-      lista = raw.dados;
-    } else if (Array.isArray(raw.responsaveis)) {
-      lista = raw.responsaveis;
-    } else if (Array.isArray(raw.lista)) {
-      lista = raw.lista;
+        if (!nome) return;
+
+        const opt = document.createElement("option");
+        opt.value = nome;
+        opt.textContent = nome;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.error("Erro ao carregar coordenadores:", e);
     }
+  }
 
-    if (!Array.isArray(lista)) lista = [];
+  async function carregarResponsaveisDropdown() {
+    try {
+      const resp = await fetch(API_LIST_RESPONSAVEIS);
+      const raw = await resp.json();
+      console.log("listar_responsaveis.php ->", raw);
 
-    cacheResponsaveis = lista;
-
-    const sel = document.getElementById("responsavel");
-    sel.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "Selecione o responsável";
-    sel.appendChild(opt0);
-
-    lista.forEach(r => {
-      let nome = "";
-
-      if (typeof r === "string") {
-        nome = r;                         // <-- caso do seu PHP
-      } else {
-        nome =
-          r.nome ||
-          r.responsavel ||
-          r.nome_responsavel ||
-          r.label ||
-          "";
+      let lista = [];
+      if (Array.isArray(raw)) {
+        lista = raw;
+      } else if (Array.isArray(raw.dados)) {
+        lista = raw.dados;
+      } else if (Array.isArray(raw.responsaveis)) {
+        lista = raw.responsaveis;
+      } else if (Array.isArray(raw.lista)) {
+        lista = raw.lista;
       }
 
-      if (!nome) return;
+      if (!Array.isArray(lista)) lista = [];
 
-      const opt = document.createElement("option");
-      opt.value = nome;
-      opt.textContent = nome;
-      sel.appendChild(opt);
-    });
-  } catch (e) {
-    console.error("Erro ao carregar responsáveis:", e);
+      cacheResponsaveis = lista;
+
+      const sel = document.getElementById("responsavel");
+      sel.innerHTML = "";
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "Selecione o responsável";
+      sel.appendChild(opt0);
+
+      lista.forEach(r => {
+        let nome = "";
+
+        if (typeof r === "string") {
+          nome = r;
+        } else {
+          nome =
+            r.nome ||
+            r.responsavel ||
+            r.nome_responsavel ||
+            r.label ||
+            "";
+        }
+
+        if (!nome) return;
+
+        const opt = document.createElement("option");
+        opt.value = nome;
+        opt.textContent = nome;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.error("Erro ao carregar responsáveis:", e);
+    }
   }
-}
-
-
 
   // ===== init =====
   document.getElementById("predecessora").addEventListener("change", onPredecessoraChange);
@@ -1625,6 +1720,8 @@ async function carregarResponsaveisDropdown() {
       carregarResponsaveisDropdown()
     ]);
     if (idObra) {
+      // próximo passo: aqui podemos chamar carregar_cronograma.php
+      // para buscar o cronograma salvo dessa obra, se você quiser.
     }
   })();
 </script>
