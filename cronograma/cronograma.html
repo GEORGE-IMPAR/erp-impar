@@ -508,7 +508,7 @@
       </div>
 
       <div class="footer-crono">
-        <span>ERP ÍMPAR • Módulo Cronograma • v2.5 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
+        <span>ERP ÍMPAR • Módulo Cronograma • v2.6 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
       </div>
     </div>
   </div>
@@ -746,87 +746,122 @@ function slugifyObra(obra) {
     info.innerHTML = partes.length ? partes.join(" • ") : "";
   }
 
-  function atualizarResumoObra() {
-    const resumo = document.getElementById("resumo-obra");
-    if (atividades.length === 0) {
-      resumo.innerHTML = "";
-      return;
+// Novo helper: devolve os dados do resumo para JSON e para a tela
+function calcularResumoObraDados() {
+  if (atividades.length === 0) {
+    return null;
+  }
+
+  let baselineInicio = null;
+  let baselineFim = null;
+  let realInicio = null;
+  let realFim = null;
+
+  let totalPlanPeso = 0;
+  let somaPlan = 0;
+  let totalRealPeso = 0;
+  let somaReal = 0;
+
+  atividades.forEach(a => {
+    if (a.baselineInicio && a.baselineFim) {
+      if (!baselineInicio || a.baselineInicio < baselineInicio) baselineInicio = a.baselineInicio;
+      if (!baselineFim || a.baselineFim > baselineFim) baselineFim = a.baselineFim;
     }
-    let baselineInicio = null;
-    let baselineFim = null;
-    let realInicio = null;
-    let realFim = null;
+    if (!realInicio || a.inicio < realInicio) realInicio = a.inicio;
+    if (!realFim || a.fim > realFim) realFim = a.fim;
 
-    let totalPlanPeso = 0;
-    let somaPlan = 0;
-    let totalRealPeso = 0;
-    let somaReal = 0;
+    const pesoPlan = a.baselineDuracaoDias || a.duracaoDias || 0;
+    const pesoReal = a.duracaoDias || 0;
+    const pr = a.plannedPercent || 0;
+    const rr = a.realPercent || 0;
 
-    atividades.forEach(a => {
-      if (a.baselineInicio && a.baselineFim) {
-        if (!baselineInicio || a.baselineInicio < baselineInicio) baselineInicio = a.baselineInicio;
-        if (!baselineFim || a.baselineFim > baselineFim) baselineFim = a.baselineFim;
-      }
-      if (!realInicio || a.inicio < realInicio) realInicio = a.inicio;
-      if (!realFim || a.fim > realFim) realFim = a.fim;
+    if (pesoPlan > 0) {
+      somaPlan += pr * pesoPlan;
+      totalPlanPeso += pesoPlan;
+    }
+    if (pesoReal > 0) {
+      somaReal += rr * pesoReal;
+      totalRealPeso += pesoReal;
+    }
+  });
 
-      const pesoPlan = a.baselineDuracaoDias || a.duracaoDias || 0;
-      const pesoReal = a.duracaoDias || 0;
-      const pr = a.plannedPercent || 0;
-      const rr = a.realPercent || 0;
+  const percPlan = totalPlanPeso ? Math.round(somaPlan / totalPlanPeso) : 0;
+  const percReal = totalRealPeso ? Math.round(somaReal / totalRealPeso) : 0;
 
-      if (pesoPlan > 0) {
-        somaPlan += pr * pesoPlan;
-        totalPlanPeso += pesoPlan;
-      }
-      if (pesoReal > 0) {
-        somaReal += rr * pesoReal;
-        totalRealPeso += pesoReal;
-      }
-    });
+  let statusObra = "Não iniciado";
+  let statusClasse = "status-nao-iniciado";
 
-    const percPlan = totalPlanPeso ? Math.round(somaPlan / totalPlanPeso) : 0;
-    const percReal = totalRealPeso ? Math.round(somaReal / totalRealPeso) : 0;
-
-    let statusObra = "Não iniciado";
-    let statusClasse = "status-nao-iniciado";
-
-    if (percReal >= 100 && percPlan >= 100) {
-      statusObra = "Concluído";
-      statusClasse = "status-concluido";
-    } else if (percReal < percPlan) {
-      if (percReal === 0 && percPlan === 0) {
-        statusObra = "Não iniciado";
-        statusClasse = "status-nao-iniciado";
-      } else {
-        statusObra = "Atrasado";
-        statusClasse = "status-atrasado";
-      }
-    } else if (percReal === 0 && percPlan === 0) {
+  if (percReal >= 100 && percPlan >= 100) {
+    statusObra = "Concluído";
+    statusClasse = "status-concluido";
+  } else if (percReal < percPlan) {
+    if (percReal === 0 && percPlan === 0) {
       statusObra = "Não iniciado";
       statusClasse = "status-nao-iniciado";
     } else {
-      statusObra = "Em andamento";
-      statusClasse = "status-em-andamento";
+      statusObra = "Atrasado";
+      statusClasse = "status-atrasado";
     }
-
-    let parteDatas = [];
-    if (baselineInicio && baselineFim) {
-      parteDatas.push(
-        `Baseline: <strong>${formatDateBr(baselineInicio)}</strong> → <strong>${formatDateBr(baselineFim)}</strong>`
-      );
-    }
-    if (realInicio && realFim) {
-      parteDatas.push(
-        `Atual: <strong>${formatDateBr(realInicio)}</strong> → <strong>${formatDateBr(realFim)}</strong>`
-      );
-    }
-
-    resumo.innerHTML =
-      (parteDatas.length ? parteDatas.join(" • ") + " • " : "") +
-      `Planejado: <strong>${percPlan}%</strong> • Real: <strong>${percReal}%</strong> • ` +
-      `Situação: <strong class="${statusClasse}">${statusObra}</strong>`;
+  } else if (percReal === 0 && percPlan === 0) {
+    statusObra = "Não iniciado";
+    statusClasse = "status-nao-iniciado";
+  } else {
+    statusObra = "Em andamento";
+    statusClasse = "status-em-andamento";
   }
+
+  return {
+    baselineInicio,
+    baselineFim,
+    realInicio,
+    realFim,
+    percPlanejado: percPlan,
+    percReal,
+    status: statusObra,
+    statusClasse
+  };
+}
+
+// Continua tendo a função que escreve o texto na tela:
+function atualizarResumoObra() {
+  const resumoEl = document.getElementById("resumo-obra");
+  const dados = calcularResumoObraDados();
+
+  if (!dados) {
+    resumoEl.innerHTML = "";
+    return;
+  }
+
+  const {
+    baselineInicio,
+    baselineFim,
+    realInicio,
+    realFim,
+    percPlanejado,
+    percReal,
+    status,
+    statusClasse
+  } = dados;
+
+  let partes = [];
+  if (baselineInicio && baselineFim) {
+    partes.push(
+      `Baseline: <strong>${formatDateBr(baselineInicio)}</strong> → <strong>${formatDateBr(baselineFim)}</strong>`
+    );
+  }
+  if (realInicio && realFim) {
+    partes.push(
+      `Atual: <strong>${formatDateBr(realInicio)}</strong> → <strong>${formatDateBr(realFim)}</strong>`
+    );
+  }
+
+  resumoEl.innerHTML =
+    (partes.length ? partes.join(" • ") + " • " : "") +
+    `Planejado: <strong>${percPlanejado}%</strong> • ` +
+    `Real: <strong>${percReal}%</strong> • ` +
+    `Situação: <strong class="${statusClasse}">${status}</strong>`;
+}
+
 
   function atualizarListaPredecessoras() {
     const select = document.getElementById("predecessora");
@@ -1001,6 +1036,7 @@ async function salvarLinhaBase() {
   calcularPlanejadoEStatus();
   renderTabela();
   renderGantt();
+  const resumoObra = calcularResumoObraDados();
 
   // 2) Monta os dados para o backend
   const { id: obraId, nome: obraNome } = getObraSelecionada();
@@ -1029,13 +1065,15 @@ async function salvarLinhaBase() {
     modo: a.modo || "Corridos"
   }));
 
-  const payloadBaseline = {
-    arquivo: arquivo,
-    id: obraId || "",          // ex: "036"
-    obra: obraNome,
-    coordenador,
-    atividades: atividadesBaseline
-  };
+const payloadBaseline = {
+  arquivo: arquivo,
+  id: obraId || "",
+  obra: obraNome,
+  coordenador,
+  resumoObra,              // <<< NOVO BLOCO
+  atividades: atividadesBaseline
+};
+
 
   console.log("Enviando baseline:", payloadBaseline);
 
@@ -1983,3 +2021,4 @@ async function carregarCronogramaServidor(obraId, obraNome) {
 </script>
 </body>
 </html>
+
