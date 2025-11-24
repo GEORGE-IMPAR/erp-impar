@@ -508,7 +508,7 @@
       </div>
 
       <div class="footer-crono">
-        <span>ERP ÍMPAR • Módulo Cronograma • v2.8 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
+        <span>ERP ÍMPAR • Módulo Cronograma • v2.9 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
       </div>
     </div>
   </div>
@@ -1015,57 +1015,104 @@ function atualizarResumoObra() {
   }
 
 async function salvarLinhaBase() {
+  // 1) Validações básicas
+  if (atividades.length === 0) {
+    alert("Cadastre pelo menos uma atividade antes de salvar a linha de base.");
+    return;
+  }
+
+  const { id: obraId, nome: obraNome } = getObraSelecionada();
+  const coordenador = document.getElementById("coordenador").value.trim();
+
+  if (!obraNome) {
+    alert("Selecione a Obra antes de salvar a linha de base.");
+    return;
+  }
+  if (!coordenador) {
+    alert("Selecione o Coordenador antes de salvar a linha de base.");
+    return;
+  }
+
+  // 2) Congela baseline localmente (isso mantém o cálculo do planejado funcionando)
+  atividades.forEach(a => {
+    a.baselineInicio      = new Date(a.inicio.getTime());
+    a.baselineFim         = new Date(a.fim.getTime());
+    a.baselineDuracaoDias = a.duracaoDias;
+    a.baselineInicioStr   = a.inicioStr;
+    a.baselineFimStr      = a.fimStr;
+  });
+
+  linhaBaseSalva = true;
+
+  const badge = document.getElementById("badge-base");
+  if (badge) badge.style.display = "inline-block";
+
+  // Recalcula planejado / status / resumo ANTES de enviar pro servidor
+  calcularPlanejadoEStatus();
+  renderTabela();
+  renderGantt();
+  atualizarResumoObra && atualizarResumoObra();
+
+  // 3) Monta o payload para o PHP
+  const arquivo = getArquivoNome(obraNome, obraId);
+  if (!arquivo) {
+    alert("Não foi possível definir o nome do arquivo do cronograma.");
+    return;
+  }
+
+  const atividadesBaseline = atividades.map(a => ({
+    id: a.id,
+    atividade: a.atividade,
+    responsavel: a.responsavel,
+    inicio: a.inicioStr,        // "yyyy-mm-dd"
+    fim: a.fimStr,              // "yyyy-mm-dd"
+    duracaoDias: a.duracaoDias,
+    diasUteis: !!a.diasComerciais,
+    predecessorId: a.predecessorId || null,
+    modo: a.modo || (a.diasComerciais ? "Comercial" : "Corridos")
+  }));
+
+  const payloadBaseline = {
+    arquivo: arquivo,           // ex: obra_003.json
+    id: obraId || "",           // ex: "003"
+    obra: obraNome,
+    coordenador,
+    atividades: atividadesBaseline
+  };
+
+  console.log("Enviando baseline para salvar_baseline.php:", payloadBaseline);
+
+  // 4) Chama o PHP de baseline
+  try {
+    const respBase = await fetch(API_SAVE_BASELINE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payloadBaseline)
+    });
+
+    // Se o servidor devolver HTML de erro, o .json() vai falhar – tratamos isso
+    let dataBase = null;
     try {
-        if (!obraSelecionada || !coordenadorSelecionado) {
-            alert("Selecione a obra e o coordenador antes de salvar a baseline.");
-            return;
-        }
-
-        // Monta payload que será salvo no JSON da obra
-        const payloadBaseline = {
-            id: obraSelecionada.id,
-            obra: obraSelecionada.nome,
-            coordenador: coordenadorSelecionado,
-            arquivo: obraSelecionada.arquivo,
-            atividades: atividades.map(a => ({
-                id: a.id,
-                atividade: a.atividade,
-                responsavel: a.responsavel,
-                inicio: a.inicio,
-                fim: a.fim,
-                duracaoDias: a.duracaoDias,
-                diasUteis: a.diasUteis,
-                predecessorId: a.predecessorId,
-                modo: a.modo
-            }))
-        };
-
-        console.log("Enviando baseline:", payloadBaseline);
-
-        // Envia usando FORM-URLENCODED — compatível com o PHP NOVO
-        const respBase = await fetch(API_SAVE_BASELINE, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
-            },
-            body: "json=" + encodeURIComponent(JSON.stringify(payloadBaseline))
-        });
-
-        const resposta = await respBase.json();
-        console.log("Resposta baseline:", resposta);
-
-        if (!resposta.success) {
-            throw new Error(resposta.message || "Erro desconhecido ao salvar baseline.");
-        }
-
-        alert("Linha de base salva com sucesso e integrada ao Farol!");
+      dataBase = await respBase.json();
+    } catch (e) {
+      console.error("Resposta não-JSON do salvar_baseline.php:", e);
     }
 
-    catch (e) {
-        console.error("Erro ao salvar baseline:", e);
-        alert("Falha na comunicação com o servidor ao salvar a baseline.");
+    console.log("Resposta salvar_baseline.php:", dataBase);
+
+    if (!respBase.ok || (dataBase && dataBase.error)) {
+      alert("Erro ao salvar baseline no servidor: " +
+            ((dataBase && dataBase.message) || respBase.statusText));
+      return;
     }
+
+    alert("Linha de base salva com sucesso e integrada ao Farol.");
+  } catch (e) {
+    console.error("Erro ao salvar baseline:", e);
+    alert("Falha na comunicação com o servidor ao salvar a baseline.");
+  }
 }
+
 
 
 
