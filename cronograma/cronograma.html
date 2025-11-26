@@ -508,7 +508,7 @@
       </div>
 
       <div class="footer-crono">
-        <span>ERP ÍMPAR • Módulo Cronograma • v2.14 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
+        <span>ERP ÍMPAR • Módulo Cronograma • v2.15 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
       </div>
     </div>
   </div>
@@ -1982,68 +1982,75 @@ async function salvarNoServidor() {
 
 
   async function salvarRealNoServidor(atividade) {
-    const obraNome = getObraSelecionadaNome();
-    const obraId   = getObraSelecionadaId();
-    if (!obraNome || !atividade) return;
+  const obra = document.getElementById("obra").value.trim();
+  const coordenador = document.getElementById("coordenador").value.trim();
 
-    const payload = {
-      obra: obraNome,
-      obraId: obraId || null,
-      idAtividade: atividade.id,
-      atividade: atividade.atividade,
-      realPercent: atividade.realPercent
-    };
-
-    try {
-      const resp = await fetch(API_SAVE_REAL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      if (!resp.ok || data.sucesso === false) {
-        console.error("salvar_real.php ->", data);
-      }
-    } catch (e) {
-      console.error("Erro comunicação salvar_real:", e);
-    }
+  if (!arquivoCronograma) {
+    alert("Nenhum arquivo de obra associado (ex.: obra_036.json). Abra o cronograma pelo Farol.");
+    return;
+  }
+  if (!obra) {
+    alert("Preencha o nome da Obra para salvar no servidor.");
+    return;
+  }
+  if (atividades.length === 0) {
+    alert("Não há atividades para salvar.");
+    return;
   }
 
-  function exportarJSON() {
-    if (atividades.length === 0) {
-      alert("Não há atividades para exportar.");
-      return;
-    }
-    const dados = atividades.map((a, i) => ({
-      ordem: i + 1,
+  const payload = {
+    arquivo: arquivoCronograma,        // ex.: "obra_036.json"
+    id: idObra,                        // ex.: "036"
+    obra: obra,
+    coordenador: coordenador,
+    atividades: atividades.map(a => ({
       id: a.id,
-      obraId: a.obraId || null,
-      obra: a.obra,
-      coordenador: a.coordenador,
       atividade: a.atividade,
       responsavel: a.responsavel,
+      duracao: a.duracaoDias,
       inicio: a.inicioStr,
       fim: a.fimStr,
-      duracaoDias: a.duracaoDias,
-      diasComerciais: !!a.diasComerciais,
-      status: a.status,
-      plannedPercent: a.plannedPercent,
-      realPercent: a.realPercent,
-      predecessorId: a.predecessorId,
-      predecessora: obterNomePredecessora(a),
-      baselineInicio: a.baselineInicioStr,
-      baselineFim: a.baselineFimStr,
-      baselineDuracaoDias: a.baselineDuracaoDias
-    }));
-    const blob = new Blob([JSON.stringify(dados, null, 2)], { type:"application/json" });
-    const url = URL.createObjectURL(blob);
-    const aTag = document.createElement("a");
-    aTag.href = url;
-    aTag.download = "cronograma_impar.json";
-    aTag.click();
-    URL.revokeObjectURL(url);
-  }
+      percentual: a.realPercent || 0,
+      predecessora: a.predecessorId ? String(a.predecessorId) : "0",
+      dias_comerciais: !!a.diasComerciais
+    }))
+  };
 
+  console.log("Salvar REAL payload:", payload);
+
+  try {
+    const resp = await fetch("https://api.erpimpar.com.br/cronograma/salvar_real.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const texto = await resp.text();
+    console.log("Resposta salvar_real.php:", texto);
+
+    if (!resp.ok) {
+      alert("Erro HTTP ao salvar andamento real: " + resp.status);
+      return;
+    }
+
+    let data;
+    try {
+      data = JSON.parse(texto);
+    } catch (_) {
+      data = {};
+    }
+
+    if (data.error) {
+      alert("Erro ao salvar andamento real: " + (data.message || "retorno de erro do servidor."));
+      return;
+    }
+
+    alert("Andamento real salvo com sucesso no arquivo " + arquivoCronograma + ".");
+  } catch (e) {
+    console.error("Exceção no fetch salvar_real:", e);
+    alert("Falha na comunicação com o servidor ao salvar o andamento real.");
+  }
+}
   // ===== Carregar combos do backend =====
   async function carregarObrasDropdown(idSelecionadoDaURL) {
     try{
