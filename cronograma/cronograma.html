@@ -646,6 +646,11 @@ async function carregarCronogramaPorArquivo(arquivo) {
     }
 
     const json = await resp.json();
+    
+    // guarda para usar no salvar
+    arquivoCronograma = json.arquivo || arquivo;
+    idObra = json.id || null;
+
     if (!json || json.error) {
       alert("Nenhum cronograma encontrado para este arquivo.");
       return;
@@ -731,6 +736,18 @@ async function carregarCronogramaPorArquivo(arquivo) {
       desenharGantt();
     }
 
+    // depois que montar todas as atividades:
+    if (typeof recalcularCronograma === "function") {
+      // usa exatamente a mesma rotina do botão
+      recalcularCronograma();
+      } else {
+        calcularPlanejadoEStatus();
+        renderTabela();
+        renderGantt();
+       }
+     }
+
+
   } catch (e) {
     console.error(e);
     alert("Erro ao carregar cronograma da obra (erro de rede/JSON).");
@@ -746,6 +763,9 @@ async function carregarCronogramaPorArquivo(arquivo) {
   let cacheObras = [];
   let cacheCoordenadores = [];
   let cacheResponsaveis = [];
+
+  let arquivoCronograma = null; // ex.: "obra_036.json"
+  let idObra = null;            // ex.: "036"
 
   // -------- navegação ----------
   document.getElementById("btnVoltarMenu").addEventListener("click", () => {
@@ -1889,68 +1909,61 @@ const resumoObra = calcularResumoObraDados();
     alert("Cronograma recalculado com base nas predecessoras (efeito dominó).");
   }
 
-async function salvarNoServidor(silencioso = false) {
-  const obraNome = getObraSelecionadaNome();
-  const obraId   = getObraSelecionadaId();
+async function salvarNoServidor() {
+  const obra = document.getElementById("obra").value.trim();
   const coordenador = document.getElementById("coordenador").value.trim();
 
-  if (!obraNome) {
-    if (!silencioso) alert("Selecione a Obra para salvar no servidor.");
+  if (!arquivoCronograma) {
+    alert("Nenhum arquivo de obra associado (ex.: obra_036.json). Abra pelo Farol ou selecione a obra corretamente.");
+    return;
+  }
+
+  if (!obra) {
+    alert("Preencha o nome da Obra para salvar no servidor.");
     return;
   }
   if (atividades.length === 0) {
-    if (!silencioso) alert("Não há atividades para salvar.");
+    alert("Não há atividades para salvar.");
     return;
   }
 
-  const arquivo = getArquivoNome(obraNome, obraId);
-  if (!arquivo) {
-    if (!silencioso) alert("Não foi possível definir o nome do arquivo do cronograma.");
-    return;
-  }
-
+  // monta o payload no formato esperado pelo salvar_real.php
   const payload = {
-    obra: obraNome,
-    obraId: obraId || null,
+    arquivo: arquivoCronograma,
+    id: idObra,
+    obra,
     coordenador,
-    linhaBaseSalva,
-    arquivo,
     atividades: atividades.map(a => ({
       id: a.id,
       atividade: a.atividade,
       responsavel: a.responsavel,
-      inicioStr: a.inicioStr,
-      fimStr: a.fimStr,
-      duracaoDias: a.duracaoDias,
-      diasComerciais: !!a.diasComerciais,
-      predecessorId: a.predecessorId,
-      realPercent: a.realPercent,
-      plannedPercent: a.plannedPercent,
-      baselineInicioStr: a.baselineInicioStr,
-      baselineFimStr: a.baselineFimStr,
-      baselineDuracaoDias: a.baselineDuracaoDias
+      duracao: a.duracaoDias,                    // vira "duracao"
+      inicio: a.inicioStr,                       // "2025-11-13"
+      fim: a.fimStr,                             // "2025-11-17"
+      percentual: a.realPercent || 0,            // % real
+      predecessora: a.predecessorId ? String(a.predecessorId) : "0",
+      dias_comerciais: !!a.diasComerciais
     }))
   };
 
   try {
-    const resp = await fetch(
-      API_SAVE_URL + "?arquivo=" + encodeURIComponent(arquivo),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
-    );
+    const resp = await fetch(API_SALVAR_REAL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
     const data = await resp.json();
-    if (!resp.ok || data.sucesso === false) {
-      console.error("salvar_cronograma.php ->", data);
-      if (!silencioso) alert("Erro ao salvar cronograma no servidor: " + (data.mensagem || resp.statusText));
+    if (!resp.ok || data.error) {
+      console.error(data);
+      alert("Erro ao salvar andamento real: " + (data.message || resp.statusText));
       return;
     }
-    if (!silencioso) alert("Cronograma salvo no servidor com sucesso.");
+
+    alert("Andamento real salvo com sucesso.\nArquivo: " + (data.arquivo || arquivoCronograma));
   } catch (e) {
-    console.error("Erro comunicação salvar_cronograma:", e);
-    if (!silencioso) alert("Falha na comunicação com o servidor ao salvar.");
+    console.error(e);
+    alert("Falha na comunicação com o servidor ao salvar o andamento real.");
   }
 }
 
