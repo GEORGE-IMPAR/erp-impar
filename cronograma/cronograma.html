@@ -532,6 +532,212 @@
   const API_SAVE_BASELINE = API_BASE + "/salvar_baseline.php";
   const API_SAVE_REAL      = API_BASE + "/salvar_real.php";
 
+// --- Converte JSON da obra (obra_036.json) em lista de atividades do front ---
+// Estrutura nova: baseline.versoes[].atividades + real.atividades
+function montarAtividadesDeJsonCronograma(json) {
+  const obraNome = json.obra || "";
+  const obraId   = json.id   || "";
+  const coord    = json.coordenador || "";
+
+  // Pega a última versão da baseline
+  let atividadesBase = [];
+  if (json.baseline && Array.isArray(json.baseline.versoes) && json.baseline.versoes.length) {
+    const ultimaVersao = json.baseline.versoes[json.baseline.versoes.length - 1];
+    if (ultimaVersao && Array.isArray(ultimaVersao.atividades)) {
+      atividadesBase = ultimaVersao.atividades;
+    }
+  }
+
+  // Atividades reais (podem estar vazias)
+  const realAtividades = (json.real && Array.isArray(json.real.atividades))
+    ? json.real.atividades
+    : [];
+
+  // Mapa por id para casar baseline x real
+  const mapaReal = {};
+  realAtividades.forEach(r => {
+    const key =
+      r.id != null ? String(r.id) :
+      (r.idBaseline != null ? String(r.idBaseline) : null);
+    if (key) mapaReal[key] = r;
+  });
+
+  const lista = atividadesBase.map((b, idx) => {
+    const key = b.id != null ? String(b.id) : String(idx);
+    const r   = mapaReal[key] || {};
+
+    const baselineInicioStr = b.inicio || b.inicioStr || "";
+    const baselineFimStr    = b.fim    || b.fimStr    || "";
+
+    const inicioRealStr = r.inicio || r.inicioStr || baselineInicioStr;
+    const fimRealStr    = r.fim    || r.fimStr    || baselineFimStr;
+
+    const baselineInicio = baselineInicioStr ? parseDate(baselineInicioStr) : null;
+    const baselineFim    = baselineFimStr    ? parseDate(baselineFimStr)    : null;
+
+    const diasComerciaisRaw =
+      r.diasComerciais ?? r.dias_comerciais ?? r.diasUteis ??
+      b.diasComerciais ?? b.diasUteis ??
+      (b.modo === "Comercial");
+
+    const diasComerciais = !!diasComerciaisRaw;
+
+    const inicio = inicioRealStr ? parseDate(inicioRealStr) : null;
+    const fim    = fimRealStr    ? parseDate(fimRealStr)    : null;
+
+    let duracaoDias = r.duracaoDias || r.duracao || b.duracaoDias || 0;
+    if (!duracaoDias && inicio && fim) {
+      duracaoDias = calcularDuracao(inicio, fim, diasComerciais);
+    }
+
+    const baselineDuracaoDias = b.duracaoDias ||
+      (baselineInicio && baselineFim
+        ? calcularDuracao(baselineInicio, baselineFim, diasComerciais)
+        : duracaoDias);
+
+    const realPercent = Number(r.realPercent || r.percentual || 0) || 0;
+
+    return {
+      id: b.id,
+      obra: obraNome,
+      obraId: obraId,
+      coordenador: coord,
+      atividade: b.atividade || "",
+      responsavel: (r.responsavel || b.responsavel || "").toString(),
+
+      inicio,
+      fim,
+      inicioStr: inicioRealStr || "",
+      fimStr: fimRealStr || "",
+      duracaoDias,
+      diasComerciais,
+      predecessorId: r.predecessorId ?? b.predecessorId ?? null,
+      modo: b.modo || (diasComerciais ? "Comercial" : "Corridos"),
+
+      plannedPercent: 0,      // será recalculado pela lógica já existente
+      realPercent: realPercent,
+
+      baselineInicio,
+      baselineFim,
+      baselineInicioStr,
+      baselineFimStr,
+      baselineDuracaoDias
+    };
+  });
+
+  return {
+    atividades: lista,
+    obraNome,
+    obraId,
+    coordenador: coord
+  };
+}
+
+// --- Carrega cronograma a partir de um arquivo específico (obra_036.json) ---
+async function carregarCronogramaPorArquivo(arquivo) {
+  if (!arquivo) return;
+
+  try {
+    const url = API_LOAD_URL + "?arquivo=" + encodeURIComponent(arquivo);
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      alert("Erro ao carregar cronograma da obra (" + resp.status + ").");
+      return;
+    }
+
+    const json = await resp.json();
+    if (!json || json.error) {
+      alert("Nenhum cronograma encontrado para este arquivo.");
+      return;
+    }
+
+    console.log("Cronograma carregado:", json);
+
+    // Monta lista de atividades
+    const dados = montarAtividadesDeJsonCronograma(json);
+    atividades = dados.atividades || [];
+
+    // Atualiza nextId
+    let maxId = 0;
+    atividades.forEach(a => {
+      if (a.id != null && a.id > maxId) maxId = a.id;
+    });
+    nextId = maxId + 1;
+
+    // Marca baseline salva se tiver baseline no JSON
+    linhaBaseSalva = !!(json.baseline && Array.isArray(json.baseline.versoes) && json.baseline.versoes.length);
+    const badge = document.getElementById("badge-base");
+    if (badge) {
+      badge.style.display = linhaBaseSalva ? "inline-block" : "none";
+    }
+
+    // Seleciona a obra no combo (tenta pelo ID e depois pelo nome)
+    const selObra = document.getElementById("obra");
+    if (selObra) {
+      const alvoId   = (dados.obraId || "").toString().padStart(3, "0");
+      const alvoNome = (dados.obraNome || "").toString().trim();
+
+      let optSelecionada = null;
+
+      if (alvoId) {
+        optSelecionada = [...selObra.options].find(o =>
+          (o.getAttribute("data-id") || "").toString().padStart(3, "0") === alvoId
+        );
+      }
+      if (!optSelecionada && alvoNome) {
+        optSelecionada = [...selObra.options].find(o =>
+          o.textContent.trim() === alvoNome
+        );
+      }
+      if (optSelecionada) {
+        selObra.value = optSelecionada.value;
+      }
+    }
+
+    // Seleciona coordenador
+    const selCoord = document.getElementById("coordenador");
+    if (selCoord && dados.coordenador) {
+      let optCoord = [...selCoord.options].find(o => o.value === dados.coordenador);
+      if (!optCoord) {
+        optCoord = document.createElement("option");
+        optCoord.value = dados.coordenador;
+        optCoord.textContent = dados.coordenador;
+        selCoord.appendChild(optCoord);
+      }
+      selCoord.value = dados.coordenador;
+    }
+
+    // Atualiza header + resumo
+    atualizarHeaderInfo();
+    if (typeof atualizarResumoObra === "function") {
+      atualizarResumoObra();
+    }
+
+    // Atualiza lista de predecessoras
+    if (typeof atualizarListaPredecessoras === "function") {
+      atualizarListaPredecessoras();
+    }
+
+    // Redesenha tabela e Gantt usando as funções que você já tem
+    if (typeof renderTabelaAtividades === "function") {
+      renderTabelaAtividades();
+    } else if (typeof renderTabela === "function") {
+      renderTabela();
+    }
+
+    if (typeof renderGantt === "function") {
+      renderGantt();
+    } else if (typeof desenharGantt === "function") {
+      desenharGantt();
+    }
+
+  } catch (e) {
+    console.error(e);
+    alert("Erro ao carregar cronograma da obra (erro de rede/JSON).");
+  }
+}
+
+
   let atividades = [];
   let nextId = 1;
   let editingIndex = null;
@@ -2135,8 +2341,47 @@ async function carregarCronogramaServidor(obraId, obraNome) {
       }
     }
   })();
+// ================== INIT ==================
+document.addEventListener("DOMContentLoaded", async () => {
+  // Carrega combos básicos
+  if (typeof carregarObrasDropdown === "function") {
+    await carregarObrasDropdown();
+  }
+  if (typeof carregarCoordenadoresDropdown === "function") {
+    await carregarCoordenadoresDropdown();
+  }
+  if (typeof carregarResponsaveisDropdown === "function") {
+    await carregarResponsaveisDropdown();
+  }
+
+  // Lê parâmetro da URL (?arquivo=obra_036.json)
+  const params = new URLSearchParams(window.location.search);
+  const arquivo = params.get("arquivo");
+
+  if (arquivo) {
+    await carregarCronogramaPorArquivo(arquivo);
+  }
+
+  // Listeners dos campos de data / predecessora
+  const selPred = document.getElementById("predecessora");
+  if (selPred) selPred.addEventListener("change", onPredecessoraChange);
+
+  const inpInicio = document.getElementById("inicio");
+  const inpFim    = document.getElementById("fim");
+  const inpDur    = document.getElementById("duracao");
+  const chkDias   = document.getElementById("diasComerciais");
+
+  if (inpInicio) inpInicio.addEventListener("change", onInicioChange);
+  if (inpFim)    inpFim.addEventListener("change", onFimChange);
+  if (inpDur)    inpDur.addEventListener("change", onDuracaoChange);
+  if (chkDias)   chkDias.addEventListener("change", () => {
+    onPredecessoraChange();
+    onInicioChange();
+  });
+});
 
 </script>
 </body>
 </html>
+
 
