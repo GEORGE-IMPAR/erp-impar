@@ -508,7 +508,7 @@
       </div>
 
       <div class="footer-crono">
-        <span>ERP ÍMPAR • Módulo Cronograma • v2.10 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
+        <span>ERP ÍMPAR • Módulo Cronograma • v2.11 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
       </div>
     </div>
   </div>
@@ -2100,21 +2100,42 @@ async function carregarCronogramaServidor(obraId, obraNome) {
     carregarCronogramaParaObraSelecionada();
   });
 
+  // ================== INIT – integração com o Farol ==================
   (async function initCronograma(){
+    // Pega parâmetro id=036 vindo do Farol
     const params = new URLSearchParams(window.location.search);
-    const idObra = params.get("id"); // vindo do Farol
+    const idObraUrl = params.get("id"); // ex.: "036"
+
+    // Carrega combos normalmente
     await Promise.all([
-      carregarObrasDropdown(idObra),
+      carregarObrasDropdown(idObraUrl),
       carregarCoordenadoresDropdown(),
       carregarResponsaveisDropdown()
     ]);
-    if (idObra) {
+
+    // Se veio id pela URL (clique no card do Farol)
+    if (idObraUrl) {
       const selObra = document.getElementById("obra");
-      const obraNome = selObra.value || getObraSelecionadaNome();
-      const obraId = getObraSelecionadaId() || idObra;
-      await carregarCronogramaServidor(obraId, obraNome);
+
+      // Tenta selecionar a opção cuja data-id == idObraUrl
+      for (let i = 0; i < selObra.options.length; i++) {
+        const opt = selObra.options[i];
+        const dataId = opt.getAttribute("data-id");
+        if (dataId && String(dataId).padStart(3, "0") === String(idObraUrl).padStart(3, "0")) {
+          selObra.selectedIndex = i;
+          break;
+        }
+      }
+
+      const { id: obraId, nome: obraNome } = getObraSelecionada();
+
+      if (obraId || obraNome) {
+        // Carrega o cronograma do servidor (obra_XXX.json)
+        await carregarCronogramaServidor(obraId, obraNome);
+      }
     }
   })();
+
 </script>
 </body>
 </html>
