@@ -508,7 +508,7 @@
       </div>
 
       <div class="footer-crono">
-        <span>ERP ÍMPAR • Módulo Cronograma • v2.13 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
+        <span>ERP ÍMPAR • Módulo Cronograma • v2.14 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
       </div>
     </div>
   </div>
@@ -1915,7 +1915,6 @@ async function salvarNoServidor() {
     alert("Nenhum arquivo de obra associado (ex.: obra_036.json). Abra o cronograma pelo Farol.");
     return;
   }
-
   if (!obra) {
     alert("Preencha o nome da Obra para salvar no servidor.");
     return;
@@ -1926,21 +1925,19 @@ async function salvarNoServidor() {
   }
 
   const payload = {
-    arquivo: arquivoCronograma,   // ex.: "obra_036.json"
-    id: idObra,                   // ex.: "036"
+    arquivo: arquivoCronograma,        // ex.: "obra_036.json"
+    id: idObra,                        // ex.: "036"
     obra: obra,
     coordenador: coordenador,
     atividades: atividades.map(a => ({
       id: a.id,
       atividade: a.atividade,
       responsavel: a.responsavel,
-      duracao: a.duracaoDias,               // nome que o PHP espera
+      duracao: a.duracaoDias,
       inicio: a.inicioStr,
       fim: a.fimStr,
       percentual: a.realPercent || 0,
-      predecessora: a.predecessorId
-        ? String(a.predecessorId)
-        : "0",
+      predecessora: a.predecessorId ? String(a.predecessorId) : "0",
       dias_comerciais: !!a.diasComerciais
     }))
   };
@@ -1948,28 +1945,28 @@ async function salvarNoServidor() {
   console.log("Salvar REAL payload:", payload);
 
   try {
-    const resp = await fetch(API_SALVAR_REAL, {
+    const resp = await fetch("https://api.erpimpar.com.br/cronograma/salvar_real.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
+    const texto = await resp.text();
+    console.log("Resposta salvar_real.php:", texto);
+
     if (!resp.ok) {
-      const txt = await resp.text();
-      console.error("Erro HTTP ao salvar_real:", resp.status, txt);
-      alert("Erro ao salvar andamento real (HTTP " + resp.status + "). Veja o console.");
+      alert("Erro HTTP ao salvar andamento real: " + resp.status);
       return;
     }
 
-    let data = {};
+    let data;
     try {
-      data = await resp.json();
-    } catch (e) {
-      console.warn("Resposta não é JSON puro:", await resp.text());
+      data = JSON.parse(texto);
+    } catch (_) {
+      data = {};
     }
 
     if (data.error) {
-      console.error("salvar_real retornou erro:", data);
       alert("Erro ao salvar andamento real: " + (data.message || "retorno de erro do servidor."));
       return;
     }
@@ -1980,6 +1977,7 @@ async function salvarNoServidor() {
     alert("Falha na comunicação com o servidor ao salvar o andamento real.");
   }
 }
+
 
 
 
