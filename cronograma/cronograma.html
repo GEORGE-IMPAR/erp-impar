@@ -508,7 +508,7 @@
       </div>
 
       <div class="footer-crono">
-        <span>ERP ÍMPAR • Módulo Cronograma • v2.11 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
+        <span>ERP ÍMPAR • Módulo Cronograma • v2.12 (baseline x real, % obra, duração, dias úteis, Gantt duplo)</span>
       </div>
     </div>
   </div>
@@ -1912,7 +1912,7 @@ async function salvarNoServidor() {
   const coordenador = document.getElementById("coordenador").value.trim();
 
   if (!arquivoCronograma) {
-    alert("Nenhum arquivo de obra associado (ex.: obra_036.json). Abra pelo Farol ou selecione a obra corretamente.");
+    alert("Nenhum arquivo de obra associado (ex.: obra_036.json). Abra o cronograma pelo Farol.");
     return;
   }
 
@@ -1925,24 +1925,27 @@ async function salvarNoServidor() {
     return;
   }
 
-  // monta o payload no formato esperado pelo salvar_real.php
   const payload = {
-    arquivo: arquivoCronograma,
-    id: idObra,
-    obra,
-    coordenador,
+    arquivo: arquivoCronograma,   // ex.: "obra_036.json"
+    id: idObra,                   // ex.: "036"
+    obra: obra,
+    coordenador: coordenador,
     atividades: atividades.map(a => ({
       id: a.id,
       atividade: a.atividade,
       responsavel: a.responsavel,
-      duracao: a.duracaoDias,                    // vira "duracao"
-      inicio: a.inicioStr,                       // "2025-11-13"
-      fim: a.fimStr,                             // "2025-11-17"
-      percentual: a.realPercent || 0,            // % real
-      predecessora: a.predecessorId ? String(a.predecessorId) : "0",
+      duracao: a.duracaoDias,                     // nome que o PHP espera
+      inicio: a.inicioStr,
+      fim: a.fimStr,
+      percentual: a.realPercent || 0,
+      predecessora: a.predecessorId
+        ? String(a.predecessorId)
+        : "0",
       dias_comerciais: !!a.diasComerciais
     }))
   };
+
+  console.log("Salvar REAL payload:", payload);
 
   try {
     const resp = await fetch(API_SALVAR_REAL, {
@@ -1951,19 +1954,34 @@ async function salvarNoServidor() {
       body: JSON.stringify(payload)
     });
 
-    const data = await resp.json();
-    if (!resp.ok || data.error) {
-      console.error(data);
-      alert("Erro ao salvar andamento real: " + (data.message || resp.statusText));
+    // Se der qualquer erro de rota ou servidor, já te avisa:
+    if (!resp.ok) {
+      const txt = await resp.text();
+      console.error("Erro HTTP ao salvar_real:", resp.status, txt);
+      alert("Erro ao salvar andamento real (HTTP " + resp.status + "). Veja o console (F12 > Network).");
       return;
     }
 
-    alert("Andamento real salvo com sucesso.\nArquivo: " + (data.arquivo || arquivoCronograma));
+    let data = {};
+    try {
+      data = await resp.json();
+    } catch (e) {
+      console.warn("Resposta não é JSON puro, conteúdo:", await resp.text());
+    }
+
+    if (data.error) {
+      console.error("salvar_real retornou erro:", data);
+      alert("Erro ao salvar andamento real: " + (data.message || "retorno de erro do servidor."));
+      return;
+    }
+
+    alert("Andamento real salvo com sucesso no arquivo " + arquivoCronograma + ".");
   } catch (e) {
-    console.error(e);
+    console.error("Exceção no fetch salvar_real:", e);
     alert("Falha na comunicação com o servidor ao salvar o andamento real.");
   }
 }
+
 
 
   async function salvarRealNoServidor(atividade) {
