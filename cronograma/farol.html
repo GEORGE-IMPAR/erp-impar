@@ -73,7 +73,7 @@
     display:flex;
     gap:8px;
     align-items:center;
-    margin-top:12px;   /* descola do topo/módulo */
+    margin-top:12px;
   }
   .pill-btn{
     border-radius:999px;
@@ -187,7 +187,6 @@
     background:#020617;
   }
 
-  /* Card especial quando não há nenhuma obra com cronograma */
   .obra-card-empty{
     align-items:flex-start;
     gap:8px;
@@ -367,31 +366,30 @@
       </div>
     </div>
 
- <div class="grid-obras-wrapper">
-  <div class="grid-obras-header">
-    <div>Obras com cronograma</div>
-    <div style="display:flex; gap:8px; align-items:center;">
-      <div id="infoResumoObras">Carregando...</div>
-      <div class="filtros-farol">
-        <label for="filtroStatus">Status:</label>
-        <select id="filtroStatus">
-          <option value="">Todos</option>
-          <option value="atrasado">Atrasadas</option>
-          <option value="em dia">Em dia</option>
-          <option value="atenção">Atenção</option>
-          <option value="concluído">Concluídas</option>
-        </select>
+    <div class="grid-obras-wrapper">
+      <div class="grid-obras-header">
+        <div>Obras com cronograma</div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div id="infoResumoObras">Carregando...</div>
+          <div class="filtros-farol">
+            <label for="filtroStatus">Status:</label>
+            <select id="filtroStatus">
+              <option value="">Todos</option>
+              <option value="atrasado">Atrasadas</option>
+              <option value="em dia">Em dia</option>
+              <option value="atenção">Atenção</option>
+              <option value="concluído">Concluídas</option>
+            </select>
 
-        <label for="filtroCoordenador">Coord.:</label>
-        <select id="filtroCoordenador">
-          <option value="">Todos</option>
-          <!-- opções preenchidas via JS -->
-        </select>
+            <label for="filtroCoordenador">Coord.:</label>
+            <select id="filtroCoordenador">
+              <option value="">Todos</option>
+            </select>
+          </div>
+        </div>
       </div>
+      <div class="grid-obras" id="gridObras"></div>
     </div>
-  </div>
-  <div class="grid-obras" id="gridObras"></div>
-</div>
 
   </div>
 </main>
@@ -404,56 +402,105 @@
 </footer>
 
 <script>
-  // MESMO PADRÃO DO GERADOR: api.erpimpar.com.br/cronograma/...
+  // Backend do módulo de cronograma
   const API_BASE = 'https://api.erpimpar.com.br/cronograma';
 
   const gridObras = document.getElementById('gridObras');
   const infoResumoObras = document.getElementById('infoResumoObras');
   const btnVoltarMenu = document.getElementById('btnVoltarMenu');
+  const filtroStatus = document.getElementById('filtroStatus');
+  const filtroCoordenador = document.getElementById('filtroCoordenador');
 
-const filtroStatus = document.getElementById('filtroStatus');
-const filtroCoordenador = document.getElementById('filtroCoordenador');
-
-let obrasCache = [];
-
+  let obrasCache = [];
 
   btnVoltarMenu.addEventListener('click', () => {
     window.location.href = '../index.html';
   });
 
-async function carregarFarol(){
-  try{
-    const resp = await fetch(API_BASE + '/listar_obras_farol.php');
-    const lista = await resp.json();
-    if(!Array.isArray(lista)){
-      throw new Error('Resposta inesperada da API do farol.');
+  async function carregarFarol(){
+    try{
+      const resp = await fetch(API_BASE + '/listar_obras_farol.php');
+      const lista = await resp.json();
+      if(!Array.isArray(lista)){
+        throw new Error('Resposta inesperada da API do farol.');
+      }
+
+      // Ordenar por nome da obra (A-Z)
+      const ordenada = lista.slice().sort((a,b) => {
+        const nomeA = (a.obra || '').toLocaleUpperCase('pt-BR');
+        const nomeB = (b.obra || '').toLocaleUpperCase('pt-BR');
+        if (nomeA < nomeB) return -1;
+        if (nomeA > nomeB) return 1;
+        return 0;
+      });
+
+      obrasCache = ordenada;
+
+      if (ordenada.length === 0){
+        renderizarSemObras();
+        return;
+      }
+
+      popularFiltros(ordenada);
+      renderizarObras(aplicarFiltros(ordenada));
+    }catch(e){
+      console.error(e);
+      infoResumoObras.textContent = 'Erro ao carregar obras.';
+      gridObras.innerHTML = '';
     }
-
-    // 🔠 ORDENAR POR NOME DA OBRA (A-Z)
-    const ordenada = lista.slice().sort((a,b) => {
-      const nomeA = (a.obra || '').toLocaleUpperCase('pt-BR');
-      const nomeB = (b.obra || '').toLocaleUpperCase('pt-BR');
-      if (nomeA < nomeB) return -1;
-      if (nomeA > nomeB) return 1;
-      return 0;
-    });
-
-    obrasCache = ordenada;
-
-    if (ordenada.length === 0){
-      renderizarSemObras();
-      return;
-    }
-
-    popularFiltros(ordenada);
-    renderizarObras(aplicarFiltros(ordenada));
-  }catch(e){
-    console.error(e);
-    infoResumoObras.textContent = 'Erro ao carregar obras.';
-    gridObras.innerHTML = '';
   }
-}
 
+  function popularFiltros(obras){
+    if (!filtroCoordenador) return;
+
+    const coords = Array.from(new Set(
+      obras
+        .map(o => (o.coordenador || '').trim())
+        .filter(Boolean)
+    )).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+
+    filtroCoordenador.innerHTML =
+      '<option value="">Todos</option>' +
+      coords.map(c => `<option value="${c}">${c}</option>`).join('');
+  }
+
+  function aplicarFiltros(lista){
+    const statusVal = filtroStatus ? filtroStatus.value.trim().toLowerCase() : '';
+    const coordVal  = filtroCoordenador ? filtroCoordenador.value.trim().toLowerCase() : '';
+
+    return lista.filter(o => {
+      const statusStr = (o.status || '').toLowerCase();
+      const coordStr  = (o.coordenador || '').toLowerCase();
+
+      let ok = true;
+
+      if (statusVal){
+        ok = ok && statusStr.includes(statusVal);
+      }
+      if (coordVal){
+        ok = ok && coordStr === coordVal;
+      }
+
+      return ok;
+    });
+  }
+
+  if (filtroStatus){
+    filtroStatus.addEventListener('change', () => {
+      renderizarObras(aplicarFiltros(obrasCache));
+    });
+  }
+  if (filtroCoordenador){
+    filtroCoordenador.addEventListener('change', () => {
+      renderizarObras(aplicarFiltros(obrasCache));
+    });
+  }
+
+  function renderizarSemObras(){
+    infoResumoObras.textContent = 'Nenhuma obra com cronograma cadastrado.';
+    gridObras.innerHTML = '';
+    renderizarCardNovoCronograma(false);
+  }
 
   function renderizarCardNovoCronograma(temObras){
     const card = document.createElement('div');
@@ -482,7 +529,6 @@ async function carregarFarol(){
     btn.textContent = 'Cadastrar novo cronograma';
 
     btn.addEventListener('click', () => {
-      // Farol e cronograma estão na mesma pasta /cronograma/
       window.location.href = 'cronograma.html';
     });
 
@@ -494,170 +540,26 @@ async function carregarFarol(){
     gridObras.appendChild(card);
   }
 
-function popularFiltros(obras){
-  if (!filtroCoordenador) return;
-
-  const coords = Array.from(new Set(
-    obras
-      .map(o => (o.coordenador || '').trim())
-      .filter(Boolean)
-  )).sort((a,b) => a.localeCompare(b, 'pt-BR'));
-
-  filtroCoordenador.innerHTML =
-    '<option value="">Todos</option>' +
-    coords.map(c => `<option value="${c}">${c}</option>`).join('');
-}
-
-function aplicarFiltros(lista){
-  const statusVal = filtroStatus ? filtroStatus.value.trim().toLowerCase() : '';
-  const coordVal  = filtroCoordenador ? filtroCoordenador.value.trim().toLowerCase() : '';
-
-  return lista.filter(o => {
-    const statusStr = (o.status || '').toLowerCase();
-    const coordStr  = (o.coordenador || '').toLowerCase();
-
-    let ok = true;
-
-    if (statusVal){
-      ok = ok && statusStr.includes(statusVal);
-    }
-    if (coordVal){
-      ok = ok && coordStr === coordVal;
-    }
-
-    return ok;
-  });
-}
-
-if (filtroStatus){
-  filtroStatus.addEventListener('change', () => {
-    renderizarObras(aplicarFiltros(obrasCache));
-  });
-}
-if (filtroCoordenador){
-  filtroCoordenador.addEventListener('change', () => {
-    renderizarObras(aplicarFiltros(obrasCache));
-  });
-}
-
-  function renderizarSemObras(){
-    infoResumoObras.textContent = 'Nenhuma obra com cronograma cadastrado.';
+  function renderizarObras(obras){
     gridObras.innerHTML = '';
-    renderizarCardNovoCronograma(false);
-  }
 
-function renderizarObras(obras){
-  gridObras.innerHTML = '';
+    const total = obrasCache.length || obras.length;
 
-  const total = obrasCache.length || obras.length;
+    if (total === 0){
+      renderizarSemObras();
+      return;
+    }
 
-  if (total === 0){
-    renderizarSemObras();
-    return;
-  }
+    if (obras.length === 0){
+      infoResumoObras.textContent = 'Nenhuma obra encontrada com o filtro atual.';
+      return;
+    } else if (obras.length === total){
+      infoResumoObras.textContent = obras.length + ' obras com cronograma';
+    } else {
+      infoResumoObras.textContent = obras.length + ' de ' + total + ' obras (filtro aplicado)';
+    }
 
-  if (obras.length === 0){
-    infoResumoObras.textContent = 'Nenhuma obra encontrada com o filtro atual.';
-    return;
-  } else if (obras.length === total){
-    infoResumoObras.textContent = obras.length + ' obras com cronograma';
-  } else {
-    infoResumoObras.textContent = obras.length + ' de ' + total + ' obras (filtro aplicado)';
-  }
-
-  obras.forEach(o => {
-    const card = document.createElement('div');
-    card.className = 'obra-card';
-
-    const { borda, dotCor } = getCoresStatus(o);
-
-    const strip = document.createElement('div');
-    strip.className = 'status-strip';
-    strip.style.borderColor = borda;
-    card.appendChild(strip);
-
-    const idSpan = document.createElement('div');
-    idSpan.className = 'obra-id';
-    idSpan.textContent = 'Obra ' + (o.id || '');
-    card.appendChild(idSpan);
-
-    const nomeSpan = document.createElement('div');
-    nomeSpan.className = 'obra-nome';
-    nomeSpan.textContent = o.obra || 'Obra sem nome';
-    card.appendChild(nomeSpan);
-
-    // 👇 NOVO: coordenador no card
-    const coordSpan = document.createElement('div');
-    coordSpan.className = 'obra-coordenador';
-    coordSpan.textContent = 'Coordenador: ' + (o.coordenador || '—');
-    card.appendChild(coordSpan);
-
-    const statusDiv = document.createElement('div');
-    statusDiv.className = 'obra-status';
-    const dot = document.createElement('span');
-    dot.className = 'status-dot';
-    dot.style.background = dotCor;
-    const txt = document.createElement('span');
-    txt.textContent = o.status || 'SEM INÍCIO';
-    statusDiv.appendChild(dot);
-    statusDiv.appendChild(txt);
-    card.appendChild(statusDiv);
-
-    const barrasDiv = document.createElement('div');
-    barrasDiv.className = 'obra-bars';
-
-    const pl = isNaN(o.planejado) ? 0 : Number(o.planejado);
-    const re = isNaN(o.real) ? 0 : Number(o.real);
-
-    const lbls = document.createElement('div');
-    lbls.className = 'barra-labels';
-    lbls.innerHTML = `
-      <span>Planejado: <strong>${pl}%</strong></span>
-      <span>Real: <strong>${re}%</strong></span>
-    `;
-    const trackPlan = document.createElement('div');
-    trackPlan.className = 'barra-track';
-    const barPlan = document.createElement('div');
-    barPlan.className = 'barra-plan';
-    barPlan.style.width = Math.max(2, Math.min(100, pl)) + '%';
-    trackPlan.appendChild(barPlan);
-
-    const trackReal = document.createElement('div');
-    trackReal.className = 'barra-track';
-    const barReal = document.createElement('div');
-    barReal.className = 'barra-real';
-    barReal.style.width = Math.max(2, Math.min(100, re)) + '%';
-    trackReal.appendChild(barReal);
-
-    barrasDiv.appendChild(lbls);
-    barrasDiv.appendChild(trackPlan);
-    barrasDiv.appendChild(trackReal);
-    card.appendChild(barrasDiv);
-
-    const footer = document.createElement('div');
-    footer.className = 'obra-footer';
-    footer.innerHTML = `
-      <span>${o.tem_baseline ? 'Com linha de base' : 'Sem linha de base'}</span>
-      <span>${o.tem_real ? 'Com andamento real' : 'Sem andamento real'}</span>
-    `;
-    card.appendChild(footer);
-
-    card.addEventListener('click', () => {
-      // mantém tua navegação atual
-      if (o.id){
-        window.location.href = 'cronograma.html?id=' + encodeURIComponent(o.id);
-      } else {
-        window.location.href = 'cronograma.html';
-      }
-    });
-
-    gridObras.appendChild(card);
-  });
-}
-
-    infoResumoObras.textContent = obras.length + ' obras com cronograma';
-
-    // Card fixo para cadastrar cronograma de uma nova obra
+    // card fixo de "Cadastrar novo cronograma"
     renderizarCardNovoCronograma(true);
 
     obras.forEach(o => {
@@ -681,22 +583,40 @@ function renderizarObras(obras){
       nomeSpan.textContent = o.obra || 'Obra sem nome';
       card.appendChild(nomeSpan);
 
+      const coordSpan = document.createElement('div');
+      coordSpan.className = 'obra-coordenador';
+      coordSpan.textContent = 'Coordenador: ' + (o.coordenador || '—');
+      card.appendChild(coordSpan);
+
       const statusDiv = document.createElement('div');
       statusDiv.className = 'obra-status';
       const dot = document.createElement('span');
       dot.className = 'status-dot';
       dot.style.background = dotCor;
       const txt = document.createElement('span');
-      txt.textContent = o.status || 'SEM INÍCIO';
+
+      const pl = isNaN(o.planejado) ? 0 : Number(o.planejado);
+      const re = isNaN(o.real) ? 0 : Number(o.real);
+      let statusTxt = (o.status || '').trim();
+      if (!statusTxt){
+        if (pl === 0 && re === 0 && !o.tem_baseline){
+          statusTxt = 'Sem início';
+        } else if (re >= pl){
+          statusTxt = 'Em dia';
+        } else if (re >= pl * 0.8){
+          statusTxt = 'Atenção';
+        } else {
+          statusTxt = 'Atrasado';
+        }
+      }
+      txt.textContent = statusTxt;
+
       statusDiv.appendChild(dot);
       statusDiv.appendChild(txt);
       card.appendChild(statusDiv);
 
       const barrasDiv = document.createElement('div');
       barrasDiv.className = 'obra-bars';
-
-      const pl = isNaN(o.planejado) ? 0 : Number(o.planejado);
-      const re = isNaN(o.real) ? 0 : Number(o.real);
 
       const lbls = document.createElement('div');
       lbls.className = 'barra-labels';
@@ -712,9 +632,7 @@ function renderizarObras(obras){
       trackPlan.appendChild(barPlan);
 
       const trackReal = document.createElement('div');
-      
-
-trackReal.className = 'barra-track';
+      trackReal.className = 'barra-track';
       const barReal = document.createElement('div');
       barReal.className = 'barra-real';
       barReal.style.width = Math.max(2, Math.min(100, re)) + '%';
@@ -771,4 +689,3 @@ trackReal.className = 'barra-track';
 
 </body>
 </html>
-
