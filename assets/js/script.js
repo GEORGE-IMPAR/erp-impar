@@ -4,19 +4,23 @@
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
-  const usuarioSelect = document.getElementById("usuario");
-  const senhaInput = document.getElementById("senha");
-  const toggleSenha = document.getElementById("toggleSenha");
-  const loginForm = document.getElementById("loginForm");
+  const usuarioSelect   = document.getElementById("usuario");
+  const senhaInput      = document.getElementById("senha");
+  const toggleSenha     = document.getElementById("toggleSenha");
+  const loginForm       = document.getElementById("loginForm");
   const solicitacaoForm = document.getElementById("solicitacaoForm");
 
-  // Login
+  // ==============================
+  // LOGIN
+  // ==============================
   if (usuarioSelect && loginForm) {
     carregarUsuarios(usuarioSelect);
 
-    toggleSenha.addEventListener("click", () => {
-      senhaInput.type = senhaInput.type === "password" ? "text" : "password";
-    });
+    if (toggleSenha && senhaInput) {
+      toggleSenha.addEventListener("click", () => {
+        senhaInput.type = senhaInput.type === "password" ? "text" : "password";
+      });
+    }
 
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -28,7 +32,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const usuarios = await resp.json();
 
         const usuario = usuarios.find(
-          u => u.Email.trim().toLowerCase() === email.trim().toLowerCase() && u.Senha === senha
+          u => u.Email.trim().toLowerCase() === email.trim().toLowerCase() &&
+               u.Senha === senha
         );
 
         if (usuario) {
@@ -54,17 +59,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Solicitação
+  // ==============================
+  // SOLICITAÇÃO DE MATERIAL
+  // ==============================
   if (solicitacaoForm) {
-    const obraSelect = document.getElementById("obra");
-    const centroCustoInput = document.getElementById("centroCusto");
-    const materialSelect = document.getElementById("material");
-    const quantidadeInput = document.getElementById("quantidade");
-    const observacaoInput = document.getElementById("observacao");	
+    const obraSelect        = document.getElementById("obra");
+    const centroCustoInput  = document.getElementById("centroCusto");
+    const materialSelect    = document.getElementById("material");
+    const quantidadeInput   = document.getElementById("quantidade");
+    const observacaoInput   = document.getElementById("observacao");
+    const tabelaMateriais   = document.querySelector("#tabelaMateriais tbody");
+    const adicionarBtn      = document.getElementById("adicionarMaterial");
+    const localEntregaSelect= document.getElementById("localEntrega");
 
-    const tabelaMateriais = document.querySelector("#tabelaMateriais tbody");
-    const adicionarBtn = document.getElementById("adicionarMaterial");
-    const localEntregaSelect = document.getElementById("localEntrega");
+    // NOVOS ELEMENTOS (modo manual)
+    const modoManualChk       = document.getElementById("modoManual");
+    const materialManualInput = document.getElementById("materialManual");
 
     let materiaisAdicionados = [];
 
@@ -86,6 +96,9 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     }
 
+    // ==============================
+    // CARREGAR OBRAS
+    // ==============================
     fetch("obras.json")
       .then(r => r.json())
       .then(obras => {
@@ -109,6 +122,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       });
 
+    // ==============================
+    // CARREGAR MATERIAIS + TOMSELECT
+    // ==============================
     fetch("materiais.json")
       .then(r => r.json())
       .then(materiais => {
@@ -121,7 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
           materialSelect.appendChild(opt);
         });
 
-        // ✅ Aplicar Tom Select após preenchimento dos materiais
+        // Aplicar Tom Select após preenchimento dos materiais
         new TomSelect("#material", {
           create: false,
           maxOptions: 1000,
@@ -133,45 +149,120 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       });
 
-    adicionarBtn.addEventListener("click", () => {
-      const material = materialSelect.value;
-      const selectedOption = materialSelect.selectedOptions[0];
-      const und = selectedOption?.dataset.und || "";
-      const quantidade = quantidadeInput.value;
-      const observacao = (observacaoInput?.value || "").trim(); // NOVO
+    // ==============================
+    // MODO MANUAL: TOGGLE LISTA x INPUT
+    // ==============================
+    if (modoManualChk && materialManualInput && materialSelect) {
+      modoManualChk.addEventListener("change", () => {
+        const ts = materialSelect.tomselect; // TomSelect instância (se já carregou)
 
-      // ✅ ALERTA DE MATERIAL NÃO SELECIONADO
-      if (!material) {
-        materialSelect.setCustomValidity("Preencha este campo.");
-        materialSelect.reportValidity();
-        return;
-      } else {
-        materialSelect.setCustomValidity("");
-      }
+        if (modoManualChk.checked) {
+          // MODO MANUAL
+          if (ts) ts.disable();
+          materialSelect.style.opacity = "0.4";
+          materialManualInput.style.display = "block";
+          materialManualInput.focus();
+        } else {
+          // MODO LISTA
+          if (ts) ts.enable();
+          materialSelect.style.opacity = "1";
+          materialManualInput.style.display = "none";
+          materialManualInput.value = "";
+        }
+      });
+    }
 
-      // ✅ ALERTA SE QUANTIDADE VAZIA OU ZERO
-      if (!quantidade || isNaN(quantidade)) {
-        quantidadeInput.setCustomValidity("Preencha este campo.");
-        quantidadeInput.reportValidity();
-        return;
-      }
+    // ==============================
+    // ADICIONAR MATERIAL
+    // ==============================
+    if (adicionarBtn) {
+      adicionarBtn.addEventListener("click", () => {
+        const usarManual = modoManualChk && modoManualChk.checked;
+        const quantidade = quantidadeInput.value;
+        const observacao = (observacaoInput?.value || "").trim();
 
-      // ✅ BLOQUEIO QUANTIDADE <= 0
-      if (parseInt(quantidade) <= 0) {
-        quantidadeInput.setCustomValidity("A quantidade deve ser maior que zero");
-        quantidadeInput.reportValidity();
-        return;
-      } else {
-        quantidadeInput.setCustomValidity("");
-      }
+        let materialDescricao;
+        let und;
+        let materialId = null;
 
-      materiaisAdicionados.push({ material, und, quantidade, observacao });
-      atualizarTabela();
-      quantidadeInput.value = "";
-      materialSelect.tomselect.clear();  // limpa seleção no TomSelect
-      if (observacaoInput) observacaoInput.value = ""; // NOVO
-    });
+        if (usarManual) {
+          // ---------- MODO MANUAL ----------
+          materialDescricao = (materialManualInput?.value || "").trim();
+          und = "-";
 
+          if (!materialDescricao) {
+            Swal.fire({
+              icon: "warning",
+              title: "Informe o material",
+              text: "Digite o nome do material quando estiver no modo manual."
+            });
+            return;
+          }
+
+        } else {
+          // ---------- MODO LISTA ----------
+          const material = materialSelect.value;
+
+          // ALERTA DE MATERIAL NÃO SELECIONADO
+          if (!material) {
+            materialSelect.setCustomValidity("Preencha este campo.");
+            materialSelect.reportValidity();
+            return;
+          } else {
+            materialSelect.setCustomValidity("");
+          }
+
+          const selectedOption = materialSelect.selectedOptions[0];
+          materialDescricao = selectedOption ? selectedOption.textContent : material;
+          und = selectedOption?.dataset.und || "";
+          materialId = material;
+        }
+
+        // ALERTA SE QUANTIDADE VAZIA OU INVÁLIDA
+        if (!quantidade || isNaN(quantidade)) {
+          quantidadeInput.setCustomValidity("Preencha este campo.");
+          quantidadeInput.reportValidity();
+          return;
+        }
+
+        // BLOQUEIO QUANTIDADE <= 0
+        if (parseInt(quantidade) <= 0) {
+          quantidadeInput.setCustomValidity("A quantidade deve ser maior que zero");
+          quantidadeInput.reportValidity();
+          return;
+        } else {
+          quantidadeInput.setCustomValidity("");
+        }
+
+        // Guarda no array (materialDescricao é o que aparece na tabela)
+        materiaisAdicionados.push({
+          id: materialId,
+          material: materialDescricao,
+          und,
+          quantidade,
+          observacao
+        });
+
+        atualizarTabela();
+
+        // Limpar campos
+        quantidadeInput.value = "";
+        if (observacaoInput) observacaoInput.value = "";
+        if (usarManual) {
+          if (materialManualInput) materialManualInput.value = "";
+        } else {
+          if (materialSelect.tomselect) {
+            materialSelect.tomselect.clear();
+          } else {
+            materialSelect.value = "";
+          }
+        }
+      });
+    }
+
+    // ==============================
+    // ATUALIZAR TABELA
+    // ==============================
     function atualizarTabela() {
       tabelaMateriais.innerHTML = "";
       materiaisAdicionados.forEach((item, index) => {
@@ -195,10 +286,13 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    // Envio: feito no script_email.js
+    // Envio continua sendo feito no script_email.js
   }
 });
 
+// ==============================
+// CARREGAR USUÁRIOS (LOGIN)
+// ==============================
 function carregarUsuarios(selectElement) {
   fetch("usuarios.json")
     .then(r => r.json())
