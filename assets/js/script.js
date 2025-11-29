@@ -1,18 +1,22 @@
-// Inicializar EmailJS
+// Inicializar EmailJS (mantém o que você já usava)
 (function() {
-  emailjs.init("WddODLBw11FUrjP-q"); // sua public key
+  try {
+    emailjs.init("WddODLBw11FUrjP-q"); // sua public key
+  } catch (e) {
+    console.warn("EmailJS não inicializado (modo local?):", e);
+  }
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
-  const usuarioSelect   = document.getElementById("usuario");
-  const senhaInput      = document.getElementById("senha");
-  const toggleSenha     = document.getElementById("toggleSenha");
-  const loginForm       = document.getElementById("loginForm");
-  const solicitacaoForm = document.getElementById("solicitacaoForm");
+  const usuarioSelect    = document.getElementById("usuario");
+  const senhaInput       = document.getElementById("senha");
+  const toggleSenha      = document.getElementById("toggleSenha");
+  const loginForm        = document.getElementById("loginForm");
+  const solicitacaoForm  = document.getElementById("solicitacaoForm");
 
-  // ==============================
+  // ==========================
   // LOGIN
-  // ==============================
+  // ==========================
   if (usuarioSelect && loginForm) {
     carregarUsuarios(usuarioSelect);
 
@@ -32,8 +36,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const usuarios = await resp.json();
 
         const usuario = usuarios.find(
-          u => u.Email.trim().toLowerCase() === email.trim().toLowerCase() &&
-               u.Senha === senha
+          u =>
+            u.Email.trim().toLowerCase() === email.trim().toLowerCase() &&
+            u.Senha === senha
         );
 
         if (usuario) {
@@ -59,46 +64,43 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ==============================
-  // SOLICITAÇÃO DE MATERIAL
-  // ==============================
+  // ==========================
+  // SOLICITAÇÃO DE MATERIAIS
+  // ==========================
   if (solicitacaoForm) {
-    const obraSelect        = document.getElementById("obra");
-    const centroCustoInput  = document.getElementById("centroCusto");
-    const materialSelect    = document.getElementById("material");
-    const quantidadeInput   = document.getElementById("quantidade");
-    const observacaoInput   = document.getElementById("observacao");
-    const tabelaMateriais   = document.querySelector("#tabelaMateriais tbody");
-    const adicionarBtn      = document.getElementById("adicionarMaterial");
-    const localEntregaSelect= document.getElementById("localEntrega");
+    const obraSelect         = document.getElementById("obra");
+    const centroCustoInput   = document.getElementById("centroCusto");
+    const materialSelect     = document.getElementById("material");
+    const quantidadeInput    = document.getElementById("quantidade");
+    const observacaoInput    = document.getElementById("observacao");
+    const tabelaMateriais    = document.querySelector("#tabelaMateriais tbody");
+    const adicionarBtn       = document.getElementById("adicionarMaterial");
+    const localEntregaSelect = document.getElementById("localEntrega");
 
-    // NOVOS ELEMENTOS (modo manual)
-    const modoManualChk       = document.getElementById("modoManual");
-    const materialManualInput = document.getElementById("materialManual");
+    // NOVOS elementos para modo manual
+    const chkModoManual      = document.getElementById("modoManual");
+    const inputMaterialManual= document.getElementById("materialManual");
 
     let materiaisAdicionados = [];
 
     const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
     if (!usuarioLogado) {
-      Swal.fire("Erro", "Você precisa fazer login novamente!", "error").then(() => {
-        window.location.href = "login.html";
-      });
+      Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
+        .then(() => { window.location.href = "login.html"; });
       return;
     }
 
-    // CABEÇALHO CENTRALIZADO COM NOME E E-MAIL
+    // Cabeçalho com nome + e-mail
     const headerDiv = document.getElementById("user-info");
     if (headerDiv) {
-      headerDiv.style.textAlign = "center";
+      headerDiv.style.textAlign = "left";
       headerDiv.innerHTML = `
-        <div style="font-size: 1.1em;">${usuarioLogado.Nome}</div>
+        <div style="font-size: 1.1em;"><strong>${usuarioLogado.Nome}</strong></div>
         <div style="font-size: 1.1em;">${usuarioLogado.Email}</div>
       `;
     }
 
-    // ==============================
-    // CARREGAR OBRAS
-    // ==============================
+    // ===== Obras associadas ao usuário =====
     fetch("obras.json")
       .then(r => r.json())
       .then(obras => {
@@ -122,9 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       });
 
-    // ==============================
-    // CARREGAR MATERIAIS + TOMSELECT
-    // ==============================
+    // ===== Materiais (modo lista + TomSelect) =====
     fetch("materiais.json")
       .then(r => r.json())
       .then(materiais => {
@@ -137,7 +137,6 @@ document.addEventListener("DOMContentLoaded", () => {
           materialSelect.appendChild(opt);
         });
 
-        // Aplicar Tom Select após preenchimento dos materiais
         new TomSelect("#material", {
           create: false,
           maxOptions: 1000,
@@ -145,124 +144,111 @@ document.addEventListener("DOMContentLoaded", () => {
             field: "text",
             direction: "asc"
           },
-          placeholder: "Selecione um material..."
+          placeholder: "Selecione um material."
         });
       });
 
-    // ==============================
-    // MODO MANUAL: TOGGLE LISTA x INPUT
-    // ==============================
-    if (modoManualChk && materialManualInput && materialSelect) {
-      modoManualChk.addEventListener("change", () => {
-        const ts = materialSelect.tomselect; // TomSelect instância (se já carregou)
+    // ===== Toggle entre LISTA x MANUAL =====
+    if (chkModoManual && inputMaterialManual && materialSelect) {
+      chkModoManual.addEventListener("change", () => {
+        const manual = chkModoManual.checked;
 
-        if (modoManualChk.checked) {
+        if (manual) {
           // MODO MANUAL
-          if (ts) ts.disable();
-          materialSelect.style.opacity = "0.4";
-          materialManualInput.style.display = "block";
-          materialManualInput.focus();
+          materialSelect.disabled = true;
+          materialSelect.style.opacity = 0.4;
+          if (materialSelect.tomselect) {
+            materialSelect.tomselect.disable();
+            materialSelect.tomselect.clear();
+          }
+          inputMaterialManual.style.display = "block";
+          inputMaterialManual.focus();
         } else {
           // MODO LISTA
-          if (ts) ts.enable();
-          materialSelect.style.opacity = "1";
-          materialManualInput.style.display = "none";
-          materialManualInput.value = "";
-        }
-      });
-    }
-
-    // ==============================
-    // ADICIONAR MATERIAL
-    // ==============================
-    if (adicionarBtn) {
-      adicionarBtn.addEventListener("click", () => {
-        const usarManual = modoManualChk && modoManualChk.checked;
-        const quantidade = quantidadeInput.value;
-        const observacao = (observacaoInput?.value || "").trim();
-
-        let materialDescricao;
-        let und;
-        let materialId = null;
-
-        if (usarManual) {
-          // ---------- MODO MANUAL ----------
-          materialDescricao = (materialManualInput?.value || "").trim();
-          und = "-";
-
-          if (!materialDescricao) {
-            Swal.fire({
-              icon: "warning",
-              title: "Informe o material",
-              text: "Digite o nome do material quando estiver no modo manual."
-            });
-            return;
-          }
-
-        } else {
-          // ---------- MODO LISTA ----------
-          const material = materialSelect.value;
-
-          // ALERTA DE MATERIAL NÃO SELECIONADO
-          if (!material) {
-            materialSelect.setCustomValidity("Preencha este campo.");
-            materialSelect.reportValidity();
-            return;
-          } else {
-            materialSelect.setCustomValidity("");
-          }
-
-          const selectedOption = materialSelect.selectedOptions[0];
-          materialDescricao = selectedOption ? selectedOption.textContent : material;
-          und = selectedOption?.dataset.und || "";
-          materialId = material;
-        }
-
-        // ALERTA SE QUANTIDADE VAZIA OU INVÁLIDA
-        if (!quantidade || isNaN(quantidade)) {
-          quantidadeInput.setCustomValidity("Preencha este campo.");
-          quantidadeInput.reportValidity();
-          return;
-        }
-
-        // BLOQUEIO QUANTIDADE <= 0
-        if (parseInt(quantidade) <= 0) {
-          quantidadeInput.setCustomValidity("A quantidade deve ser maior que zero");
-          quantidadeInput.reportValidity();
-          return;
-        } else {
-          quantidadeInput.setCustomValidity("");
-        }
-
-        // Guarda no array (materialDescricao é o que aparece na tabela)
-        materiaisAdicionados.push({
-          id: materialId,
-          material: materialDescricao,
-          und,
-          quantidade,
-          observacao
-        });
-
-        atualizarTabela();
-
-        // Limpar campos
-        quantidadeInput.value = "";
-        if (observacaoInput) observacaoInput.value = "";
-        if (usarManual) {
-          if (materialManualInput) materialManualInput.value = "";
-        } else {
+          materialSelect.disabled = false;
+          materialSelect.style.opacity = 1;
           if (materialSelect.tomselect) {
+            materialSelect.tomselect.enable();
             materialSelect.tomselect.clear();
           } else {
             materialSelect.value = "";
           }
+          inputMaterialManual.style.display = "none";
+          inputMaterialManual.value = "";
         }
       });
     }
 
-    // ==============================
-    // ATUALIZAR TABELA
-    // ==============================
+    // ===== Adicionar material na tabela =====
+    adicionarBtn.addEventListener("click", () => {
+      const manual = chkModoManual && chkModoManual.checked;
+
+      let material = "";
+      let und = "";
+
+      if (manual) {
+        material = (inputMaterialManual.value || "").trim();
+        und = "-"; // unidade em branco / traço no modo manual
+      } else {
+        material = materialSelect.value;
+        const selectedOption = materialSelect.selectedOptions[0];
+        und = selectedOption?.dataset.und || "";
+      }
+
+      const quantidade = quantidadeInput.value;
+      const observacao = (observacaoInput?.value || "").trim();
+
+      // Validação de material
+      if (manual) {
+        if (!material) {
+          inputMaterialManual.setCustomValidity("Preencha este campo.");
+          inputMaterialManual.reportValidity();
+          return;
+        } else {
+          inputMaterialManual.setCustomValidity("");
+        }
+      } else {
+        if (!material) {
+          materialSelect.setCustomValidity("Preencha este campo.");
+          materialSelect.reportValidity();
+          return;
+        } else {
+          materialSelect.setCustomValidity("");
+        }
+      }
+
+      // Validação de quantidade
+      if (!quantidade || isNaN(quantidade)) {
+        quantidadeInput.setCustomValidity("Preencha este campo.");
+        quantidadeInput.reportValidity();
+        return;
+      }
+      if (parseInt(quantidade, 10) <= 0) {
+        quantidadeInput.setCustomValidity("A quantidade deve ser maior que zero");
+        quantidadeInput.reportValidity();
+        return;
+      } else {
+        quantidadeInput.setCustomValidity("");
+      }
+
+      // Adiciona na lista e atualiza tabela
+      materiaisAdicionados.push({ material, und, quantidade, observacao });
+      atualizarTabela();
+
+      // Limpa campos
+      quantidadeInput.value = "";
+      if (observacaoInput) observacaoInput.value = "";
+
+      if (manual) {
+        inputMaterialManual.value = "";
+        inputMaterialManual.focus();
+      } else if (materialSelect.tomselect) {
+        materialSelect.tomselect.clear();
+      } else {
+        materialSelect.value = "";
+      }
+    });
+
     function atualizarTabela() {
       tabelaMateriais.innerHTML = "";
       materiaisAdicionados.forEach((item, index) => {
@@ -284,15 +270,23 @@ document.addEventListener("DOMContentLoaded", () => {
           atualizarTabela();
         });
       });
+
+      // Deixa o array acessível para o script_email.js
+      window.materiaisAdicionados = materiaisAdicionados;
+      window.localEntregaSelect   = localEntregaSelect;
+      window.obraSelect           = obraSelect;
+      window.prazoInput           = document.getElementById("prazo");
     }
 
-    // Envio continua sendo feito no script_email.js
+    // garante que o array esteja disponível mesmo sem clicar ainda
+    window.materiaisAdicionados = materiaisAdicionados;
+    window.localEntregaSelect   = localEntregaSelect;
+    window.obraSelect           = obraSelect;
+    window.prazoInput           = document.getElementById("prazo");
   }
 });
 
-// ==============================
-// CARREGAR USUÁRIOS (LOGIN)
-// ==============================
+// Helper para carregar usuários no combo de login
 function carregarUsuarios(selectElement) {
   fetch("usuarios.json")
     .then(r => r.json())
