@@ -751,6 +751,8 @@
 
 // --- Converte JSON da obra (obra_036.json) em lista de atividades do front ---
 // Estrutura nova: baseline.versoes[].atividades + real.atividades
+// --- Converte JSON da obra (obra_036.json) em lista de atividades do front ---
+// Estrutura nova: baseline.versoes[].atividades + real.atividades
 function montarAtividadesDeJsonCronograma(json) {
   const obraNome = json.obra || "";
   const obraId   = json.id   || "";
@@ -840,7 +842,7 @@ function montarAtividadesDeJsonCronograma(json) {
       baselineFimStr,
       baselineDuracaoDias,
 
-      // NOVO: observações vindas do JSON (real ou baseline)
+      // aqui vem do JSON (real ou baseline)
       observacao: r.observacao || b.observacao || ""
     };
   });
@@ -852,6 +854,7 @@ function montarAtividadesDeJsonCronograma(json) {
     coordenador: coord
   };
 }
+
 
 // --- Carrega cronograma a partir de um arquivo específico (obra_036.json) ---
 async function carregarCronogramaPorArquivo(arquivo) {
@@ -2178,7 +2181,8 @@ if (!obra) {
       percentual: a.realPercent || 0,
       predecessora: a.predecessorId ? String(a.predecessorId) : "0",
       dias_comerciais: !!a.diasComerciais,
-      observacao: a.observacao || ""
+      observacao: a.observacao || "",
+      comentarios: a.comentarios || []
     }))
   };
 
@@ -2367,53 +2371,61 @@ if (!obra) {
     atualizarResumoObra();
   }
 
-  function mapAtividadeServidor(item, obraNome, obraId, coordenadorPadrao) {
-    const atividade = item.atividade || item.nome || item.descricao || "";
-    const responsavel = item.responsavel || item.resp || "";
-    const inicioStr = item.inicioStr || item.inicio || item.data_inicio;
-    const fimStr = item.fimStr || item.fim || item.data_fim;
-    const duracaoDias = Number(item.duracaoDias || item.duracao || 0) || null;
-    const diasComerciais = !!(item.diasComerciais || item.dias_uteis || item.modo === "Comercial" || item.modo === "Dias úteis");
-    const predecessorId = item.predecessorId ? Number(item.predecessorId) :
-                          (item.predecessora_id ? Number(item.predecessora_id) : null);
-    const realPercent = Number(item.realPercent || item.real || item.percentual_real || 0) || 0;
-    const plannedPercent = Number(item.plannedPercent || item.planejado || item.percentual_planejado || 0) || 0;
+function mapAtividadeServidor(item, obraNome, obraId, coordenadorPadrao) {
+  const atividade = item.atividade || item.nome || item.descricao || "";
+  const responsavel = item.responsavel || item.resp || "";
+  const inicioStr = item.inicioStr || item.inicio || item.data_inicio;
+  const fimStr = item.fimStr || item.fim || item.data_fim;
+  const duracaoDias = Number(item.duracaoDias || item.duracao || 0) || null;
+  const diasComerciais = !!(
+    item.diasComerciais ||
+    item.dias_uteis ||
+    item.modo === "Comercial" ||
+    item.modo === "Dias úteis"
+  );
+  const predecessorId = item.predecessorId ? Number(item.predecessorId) :
+                        (item.predecessora_id ? Number(item.predecessora_id) : null);
+  const realPercent = Number(item.realPercent || item.real || item.percentual_real || 0) || 0;
+  const plannedPercent = Number(item.plannedPercent || item.planejado || item.percentual_planejado || 0) || 0;
 
-    const baselineInicioStr = item.baselineInicioStr || item.baselineInicio || item.base_inicio;
-    const baselineFimStr = item.baselineFimStr || item.baselineFim || item.base_fim;
-    const baselineDuracaoDias = Number(item.baselineDuracaoDias || item.baseDuracao || 0) || null;
+  const baselineInicioStr = item.baselineInicioStr || item.baselineInicio || item.base_inicio;
+  const baselineFimStr    = item.baselineFimStr    || item.baselineFim    || item.base_fim;
+  const baselineDuracaoDias = Number(item.baselineDuracaoDias || item.baseDuracao || 0) || null;
 
-    const inicio = inicioStr ? parseDate(inicioStr) : null;
-    const fim = fimStr ? parseDate(fimStr) : null;
-    const baselineInicio = baselineInicioStr ? parseDate(baselineInicioStr) : null;
-    const baselineFim = baselineFimStr ? parseDate(baselineFimStr) : null;
+  const inicio         = inicioStr         ? parseDate(inicioStr)         : null;
+  const fim            = fimStr            ? parseDate(fimStr)            : null;
+  const baselineInicio = baselineInicioStr ? parseDate(baselineInicioStr) : null;
+  const baselineFim    = baselineFimStr    ? parseDate(baselineFimStr)    : null;
 
-    return {
-      id: item.id ? Number(item.id) : null,
-      obra: obraNome,
-      obraId,
-      coordenador: item.coordenador || coordenadorPadrao || "",
-      atividade,
-      responsavel,
-      inicioStr: inicioStr || (inicio ? formatDateToInput(inicio) : ""),
-      fimStr: fimStr || (fim ? formatDateToInput(fim) : ""),
-      inicio,
-      fim,
-      duracaoDias: duracaoDias || (inicio && fim ? diffInDays(inicio, fim) : 0),
-      predecessorId,
-      diasComerciais,
-      realPercent,
-      plannedPercent,
-      status: item.status || "Não iniciado",
-      statusClass: "",
-      baselineInicio,
-      baselineFim,
-      baselineDuracaoDias,
-      baselineInicioStr: baselineInicioStr || (baselineInicio ? formatDateToInput(baselineInicio) : null),
-      baselineFimStr: baselineFimStr || (baselineFim ? formatDateToInput(baselineFim) : null),
-      observacao: item.observacao || item.obs || ""   // <<< NOVO
-    };
-  }
+  return {
+    id: item.id ? Number(item.id) : null,
+    obra: obraNome,
+    obraId,
+    coordenador: item.coordenador || coordenadorPadrao || "",
+    atividade,
+    responsavel,
+    inicioStr: inicioStr || (inicio ? formatDateToInput(inicio) : ""),
+    fimStr: fimStr || (fim ? formatDateToInput(fim) : ""),
+    inicio,
+    fim,
+    duracaoDias: duracaoDias || (inicio && fim ? diffInDays(inicio, fim) : 0),
+    predecessorId,
+    diasComerciais,
+    realPercent,
+    plannedPercent,
+    status: item.status || "Não iniciado",
+    statusClass: "",
+    baselineInicio,
+    baselineFim,
+    baselineDuracaoDias,
+    baselineInicioStr: baselineInicioStr || (baselineInicio ? formatDateToInput(baselineInicio) : null),
+    baselineFimStr: baselineFimStr || (baselineFim ? formatDateToInput(baselineFim) : null),
+
+    // observação vinda do JSON antigo
+    observacao: item.observacao || item.obs || ""
+  };
+}
+
 
 async function carregarCronogramaServidor(obraId, obraNome) {
   if (!obraId && !obraNome) {
@@ -2697,7 +2709,14 @@ function salvarObservacaoAtual(){
   campoNova.value = "";
 
   marcarIconeObservacao(observacaoIndexAtual, !!historicoNovo);
+
+  // 👇 AQUI é onde garante que vá para o JSON no servidor
+  if (typeof salvarRealNoServidor === "function") {
+    salvarRealNoServidor(atividade);
+  }
 }
+
+
 
 function marcarIconeObservacao(index, temObservacao){
   const btn = document.getElementById(`btnObs-${index}`);
