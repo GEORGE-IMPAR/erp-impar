@@ -500,7 +500,7 @@
 
       <div class="updates-grid">
         <div class="card-updates">
-          <div class="card-updates-title">Atualizações recentes da obra</div>
+          <div class="card-updates-title">Histórico de observações da obra</div>
           <div id="listaUpdates" class="no-data">
             Nenhuma observação registrada até o momento.
           </div>
@@ -551,17 +551,15 @@
   let chartStatus = null;
   let chartPlanejadoReal = null;
 
-  // ========= FUNÇÕES DE DATA (mesmas ideias do cronograma interno) =========
+  // ========= FUNÇÕES DE DATA =========
   function parseDate(str){
     if(!str) return null;
     str = String(str).trim();
-    // yyyy-mm-dd
     const partsDash = str.split("-");
     if(partsDash.length === 3 && partsDash[0].length === 4){
       const [y,m,d] = partsDash.map(Number);
       return new Date(y, m-1, d);
     }
-    // dd/mm/yyyy
     const partsSlash = str.split("/");
     if(partsSlash.length === 3 && partsSlash[2].length === 4){
       const [d,m,y] = partsSlash.map(Number);
@@ -597,9 +595,8 @@
     return melhor;
   }
 
-  // ========= MONTA LISTA DE ATIVIDADES A PARTIR DO JSON (baseline + real) =========
+  // ========= MONTA LISTA DE ATIVIDADES (baseline + real) =========
   function montarAtividadesDeJson(json){
-    // baseline
     let atividadesBase = [];
     if(json.baseline && Array.isArray(json.baseline.versoes) && json.baseline.versoes.length){
       const ultima = json.baseline.versoes[json.baseline.versoes.length-1];
@@ -607,7 +604,6 @@
         atividadesBase = ultima.atividades;
       }
     }
-    // real
     const realAtividades = (json.real && Array.isArray(json.real.atividades))
       ? json.real.atividades
       : [];
@@ -641,7 +637,6 @@
 
       const percReal = Number(r.realPercent || r.percentual || 0) || 0;
 
-      // cálculo simplificado de planejado
       let plannedPercent = 0;
       if(baseIni && baseFim){
         if(hoje <= baseIni){
@@ -658,7 +653,6 @@
         }
       }
 
-      // status por atividade (mesma lógica conceitual do cronograma interno)
       let status = "Não iniciado";
       let statusClass = "status-nao-iniciado";
       const pr = plannedPercent;
@@ -698,7 +692,7 @@
     return lista;
   }
 
-  // ========= RESUMO GLOBAL (fallback se não tiver "resumo" no JSON) =========
+  // ========= RESUMO GLOBAL (fallback) =========
   function calcularResumoGlobal(atividades){
     if(!atividades || !atividades.length){
       return {
@@ -772,7 +766,7 @@
     };
   }
 
-  // ========= CARREGAR UMA OBRA ESPECÍFICA =========
+  // ========= CARREGAR UMA OBRA =========
   async function carregarStatusPorArquivo(arquivo){
     if(!arquivo) return;
 
@@ -790,7 +784,6 @@
         return;
       }
 
-      // dados básicos
       const obraNome = json.obra || "Obra não identificada";
       const coord    = json.coordenador || "—";
 
@@ -801,14 +794,10 @@
       document.getElementById("lblAtualizadoEm").textContent =
         agora.toLocaleString("pt-BR", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
 
-      // monta atividades combinando baseline + real
       const atividades = montarAtividadesDeJson(json);
 
-      // resumo: usa o do JSON se existir, senão calcula
       let resumo = json.resumo || null;
-      if(resumo && typeof resumo.baseline_inicio === "string"){
-        // se vier tudo como string, vamos manter assim
-      }else{
+      if(!(resumo && typeof resumo.baseline_inicio === "string")){
         resumo = calcularResumoGlobal(atividades);
       }
 
@@ -823,9 +812,8 @@
     }
   }
 
-  // ========= APLICA RESUMO / KPIs / CHARTS =========
+  // ========= APLICA RESUMO / KPIs / GRÁFICOS =========
   function aplicarResumoNaTela(resumo, atividades){
-    // baseline / real datas
     let baseIniStr = "—", baseFimStr="—", realIniStr="—", realFimStr="—";
     if(resumo.baseline_inicio instanceof Date){
       baseIniStr = formatDateBr(resumo.baseline_inicio);
@@ -883,9 +871,12 @@
 
     document.getElementById("kpiAtividadesTotal").textContent = totalAtiv;
     document.getElementById("kpiAtividadesDetalhe").textContent =
-      `${concluidas} concluída(s), ${andamento} em andamento, ${atrasadas} atrasada(s).`;
+      `${totalAtiv} atividade(s): ` +
+      `${concluidas} concluída(s), ` +
+      `${andamento} em andamento, ` +
+      `${atrasadas} atrasada(s), ` +
+      `${naoIniciadas} não iniciada(s).`;
 
-    // status global
     const status = resumo.status || "Sem início";
     const statusClasse = resumo.status_classe || "status-sem-inicio";
 
@@ -906,16 +897,21 @@
         ? `${realIniStr} a ${realFimStr}`
         : "Ainda não iniciada ou em registro inicial.";
 
-    // CHART – pizza de status
+    // ========== GRÁFICO DE ROSCA ==========
     const elChartStatus = document.getElementById("chartStatusAtividades");
     const dataStatus = [concluidas, andamento, atrasadas, naoIniciadas];
     const temAlguma = dataStatus.some(v => v>0);
+    const resumoElem = document.getElementById("chartStatusResumo");
 
     if(!temAlguma){
-      document.getElementById("chartStatusResumo").textContent =
+      resumoElem.textContent =
         "Ainda não há atividades concluídas ou em andamento registradas.";
     }else{
-      document.getElementById("chartStatusResumo").textContent = "";
+      resumoElem.textContent =
+        `Concluídas: ${concluidas} • ` +
+        `Em andamento: ${andamento} • ` +
+        `Atrasadas: ${atrasadas} • ` +
+        `Não iniciadas: ${naoIniciadas}`;
     }
 
     if(chartStatus){
@@ -932,14 +928,26 @@
       },
       options:{
         plugins:{
-          legend:{position:"bottom", labels:{color:"#e5e7eb", font:{size:10}}},
-          tooltip:{enabled:true}
+          legend:{
+            position:"bottom",
+            labels:{ color:"#e5e7eb", font:{size:10} }
+          },
+          tooltip:{
+            enabled:true,
+            callbacks:{
+              label: function(ctx){
+                const label = ctx.label || "";
+                const value = (ctx.parsed !== undefined ? ctx.parsed : ctx.raw) || 0;
+                return `${label}: ${value} atividade(s)`;
+              }
+            }
+          }
         },
         cutout:"55%"
       }
     });
 
-    // CHART – barras Planejado x Real
+    // ========== GRÁFICO BARRAS PLANEJADO X REAL ==========
     const elChartPR = document.getElementById("chartPlanejadoReal");
     if(chartPlanejadoReal){
       chartPlanejadoReal.destroy();
@@ -968,7 +976,7 @@
     });
   }
 
-  // ========= ATUALIZA LISTA DE OBSERVAÇÕES =========
+  // ========= LISTA DE OBSERVAÇÕES =========
   function aplicarUpdatesNaTela(atividades){
     const container = document.getElementById("listaUpdates");
     if(!atividades || !atividades.length){
@@ -978,15 +986,19 @@
     }
 
     const updates = [];
+
     atividades.forEach(a => {
       const obs = (a.observacao || "").trim();
       if(!obs) return;
+
       const linhas = obs.split("\n").filter(l => l.trim());
       if(!linhas.length) return;
-      const ultimaLinha = linhas[linhas.length-1];
-      updates.push({
-        atividade: a.atividade || "Atividade",
-        texto: ultimaLinha
+
+      linhas.forEach(linha => {
+        updates.push({
+          atividade: a.atividade || "Atividade",
+          texto: linha
+        });
       });
     });
 
@@ -998,7 +1010,8 @@
 
     container.className = "";
     container.innerHTML = "";
-    updates.slice(-8).forEach(up => {
+
+    updates.forEach(up => {
       const div = document.createElement("div");
       div.className = "update-item";
       div.innerHTML = `
@@ -1009,7 +1022,7 @@
     });
   }
 
-  // ========= LISTAR SÓ OBRAS QUE POSSUEM CRONOGRAMA =========
+  // ========= LISTAR SÓ OBRAS COM CRONOGRAMA =========
   async function carregarObrasComCronograma(){
     const select = document.getElementById("obraSelect");
     const info   = document.getElementById("listaObrasInfo");
@@ -1026,9 +1039,8 @@
 
       const obrasComArquivo = [];
 
-      // vamos testar cada obra para ver se tem cronograma salvo
       for(const o of lista){
-        const idObra  = (o.id !== undefined && o.id !== null) ? String(o.id) : "";
+        const idObra   = (o.id !== undefined && o.id !== null) ? String(o.id) : "";
         const nomeObra = o.obra || ("Obra " + (idObra || ""));
 
         if(!idObra && !nomeObra) continue;
@@ -1039,7 +1051,13 @@
         try{
           const r = await fetch(API_LOAD_URL + "?arquivo=" + encodeURIComponent(arquivo));
           const j = await r.json();
-          if(!j.error && (j.baseline || j.real)){
+
+          const temBaseline =
+            j.baseline &&
+            Array.isArray(j.baseline.versoes) &&
+            j.baseline.versoes.length > 0;
+
+          if(!j.error && temBaseline){
             obrasComArquivo.push({
               id:idObra,
               obra:nomeObra,
@@ -1047,7 +1065,7 @@
             });
           }
         }catch(e2){
-          console.warn("Erro ao testar cronograma da obra", nomeObra, e2);
+          console.warn("Erro ao testar cronograma da obra", nomeObra, e22);
         }
       }
 
@@ -1109,7 +1127,7 @@
     const pageHeight = pdf.internal.pageSize.getHeight();
 
     const imgProps = pdf.getImageProperties(imgData);
-    const imgWidth = pageWidth - 20; // margens
+    const imgWidth = pageWidth - 20;
     const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
 
     let y = 10;
@@ -1157,7 +1175,7 @@
     }
   }
 
-  // ========= NAVEGAÇÃO BÁSICA =========
+  // ========= NAVEGAÇÃO =========
   function voltarMenu(){
     window.location.href = "../index.html";
   }
@@ -1169,17 +1187,14 @@
   document.addEventListener("DOMContentLoaded", async () => {
     const params = new URLSearchParams(window.location.search);
     const arquivoUrl = params.get("arquivo");
-    const idUrl = params.get("id"); // ex.: 036
+    const idUrl = params.get("id");
 
     const select = document.getElementById("obraSelect");
 
-    // Sempre carrega a lista de obras com cronograma
     carregarObrasComCronograma();
 
-    // Se vier id ou arquivo na URL, abre direto
     if(arquivoUrl){
       carregarStatusPorArquivo(arquivoUrl);
-      // tenta selecionar no combo
       select.value = arquivoUrl;
     }else if(idUrl){
       const arquivo = getArquivoNome(null, idUrl);
@@ -1187,7 +1202,6 @@
       select.value = arquivo;
     }
 
-    // Quando o usuário troca a obra no combo
     select.addEventListener("change", () => {
       const arq = select.value;
       if(arq){
