@@ -453,6 +453,115 @@
       .container{padding:14px 12px 16px;}
       h1{font-size:16px;}
     }
+
+    /* ========= OBSERVAÇÕES POR ATIVIDADE ========= */
+
+    .modal-observacoes {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9998;
+    }
+    .modal-observacoes.hidden {
+      display: none;
+    }
+    .modal-observacoes-content {
+      background: #ffffff;
+      border-radius: 10px;
+      max-width: 600px;
+      width: 95%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.20);
+    }
+    .modal-observacoes-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-observacoes-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #003366;
+    }
+    .modal-observacoes-close {
+      border: none;
+      background: transparent;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .modal-observacoes-body {
+      padding: 12px 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .label-modal {
+      font-size: 12px;
+      color: #555;
+    }
+    .textarea-historico,
+    .textarea-nova {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 6px;
+      border: 1px solid #cccccc;
+      padding: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+    }
+    .textarea-historico {
+      min-height: 120px;
+      max-height: 200px;
+      background: #f8f8f8;
+    }
+    .textarea-nova {
+      min-height: 80px;
+    }
+    .modal-observacoes-footer {
+      padding: 10px 16px 14px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .btn-modal-cancelar,
+    .btn-modal-salvar {
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-modal-cancelar {
+      background: #e0e0e0;
+    }
+    .btn-modal-salvar {
+      background: #003366;
+      color: #ffffff;
+    }
+    .btn-observacao {
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 4px;
+      opacity: 0.7;
+    }
+    .btn-observacao.tem-observacao {
+      opacity: 1;
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -606,6 +715,29 @@
   </div>
 </footer>
 
+<!-- MODAL DE OBSERVAÇÕES POR ATIVIDADE -->
+<div id="modalObservacoes" class="modal-observacoes hidden">
+  <div class="modal-observacoes-content">
+    <div class="modal-observacoes-header">
+      <h2 id="observacoesAtividadeTitulo">Observações da Atividade</h2>
+      <button type="button" class="modal-observacoes-close" onclick="fecharModalObservacoes()">×</button>
+    </div>
+
+    <div class="modal-observacoes-body">
+      <label class="label-modal">Histórico de observações</label>
+      <textarea id="observacoesHistorico" class="textarea-historico" readonly></textarea>
+
+      <label class="label-modal">Nova observação</label>
+      <textarea id="novaObservacao" class="textarea-nova" placeholder="Digite aqui a nova observação..."></textarea>
+    </div>
+
+    <div class="modal-observacoes-footer">
+      <button type="button" class="btn-modal-cancelar" onclick="fecharModalObservacoes()">Fechar</button>
+      <button type="button" class="btn-modal-salvar" onclick="salvarObservacaoAtual()">Salvar observação</button>
+    </div>
+  </div>
+</div>
+
 <script>
   // ================== CONFIG API ==================
   const API_BASE = "https://api.erpimpar.com.br/cronograma";
@@ -706,7 +838,10 @@ function montarAtividadesDeJsonCronograma(json) {
       baselineFim,
       baselineInicioStr,
       baselineFimStr,
-      baselineDuracaoDias
+      baselineDuracaoDias,
+
+      // NOVO: observações vindas do JSON (real ou baseline)
+      observacao: r.observacao || b.observacao || ""
     };
   });
 
@@ -849,6 +984,9 @@ async function carregarCronogramaPorArquivo(arquivo) {
 
   let arquivoCronograma = null; // ex.: "obra_036.json"
   let idObra = null;            // ex.: "036"
+
+  // índice da atividade atualmente aberta no modal de observação
+  let observacaoIndexAtual = null;
 
   // -------- navegação ----------
   document.getElementById("btnVoltarMenu").addEventListener("click", () => {
@@ -1056,82 +1194,6 @@ function slugifyObra(obra) {
   }
 
 // Novo helper: devolve os dados do resumo para JSON e para a tela
-function calcularResumoObraDados() {
-  if (atividades.length === 0) {
-    return null;
-  }
-
-  let baselineInicio = null;
-  let baselineFim = null;
-  let realInicio = null;
-  let realFim = null;
-
-  let totalPlanPeso = 0;
-  let somaPlan = 0;
-  let totalRealPeso = 0;
-  let somaReal = 0;
-
-  atividades.forEach(a => {
-    if (a.baselineInicio && a.baselineFim) {
-      if (!baselineInicio || a.baselineInicio < baselineInicio) baselineInicio = a.baselineInicio;
-      if (!baselineFim || a.baselineFim > baselineFim) baselineFim = a.baselineFim;
-    }
-    if (!realInicio || a.inicio < realInicio) realInicio = a.inicio;
-    if (!realFim || a.fim > realFim) realFim = a.fim;
-
-    const pesoPlan = a.baselineDuracaoDias || a.duracaoDias || 0;
-    const pesoReal = a.duracaoDias || 0;
-    const pr = a.plannedPercent || 0;
-    const rr = a.realPercent || 0;
-
-    if (pesoPlan > 0) {
-      somaPlan += pr * pesoPlan;
-      totalPlanPeso += pesoPlan;
-    }
-    if (pesoReal > 0) {
-      somaReal += rr * pesoReal;
-      totalRealPeso += pesoReal;
-    }
-  });
-
-  const percPlan = totalPlanPeso ? Math.round(somaPlan / totalPlanPeso) : 0;
-  const percReal = totalRealPeso ? Math.round(somaReal / totalRealPeso) : 0;
-
-  let statusObra = "Não iniciado";
-  let statusClasse = "status-nao-iniciado";
-
-  if (percReal >= 100 && percPlan >= 100) {
-    statusObra = "Concluído";
-    statusClasse = "status-concluido";
-  } else if (percReal < percPlan) {
-    if (percReal === 0 && percPlan === 0) {
-      statusObra = "Não iniciado";
-      statusClasse = "status-nao-iniciado";
-    } else {
-      statusObra = "Atrasado";
-      statusClasse = "status-atrasado";
-    }
-  } else if (percReal === 0 && percPlan === 0) {
-    statusObra = "Não iniciado";
-    statusClasse = "status-nao-iniciado";
-  } else {
-    statusObra = "Em andamento";
-    statusClasse = "status-em-andamento";
-  }
-
-  return {
-    baselineInicio,
-    baselineFim,
-    realInicio,
-    realFim,
-    percPlanejado: percPlan,
-    percReal,
-    status: statusObra,
-    statusClasse
-  };
-}
-
-
 function calcularResumoObraDados() {
   if (!atividades.length) return null;
 
@@ -1459,7 +1521,8 @@ const resumoObra = calcularResumoObraDados();
     duracaoDias: a.duracaoDias,
     diasUteis: !!a.diasComerciais,
     predecessorId: a.predecessorId || null,
-    modo: a.modo || (a.diasComerciais ? "Comercial" : "Corridos")
+    modo: a.modo || (a.diasComerciais ? "Comercial" : "Corridos"),
+    observacao: a.observacao || ""       // <<< NOVO
   }));
 
   const payloadBaseline = {
@@ -1612,7 +1675,8 @@ const resumoObra = calcularResumoObraDados();
       baselineFim: null,
       baselineDuracaoDias: null,
       baselineInicioStr: null,
-      baselineFimStr: null
+      baselineFimStr: null,
+      observacao: ""    // <<< NOVO
     });
 
     atualizarHeaderInfo();
@@ -1777,6 +1841,7 @@ const resumoObra = calcularResumoObraDados();
       duracaoDias,
       predecessorId,
       diasComerciais
+      // observacao é preservada via spread itemOriginal
     };
 
     editingIndex = null;
@@ -1862,12 +1927,24 @@ const resumoObra = calcularResumoObraDados();
         <td>
           <button class="btn-secondary" onclick="event.stopPropagation(); iniciarEdicao(${i});">Editar</button>
           <button class="btn-danger" onclick="event.stopPropagation(); removerAtividade(${i});">Excluir</button>
+          <button
+            type="button"
+            class="btn-observacao"
+            title="Observações da atividade"
+            onclick="event.stopPropagation(); abrirObservacoes(${i});"
+            id="btnObs-${i}"
+          >
+            📝
+          </button>
         </td>
       `;
       tr.addEventListener("click", () => iniciarEdicao(i));
       if (editingIndex === i) tr.classList.add("row-editing");
       tbody.appendChild(tr);
     });
+
+    // depois de montar a tabela, atualiza os ícones de observação
+    atualizarIconesObservacao();
   }
 
   function renderGantt() {
@@ -2023,7 +2100,8 @@ async function salvarNoServidor() {
       fim: a.fimStr,
       percentual: a.realPercent || 0,
       predecessora: a.predecessorId ? String(a.predecessorId) : "0",
-      dias_comerciais: !!a.diasComerciais
+      dias_comerciais: !!a.diasComerciais,
+      observacao: a.observacao || ""
     }))
   };
 
@@ -2099,7 +2177,8 @@ if (!obra) {
       fim: a.fimStr,
       percentual: a.realPercent || 0,
       predecessora: a.predecessorId ? String(a.predecessorId) : "0",
-      dias_comerciais: !!a.diasComerciais
+      dias_comerciais: !!a.diasComerciais,
+      observacao: a.observacao || ""
     }))
   };
 
@@ -2331,7 +2410,8 @@ if (!obra) {
       baselineFim,
       baselineDuracaoDias,
       baselineInicioStr: baselineInicioStr || (baselineInicio ? formatDateToInput(baselineInicio) : null),
-      baselineFimStr: baselineFimStr || (baselineFim ? formatDateToInput(baselineFim) : null)
+      baselineFimStr: baselineFimStr || (baselineFim ? formatDateToInput(baselineFim) : null),
+      observacao: item.observacao || item.obs || ""   // <<< NOVO
     };
   }
 
@@ -2545,6 +2625,97 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 });
 
+// ========= OBSERVAÇÕES POR ATIVIDADE – JS =========
+
+function abrirObservacoes(index){
+  const atividade = atividades[index];
+  if(!atividade) return;
+
+  observacaoIndexAtual = index;
+
+  const titulo = document.getElementById("observacoesAtividadeTitulo");
+  if(titulo){
+    titulo.textContent = `Observações - ${atividade.atividade || ("Atividade " + (index+1))}`;
+  }
+
+  const historico = document.getElementById("observacoesHistorico");
+  if(historico){
+    historico.value = (atividade.observacao || "").trim();
+  }
+
+  const nova = document.getElementById("novaObservacao");
+  if(nova) nova.value = "";
+
+  const modal = document.getElementById("modalObservacoes");
+  if(modal){
+    modal.classList.remove("hidden");
+  }
+}
+
+function fecharModalObservacoes(){
+  const modal = document.getElementById("modalObservacoes");
+  if(modal){
+    modal.classList.add("hidden");
+  }
+  observacaoIndexAtual = null;
+}
+
+function salvarObservacaoAtual(){
+  if(observacaoIndexAtual === null) return;
+  const atividade = atividades[observacaoIndexAtual];
+  if(!atividade) return;
+
+  const campoNova = document.getElementById("novaObservacao");
+  if(!campoNova) return;
+
+  const textoNova = campoNova.value.trim();
+  if(!textoNova){
+    alert("Digite uma observação antes de salvar.");
+    return;
+  }
+
+  const agora = new Date();
+  const dataFormatada = agora.toLocaleString("pt-BR", {
+    day:"2-digit",
+    month:"2-digit",
+    year:"numeric",
+    hour:"2-digit",
+    minute:"2-digit"
+  });
+
+  const linha = `[${dataFormatada}] ${textoNova}`;
+  let historicoAnterior = (atividade.observacao || "").trim();
+  const historicoNovo = historicoAnterior ? (historicoAnterior + "\n" + linha) : linha;
+
+  atividade.observacao = historicoNovo;
+
+  const campoHistorico = document.getElementById("observacoesHistorico");
+  if(campoHistorico){
+    campoHistorico.value = historicoNovo;
+  }
+
+  campoNova.value = "";
+
+  marcarIconeObservacao(observacaoIndexAtual, !!historicoNovo);
+}
+
+function marcarIconeObservacao(index, temObservacao){
+  const btn = document.getElementById(`btnObs-${index}`);
+  if(!btn) return;
+  if(temObservacao){
+    btn.classList.add("tem-observacao");
+  }else{
+    btn.classList.remove("tem-observacao");
+  }
+}
+
+function atualizarIconesObservacao(){
+  atividades.forEach((a, i) => {
+    const tem = !!(a.observacao && a.observacao.trim());
+    marcarIconeObservacao(i, tem);
+  });
+}
+
 </script>
 
 <div id="toastContainer"></div>
@@ -2553,5 +2724,3 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 </body>
 </html>
-
-
