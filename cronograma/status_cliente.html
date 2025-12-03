@@ -242,39 +242,6 @@
     .status-atrasado .status-dot{background:var(--red);}
     .status-sem-inicio .status-dot{background:var(--blue);}
 
-    .badge-readonly{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      margin-top:8px;
-      padding:4px 12px;
-      border-radius:999px;
-      font-size:11px;
-      font-weight:600;
-      letter-spacing:0.03em;
-      background:linear-gradient(135deg,var(--blue),var(--green));
-      color:#e5e7eb;
-      box-shadow:0 0 0 0 rgba(59,130,246,0.6);
-      animation:badgePulse 2.4s ease-in-out infinite, badgeCycle 8s ease-in-out infinite;
-    }
-    .badge-readonly::before{
-      content:"";
-      width:8px;
-      height:8px;
-      border-radius:999px;
-      background:#22c55e;
-      box-shadow:0 0 10px rgba(34,197,94,0.9);
-    }
-    @keyframes badgePulse{
-      0%{transform:scale(1);box-shadow:0 0 0 0 rgba(59,130,246,0.6);}
-      50%{transform:scale(1.03);box-shadow:0 0 0 10px rgba(37,99,235,0);}
-      100%{transform:scale(1);box-shadow:0 0 0 0 rgba(59,130,246,0);}
-    }
-    @keyframes badgeCycle{
-      0%,100%{background:linear-gradient(135deg,var(--blue),#1d4ed8);}
-      50%{background:linear-gradient(135deg,#166534,var(--green));}
-    }
-
     .cards-grid{
       display:grid;
       grid-template-columns:repeat(4,minmax(0,1fr));
@@ -606,10 +573,6 @@
   <div class="layout">
     <div class="container" id="printArea">
       <h1>Status da Obra – Visão Cliente</h1>
-      <div id="badgeSomenteLeitura" class="badge-readonly" style="display:none;">
-        🔒 VISÃO CLIENTE – SOMENTE LEITURA
-      </div>
-
       <div class="subtitulo">
         Painel executivo de acompanhamento da sua obra, com avanço físico planejado x real,
         status consolidado e principais atualizações registradas pela equipe ÍMPAR.
@@ -744,10 +707,6 @@
   <div class="rodape-inner">
     <span>© 2025 ERP ÍMPAR • Status da Obra – Visão Cliente</span>
     <span>Relatório executivo gerado automaticamente a partir do cronograma oficial da obra</span>
-    <span id="avisoSomenteLeitura" style="display:none;">
-      Esta visão é exclusiva para consulta do cliente. Qualquer atualização de dados deve ser feita diretamente no ERP ÍMPAR.
-    </span>
-
   </div>
 </footer>
 
@@ -755,8 +714,7 @@
 <div id="fotoModal" class="foto-modal-backdrop" onclick="fecharFotoModal(event)">
   <div class="foto-modal-inner">
     <div class="foto-modal-imgwrap">
-      <img id="fotoModalImg" src="" alt="Foto da obra" style="display:none" />
-      <video id="fotoModalVideo" style="display:none;max-width:100%;max-height:60vh;" controls playsinline></video>
+      <img id="fotoModalImg" src="" alt="Foto da obra" />
     </div>
     <div class="foto-modal-footer">
       <div class="foto-modal-legenda">
@@ -781,9 +739,6 @@
 
   // guarda qual obra está selecionada (arquivo JSON)
   let obraArquivoAtual = null;
-
-  // NOVO: modo somente leitura (visão cliente travada)
-  let modoSomenteLeitura = false;
 
   // ========= FUNÇÕES DE DATA =========
   function parseDate(str){
@@ -973,24 +928,16 @@
     const percPlanejado = pesoPlan ? Math.round(somaPlan / pesoPlan) : 0;
     const percReal      = pesoReal ? Math.round(somaReal / pesoReal) : 0;
 
-    // Status alinhado com a legenda do Farol:
-    // Verde: Adiantado / no prazo
-    // Amarelo: Atenção
-    // Vermelho: Atrasado
-    // Azul: Sem início / sem baseline
     let status="Sem início", statusClasse="status-sem-inicio";
-    if(percReal === 0 && percPlanejado === 0){
-      status="Sem início";
-      statusClasse="status-sem-inicio";
-    }else if(percReal >= 100 && percPlanejado >= 100){
+    if(percReal >= 100 && percPlanejado >= 100){
       status="Concluído";
       statusClasse="status-concluido";
+    }else if(percReal === 0 && percPlanejado === 0){
+      status="Sem início";
+      statusClasse="status-sem-inicio";
     }else if(percReal >= percPlanejado){
       status="Em dia";
       statusClasse="status-em-dia";
-    }else if(percReal >= percPlanejado * 0.8){
-      status="Atenção";
-      statusClasse="status-atencao";
     }else{
       status="Atrasado";
       statusClasse="status-atrasado";
@@ -1118,15 +1065,38 @@
     document.getElementById("kpiAtividadesDetalhe").textContent =
       `${concluidas} concluída(s), ${andamento} em andamento, ${atrasadas} atrasada(s).`;
 
-    const status = resumo.status || "Sem início";
-    const statusClasse = resumo.status_classe || "status-sem-inicio";
+    // Status calculado aqui na Visão Cliente, usando os percentuais
+    // Regra:
+    // - Se percPlan === 0 e percReal === 0  -> "Sem início" (azul)
+    // - Se percReal >= percPlan            -> "Em dia" (verde)
+    // - Se diferença (percPlan - percReal) <= 15 -> "Atenção" (amarelo)
+    // - Se diferença > 15                  -> "Atrasado" (vermelho)
+    let statusTxt = "Sem início";
+    let statusClasse = "status-sem-inicio";
+
+    if (percPlan === 0 && percReal === 0){
+      statusTxt = "Sem início";
+      statusClasse = "status-sem-inicio";
+    } else if (percReal >= percPlan){
+      statusTxt = "Em dia";
+      statusClasse = "status-em-dia";
+    } else {
+      const diferenca = percPlan - percReal;
+      if (diferenca <= 15){
+        statusTxt = "Atenção";
+        statusClasse = "status-atencao";
+      } else {
+        statusTxt = "Atrasado";
+        statusClasse = "status-atrasado";
+      }
+    }
 
     const badge = document.getElementById("statusBadge");
     badge.className = "status-badge " + statusClasse;
 
-    document.getElementById("lblStatus").textContent = "Status geral: " + status;
+    document.getElementById("lblStatus").textContent = "Status geral: " + statusTxt;
 
-    document.getElementById("infoStatus").textContent = status;
+    document.getElementById("infoStatus").textContent = statusTxt;
     document.getElementById("infoPercs").textContent =
       `Planejado: ${percPlan}% • Real: ${percReal}%`;
     document.getElementById("infoBaseline").textContent =
@@ -1255,57 +1225,6 @@
       container.appendChild(div);
     });
   }
-
-  // ========= MODO SOMENTE LEITURA (VISÃO CLIENTE) =========
-  function aplicarModoSomenteLeitura(){
-    modoSomenteLeitura = true;
-
-    // Atualiza título / branding para visão do cliente
-    document.title = "ERP ÍMPAR · Status da Obra (Cliente)";
-    const brandTitulo = document.querySelector(".brand span:nth-child(2)");
-    if (brandTitulo) {
-      brandTitulo.textContent = "ERP ÍMPAR • Status da Obra (Cliente)";
-    }
-
-    // Exibe badge de somente leitura
-    const badge = document.getElementById("badgeSomenteLeitura");
-    if (badge) {
-      badge.style.display = "inline-flex";
-    }
-
-    // Mostra aviso extra no rodapé
-    const avisoRodape = document.getElementById("avisoSomenteLeitura");
-    if (avisoRodape) {
-      avisoRodape.style.display = "inline";
-    }
-
-    // Desabilita seleção de obra
-    const select = document.getElementById("obraSelect");
-    if (select) {
-      select.disabled = true;
-      select.style.opacity = "0.7";
-      select.style.pointerEvents = "none";
-      select.title = "Modo cliente: seleção de obra bloqueada";
-    }
-
-    // Opcional: esconder botões de navegação interno (menu/farol)
-    // Se não quiser esconder, pode comentar essas linhas
-    const btnMenu  = document.querySelector("button[onclick='voltarMenu()']");
-    const btnFarol = document.querySelector("button[onclick='voltarFarol()']");
-    if (btnMenu)  btnMenu.style.display  = "none";
-    if (btnFarol) btnFarol.style.display = "none";
-
-    // Esconder botão "Adicionar foto"
-    const btnAddFoto = document.querySelector(".fotos-header .btn.btn-secondary");
-    if (btnAddFoto) btnAddFoto.style.display = "none";
-
-    // Se já tiver fotos renderizadas, esconde botões de excluir
-    document.querySelectorAll(".foto-delete").forEach(btn => {
-      btn.style.display = "none";
-    });
-  }
-
-
 
   // ========= LISTAR SÓ OBRAS QUE POSSUEM CRONOGRAMA =========
   async function carregarObrasComCronograma(){
@@ -1443,17 +1362,11 @@
     fotos.forEach(f => {
       const card = document.createElement("div");
       card.className = "foto-card";
-
-      const isVideo = (f.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(f.url || "");
-      const midiaHtml = isVideo
-        ? `<video class="foto-thumb" src="${f.url}" muted playsinline></video>`
-        : `<img class="foto-thumb"
-               src="${f.url}"
-               alt="${(f.legenda || "Foto da obra").replace(/"/g,"&quot;")}">`;
-
       card.innerHTML = `
         <div class="foto-thumb-wrap">
-          ${midiaHtml}
+          <img class="foto-thumb"
+               src="${f.url}"
+               alt="${(f.legenda || "Foto da obra").replace(/"/g,"&quot;")}">
         </div>
         <div class="foto-meta">
           <div class="foto-data">${f.data || ""}</div>
@@ -1462,23 +1375,12 @@
         <button class="foto-delete" type="button" title="Excluir foto">🗑</button>
       `;
       card.querySelector(".foto-thumb-wrap").addEventListener("click", () => abrirFotoModal(f));
-
-      const btnDel = card.querySelector(".foto-delete");
-      if (modoSomenteLeitura && btnDel) {
-        btnDel.style.display = "none";
-      } else if (btnDel) {
-        btnDel.addEventListener("click", () => excluirFoto(f.id));
-      }
-
+      card.querySelector(".foto-delete").addEventListener("click", () => excluirFoto(f.id));
       galeria.appendChild(card);
     });
   }
 
   function abrirSelecaoFoto(){
-    if (modoSomenteLeitura) {
-      alert("Esta visão é apenas para consulta do cliente. Inclusão de fotos está bloqueada.");
-      return;
-    }
     if(!obraArquivoAtual){
       alert("Selecione uma obra antes de adicionar fotos.");
       return;
@@ -1486,7 +1388,6 @@
     const input = document.getElementById("fotoInput");
     if(input) input.click();
   }
-
 
   // upload ao selecionar arquivo
   document.addEventListener("DOMContentLoaded", () => {
@@ -1526,10 +1427,6 @@
   });
 
   async function excluirFoto(idFoto){
-    if (modoSomenteLeitura) {
-      alert("Esta visão é apenas para consulta do cliente. Exclusão de fotos está bloqueada.");
-      return;
-    }
     if(!obraArquivoAtual || !idFoto) return;
     if(!confirm("Deseja realmente excluir esta foto da obra?")) return;
 
@@ -1557,30 +1454,9 @@
   function abrirFotoModal(foto){
     const backdrop = document.getElementById("fotoModal");
     if(!backdrop) return;
-
-    const imgEl   = document.getElementById("fotoModalImg");
-    const vidEl   = document.getElementById("fotoModalVideo");
-
-    const isVideo = (foto.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(foto.url || "");
-
-    if (imgEl && vidEl) {
-      if (isVideo) {
-        imgEl.style.display = "none";
-        imgEl.src = "";
-        vidEl.style.display = "block";
-        vidEl.src = foto.url;
-        vidEl.load();
-      } else {
-        vidEl.pause && vidEl.pause();
-        vidEl.style.display = "none";
-        vidEl.src = "";
-        imgEl.style.display = "block";
-        imgEl.src = foto.url;
-      }
-    }
-
+    document.getElementById("fotoModalImg").src = foto.url;
     document.getElementById("fotoModalData").textContent = foto.data || "";
-    document.getElementById("fotoModalLegenda").textContent = foto.legenda || "Registro da obra";
+    document.getElementById("fotoModalLegenda").textContent = foto.legenda || "Foto da obra";
     backdrop.style.display = "flex";
   }
 
@@ -1596,11 +1472,6 @@
     const backdrop = document.getElementById("fotoModal");
     if(backdrop){
       backdrop.style.display = "none";
-    }
-    const vidEl = document.getElementById("fotoModalVideo");
-    if (vidEl){
-      vidEl.pause && vidEl.pause();
-      vidEl.src = "";
     }
   }
 
@@ -1644,34 +1515,28 @@
     pdf.save(`status_${slug}.pdf`);
   }
 
-function compartilharStatus(){
+  function compartilharStatus(){
     const nomeObra = document.getElementById("lblObraNome").textContent || "sua obra";
     const status   = document.getElementById("infoStatus").textContent || "Sem início";
     const percs    = document.getElementById("infoPercs").textContent || "";
 
-    // monta URL com trava de leitura
-    const urlObj = new URL(window.location.href);
-    urlObj.searchParams.set("readonly", "1");
+    const texto = `Status da obra – ${nomeObra}\n` +
+                  `${status}\n` +
+                  `${percs}\n\n` +
+                  `Relatório gerado automaticamente via ERP ÍMPAR.`;
 
-    const texto =
-      `Status da obra – ${nomeObra}\n` +
-      `${status}\n` +
-      `${percs}\n\n` +
-      `Relatório gerado automaticamente via ERP ÍMPAR.`;
-
-    if (navigator.share){
-        navigator.share({
-            title: `Status da obra – ${nomeObra}`,
-            text: texto,
-            url: urlObj.toString()
-        }).catch(err => {
-            console.warn("Compartilhamento cancelado ou indisponível:", err);
-        });
-    } else {
-        alert("O compartilhamento nativo não está disponível neste dispositivo.");
+    if(navigator.share){
+      navigator.share({
+        title: `Status da obra – ${nomeObra}`,
+        text: texto,
+        url: window.location.href
+      }).catch(err => {
+        console.warn("Compartilhamento cancelado ou não disponível:", err);
+      });
+    }else{
+      alert("O compartilhamento nativo não está disponível neste dispositivo/navegador.");
     }
-}
-
+  }
 
   // ========= NAVEGAÇÃO =========
   function voltarMenu(){
@@ -1686,12 +1551,6 @@ function compartilharStatus(){
     const params = new URLSearchParams(window.location.search);
     const arquivoUrl = params.get("arquivo");
     const idUrl = params.get("id");
-    const readonly   = params.get("readonly");
-    
-    // se vier readonly=1 ou cliente=1 → trava
-    if (readonly === "1") {
-      aplicarModoSomenteLeitura();
-    }
 
     const select = document.getElementById("obraSelect");
 
@@ -1699,33 +1558,23 @@ function compartilharStatus(){
 
     if(arquivoUrl){
       carregarStatusPorArquivo(arquivoUrl);
-      if (select) select.value = arquivoUrl;
+      select.value = arquivoUrl;
     }else if(idUrl){
       const arquivo = getArquivoNome(null, idUrl);
       carregarStatusPorArquivo(arquivo);
-      if (select) select.value = arquivo;
+      select.value = arquivo;
     }
 
-    // se for somente leitura, não deixa trocar obra,
-    // mas mantém o evento por segurança (ele não será disparado porque o select está disabled)
-    if (select) {
-      select.addEventListener("change", () => {
-        if (modoSomenteLeitura) {
-          // redundante, só por segurança
-          select.value = arquivoUrl || "";
-          return;
-        }
-        const arq = select.value;
-        if(arq){
-          carregarStatusPorArquivo(arq);
-          const url = new URL(window.location.href);
-          url.searchParams.set("arquivo", arq);
-          window.history.replaceState({}, "", url.toString());
-        }
-      });
-    }
+    select.addEventListener("change", () => {
+      const arq = select.value;
+      if(arq){
+        carregarStatusPorArquivo(arq);
+        const url = new URL(window.location.href);
+        url.searchParams.set("arquivo", arq);
+        window.history.replaceState({}, "", url.toString());
+      }
+    });
   });
-
 </script>
 
 </body>
