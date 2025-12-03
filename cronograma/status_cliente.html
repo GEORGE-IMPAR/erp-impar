@@ -237,10 +237,9 @@
       width:8px;height:8px;border-radius:999px;
     }
     .status-concluido .status-dot{background:var(--green);}
-    .status-em-dia .status-dot{background:var(--green);}
-    .status-atencao .status-dot{background:var(--yellow);}
+    .status-em-dia .status-dot{background:var(--blue);}
     .status-atrasado .status-dot{background:var(--red);}
-    .status-sem-inicio .status-dot{background:var(--blue);}
+    .status-sem-inicio .status-dot{background:#6b7280;}
 
     .cards-grid{
       display:grid;
@@ -684,15 +683,19 @@
       <div class="fotos-grid">
         <div class="fotos-header">
           <div class="fotos-titulos">
-            <div class="fotos-title">Evolução da obra – Registro fotográfico</div>
+            <div class="fotos-title">Evolução da obra – Registros fotográficos e vídeos</div>
             <div class="fotos-subtitle">
-              Histórico de imagens da obra, atualizadas pela equipe ÍMPAR.
+              Histórico de imagens e vídeos da obra, atualizadas pela equipe ÍMPAR.
             </div>
           </div>
           <button class="btn btn-secondary" type="button" onclick="abrirSelecaoFoto()">
             ➕ Adicionar foto
           </button>
-          <input type="file" id="fotoInput" accept="image/*,video/*" style="display:none" />
+          <button class="btn btn-secondary btn-add-video" type="button" onclick="abrirSelecaoVideo()">
+            🎬 Adicionar vídeo
+          </button>
+          <input type="file" id="fotoInput" accept="image/*" style="display:none" />
+          <input type="file" id="videoInput" accept="video/*" style="display:none" />
         </div>
         <div id="galeriaFotos" class="fotos-list no-data">
           Nenhuma foto cadastrada para esta obra.
@@ -1065,38 +1068,15 @@
     document.getElementById("kpiAtividadesDetalhe").textContent =
       `${concluidas} concluída(s), ${andamento} em andamento, ${atrasadas} atrasada(s).`;
 
-    // Status calculado aqui na Visão Cliente, usando os percentuais
-    // Regra:
-    // - Se percPlan === 0 e percReal === 0  -> "Sem início" (azul)
-    // - Se percReal >= percPlan            -> "Em dia" (verde)
-    // - Se diferença (percPlan - percReal) <= 15 -> "Atenção" (amarelo)
-    // - Se diferença > 15                  -> "Atrasado" (vermelho)
-    let statusTxt = "Sem início";
-    let statusClasse = "status-sem-inicio";
-
-    if (percPlan === 0 && percReal === 0){
-      statusTxt = "Sem início";
-      statusClasse = "status-sem-inicio";
-    } else if (percReal >= percPlan){
-      statusTxt = "Em dia";
-      statusClasse = "status-em-dia";
-    } else {
-      const diferenca = percPlan - percReal;
-      if (diferenca <= 15){
-        statusTxt = "Atenção";
-        statusClasse = "status-atencao";
-      } else {
-        statusTxt = "Atrasado";
-        statusClasse = "status-atrasado";
-      }
-    }
+    const status = resumo.status || "Sem início";
+    const statusClasse = resumo.status_classe || "status-sem-inicio";
 
     const badge = document.getElementById("statusBadge");
     badge.className = "status-badge " + statusClasse;
 
-    document.getElementById("lblStatus").textContent = "Status geral: " + statusTxt;
+    document.getElementById("lblStatus").textContent = "Status geral: " + status;
 
-    document.getElementById("infoStatus").textContent = statusTxt;
+    document.getElementById("infoStatus").textContent = status;
     document.getElementById("infoPercs").textContent =
       `Planejado: ${percPlan}% • Real: ${percReal}%`;
     document.getElementById("infoBaseline").textContent =
@@ -1389,7 +1369,16 @@
     if(input) input.click();
   }
 
-  // upload ao selecionar arquivo
+  function abrirSelecaoVideo(){
+    if(!obraArquivoAtual){
+      alert("Selecione uma obra antes de adicionar vídeos.");
+      return;
+    }
+    const input = document.getElementById("videoInput");
+    if(input) input.click();
+  }
+
+// upload ao selecionar arquivo
   document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("fotoInput");
     if(input){
@@ -1419,6 +1408,41 @@
         }catch(e){
           console.error("Erro ao enviar foto:", e);
           alert("Erro ao enviar foto da obra.");
+        }finally{
+          ev.target.value = "";
+        }
+      });
+    }
+
+    const inputVideo = document.getElementById("videoInput");
+    if(inputVideo){
+      inputVideo.addEventListener("change", async (ev) => {
+        const file = ev.target.files[0];
+        if(!file || !obraArquivoAtual) return;
+
+        const legenda = prompt("Digite uma legenda curta para o vídeo (opcional):", "") || "";
+
+        const fd = new FormData();
+        fd.append("acao", "upload");
+        fd.append("arquivo", obraArquivoAtual);
+        fd.append("foto", file);
+        fd.append("legenda", legenda);
+        fd.append("tipo", "video");
+
+        try{
+          const resp = await fetch(API_FOTOS, {
+            method:"POST",
+            body: fd
+          });
+          const json = await resp.json();
+          if(json.error){
+            alert(json.message || "Erro ao enviar vídeo.");
+          }else{
+            carregarFotosObra();
+          }
+        }catch(e){
+          console.error("Erro ao enviar vídeo:", e);
+          alert("Erro ao enviar vídeo da obra.");
         }finally{
           ev.target.value = "";
         }
