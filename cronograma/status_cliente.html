@@ -242,7 +242,7 @@
     .status-atrasado .status-dot{background:var(--red);}
     .status-sem-inicio .status-dot{background:var(--blue);}
 
-    .badge-readonly}{
+    .badge-readonly{
       display:inline-flex;
       align-items:center;
       gap:6px;
@@ -390,7 +390,7 @@
       margin-top:6px;
     }
 
-    /* ====== GALERIA DE FOTOS / VÍDEOS ====== */
+    /* ====== GALERIA DE FOTOS ====== */
     .fotos-grid{
       margin-top:14px;
       background:#020617;
@@ -477,7 +477,7 @@
       background:#7f1d1d;
     }
 
-    /* MODAL FOTO / VÍDEO */
+    /* MODAL FOTO */
     .foto-modal-backdrop{
       position:fixed;
       inset:0;
@@ -734,19 +734,18 @@
         <div id="galeriaFotos" class="fotos-list no-data">
           Nenhuma foto cadastrada para esta obra.
         </div>
-      </div>
-
+      
       <!-- ====== GALERIA DE VÍDEOS ====== -->
-      <div class="fotos-grid">
+      <div class="fotos-grid videos-grid">
         <div class="fotos-header">
           <div class="fotos-titulos">
-            <div class="fotos-title">Evolução da obra – Registros em vídeo</div>
+            <div class="fotos-title">Evolução da obra – Registro em vídeo</div>
             <div class="fotos-subtitle">
-              Histórico de vídeos da obra, atualizadas pela equipe ÍMPAR.
+              Histórico de vídeos da obra, atualizados pela equipe ÍMPAR.
             </div>
           </div>
           <button class="btn btn-secondary" type="button" onclick="abrirSelecaoVideo()">
-            🎥 + Adicionar vídeo
+            🎬 Adicionar vídeo
           </button>
           <input type="file" id="videoInput" accept="video/*" style="display:none" />
         </div>
@@ -754,6 +753,8 @@
           Nenhum vídeo cadastrado para esta obra.
         </div>
       </div>
+
+</div>
 
     </div>
   </div>
@@ -770,7 +771,7 @@
   </div>
 </footer>
 
-<!-- MODAL FOTO / VÍDEO -->
+<!-- MODAL FOTO -->
 <div id="fotoModal" class="foto-modal-backdrop" onclick="fecharFotoModal(event)">
   <div class="foto-modal-inner">
     <div class="foto-modal-imgwrap">
@@ -955,7 +956,7 @@
         real_fim:null,
         perc_planejado:0,
         perc_real:0,
-        status:"Sem início / sem baseline",
+        status:"Sem início",
         status_classe:"status-sem-inicio"
       };
     }
@@ -992,32 +993,27 @@
     const percPlanejado = pesoPlan ? Math.round(somaPlan / pesoPlan) : 0;
     const percReal      = pesoReal ? Math.round(somaReal / pesoReal) : 0;
 
-    // Regras do status global:
-    // Azul: percPlanejado = 0 e percReal = 0 -> "Sem início / sem baseline"
-    // Verde: percReal >= percPlanejado -> "Adiantado / no prazo"
-    // Amarelo: atraso < 15 p.p. -> "Atenção"
-    // Vermelho: atraso >= 15 p.p. -> "Atrasado"
-    let status = "Sem início / sem baseline";
-    let statusClasse = "status-sem-inicio";
-
-    if (percReal === 0 && percPlanejado === 0){
-      status = "Sem início / sem baseline";
-      statusClasse = "status-sem-inicio";
-    } else if (percReal >= 100 && percPlanejado >= 100){
-      status = "Concluído";
-      statusClasse = "status-concluido";
-    } else if (percReal >= percPlanejado){
-      status = "Adiantado / no prazo";
-      statusClasse = "status-em-dia";
-    } else {
-      const diff = percPlanejado - percReal; // atraso em p.p.
-      if (diff >= 15){
-        status = "Atrasado";
-        statusClasse = "status-atrasado";
-      } else {
-        status = "Atenção";
-        statusClasse = "status-atencao";
-      }
+    // Status alinhado com a legenda do Farol:
+    // Verde: Adiantado / no prazo
+    // Amarelo: Atenção
+    // Vermelho: Atrasado
+    // Azul: Sem início / sem baseline
+    let status="Sem início", statusClasse="status-sem-inicio";
+    if(percReal === 0 && percPlanejado === 0){
+      status="Sem início";
+      statusClasse="status-sem-inicio";
+    }else if(percReal >= 100 && percPlanejado >= 100){
+      status="Concluído";
+      statusClasse="status-concluido";
+    }else if(percReal >= percPlanejado){
+      status="Em dia";
+      statusClasse="status-em-dia";
+    }else if(percReal >= percPlanejado * 0.8){
+      status="Atenção";
+      statusClasse="status-atencao";
+    }else{
+      status="Atrasado";
+      statusClasse="status-atrasado";
     }
 
     return {
@@ -1036,7 +1032,7 @@
   async function carregarStatusPorArquivo(arquivo){
     if(!arquivo) return;
 
-    obraArquivoAtual = arquivo;  // guarda para fotos & vídeos
+    obraArquivoAtual = arquivo;  // guarda para fotos
 
     document.getElementById("erroGlobal").style.display = "none";
     document.getElementById("listaUpdates").innerHTML =
@@ -1071,7 +1067,8 @@
 
       aplicarResumoNaTela(resumo, atividades);
       aplicarUpdatesNaTela(atividades);
-      carregarFotosObra();   // 📸 / 🎥 carrega registros de mídia da obra
+      carregarFotosObra();   // 📸 carrega fotos da obra
+      carregarVideosObra();  // 🎥 carrega vídeos da obra
 
     }catch(e){
       console.error("Erro ao carregar status da obra:", e);
@@ -1142,8 +1139,33 @@
     document.getElementById("kpiAtividadesDetalhe").textContent =
       `${concluidas} concluída(s), ${andamento} em andamento, ${atrasadas} atrasada(s).`;
 
-    const status = resumo.status || "Sem início / sem baseline";
-    const statusClasse = resumo.status_classe || "status-sem-inicio";
+    // Cálculo de status específico para VISÃO CLIENTE (regra dos 15%)
+    let status = resumo.status || "Sem início";
+    let statusClasse = resumo.status_classe || "status-sem-inicio";
+
+    // Usa os percentuais planejado x real, com a sua regra:
+    // - Se não há baseline e não houve avanço → Sem início (azul)
+    // - Se real >= planejado → Em dia (verde)
+    // - Se diferença <= 15% → Atenção (amarelo)
+    // - Se diferença > 15% → Atrasado (vermelho)
+    const diff = percPlan - percReal;
+
+    if (percPlan === 0 && percReal === 0) {
+      status = "Sem início";
+      statusClasse = "status-sem-inicio";
+    } else if (status === "Concluído" || (percPlan >= 100 && percReal >= 100)) {
+      status = "Concluído";
+      statusClasse = "status-concluido";
+    } else if (diff <= 0) {
+      status = "Em dia";
+      statusClasse = "status-em-dia";
+    } else if (diff <= 15) {
+      status = "Atenção";
+      statusClasse = "status-atencao";
+    } else {
+      status = "Atrasado";
+      statusClasse = "status-atrasado";
+    }
 
     const badge = document.getElementById("statusBadge");
     badge.className = "status-badge " + statusClasse;
@@ -1312,32 +1334,25 @@
       select.title = "Modo cliente: seleção de obra bloqueada";
     }
 
-    // Esconde bloco do select e info de quantidade de obras
-    const blocoSelect = document.querySelector(".obra-select-bloco");
-    if (blocoSelect) {
-      blocoSelect.style.display = "none";
-    }
-    const infoObras = document.getElementById("listaObrasInfo");
-    if (infoObras) {
-      infoObras.style.display = "none";
-    }
-
     // Opcional: esconder botões de navegação interno (menu/farol)
+    // Se não quiser esconder, pode comentar essas linhas
     const btnMenu  = document.querySelector("button[onclick='voltarMenu()']");
     const btnFarol = document.querySelector("button[onclick='voltarFarol()']");
     if (btnMenu)  btnMenu.style.display  = "none";
     if (btnFarol) btnFarol.style.display = "none";
 
-    // Esconder botões de inclusão de mídia (fotos e vídeos)
+    // Esconder botões de "Adicionar foto/vídeo"
     document.querySelectorAll(".fotos-header .btn.btn-secondary").forEach(btn => {
       btn.style.display = "none";
     });
 
-    // Se já tiver fotos/vídeos renderizados, esconde botões de excluir
+    // Se já tiver fotos renderizadas, esconde botões de excluir
     document.querySelectorAll(".foto-delete").forEach(btn => {
       btn.style.display = "none";
     });
   }
+
+
 
   // ========= LISTAR SÓ OBRAS QUE POSSUEM CRONOGRAMA =========
   async function carregarObrasComCronograma(){
@@ -1426,32 +1441,19 @@
     return "obra_" + slug + ".json";
   }
 
-  // ========= GALERIA DE FOTOS / VÍDEOS =========
-  function ehVideoMidia(f){
-    return !!(f && ((f.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(f.url || "")));
-  }
-
+  // ========= GALERIA DE FOTOS =========
   async function carregarFotosObra(){
     const galeria = document.getElementById("galeriaFotos");
-    const galeriaVideos = document.getElementById("galeriaVideos");
     if(!galeria) return;
 
     if(!obraArquivoAtual){
       galeria.className = "fotos-list no-data";
       galeria.textContent = "Selecione uma obra para visualizar as fotos.";
-      if (galeriaVideos){
-        galeriaVideos.className = "fotos-list no-data";
-        galeriaVideos.textContent = "Selecione uma obra para visualizar os vídeos.";
-      }
       return;
     }
 
     galeria.className = "fotos-list loading";
-    galeria.textContent = "Carregando registros da obra...";
-    if (galeriaVideos){
-      galeriaVideos.className = "fotos-list loading";
-      galeriaVideos.textContent = "Carregando registros da obra...";
-    }
+    galeria.textContent = "Carregando fotos da obra...";
 
     try{
       const resp = await fetch(
@@ -1461,26 +1463,18 @@
       if(json.error){
         galeria.className = "fotos-list no-data";
         galeria.textContent = json.message || "Erro ao carregar fotos.";
-        if (galeriaVideos){
-          galeriaVideos.className = "fotos-list no-data";
-          galeriaVideos.textContent = json.message || "Erro ao carregar vídeos.";
-        }
         return;
       }
-      const lista = json.fotos || [];
-      const fotos = lista.filter(f => !ehVideoMidia(f));
-      const videos = lista.filter(f => ehVideoMidia(f));
-
-      renderizarFotos(fotos);
-      renderizarVideos(videos);
+      const fotos = json.fotos || [];
+      const apenasFotos = fotos.filter(f => {
+        const isVideo = (f.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(f.url || "");
+        return !isVideo;
+      });
+      renderizarFotos(apenasFotos);
     }catch(e){
-      console.error("Erro ao listar fotos/vídeos:", e);
+      console.error("Erro ao listar fotos:", e);
       galeria.className = "fotos-list no-data";
-      galeria.textContent = "Erro ao carregar registros da obra.";
-      if (galeriaVideos){
-        galeriaVideos.className = "fotos-list no-data";
-        galeriaVideos.textContent = "Erro ao carregar registros da obra.";
-      }
+      galeria.textContent = "Erro ao carregar fotos da obra.";
     }
   }
 
@@ -1501,8 +1495,10 @@
       const card = document.createElement("div");
       card.className = "foto-card";
 
-      const midiaHtml =
-        `<img class="foto-thumb"
+      const isVideo = (f.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(f.url || "");
+      const midiaHtml = isVideo
+        ? `<video class="foto-thumb" src="${f.url}" muted playsinline></video>`
+        : `<img class="foto-thumb"
                src="${f.url}"
                alt="${(f.legenda || "Foto da obra").replace(/"/g,"&quot;")}">`;
 
@@ -1529,6 +1525,43 @@
     });
   }
 
+  
+  async function carregarVideosObra(){
+    const galeria = document.getElementById("galeriaVideos");
+    if(!galeria) return;
+
+    if(!obraArquivoAtual){
+      galeria.className = "fotos-list no-data";
+      galeria.textContent = "Selecione uma obra para visualizar os vídeos.";
+      return;
+    }
+
+    galeria.className = "fotos-list loading";
+    galeria.textContent = "Carregando vídeos da obra...";
+
+    try{
+      const resp = await fetch(
+        `${API_FOTOS}?acao=listar&arquivo=${encodeURIComponent(obraArquivoAtual)}`
+      );
+      const json = await resp.json();
+      if(json.error){
+        galeria.className = "fotos-list no-data";
+        galeria.textContent = json.message || "Erro ao carregar vídeos.";
+        return;
+      }
+      const itens = json.fotos || [];
+      const apenasVideos = itens.filter(f => {
+        const isVideo = (f.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(f.url || "");
+        return isVideo;
+      });
+      renderizarVideos(apenasVideos);
+    }catch(e){
+      console.error("Erro ao listar vídeos:", e);
+      galeria.className = "fotos-list no-data";
+      galeria.textContent = "Erro ao carregar vídeos da obra.";
+    }
+  }
+
   function renderizarVideos(videos){
     const galeria = document.getElementById("galeriaVideos");
     if(!galeria) return;
@@ -1547,7 +1580,7 @@
       card.className = "foto-card";
 
       const midiaHtml =
-        `<video class="foto-thumb" src="${f.url}" muted playsinline></video>`;
+        `<video class="foto-thumb" src="${f.url}" controls playsinline></video>`;
 
       card.innerHTML = `
         <div class="foto-thumb-wrap">
@@ -1559,7 +1592,11 @@
         </div>
         <button class="foto-delete" type="button" title="Excluir vídeo">🗑</button>
       `;
-      card.querySelector(".foto-thumb-wrap").addEventListener("click", () => abrirFotoModal(f));
+
+      const thumb = card.querySelector(".foto-thumb-wrap");
+      if (thumb) {
+        thumb.addEventListener("click", () => abrirFotoModal(f));
+      }
 
       const btnDel = card.querySelector(".foto-delete");
       if (modoSomenteLeitura && btnDel) {
@@ -1572,7 +1609,7 @@
     });
   }
 
-  function abrirSelecaoFoto(){
+function abrirSelecaoFoto(){
     if (modoSomenteLeitura) {
       alert("Esta visão é apenas para consulta do cliente. Inclusão de fotos está bloqueada.");
       return;
@@ -1584,7 +1621,6 @@
     const input = document.getElementById("fotoInput");
     if(input) input.click();
   }
-
   function abrirSelecaoVideo(){
     if (modoSomenteLeitura) {
       alert("Esta visão é apenas para consulta do cliente. Inclusão de vídeos está bloqueada.");
@@ -1598,19 +1634,16 @@
     if(input) input.click();
   }
 
-  // upload ao selecionar arquivo (foto / vídeo)
+
+
+
+  // upload ao selecionar arquivo
   document.addEventListener("DOMContentLoaded", () => {
-    const inputFoto = document.getElementById("fotoInput");
-    if(inputFoto){
-      inputFoto.addEventListener("change", async (ev) => {
+    const input = document.getElementById("fotoInput");
+    if(input){
+      input.addEventListener("change", async (ev) => {
         const file = ev.target.files[0];
         if(!file || !obraArquivoAtual) return;
-
-        if (!file.type.startsWith("image/")){
-          alert("Por favor, selecione apenas arquivos de imagem para o registro fotográfico.");
-          ev.target.value = "";
-          return;
-        }
 
         const legenda = prompt("Digite uma legenda curta para a foto (opcional):", "") || "";
 
@@ -1646,19 +1679,14 @@
         const file = ev.target.files[0];
         if(!file || !obraArquivoAtual) return;
 
-        if (!file.type.startsWith("video/")){
-          alert("Por favor, selecione apenas arquivos de vídeo para o registro em vídeo.");
-          ev.target.value = "";
-          return;
-        }
-
         const legenda = prompt("Digite uma legenda curta para o vídeo (opcional):", "") || "";
 
         const fd = new FormData();
         fd.append("acao", "upload");
         fd.append("arquivo", obraArquivoAtual);
-        fd.append("foto", file);
+        fd.append("foto", file);     // mesmo campo, backend continua igual
         fd.append("legenda", legenda);
+        fd.append("tipo", "video");
 
         try{
           const resp = await fetch(API_FOTOS, {
@@ -1669,7 +1697,7 @@
           if(json.error){
             alert(json.message || "Erro ao enviar vídeo.");
           }else{
-            carregarFotosObra();
+            carregarVideosObra();
           }
         }catch(e){
           console.error("Erro ao enviar vídeo:", e);
@@ -1683,11 +1711,11 @@
 
   async function excluirFoto(idFoto){
     if (modoSomenteLeitura) {
-      alert("Esta visão é apenas para consulta do cliente. Exclusão de registros está bloqueada.");
+      alert("Esta visão é apenas para consulta do cliente. Exclusão de fotos está bloqueada.");
       return;
     }
     if(!obraArquivoAtual || !idFoto) return;
-    if(!confirm("Deseja realmente excluir este registro da obra?")) return;
+    if(!confirm("Deseja realmente excluir esta foto da obra?")) return;
 
     try{
       const resp = await fetch(API_FOTOS + "?acao=excluir", {
@@ -1700,13 +1728,13 @@
       });
       const json = await resp.json();
       if(json.error){
-        alert(json.message || "Erro ao excluir registro.");
+        alert(json.message || "Erro ao excluir foto.");
       }else{
         carregarFotosObra();
       }
     }catch(e){
-      console.error("Erro ao excluir registro:", e);
-      alert("Erro ao excluir registro da obra.");
+      console.error("Erro ao excluir foto:", e);
+      alert("Erro ao excluir foto da obra.");
     }
   }
 
@@ -1717,7 +1745,7 @@
     const imgEl   = document.getElementById("fotoModalImg");
     const vidEl   = document.getElementById("fotoModalVideo");
 
-    const isVideo = ehVideoMidia(foto);
+    const isVideo = (foto.tipo === "video") || /\.(mp4|webm|ogg)$/i.test(foto.url || "");
 
     if (imgEl && vidEl) {
       if (isVideo) {
@@ -1742,6 +1770,7 @@
 
   function fecharFotoModal(ev){
     if(ev && ev.target && !ev.target.classList.contains("foto-modal-backdrop") && ev.target.id !== "fotoModal"){
+      // clique dentro do modal, ignora
       const backdrop = document.getElementById("fotoModal");
       if(ev.target === backdrop){
         backdrop.style.display = "none";
@@ -1799,9 +1828,9 @@
     pdf.save(`status_${slug}.pdf`);
   }
 
-  function compartilharStatus(){
+function compartilharStatus(){
     const nomeObra = document.getElementById("lblObraNome").textContent || "sua obra";
-    const status   = document.getElementById("infoStatus").textContent || "Sem início / sem baseline";
+    const status   = document.getElementById("infoStatus").textContent || "Sem início";
     const percs    = document.getElementById("infoPercs").textContent || "";
 
     // monta URL com trava de leitura
@@ -1825,7 +1854,8 @@
     } else {
         alert("O compartilhamento nativo não está disponível neste dispositivo.");
     }
-  }
+}
+
 
   // ========= NAVEGAÇÃO =========
   function voltarMenu(){
@@ -1842,7 +1872,7 @@
     const idUrl = params.get("id");
     const readonly   = params.get("readonly");
     
-    // se vier readonly=1 → trava visão cliente
+    // se vier readonly=1 ou cliente=1 → trava
     if (readonly === "1") {
       aplicarModoSomenteLeitura();
     }
@@ -1860,6 +1890,8 @@
       if (select) select.value = arquivo;
     }
 
+    // se for somente leitura, não deixa trocar obra,
+    // mas mantém o evento por segurança (ele não será disparado porque o select está disabled)
     if (select) {
       select.addEventListener("change", () => {
         if (modoSomenteLeitura) {
@@ -1882,3 +1914,4 @@
 
 </body>
 </html>
+
