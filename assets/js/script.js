@@ -20,17 +20,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (usuarioSelect && loginForm) {
     carregarUsuarios(usuarioSelect);
 
-if (toggleSenha && senhaInput) {
-  toggleSenha.addEventListener("click", (e) => {
-    e.preventDefault();
-
-    const isPassword = senhaInput.type === "password";
-    // alterna o tipo do input
-    senhaInput.type = isPassword ? "text" : "password";
-    // alterna o ícone do olho
-    toggleSenha.textContent = isPassword ? "🙈" : "👁️";
-  });
-}
+    if (toggleSenha && senhaInput) {
+      toggleSenha.addEventListener("click", () => {
+        senhaInput.type = senhaInput.type === "password" ? "text" : "password";
+      });
+    }
 
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
