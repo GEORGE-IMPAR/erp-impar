@@ -20,11 +20,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (usuarioSelect && loginForm) {
     carregarUsuarios(usuarioSelect);
 
-    if (toggleSenha && senhaInput) {
-      toggleSenha.addEventListener("click", () => {
-        senhaInput.type = senhaInput.type === "password" ? "text" : "password";
-      });
-    }
+   // if (toggleSenha && senhaInput) {
+   //   toggleSenha.addEventListener("click", () => {
+   //     senhaInput.type = senhaInput.type === "password" ? "text" : "password";
+   //   });
+   // }
 
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -299,4 +299,5 @@ function carregarUsuarios(selectElement) {
       });
     });
 }
+
 
