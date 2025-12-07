@@ -1105,6 +1105,14 @@
 </div>
 
 <script>
+
+
+// Endpoints da API de custos (planilhas salvas no KingHost)
+const API_DASH_BASE = "https://api.erpimpar.com.br/cronograma";
+const API_DASH_OBRAS_URL = API_DASH_BASE + "/carregar_dash_mao_obra.php";
+const API_DASH_CI_URL    = API_DASH_BASE + "/carregar_dash_custos_indiretos.php";
+
+
   // ---------- FUNÇÕES AUXILIARES ----------
   function formatCurrencyBR(v) {
     if (!v || !isFinite(v)) v = 0;
@@ -1660,6 +1668,69 @@
     reader.readAsArrayBuffer(file);
   }
 
+
+// Carrega automaticamente a base de obras salva no servidor (BASE-DASH.xlsx)
+async function carregarBaseObrasDoServidor() {
+  const status = document.getElementById("import-status-obras");
+  if (!status) return;
+
+  try {
+    status.textContent = "Carregando base de obras do servidor...";
+
+    const resp = await fetch(API_DASH_OBRAS_URL, { cache: "no-cache" });
+    if (!resp.ok) {
+      status.textContent = "Nenhuma base de obras salva no servidor.";
+      return;
+    }
+
+    const arrayBuf = await resp.arrayBuffer();
+    const data = new Uint8Array(arrayBuf);
+    const workbook = XLSX.read(data, { type: "array", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const ws = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+
+    obrasData = rows.map(r => {
+      const dataVal = parseExcelDateToISO(r["DATA"] || r["Data"] || r["data"]);
+      const nome = r["NOME"] || r["Nome"] || r["COLABORADOR"] || r["Colaborador"] || "";
+      const cargo = r["CARGO"] || r["Cargo"] || "";
+      const obra = r["OBRA"] || r["Obra"] || "";
+      const valorDia = parseBrazilNumber(
+        r["VALOR-DIA"] || r["Valor-dia"] || r["Valor Dia"] || r["VALOR_DIA"]
+      );
+      const eficienciaStr = r["EFICIÊNCIA"] || r["Eficiência"] || r["EFICIENCIA"] || "";
+      const horasStr = r["Horas-diárias"] || r["HORAS-DIARIAS"] || r["Horas_diarias"] || "";
+      const horasPrev = parseTimeToHours(horasStr || "00:00:00");
+      const horasEff  = parseTimeToHours(eficienciaStr || "00:00:00");
+      const percEff   = (horasPrev > 0) ? (horasEff / horasPrev) * 100 : null;
+
+      return {
+        DATA: dataVal,
+        NOME: nome,
+        CARGO: cargo,
+        OBRA: obra,
+        VALOR_DIA: valorDia,
+        EFICIENCIA: eficienciaStr,
+        HORAS_DIARIAS: horasStr,
+        PERC_EFICIENCIA: percEff
+      };
+    });
+
+    if (!obrasData.length) {
+      status.textContent = "Base de obras no servidor está vazia.";
+      return;
+    }
+
+    status.textContent = "Registros carregados: " + obrasData.length + " (base do servidor)";
+    buildFiltersFromDataObras(obrasData);
+    refreshDashboardObras();
+  } catch (err) {
+    console.error(err);
+    status.textContent = "Erro ao carregar base de obras do servidor.";
+  }
+}
+
+
   // =====================================
   // DASHBOARD CUSTOS INDIRETOS
   // =====================================
@@ -2013,6 +2084,67 @@
     reader.readAsArrayBuffer(file);
   }
 
+
+// Carrega automaticamente a base de custos indiretos salva no servidor
+// (BASE-DASH-CUSTOS-INDIRETOS.xlsx)
+async function carregarBaseCIDoServidor() {
+  const status   = document.getElementById("ci-import-status");
+  const subtitle = document.getElementById("ci-table-subtitle");
+  if (!status || !subtitle) return;
+
+  try {
+    status.textContent = "Carregando base de custos indiretos do servidor...";
+
+    const resp = await fetch(API_DASH_CI_URL, { cache: "no-cache" });
+    if (!resp.ok) {
+      status.textContent = "Nenhuma base de custos indiretos salva no servidor.";
+      subtitle.textContent = "Nenhuma base carregada.";
+      return;
+    }
+
+    const arrayBuf = await resp.arrayBuffer();
+    const data = new Uint8Array(arrayBuf);
+    const workbook = XLSX.read(data, { type: "array", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const ws = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+
+    ciData = rows.map(row => {
+      const mesRaw  = row["Mês"] || row["MES"] || row["Mes"];
+      const mes     = parseMonthToYYYYMM(mesRaw);
+      const modelo  = row["Modelo"] || row["MODELO"] || "";
+      const classificacao = row["Classificação"] || row["CLASSIFICACAO"] || row["Classificacao"] || "";
+      const nome    = row["Colaborador"] || row["Nome"] || row["NOME"] || "";
+      let valor     = row["Despesa (R$)"] ?? row["Despesa"] ?? row["Valor"] ?? 0;
+      valor = parseBrazilNumber(valor);
+
+      return {
+        MES: mes,
+        MODELO: modelo,
+        CLASSIFICACAO: classificacao,
+        NOME: nome,
+        VALOR: valor
+      };
+    });
+
+    if (!ciData.length) {
+      status.textContent = "Base de custos indiretos no servidor está vazia.";
+      subtitle.textContent = "Nenhuma base carregada.";
+      return;
+    }
+
+    buildCIFiltersFromData(ciData);
+    subtitle.textContent = "Base carregada do servidor · " + ciData.length + " registros";
+    status.textContent   = "Registros carregados: " + ciData.length;
+    refreshCIDashboard();
+  } catch (err) {
+    console.error(err);
+    status.textContent = "Erro ao carregar base de custos indiretos do servidor.";
+    subtitle.textContent = "Nenhuma base carregada.";
+  }
+}
+
+
   // ---------- INICIALIZAÇÃO ----------
   document.addEventListener("DOMContentLoaded", () => {
     // Obras
@@ -2060,6 +2192,11 @@
         if (text) text.textContent = "Ocultar filtros";
       }
     });
+
+  // Carrega automaticamente as bases salvas no servidor (se existirem)
+  carregarBaseObrasDoServidor();
+  carregarBaseCIDoServidor();
+
   });
 </script>
 </body>
