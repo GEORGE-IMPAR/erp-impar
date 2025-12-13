@@ -209,6 +209,113 @@ footer{
 </footer>
 
 <script>
+  const KEY = "ERPIMPAR_USER";
+
+  function getStore(remember){
+    return remember ? localStorage : sessionStorage;
+  }
+
+  async function carregarUsuarios() {
+  // 1) tenta com cache-bust (resolve cache do Pages)
+  const url = "usuarios_erp.json?v=" + Date.now();
+
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status + " ao abrir " + url);
+
+  // 2) lê como texto e remove BOM (resolve JSON com caractere invisível)
+  const txt = await r.text();
+  const clean = txt.replace(/^\uFEFF/, "").trim(); // remove BOM
+
+  const data = JSON.parse(clean);
+
+  if (!Array.isArray(data)) {
+    throw new Error("usuarios_erp.json não é um array. (Formato inesperado)");
+  }
+  return data;
+}
+
+
+  function limparSessao(){
+    localStorage.removeItem(KEY);
+    sessionStorage.removeItem(KEY);
+  }
+
+  function salvarSessao(user, remember){
+    const store = getStore(remember);
+    // não salva senha
+    const payload = {
+      nome: user.nome,
+      email: user.email,
+      cargo: user.cargo,
+      telefone: user.telefone,
+      foto: user.foto,
+      modulos: Array.isArray(user.modulos) ? user.modulos : [],
+      ts: Date.now(),
+      remember: !!remember
+    };
+    store.setItem(KEY, JSON.stringify(payload));
+    // garante que não ficou nada no outro storage
+    (remember ? sessionStorage : localStorage).removeItem(KEY);
+  }
+
+  (async () => {
+    const sel = document.getElementById("usuario");
+    const inpSenha = document.getElementById("senha");
+    const chkLembrar = document.getElementById("lembrar");
+    const btnEntrar = document.querySelector("button.login");
+
+    let usuarios = [];
+    try{
+      usuarios = await carregarUsuarios();
+      console.log("Usuários carregados:", usuarios.length, usuarios[0]);
+
+      // popula select      sel.innerHTML = `<option value="">Selecione o usuário</option>`;
+      usuarios.forEach((u, idx) => {
+        const opt = document.createElement("option");
+        opt.value = String(idx);
+        opt.textContent = u.nome;
+        sel.appendChild(opt);
+      });
+    }catch(e){
+      console.error(e);
+      alert("Erro ao carregar usuários (JSON). Verifique se usuarios_erp.json está na raiz do GitHub.");
+      return;
+    }
+
+    // se já estiver logado, pula pro menu
+    const sess = localStorage.getItem(KEY) || sessionStorage.getItem(KEY);
+    if(sess){
+      window.location.href = "menu.html";
+      return;
+    }
+
+    btnEntrar.addEventListener("click", () => {
+      const idx = sel.value;
+      const senhaDigitada = inpSenha.value || "";
+
+      if(idx === ""){
+        alert("Selecione um usuário.");
+        return;
+      }
+
+      const user = usuarios[Number(idx)];
+      if(!user){
+        alert("Usuário inválido.");
+        return;
+      }
+
+      if(String(user.senha || "") !== String(senhaDigitada)){
+        alert("Senha incorreta.");
+        return;
+      }
+
+      salvarSessao(user, chkLembrar.checked);
+      window.location.href = "menu.html";
+    });
+  })();
+</script>
+
+<script>
   // ✅ Olho funcionando
   const senha = document.getElementById("senha");
   const btnOlho = document.getElementById("btnOlho");
