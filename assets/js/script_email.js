@@ -3,7 +3,7 @@ console.log("📌 script_email.js carregado");
 document.addEventListener("DOMContentLoaded", () => {
   // Inicializar EmailJS
   if (window.emailjs) {
-    emailjs.init("WddODLBw11FUrjP-q"); // sua public key
+    emailjs.init("WddODLBw11FUrjP-q");
     console.log("✅ EmailJS inicializado");
   } else {
     console.error("❌ EmailJS não carregado");
@@ -19,12 +19,19 @@ document.addEventListener("DOMContentLoaded", () => {
   solicitacaoForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+    // 🔐 Login único + login antigo (fallback)
+    const usuarioLogado =
+      JSON.parse(localStorage.getItem("usuarioLogado")) ||
+      JSON.parse(localStorage.getItem("ERPIMPAR_USER"));
+
     if (!usuarioLogado) {
-      Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
-        .then(() => window.location.href = "login.html");
+      Swal.fire("Sessão expirada", "Faça login novamente.", "error")
+        .then(() => window.location.href = "index.html");
       return;
     }
+
+    const btnSubmit = solicitacaoForm.querySelector("button[type='submit']");
+    if (btnSubmit) btnSubmit.disabled = true;
 
     const obra = document.getElementById("obra").value;
     const centroCusto = document.getElementById("centroCusto").value;
@@ -33,12 +40,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!obra || !centroCusto || !prazo || !localEntrega) {
       Swal.fire("⚠️ Atenção", "Preencha todos os campos obrigatórios!", "warning");
+      if (btnSubmit) btnSubmit.disabled = false;
       return;
     }
 
-    // Capturar materiais da tabela
     const linhas = document.querySelectorAll("#tabelaMateriais tbody tr");
     let materiais = [];
+
     linhas.forEach(linha => {
       const cols = linha.querySelectorAll("td");
       materiais.push({
@@ -51,24 +59,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (materiais.length === 0) {
       Swal.fire("⚠️ Atenção", "Adicione pelo menos um material!", "warning");
+      if (btnSubmit) btnSubmit.disabled = false;
       return;
     }
 
-    console.log("📦 Materiais coletados:", materiais);
-
-    // Montar HTML dos materiais para o template
     const materiaisHtml = materiais.map(m =>
       `<tr>
-         <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.material}</td>
-         <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.und}</td>
-         <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.quantidade}</td>
-         <td style="border:1px solid #ccc; padding:8px; text-align:center;">${m.observacao}</td>
-       </tr>`
+        <td style="border:1px solid #ccc; padding:8px;">${m.material}</td>
+        <td style="border:1px solid #ccc; padding:8px;">${m.und}</td>
+        <td style="border:1px solid #ccc; padding:8px;">${m.quantidade}</td>
+        <td style="border:1px solid #ccc; padding:8px;">${m.observacao}</td>
+      </tr>`
     ).join("");
 
     const templateParams = {
-      nome: usuarioLogado.Nome || "Não informado",
-      from_email: usuarioLogado.Email || "Não informado",
+      nome: usuarioLogado.Nome || usuarioLogado.nome || "Não informado",
+      from_email: usuarioLogado.Email || usuarioLogado.email || "Não informado",
       obra,
       centro_custo: centroCusto,
       data: prazo,
@@ -76,27 +82,36 @@ document.addEventListener("DOMContentLoaded", () => {
       materiais: materiaisHtml
     };
 
-    console.log("📧 Enviando com parâmetros:", templateParams);
+    // 🎬 Spinner premium
+    Swal.fire({
+      title: "Enviando solicitação",
+      html: "Aguarde, estamos enviando o e-mail…",
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
 
     try {
-      const resp = await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
-      console.log("✅ Email enviado:", resp);
-      
+      await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
+
       Swal.fire({
         icon: "success",
-        title: "Solicitação enviada com sucesso!",
-        showConfirmButton: false,
-        timer: 2500
+        title: "Solicitação enviada!",
+        text: "O e-mail foi enviado com sucesso.",
+        timer: 2200,
+        showConfirmButton: false
       }).then(() => {
-        // Limpa tudo
         solicitacaoForm.reset();
         document.querySelector("#tabelaMateriais tbody").innerHTML = "";
-        localStorage.removeItem("usuarioLogado"); // Desloga o usuário
-        window.location.href = "login.html"; // Redireciona para o login
+        // ❌ NÃO desloga
+        window.location.href = "menu.html";
       });
+
     } catch (err) {
       console.error("❌ Erro EmailJS:", err);
       Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
+      if (btnSubmit) btnSubmit.disabled = false;
     }
   });
 });

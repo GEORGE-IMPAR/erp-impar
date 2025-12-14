@@ -8,6 +8,46 @@
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
+
+    // =======================
+    // SSO ERP ÍMPAR (login único)
+    // =======================
+    const ERP_SESSION_KEY = "ERPIMPAR_USER";
+
+    function getUsuarioSessaoUnica(){
+      // 1) tenta o padrão antigo do módulo
+      try{
+        const raw = localStorage.getItem("usuarioLogado");
+        if(raw){
+          const u = JSON.parse(raw);
+          if(u && (u.Email || u.email)) return normalizarUsuario(u);
+        }
+      }catch(e){}
+
+      // 2) tenta o padrão do login único da plataforma (menu/index)
+      try{
+        const rawS = localStorage.getItem(ERP_SESSION_KEY);
+        if(rawS){
+          const s = JSON.parse(rawS);
+          if(s && (s.email || s.Email)){
+            const u = { Nome: s.nome || s.Nome || s.name || "", Email: s.email || s.Email || "" };
+            // grava também no formato antigo para manter compatibilidade com o restante do módulo
+            localStorage.setItem("usuarioLogado", JSON.stringify(u));
+            return normalizarUsuario(u);
+          }
+        }
+      }catch(e){}
+
+      return null;
+    }
+
+    function normalizarUsuario(u){
+      const Nome  = (u.Nome || u.nome || u.name || "").trim();
+      const Email = (u.Email || u.email || "").trim();
+      return { Nome, Email };
+    }
+
+
   const usuarioSelect    = document.getElementById("usuario");
   const senhaInput       = document.getElementById("senha");
   const toggleSenha      = document.getElementById("toggleSenha");
@@ -83,10 +123,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let materiaisAdicionados = [];
 
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+    const usuarioLogado = getUsuarioSessaoUnica();
     if (!usuarioLogado) {
-      Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
-        .then(() => { window.location.href = "login.html"; });
+      Swal.fire("Sessão expirada", "Faça login novamente para acessar este módulo.", "warning")
+        .then(() => { window.location.href = "index.html"; });
       return;
     }
 
@@ -109,7 +149,7 @@ document.addEventListener("DOMContentLoaded", () => {
         );
         if (obrasFiltradas.length === 0) {
           Swal.fire("Atenção", "Você não tem obras associadas!", "warning")
-            .then(() => window.location.href = "login.html");
+            .then(() => window.location.href = "menu.html");
         }
         obrasFiltradas.forEach(obra => {
           const opt = document.createElement("option");
@@ -299,5 +339,6 @@ function carregarUsuarios(selectElement) {
       });
     });
 }
+
 
 
