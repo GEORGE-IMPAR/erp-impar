@@ -7,64 +7,6 @@
   }
 })();
 
-// =============================
-// SSO (Login único ERP ÍMPAR) — ponte segura para o módulo Materiais
-// =============================
-function getSessaoERP() {
-  // Sessão do MENU (tenta vários nomes para ser compatível com versões antigas)
-  const keys = ['ERPIMPAR_USER', 'ERP_IMPAR_USER', 'erpimpar_user', 'erp_user', 'usuarioMenu', 'usuarioAtual', 'usuario_logado_menu'];
-  for (const k of keys) {
-    try {
-      const raw = localStorage.getItem(k) || sessionStorage.getItem(k);
-      if (!raw) continue;
-      const obj = JSON.parse(raw);
-      // Aceita formatos: {nome,email,...} ou {user:{...}}
-      const u = obj?.user ? obj.user : obj;
-      if (u && (u.email || u.Email || u.nome || u.Nome)) {
-        return {
-          nome: u.nome || u.Nome || "",
-          email: u.email || u.Email || "",
-          cargo: u.cargo || u.Cargo || "",
-          telefone: u.telefone || u.Telefone || "",
-          foto: u.foto || u.Foto || ""
-        };
-      }
-    } catch(e){}
-  }
-  return null;
-}
-
-function ensureUsuarioLogadoSSO() {
-  // Sempre prioriza o usuário do MENU (ERPIMPAR_USER / ERP_IMPAR_USER), e
-  // sobrescreve o usuarioLogado do módulo quando necessário.
-  const erp = getSessaoERP();
-  const atual = getUsuarioLogado();
-
-  if (erp && (erp.email || erp.nome)) {
-    const emailERP = (erp.email || "").trim().toLowerCase();
-    const emailAtual = (atual?.Email || atual?.email || "").trim().toLowerCase();
-
-    // Se não tem usuário atual, ou se é outro usuário, sincroniza
-    if (!atual || (emailERP && emailERP !== emailAtual)) {
-      const novo = {
-        Nome: erp.nome || erp.Nome || atual?.Nome || "",
-        Email: erp.email || erp.Email || "",
-        Cargo: erp.cargo || erp.Cargo || "",
-        Telefone: erp.telefone || erp.Telefone || "",
-        Foto: erp.foto || erp.Foto || ""
-      };
-      try { localStorage.setItem('usuarioLogado', JSON.stringify(novo)); } catch(e){}
-      return novo;
-    }
-    // Usuário já está sincronizado
-    return atual;
-  }
-
-  // Sem sessão do menu: usa o que já existir (compatibilidade)
-  return atual;
-}
-
-
 document.addEventListener("DOMContentLoaded", () => {
   const usuarioSelect    = document.getElementById("usuario");
   const senhaInput       = document.getElementById("senha");
@@ -141,7 +83,95 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let materiaisAdicionados = [];
 
-    const usuarioLogado = ensureUsuarioLogadoSSO() || JSON.parse(localStorage.getItem("usuarioLogado") || "null");
+    
+  
+  // ============================
+  // SSO (MENU -> MÓDULO MATERIAIS)
+  // Pega o usuário autenticado no MENU e espelha no formato que este módulo espera
+  // (usuarioLogado com chaves Nome/Email/responsável). Isso evita "usuário preso" (stale)
+  // e garante que SEMPRE use o usuário atual do menu.
+  // ============================
+  function __detectMenuUser() {
+    const preferredKeys = [
+      "ERPIMPAR_USER",
+      "ERP_IMPAR_USER",
+      "ERP_USER",
+      "usuarioERP",
+      "usuario_erp",
+      "usuarioLogadoERP",
+      "usuarioLogadoMenu",
+      "menuUser",
+      "currentUser"
+    ];
+
+    const readFromStorage = (stg, key) => {
+      try {
+        const raw = stg.getItem(key);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object") return obj;
+      } catch (e) {}
+      return null;
+    };
+
+    // 1) chaves preferidas
+    for (const k of preferredKeys) {
+      const a = readFromStorage(localStorage, k) || readFromStorage(sessionStorage, k);
+      if (a && (a.email || a.Email)) return a;
+    }
+
+    // 2) heurística: varre storages e pega o objeto que parece "usuário ERP"
+    const scan = (stg) => {
+      try {
+        for (let i = 0; i < stg.length; i++) {
+          const k = stg.key(i);
+          if (!k) continue;
+          const obj = readFromStorage(stg, k);
+          if (!obj) continue;
+          const email = (obj.email || obj.Email || "").toString();
+          const nome  = (obj.nome || obj.Nome || obj.name || "").toString();
+          const mods  = obj.modulos || obj.modules || obj.permissoes || obj.permissions;
+          // sinais fortes: email + (modulos array) ou foto/cargo
+          const looksLikeERP =
+            email.includes("@") &&
+            (
+              Array.isArray(mods) ||
+              obj.foto || obj.Foto ||
+              obj.cargo || obj.Cargo ||
+              obj.telefone || obj.Telefone
+            );
+
+          if (looksLikeERP) return obj;
+        }
+      } catch (e) {}
+      return null;
+    };
+
+    return scan(localStorage) || scan(sessionStorage) || null;
+  }
+
+  try {
+    const mu = __detectMenuUser();
+    const urlParams = new URLSearchParams(location.search);
+    const muNome  = (urlParams.get("nome") || urlParams.get("name") || (mu?.Nome || mu?.nome || mu?.name) || "").trim();
+    const muEmail = (urlParams.get("email") || (mu?.Email || mu?.email) || "").trim();
+
+    if (muEmail) {
+      const mapped = {
+        Nome: muNome || muEmail.split("@")[0],
+        Email: muEmail,
+        "responsável": (muNome || muEmail.split("@")[0]),
+        Senha: "" // não é usado aqui
+      };
+      // sempre sobrescreve para não ficar "preso" no usuário anterior
+      localStorage.setItem("usuarioLogado", JSON.stringify(mapped));
+      sessionStorage.setItem("usuarioLogado", JSON.stringify(mapped));
+    }
+  } catch (e) {
+    console.warn("SSO: falha ao sincronizar usuário do menu:", e);
+  }
+
+const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
     if (!usuarioLogado) {
       Swal.fire("Erro", "Você precisa fazer login novamente!", "error")
         .then(() => { window.location.href = "menu.html"; });
