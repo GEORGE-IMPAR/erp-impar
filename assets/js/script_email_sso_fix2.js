@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // modal de envio (premium + spinner)
     Swal.fire({
       title: "Enviando e-mail…",
-      html: "Aguarde alguns segundos. Não feche esta tela.",
+      html: `<div class="impar-swal-body"><div class="impar-spinner"></div><div class="impar-swal-sub"><b>Processando sua solicitação</b><br><span>Aguarde alguns segundos. Não feche esta tela.</span></div></div>`,
       allowOutsideClick: false,
       allowEscapeKey: false,
       didOpen: () => Swal.showLoading()
