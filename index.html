@@ -265,6 +265,60 @@ button, .btn, #btnEntrar{
 }
 .loader.hidden{ display:none; }
 
+
+/* ===== Loader overlay (não empurra layout) ===== */
+#pageLoader{
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2,6,23,.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 9999;
+}
+#pageLoader.hidden{ display:none; }
+
+.loader-card{
+  width: min(520px, 92vw);
+  background: rgba(3,10,24,.88);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  padding: 18px 18px 16px;
+}
+.loader-row{ display:flex; gap:14px; align-items:center; }
+.loader-title{ font-size: 18px; font-weight: 800; letter-spacing:.2px; color:#e5e7eb; }
+.loader-sub{ font-size: 13px; color: rgba(226,232,240,.75); margin-top:4px; }
+.spinner{
+  width: 46px; height: 46px; border-radius: 999px;
+  border: 4px solid rgba(59,130,246,.22);
+  border-top-color: rgba(34,197,94,.85);
+  animation: spin 1.05s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Foco mais “brilhante” no desktop ===== */
+@media (min-width: 768px){
+  input:focus, select:focus{
+    border-color: rgba(59,130,246,.95) !important;
+    box-shadow: 0 0 0 6px rgba(59,130,246,.22), 0 0 22px rgba(59,130,246,.25) !important;
+  }
+}
+
+/* ===== Erro de senha persiste (vermelho) ===== */
+.input-error{
+  border-color: rgba(239,68,68,.95) !important;
+  box-shadow: 0 0 0 6px rgba(239,68,68,.18), 0 0 22px rgba(239,68,68,.22) !important;
+}
+#loginStatus.status-error{
+  color: #ef4444 !important;
+  font-weight: 700;
+}
+
 .loader-card{
   width: min(520px, 92vw);
   background: rgba(6, 14, 34, .92);
@@ -365,12 +419,27 @@ button, .btn, #btnEntrar{
   const selUsuario = document.getElementById("usuario");
   const chkLembrar = document.getElementById("lembrar");
   const btnEntrar = document.getElementById("btnEntrar");
+    const statusEl = document.getElementById("loginStatus");
+  let lastUserKey = null;
+  let hasAuthError = false;
 
-  const statusEl = document.getElementById("loginStatus");
-// ====== Loader Premium (UI only) ======
+  selUsuario.addEventListener("change", () => {
+    const k = selUsuario.value || "";
+    if (k !== lastUserKey) {
+      clearAuthError();
+    }
+    lastUserKey = k;
+    // ao trocar de usuário, sempre limpa senha e volta borda azul
+    if (senhaEl) senhaEl.value = "";
+  });
+  // ====== Loader Premium (UI only) ======
   const loaderEl = document.getElementById("pageLoader");
-  function showLoader(){
+  function showLoader(title, sub){
     if(!loaderEl) return;
+    const t = loaderEl.querySelector(".loader-title");
+    const s = loaderEl.querySelector(".loader-sub");
+    if (t && title) t.textContent = title;
+    if (s && sub) s.textContent = sub;
     loaderEl.classList.remove("hidden");
     loaderEl.setAttribute("aria-hidden","false");
   }
@@ -384,13 +453,18 @@ button, .btn, #btnEntrar{
   function markSenhaErro(on){
     if(!senhaEl) return;
     senhaEl.classList.toggle("input-error", !!on);
-    statusEl?.classList.toggle("status-error", !!on);
   }
 
-function setStatus(msg, ok=false){
-  if(!statusEl) return;
-  statusEl.textContent = msg || "";
-    statusEl.style.color = ok ? "#86efac" : "#cbd5e1";
+  function setStatus(msg){
+    if(!statusEl) return;
+    statusEl.textContent = msg || "";
+    statusEl.classList.toggle("status-error", !!msg);
+  }
+
+  function clearAuthError(){
+    hasAuthError = false;
+    markSenhaErro(false);
+    setStatus("");
   }
 
   function getStore(remember){
@@ -460,39 +534,57 @@ function setStatus(msg, ok=false){
 
     btnEntrar.addEventListener("click", () => {
       const idx = selUsuario.value;
-      const senhaDigitada = senhaEl.value || "";
+      const senhaDigitada = (senhaEl?.value || "").trim();
+      lastUserKey = idx || "";
 
       if(!idx){
-        setStatus("Selecione um usuário.");
+        // sem usuário: não é erro de senha
+        hasAuthError = false;
         markSenhaErro(false);
+        setStatus("Selecione um usuário.");
         return;
       }
 
-      const user = usuarios[Number(idx)];
-      if(!user){
+      if(!senhaDigitada){
+        // se já errou a senha para esse usuário, mantém o estado vermelho
+        markSenhaErro(!!hasAuthError);
+        setStatus(hasAuthError ? "Senha incorreta. Tente novamente." : "Digite sua senha.");
+        return;
+      }
+
+      const u = usuarios[Number(idx)];
+      if(!u){
+        hasAuthError = false;
+        markSenhaErro(false);
         setStatus("Usuário inválido.");
         return;
       }
 
-      if(String(user.senha || "") !== String(senhaDigitada)){
-        setStatus("Senha incorreta. Tente novamente.");
+      // validação de senha
+      if(String(senhaDigitada) !== String(u.senha || "")){
+        hasAuthError = true;
         markSenhaErro(true);
-        senhaEl.focus();
+        setStatus("Senha incorreta. Tente novamente.");
         return;
       }
 
-      btnEntrar.classList.add("is-loading");
-      btnEntrar.textContent = "ENTRANDO...";
-      setStatus("✅ Login efetuado com sucesso. Carregando menu...", true);
+      // sucesso: limpa erro e usa loader premium (sem mensagem verde)
+      clearAuthError();
+      showLoader("Carregando módulos…", "Preparando sua sessão e carregando seus cards.");
+      btnEntrar.classList.add("loading");
+      btnEntrar.textContent = "ENTRANDO…";
 
-      salvarSessao(user, chkLembrar.checked);
+      try{
+        const remember = !!chkLembrar?.checked;
+        salvarSessao(u, remember);
+      }catch(e){ /* UI only */ }
 
+      // redireciona para menu
       setTimeout(() => {
-        showLoader();
         window.location.href = "menu.html";
-      }, 450);
+      }, 350);
     });
-  })();
+})();
 </script>
 <!-- Loader Premium (UI only) -->
   <div id="pageLoader" class="loader hidden" aria-hidden="true">
