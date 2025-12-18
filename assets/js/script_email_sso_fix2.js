@@ -54,14 +54,23 @@ document.addEventListener("DOMContentLoaded", () => {
     if (submitBtn) submitBtn.disabled = true;
 
     // modal de envio (premium + spinner)
-    Swal.fire({
-      title: "Enviando e-mail…",
-      html: `<div class="impar-swal-body"><div class="impar-spinner"></div><div class="impar-swal-sub"><b>Processando sua solicitação</b><br><span>Aguarde alguns segundos. Não feche esta tela.</span></div></div>`,
-      allowOutsideClick: false,
-      allowEscapeKey: false,
-      didOpen: () => Swal.showLoading()
-    });
 
+Swal.fire({
+  title: "Enviando e-mail…",
+  html: `
+    <div style="font-size:13px;opacity:.85">
+      Processando sua solicitação.<br>
+      Aguarde alguns segundos. Não feche esta tela.
+    </div>
+  `,
+  icon: undefined,              // 👈 força NÃO renderizar ícone
+  showConfirmButton: false,
+  allowOutsideClick: false,
+  allowEscapeKey: false,
+  didOpen: () => {
+    Swal.showLoading();          // 👈 único spinner (central)
+  }
+});
 
     const usuarioLogado = ensureUsuarioLogadoSSO() || JSON.parse(localStorage.getItem("usuarioLogado") || "null");
     if (!usuarioLogado) {
