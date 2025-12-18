@@ -466,10 +466,70 @@ html, body{
   @media (prefers-reduced-motion: reduce){
     *{ animation:none !important; transition:none !important; }
   }
+
+/* ===== Overlay loader (mesmo efeito do index: blur + card) ===== */
+#pageLoader{
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,.22);
+  backdrop-filter: blur(10px) saturate(1.25);
+  -webkit-backdrop-filter: blur(10px) saturate(1.25);
+  z-index: 9999;
+  transition: opacity .35s ease, transform .35s ease, visibility .35s ease;
+}
+#pageLoader.hidden{
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px);
+}
+#pageLoader .loader-card{
+  width: min(520px, 92vw);
+  border-radius: 16px;
+  border: 1px solid rgba(148,163,184,.20);
+  background: rgba(2,6,23,.72);
+  box-shadow: 0 20px 60px rgba(0,0,0,.55);
+  padding: 18px 18px 16px;
+  text-align: center;
+}
+#pageLoader .spinner{
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 4px solid rgba(255,255,255,.12);
+  border-top-color: rgba(34,197,94,.95);
+  border-right-color: rgba(59,130,246,.95);
+  margin: 2px auto 10px;
+  animation: imparSpin 1s linear infinite;
+}
+@keyframes imparSpin{ to { transform: rotate(360deg); } }
+#pageLoader .loader-title{
+  font-weight: 800;
+  letter-spacing: .2px;
+  margin-top: 4px;
+}
+#pageLoader .loader-sub{
+  color: var(--texto-suave, #9ca3af);
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
 </style>
 </head>
 
 <body>
+
+<div aria-busy="true" aria-live="polite" id="pageLoader" class="hidden">
+  <div class="loader-card">
+    <div class="spinner"></div>
+    <div class="loader-title">Carregando módulo…</div>
+    <div class="loader-sub">Preparando sua sessão e carregando dados.</div>
+  </div>
+</div>
 <header>
   <div class="topbar">
     <div class="brand-wrap">
@@ -641,7 +701,34 @@ html, body{
     sessionStorage.removeItem(KEY);
   }
 
-  const user = getSessao();
+  
+
+  // ===== Loader (mesmo efeito do index) =====
+  const __LOADER_MIN_MS = 900;
+  const __LOADER_FADE_MS = 350;
+
+  function showPageLoader(titulo, sub){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.querySelector(".loader-title").textContent = titulo || "Carregando módulo…";
+    el.querySelector(".loader-sub").textContent = sub || "Preparando sua sessão e carregando dados.";
+    el.classList.remove("hidden");
+    // trava cliques para evitar duplo-acesso
+    try{
+      document.querySelectorAll("button, a").forEach(x => x.setAttribute("data-was-disabled", x.disabled ? "1":"0"));
+      document.querySelectorAll("button").forEach(b => b.disabled = true);
+    }catch(e){}
+  }
+
+  function navegarComLoader(url){
+    const t0 = performance.now();
+    showPageLoader("Carregando módulo…", "Preparando sua sessão e carregando dados.");
+    const elapsed = () => performance.now() - t0;
+    const waitToNav = Math.max(0, __LOADER_MIN_MS - elapsed());
+    setTimeout(() => { window.location.href = url; }, waitToNav);
+  }
+
+const user = getSessao();
   if(!user){
     window.location.href = "index.html";
   } else {
@@ -723,11 +810,11 @@ html, body{
     });
 
     // rotas atuais (mantém por enquanto)
-    document.getElementById('btnMateriais')?.addEventListener('click', () => window.location.href = 'solicitacao_sso_v2_fix2.html');
-    document.getElementById('btnGerador')?.addEventListener('click', () => window.location.href = 'login_doc.html');
-    document.getElementById('btnCronograma')?.addEventListener('click', () => window.location.href = 'login_cronograma.html');
-    document.getElementById('btnStatusCliente')?.addEventListener('click', () => window.location.href = 'login_status.html');
-    document.getElementById('btnDashCustos')?.addEventListener('click', () => window.location.href = 'login_custos.html');
+    document.getElementById('btnMateriais')?.addEventListener('click', () => navegarComLoader('solicitacao_sso_v2_fix2.html'));
+    document.getElementById('btnGerador')?.addEventListener('click', () => navegarComLoader('login_doc.html'));
+    document.getElementById('btnCronograma')?.addEventListener('click', () => navegarComLoader('login_cronograma.html'));
+    document.getElementById('btnStatusCliente')?.addEventListener('click', () => navegarComLoader('login_status.html'));
+    document.getElementById('btnDashCustos')?.addEventListener('click', () => navegarComLoader('login_custos.html'));
   }
 </script>
 </body>
