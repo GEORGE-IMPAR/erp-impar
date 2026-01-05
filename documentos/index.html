@@ -1756,7 +1756,7 @@ header, main{
       showLoader("Abrindo menu…", "Carregando módulos e permissões.");
       setTimeout(() => {
         undo();
-        window.location.href = "../menu.html";
+        window.location.href = "./menu.html";
       }, 350);
     });
 
@@ -2477,115 +2477,75 @@ function getCurrentStep(){
 
 })();
 </script>
+
 <script>
-document.addEventListener("DOMContentLoaded",()=>{
- 
-    // ====== Dados do usuário (SSO) ======
-    (function(){
-    // SSO: carrega nome/e-mail do login_erp (sessionStorage) com fallback via usuarios.json usando o e-mail salvo no localStorage.
-    try{
-      const nomeEls  = Array.from(document.querySelectorAll('[id^="userNome"]'));
-      const emailEls = Array.from(document.querySelectorAll('[id^="userEmail"]'));
-
-      const setNome = (txt)=>{
-        nomeEls.forEach(el=>{
-          if(!el) return;
-          el.textContent = txt || "Usuário";
-        });
-      };
-      const setEmail = (mail)=>{
-        emailEls.forEach(el=>{
-          if(!el) return;
-          el.textContent = mail || "email@imparsistemas.com";
-          if(el.tagName === "A"){
-            el.href = mail ? ("mailto:" + mail) : "mailto:email@imparsistemas.com";
-          }
-        });
-      };
-
-      const loadUsuarios = async()=>{
-        const urls = [
-          "../usuarios.json",
-          "./usuarios.json",
-          "/usuarios.json"
-        ];
-        for(const u of urls){
-          try{
-            const r = await fetch(u + (u.includes("?") ? "&" : "?") + "ts=" + Date.now(), {cache:"no-store"});
-            if(!r.ok) continue;
-            const j = await r.json();
-            if(Array.isArray(j)) return j;
-            if(Array.isArray(j.usuarios)) return j.usuarios;
-            if(Array.isArray(j.data)) return j.data;
-          }catch(e){}
-        }
-        return [];
-      };
-
-      const acharUsuario = (lista, email)=>{
-        const em = (email||"").toLowerCase().trim();
-        return lista.find(u => ((u.email||u.usuario||"").toLowerCase().trim() === em)) || null;
-      };
-
-      (async()=>{
-        // Preferência: sessionStorage (mesma aba)
-        let email = (sessionStorage.getItem("erp_user_email") || "").trim();
-        let nome  = (sessionStorage.getItem("erp_user_nome")  || "").trim();
-
-        // Fallback: localStorage (se abriu em nova aba / refresh)
-        if(!email){
-          email = (localStorage.getItem("erp_login_usuario") || "").trim();
-        }
-
-        // Se ainda não tiver nome, tenta resolver via usuarios.json
-        if(email && !nome){
-          const lista = await loadUsuarios();
-          const u = acharUsuario(lista, email);
-          nome = (u && (u.nome || u.usuario || u.email)) ? (u.nome || u.usuario || u.email) : "";
-          // regrava em sessionStorage para ficar consistente no restante da navegação
-          if(nome) sessionStorage.setItem("erp_user_nome", nome);
-          sessionStorage.setItem("erp_user_email", email);
-        }
-
-        if(nome) setNome(nome);
-        if(email) setEmail(email);
-      })();
-    }catch(e){}
-  })();
-// ===============================
-    });
-</script>
-<script>
-/* === ERP ÍMPAR SSO (puxar usuário/e-mail do login_erp.html) ===
-   login_erp.html salva:
-   sessionStorage: erp_user_nome, erp_user_email, ...
-*/
+/* SSO ERP ÍMPAR: aplica usuário/e-mail do login_erp no Gerador (todas as etapas) */
 (function(){
-  function applySSOUser(){
-    try{
-      var nome = sessionStorage.getItem("erp_user_nome") || localStorage.getItem("erp_user_nome") || "";
-      var email = sessionStorage.getItem("erp_user_email") || localStorage.getItem("erp_user_email") || "";
-      // fallback para chaves antigas (caso existam)
-      if(!nome)  nome  = sessionStorage.getItem("user_nome")  || localStorage.getItem("user_nome")  || "";
-      if(!email) email = sessionStorage.getItem("user_email") || localStorage.getItem("user_email") || "";
-      var elNome  = document.getElementById("userNome");
-      var elEmail = document.getElementById("userEmail");
-      if(elNome){
-        elNome.textContent = nome ? nome : "Usuário";
-      }
-      if(elEmail){
-        // se não tiver email, mantém o texto padrão (evita mostrar placeholder antigo)
-        elEmail.textContent = email ? email : (elEmail.textContent || "");
-      }
-    }catch(e){}
+  const KEY_EMAIL = "erp_user_email";
+  const KEY_NOME  = "erp_user_nome";
+
+  function setAll(nome, email){
+    const nomeFinal = (nome || "").trim() || "Usuário";
+    const emailFinal = (email || "").trim();
+
+    document.querySelectorAll('[id^="userNome"]').forEach(el => { el.textContent = nomeFinal; });
+    document.querySelectorAll('[id^="userEmail"]').forEach(el => { el.textContent = emailFinal || "email@imparsistemas.com"; });
   }
 
-  // roda assim que der (antes do DOM completo) e de novo no DOMContentLoaded
-  applySSOUser();
-  document.addEventListener("DOMContentLoaded", applySSOUser);
+  function getFromSession(){
+    const email = sessionStorage.getItem(KEY_EMAIL) || "";
+    const nome  = sessionStorage.getItem(KEY_NOME)  || "";
+    return { nome, email };
+  }
 
-  // se o browser restaurar/voltar no histórico, reaplica
-  window.addEventListener("pageshow", applySSOUser);
+  async function getFromUsuariosJson(email){
+    if(!email) return { nome:"", email:"" };
+    try{
+      // De /documentos/ -> /usuarios.json
+      const res = await fetch("../usuarios.json", { cache: "no-store" });
+      if(!res.ok) throw new Error("usuarios.json: " + res.status);
+      const usuarios = await res.json();
+      const u = (Array.isArray(usuarios) ? usuarios : (usuarios.usuarios || usuarios.data || [])).find(x=>{
+        const e = (x && (x.email || x.usuario) || "");
+        return e === email;
+      });
+      return { nome: (u && u.nome) ? u.nome : "", email };
+    }catch(e){
+      return { nome:"", email };
+    }
+  }
+
+  async function resolveUser(){
+    // 1) SessionStorage (padrão do login_erp)
+    let { nome, email } = getFromSession();
+    if(email || nome) return { nome, email };
+
+    // 2) Fallback: email salvo no login (localStorage)
+    email = localStorage.getItem("erp_login_usuario") || "";
+    if(email){
+      const fromJson = await getFromUsuariosJson(email);
+      return { nome: fromJson.nome || "", email: fromJson.email || email };
+    }
+
+    return { nome:"", email:"" };
+  }
+
+  async function applyUser(){
+    const { nome, email } = await resolveUser();
+    if(nome || email) setAll(nome, email);
+  }
+
+  document.addEventListener("DOMContentLoaded", ()=>{
+    applyUser();
+
+    // Reaplica algumas vezes para evitar timing/elementos escondidos/loader
+    let tries = 0;
+    const t = setInterval(()=>{
+      tries++;
+      applyUser();
+      if(tries >= 12) clearInterval(t);
+    }, 250);
+  });
 })();
 </script>
 
