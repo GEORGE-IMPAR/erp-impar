@@ -1756,7 +1756,7 @@ header, main{
       showLoader("Abrindo menu…", "Carregando módulos e permissões.");
       setTimeout(() => {
         undo();
-        window.location.href = "./menu.html";
+        window.location.href = "../menu.html";
       }, 350);
     });
 
@@ -2479,12 +2479,62 @@ function getCurrentStep(){
 </script>
 <script>
 document.addEventListener("DOMContentLoaded",()=>{
- const nome=sessionStorage.getItem("erp_user_nome")||"";
- const email=sessionStorage.getItem("erp_user_email")||"";
- const nomeEl=document.getElementById("usuarioNome");
- const emailEl=document.getElementById("usuarioEmail");
- if(nomeEl) nomeEl.textContent=nome;
- if(emailEl) emailEl.textContent=email;
-});
+ 
+    // ====== Dados do usuário (SSO) ======
+    (function(){
+      const elNome = document.getElementById("userNome");
+      const elEmail = document.getElementById("userEmail");
+
+      const email =
+        (localStorage.getItem("erp_login_usuario") || "").trim() ||
+        (sessionStorage.getItem("erp_login_usuario") || "").trim() ||
+        (sessionStorage.getItem("erp_user_email") || "").trim() ||
+        (localStorage.getItem("erp_user_email") || "").trim();
+
+      if(elEmail){
+        elEmail.textContent = email || "email@imparsistemas.com";
+      }
+
+      async function loadUsuarios(){
+        const urls = [
+          "../usuarios_erp.json",
+          "/usuarios_erp.json",
+          "./usuarios_erp.json",
+          "https://api.erpimpar.com.br/storage/usuarios_erp.json",
+          "https://api.erpimpar.com.br/usuarios_erp.json"
+        ];
+        for(const url of urls){
+          try{
+            const res = await fetch(url, { cache: "no-store" });
+            if(!res.ok) continue;
+            const data = await res.json();
+            if(Array.isArray(data)) return data;
+            if(data && Array.isArray(data.usuarios)) return data.usuarios;
+          }catch(e){}
+        }
+        return null;
+      }
+
+      function resolveNome(email, lista){
+        if(!email) return "";
+        const lower = email.toLowerCase();
+        if(Array.isArray(lista)){
+          const u = lista.find(u=>{
+            const e = (u.email || u.usuario || u.login || u.user || "").toLowerCase();
+            return e === lower;
+          });
+          if(u) return u.nome || u.name || u.usuario || u.login || "";
+        }
+        return email.split("@")[0];
+      }
+
+      (async()=>{
+        const lista = await loadUsuarios();
+        const nome = resolveNome(email, lista);
+        if(elNome) elNome.textContent = nome || "Usuário";
+      })();
+    })();
+    // ===============================
+    });
 </script></body>
 </html>
