@@ -2482,59 +2482,77 @@ document.addEventListener("DOMContentLoaded",()=>{
  
     // ====== Dados do usuário (SSO) ======
     (function(){
-      const elNome = document.getElementById("userNome");
-      const elEmail = document.getElementById("userEmail");
+    // SSO: carrega nome/e-mail do login_erp (sessionStorage) com fallback via usuarios.json usando o e-mail salvo no localStorage.
+    try{
+      const nomeEls  = Array.from(document.querySelectorAll('[id^="userNome"]'));
+      const emailEls = Array.from(document.querySelectorAll('[id^="userEmail"]'));
 
-      const email =
-        (localStorage.getItem("erp_login_usuario") || "").trim() ||
-        (sessionStorage.getItem("erp_login_usuario") || "").trim() ||
-        (sessionStorage.getItem("erp_user_email") || "").trim() ||
-        (localStorage.getItem("erp_user_email") || "").trim();
+      const setNome = (txt)=>{
+        nomeEls.forEach(el=>{
+          if(!el) return;
+          el.textContent = txt || "Usuário";
+        });
+      };
+      const setEmail = (mail)=>{
+        emailEls.forEach(el=>{
+          if(!el) return;
+          el.textContent = mail || "email@imparsistemas.com";
+          if(el.tagName === "A"){
+            el.href = mail ? ("mailto:" + mail) : "mailto:email@imparsistemas.com";
+          }
+        });
+      };
 
-      if(elEmail){
-        elEmail.textContent = email || "email@imparsistemas.com";
-      }
-
-      async function loadUsuarios(){
+      const loadUsuarios = async()=>{
         const urls = [
-          "../usuarios_erp.json",
-          "/usuarios_erp.json",
-          "./usuarios_erp.json",
-          "https://api.erpimpar.com.br/storage/usuarios_erp.json",
-          "https://api.erpimpar.com.br/usuarios_erp.json"
+          "../usuarios.json",
+          "./usuarios.json",
+          "/usuarios.json"
         ];
-        for(const url of urls){
+        for(const u of urls){
           try{
-            const res = await fetch(url, { cache: "no-store" });
-            if(!res.ok) continue;
-            const data = await res.json();
-            if(Array.isArray(data)) return data;
-            if(data && Array.isArray(data.usuarios)) return data.usuarios;
+            const r = await fetch(u + (u.includes("?") ? "&" : "?") + "ts=" + Date.now(), {cache:"no-store"});
+            if(!r.ok) continue;
+            const j = await r.json();
+            if(Array.isArray(j)) return j;
+            if(Array.isArray(j.usuarios)) return j.usuarios;
+            if(Array.isArray(j.data)) return j.data;
           }catch(e){}
         }
-        return null;
-      }
+        return [];
+      };
 
-      function resolveNome(email, lista){
-        if(!email) return "";
-        const lower = email.toLowerCase();
-        if(Array.isArray(lista)){
-          const u = lista.find(u=>{
-            const e = (u.email || u.usuario || u.login || u.user || "").toLowerCase();
-            return e === lower;
-          });
-          if(u) return u.nome || u.name || u.usuario || u.login || "";
-        }
-        return email.split("@")[0];
-      }
+      const acharUsuario = (lista, email)=>{
+        const em = (email||"").toLowerCase().trim();
+        return lista.find(u => ((u.email||u.usuario||"").toLowerCase().trim() === em)) || null;
+      };
 
       (async()=>{
-        const lista = await loadUsuarios();
-        const nome = resolveNome(email, lista);
-        if(elNome) elNome.textContent = nome || "Usuário";
+        // Preferência: sessionStorage (mesma aba)
+        let email = (sessionStorage.getItem("erp_user_email") || "").trim();
+        let nome  = (sessionStorage.getItem("erp_user_nome")  || "").trim();
+
+        // Fallback: localStorage (se abriu em nova aba / refresh)
+        if(!email){
+          email = (localStorage.getItem("erp_login_usuario") || "").trim();
+        }
+
+        // Se ainda não tiver nome, tenta resolver via usuarios.json
+        if(email && !nome){
+          const lista = await loadUsuarios();
+          const u = acharUsuario(lista, email);
+          nome = (u && (u.nome || u.usuario || u.email)) ? (u.nome || u.usuario || u.email) : "";
+          // regrava em sessionStorage para ficar consistente no restante da navegação
+          if(nome) sessionStorage.setItem("erp_user_nome", nome);
+          sessionStorage.setItem("erp_user_email", email);
+        }
+
+        if(nome) setNome(nome);
+        if(email) setEmail(email);
       })();
-    })();
-    // ===============================
+    }catch(e){}
+  })();
+// ===============================
     });
 </script></body>
 </html>
