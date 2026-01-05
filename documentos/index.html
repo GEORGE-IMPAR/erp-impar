@@ -2522,9 +2522,64 @@ function getCurrentStep(){
   }
 
 
+  function safeJsonParse(txt){
+    try{ return JSON.parse(txt); }catch(e){ return null; }
+  }
+
+  function pickFirst(obj, keys){
+    if(!obj) return "";
+    for(const k of keys){
+      if(obj[k]!==undefined && obj[k]!==null && String(obj[k]).trim()!=="") return String(obj[k]).trim();
+    }
+    return "";
+  }
+
+  function readUserFromStorage(storage){
+    if(!storage) return {nome:"", email:""};
+
+    // 1) ERPIMPAR_USER (mais "oficial" no menu atual)
+    const k1 = storage.getItem("ERPIMPAR_USER");
+    if(k1){
+      const o = safeJsonParse(k1);
+      const nome = pickFirst(o, ["nome","name","Nome","user","usuario","Usuário"]);
+      const email = pickFirst(o, ["email","Email","mail","e-mail","usuarioEmail","userEmail"]);
+      if(nome || email) return {nome, email};
+    }
+
+    // 2) impar_user (legado)
+    const k2 = storage.getItem("impar_user");
+    if(k2){
+      const o = safeJsonParse(k2);
+      const nome = pickFirst(o, ["Nome","nome","name"]);
+      const email = pickFirst(o, ["Email","email","mail"]);
+      if(nome || email) return {nome, email};
+    }
+
+    // 3) usuarioLogado (outro legado)
+    const k3 = storage.getItem("usuarioLogado");
+    if(k3){
+      const o = safeJsonParse(k3);
+      const nome = pickFirst(o, ["Nome","nome","name","responsável","responsavel"]);
+      const email = pickFirst(o, ["Email","email","mail"]);
+      if(nome || email) return {nome, email};
+    }
+
+    // 4) chaves "diretas"
+    const nome = storage.getItem("erp_user_nome") || storage.getItem("erp_user_name") || "";
+    const email = storage.getItem("erp_user_email") || storage.getItem("erp_user_mail") || "";
+    if(nome || email) return {nome: (nome||"").trim(), email: (email||"").trim()};
+
+    return {nome:"", email:""};
+  }
+
   function getFromSession(){
-    const email = sessionStorage.getItem(KEY_EMAIL) || "";
-    const nome  = sessionStorage.getItem(KEY_NOME)  || "";
+    // tenta vários formatos (sessionStorage é o padrão do login_erp)
+    const fromSess = readUserFromStorage(sessionStorage);
+    if(fromSess.nome || fromSess.email) return fromSess;
+
+    // fallback específico do login_erp antigo
+    const nome = (sessionStorage.getItem("erp_user_nome")||"").trim();
+    const email = (sessionStorage.getItem("erp_user_email")||"").trim();
     return { nome, email };
   }
 
@@ -2546,12 +2601,16 @@ function getCurrentStep(){
   }
 
   async function resolveUser(){
-    // 1) SessionStorage (padrão do login_erp)
-    let { nome, email } = getFromSession();
-    if(email || nome) return { nome, email };
+    // 1) SessionStorage (padrão do login_erp / navegação na mesma aba)
+    let u = getFromSession();
+    if(u.email || u.nome) return u;
 
-    // 2) Fallback: email salvo no login (localStorage)
-    email = localStorage.getItem("erp_login_usuario") || "";
+    // 2) LocalStorage (quando abre em nova aba / persistência)
+    u = readUserFromStorage(localStorage);
+    if(u.email || u.nome) return u;
+
+    // 3) Fallback: email salvo no login (localStorage) + JSON de usuários
+    let email = localStorage.getItem("erp_login_usuario") || "";
     if(email){
       const fromJson = await getFromUsuariosJson(email);
       return { nome: fromJson.nome || "", email: fromJson.email || email };
