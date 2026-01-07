@@ -114,33 +114,81 @@ th{
 const API = "https://api.erpimpar.com.br/pricing";
 const KEY = "IMP4R_CHAVE_FIXA_TESTE_123";
 
+function setLoading(msg="Carregando..."){
+  document.getElementById("tbody").innerHTML =
+    `<tr><td colspan="6">${msg}</td></tr>`;
+}
+
 async function loadQuotes(){
-    const q = document.getElementById("search").value;
-    const r = await fetch(`${API}/list_quotes.php?limit=50&q=${q}`,{
-        headers:{"X-API-KEY":KEY}
+  const q = document.getElementById("search").value.trim();
+  const url = `${API}/list_quotes.php?limit=50&q=${encodeURIComponent(q)}`;
+
+  setLoading("Carregando...");
+
+  try{
+    // timeout de 12s (pra não ficar preso)
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 12000);
+
+    const r = await fetch(url,{
+      method: "GET",
+      headers: { "X-API-KEY": KEY },
+      signal: controller.signal
     });
-    const j = await r.json();
+
+    clearTimeout(t);
+
+    const text = await r.text(); // lê como texto primeiro (pra debug)
+    let j;
+    try { j = JSON.parse(text); }
+    catch(e){
+      console.error("Resposta não é JSON:", text);
+      setLoading("❌ Resposta inválida do servidor (não é JSON). Abra o Console (F12).");
+      return;
+    }
+
+    console.log("list_quotes response:", j);
+
+    if(!r.ok){
+      setLoading(`❌ ERRO ${r.status}: ${(j && j.error) ? j.error : "Falha ao carregar"}`);
+      return;
+    }
 
     const tbody = document.getElementById("tbody");
     tbody.innerHTML = "";
 
     if(!j.data || j.data.length === 0){
-        tbody.innerHTML = "<tr><td colspan='6'>Nenhum resultado</td></tr>";
-        return;
+      tbody.innerHTML = "<tr><td colspan='6'>Nenhuma cotação encontrada.</td></tr>";
+      return;
     }
 
     j.data.forEach(x=>{
-        tbody.innerHTML += `
+      const total = (x.total_best ?? 0);
+      tbody.innerHTML += `
         <tr>
-            <td>${x.quote_id}</td>
-            <td>${x.obra_id || ""}</td>
-            <td>${x.items_count}</td>
-            <td>R$ ${(x.total_best || 0).toFixed(2)}</td>
-            <td class="status">${x.status}</td>
-            <td><button class="btn" onclick="openQuote('${x.quote_id}')">Abrir</button></td>
+          <td>${x.quote_id ?? ""}</td>
+          <td>${x.obra_id ?? ""}</td>
+          <td>${x.items_count ?? 0}</td>
+          <td>R$ ${Number(total).toFixed(2)}</td>
+          <td class="status">${x.status ?? ""}</td>
+          <td><button class="btn" onclick="openQuote('${x.quote_id}')">Abrir</button></td>
         </tr>`;
     });
+
+  }catch(err){
+    console.error("Falha no fetch:", err);
+    const msg = (err.name === "AbortError")
+      ? "⏳ Timeout (12s) ao consultar a API."
+      : "❌ Falha ao consultar a API. Veja o Console (F12).";
+    setLoading(msg);
+  }
 }
+
+function openQuote(id){
+  window.open(`${API}/get_quote.php?id=${encodeURIComponent(id)}`,"_blank");
+}
+
+loadQuotes();
 
 function openQuote(id){
     window.open(`${API}/get_quote.php?id=${id}`,"_blank");
