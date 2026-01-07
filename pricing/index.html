@@ -1288,7 +1288,8 @@ html, body{ width:100%; overflow-x:hidden; }
 /* =========================================================
    TRANSIÇÃO DE ENTRADA — estilo slide (menu → solicitação)
    ========================================================= */
-body { opacity: 0; }
+/* Importante: não deixar a página invisível se o JS falhar */
+body { opacity: 1; }
 @keyframes imparEnter {
   0% { opacity:0; transform: translateY(34px) scale(.97); filter: blur(10px); }
   100% { opacity:1; transform: translateY(0) scale(1); filter: blur(0); }
@@ -1542,7 +1543,6 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
 
       <div class="pricing-search">
         <input class="input" id="q" placeholder="Buscar por obra, código ou ID (ex: OBRA_001, 2734, Q-...)" />
-<button id=\"btnImportCsv\" class=\"btn btn-green\" type=\"button\">Importar CSV</button>
         <button class="btn btn-primary" id="btnSearch">Buscar</button>
       </div>
 
@@ -1663,13 +1663,23 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
 
   async function apiFetch(path, opts={}) {
     const key = getKey();
-    const headers = Object.assign({"Content-Type":"application/json"}, (opts.headers||{}));
-    if (key) headers["X-API-KEY"] = key;
+    const method = (opts.method || "GET").toUpperCase();
 
-    const res = await fetch(API_BASE + path, {
-      method: opts.method || "GET",
+    // Evita preflight: para GET, não manda Content-Type e passa a chave por querystring.
+    // O backend também aceita header X-API-KEY (fallback), mas query é o caminho mais simples.
+    let url = API_BASE + path;
+    if (key && method === "GET") {
+      url += (url.includes("?") ? "&" : "?") + "x_api_key=" + encodeURIComponent(key);
+    }
+
+    const headers = Object.assign({}, (opts.headers||{}));
+    if (key && method !== "GET") headers["X-API-KEY"] = key;
+    if (method !== "GET") headers["Content-Type"] = headers["Content-Type"] || "application/json";
+
+    const res = await fetch(url, {
+      method,
       headers,
-      body: opts.body ? JSON.stringify(opts.body) : undefined
+      body: (method === "GET" || !opts.body) ? undefined : JSON.stringify(opts.body)
     });
 
     // tenta JSON sempre
@@ -1808,13 +1818,5 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
 })();
 </script>
 
-
-  <!-- IMPORT CSV (ERP) -->
-  <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
-<script>
-/* IMPORTAÇÃO CSV (ERP ÍMPAR) */
-console.log('CSV import helpers loaded');
-
-</script>
 </body>
 </html>
