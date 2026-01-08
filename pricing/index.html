@@ -382,8 +382,30 @@ function showOverlay(on, text="Processando..."){
 
   const API_BASE = "https://api.erpimpar.com.br/pricing";
 
+
+  function getApiKey(){
+    return (
+      localStorage.getItem("impar_x_api_key") ||
+      localStorage.getItem("x_api_key") ||
+      localStorage.getItem("API_KEY") ||
+      ""
+    ).trim();
+  }
+
+  function withKeyInUrl(url){
+    const k = getApiKey();
+    if(!k) return url;
+    // fallback para servidores que aceitam querystring
+    const sep = url.includes("?") ? "&" : "?";
+    return url + sep + "x_api_key=" + encodeURIComponent(k);
+  }
+
   async function apiGet(path){
-    const res = await fetch(API_BASE + path, { method:"GET" });
+    const k = getApiKey();
+    const res = await fetch(withKeyInUrl(API_BASE + path), {
+      method:"GET",
+      headers: k ? { "X-API-KEY": k } : {}
+    });
     const txt = await res.text();
     let data;
     try{ data = JSON.parse(txt); }catch(e){ data = txt; }
@@ -398,9 +420,12 @@ function showOverlay(on, text="Processando..."){
   }
 
   async function apiPost(path, body){
-    const res = await fetch(API_BASE + path, {
+    const k = getApiKey();
+    const headers = { "Content-Type":"application/json" };
+    if(k) headers["X-API-KEY"] = k;
+    const res = await fetch(withKeyInUrl(API_BASE + path), {
       method:"POST",
-      headers: { "Content-Type":"application/json" },
+      headers,
       body: JSON.stringify(body||{})
     });
     const txt = await res.text();
@@ -414,6 +439,16 @@ function showOverlay(on, text="Processando..."){
       throw e;
     }
     return data;
+  }
+
+  async function triggerProcess(quoteId){
+    if(!quoteId) return null;
+    try{
+      return await apiPost("/process_quote.php", { quote_id: String(quoteId) });
+    }catch(e){
+      // se falhar, o polling ainda mostra status pending
+      return null;
+    }
   }
 
   function fmtBRL(v){
@@ -632,6 +667,12 @@ function showOverlay(on, text="Processando..."){
       };
       const out = await apiPost("/create_quote.php", payload);
       toast("ok", `Cotação criada: ${out.quote_id || out.id || "OK"}`);
+
+      // Dispara o processamento (SerpAPI) no servidor.
+      // (Se o servidor ainda não estiver com SERPAPI_KEY configurada, a cotação ficará como pending.)
+      if (out && (out.quote_id || out.id)) {
+        triggerProcess(String(out.quote_id || out.id)).catch(()=>{});
+      }
       await loadQuotes();
       if(out.quote_id) await openDetail(out.quote_id, true);
       showOverlay(false);
@@ -647,6 +688,8 @@ function showOverlay(on, text="Processando..."){
     try{
       let data = await apiGet(`/get_quote.php?quote_id=${encodeURIComponent(quoteId)}`);
       if(autoPoll){
+        // dispara o processamento no servidor (se ainda estiver pending)
+        triggerProcess(quoteId).catch(()=>{});
         const start = Date.now();
         while(true){
           const st = String(data.status||"").toLowerCase();
