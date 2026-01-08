@@ -813,10 +813,17 @@ function escAttr(s){
       const bestTitle = best ? offerTitle(best) : "";
       const bestSrc = best ? offerSource(best) : "";
       const bestHref = (best ? offerUrl(best) : "") || offerLinkFallback(bestLoja, bestTitle);
-      // Loja: clique no nome abre o site (domínio da loja); clique no ícone abre o link do item/oferta
-      let storeHome = "";
-      if (bestHref) {
-        try { storeHome = new URL(bestHref).origin; } catch (e) { storeHome = ""; }
+      // Loja: clique no nome abre o site da loja (homepage); clique no ícone abre o link do item/oferta.
+// Regra: 1) tenta mapear pelo nome da loja (mais confiável)
+//        2) se não achar, tenta extrair o domínio do bestHref (desde que NÃO seja Google)
+      let storeHome = storeHomepage(bestLoja);
+      if (!storeHome && bestHref) {
+        try {
+          const u = new URL(bestHref);
+          const host = (u.hostname || "").toLowerCase();
+          const isGoogle = host.includes("google.");
+          storeHome = isGoogle ? "" : u.origin;
+        } catch (e) { storeHome = ""; }
       }
 
       const lojaHtml = bestLoja
@@ -840,7 +847,7 @@ const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` 
         <td class="price">${second ? fmtBRL(offerPrice(second)) : "—"}</td>
         <td class="price">${third ? fmtBRL(offerPrice(third)) : "—"}</td>
       `;
-      tb.appendChild(tr);(tr);
+      tb.appendChild(tr);
     }
 
     box.querySelector("#grandTotal").textContent = fmtBRL(grandTotal);
