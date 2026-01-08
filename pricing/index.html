@@ -229,7 +229,90 @@
     .toast.err .toast-dot{background: rgba(255,77,79,.90);}
     .toast-msg{font-size:12px;color: rgba(255,255,255,.92);line-height:1.35;}
     .footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px;color:rgba(255,255,255,.45);font-size:11px;}
-  </style>
+  
+/* ===== Premium modal goodies ===== */
+.badge-src{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; margin-left:8px;
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+  color:rgba(229,231,235,.92);
+  font-size:12px; font-weight:800; letter-spacing:.6px;
+  text-transform:uppercase;
+  box-shadow:0 6px 18px rgba(0,0,0,.25) inset;
+}
+.badge-src::before{
+  content:"⟐";
+  opacity:.9;
+}
+.store-name{
+  color:rgba(231,241,255,.95);
+  font-weight:900;
+  text-decoration:none;
+  border-bottom:1px dashed rgba(120,200,255,.25);
+}
+.store-name:hover{ filter:brightness(1.12); border-bottom-color:rgba(120,200,255,.55); }
+.iconLink{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:26px; height:26px; margin-left:6px;
+  border-radius:10px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+  color:rgba(231,241,255,.92);
+  text-decoration:none;
+  transform:translateY(2px);
+}
+.iconLink:hover{ filter:brightness(1.15); transform:translateY(1px) scale(1.03); }
+.bestPrice{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:6px 10px;
+  border-radius:14px;
+  background:rgba(34,197,94,.10);
+  border:1px solid rgba(34,197,94,.25);
+  box-shadow: 0 0 0 1px rgba(34,197,94,.08), 0 12px 40px rgba(34,197,94,.10);
+  font-weight:900;
+}
+.bestPrice .trophy{ filter:drop-shadow(0 6px 18px rgba(34,197,94,.25)); }
+tr.row-best td{
+  box-shadow: inset 0 0 0 1px rgba(34,197,94,.12);
+  background: linear-gradient(90deg, rgba(34,197,94,.08), rgba(34,197,94,.02));
+}
+.tip{
+  position:relative;
+  cursor:help;
+  border-bottom:1px dotted rgba(255,255,255,.25);
+}
+.tip:hover::after{
+  content: attr(data-tip);
+  position:absolute;
+  left:0; top:calc(100% + 10px);
+  min-width:260px;
+  max-width:520px;
+  z-index:9999;
+  padding:12px 14px;
+  border-radius:16px;
+  background:rgba(8,15,24,.94);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  color:rgba(243,244,246,.96);
+  font-size:13px;
+  line-height:1.3;
+  white-space:normal;
+}
+.tip:hover::before{
+  content:"";
+  position:absolute;
+  left:18px; top:100%;
+  width:0; height:0;
+  border-left:10px solid transparent;
+  border-right:10px solid transparent;
+  border-bottom:10px solid rgba(8,15,24,.94);
+  filter:drop-shadow(0 -1px 0 rgba(255,255,255,.10));
+}
+/* ===== /Premium modal goodies ===== */
+
+</style>
 </head>
 <body>
   <div class="wrap">
@@ -551,6 +634,28 @@ function showOverlay(on, text="Processando..."){
     return offer.link || offer.url || offer.href || "";
   }
 
+
+function offerTitle(o){
+  if(!o) return "";
+  return (o.title ?? o.titulo ?? o.nome ?? o.name ?? "");
+}
+function offerSource(o){
+  if(!o) return "";
+  return (o.fonte ?? o.source ?? o.origem ?? o.provider ?? "");
+}
+function offerLinkFallback(store, title){
+  const q = [store||"", title||""].join(" ").trim();
+  if(!q) return "";
+  return "https://www.google.com/search?q=" + encodeURIComponent(q);
+}
+function escAttr(s){
+  return String(s ?? "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
   function loadUser(){
     const raw = localStorage.getItem("usuarioLogado") || localStorage.getItem("ERPIMPAR_USER") || localStorage.getItem("impar_user") || "";
     try{
@@ -704,17 +809,25 @@ function showOverlay(on, text="Processando..."){
       const third  = offers[2] || null;
 
       const tr=document.createElement("tr");
+      tr.className = (bestPrice && isFinite(bestPrice)) ? "row-best" : "";
+      const bestTitle = best ? offerTitle(best) : "";
+      const bestSrc = best ? offerSource(best) : "";
+      const bestHref = (best ? offerUrl(best) : "") || offerLinkFallback(bestLoja, bestTitle);
+      const lojaHtml = bestLoja ? `<a class="store-name" href="${bestHref}" target="_blank" rel="noopener">${safeStr(bestLoja)}</a>` : "—";
+      const iconHtml = bestHref ? `<a class="iconLink" href="${bestHref}" target="_blank" rel="noopener" aria-label="Abrir link" title="Abrir link">↗</a>` : "";
+      const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` : "";
+      const itemTip = escAttr(bestTitle || (it.descricao||it.descrição||""));
       tr.innerHTML = `
         <td>${safeStr(it.codigo||it.código||"")}</td>
-        <td>${safeStr(it.descricao||it.descrição||"")}</td>
+        <td><span class="tip" data-tip="${itemTip}">${safeStr(it.descricao||it.descrição||"")}</span></td>
         <td class="price">${safeStr(qtd)}</td>
-        <td class="price"><span class="best">${fmtBRL(bestPrice)}</span></td>
-        <td>${(function(){const lojaTxt=safeStr(bestLoja)||"—"; const href=storeHref(bestLoja, (it.consulta||it.query||it.descricao||it.descrição||""), bestLink); return href ? `<a class="storeLink" href="${href}" target="_blank" rel="noopener">${lojaTxt}</a>` : lojaTxt;})()}${best ? `<span class="storeSub">${safeStr(best.fonte||best.fonte||best.source||best.fonte_dados||best.fonteDados||best.fonte||"")}</span>` : ""}</td>
+        <td class="price"><span class="bestPrice"><span class="trophy">🏆</span>${fmtBRL(bestPrice)}</span></td>
+        <td>${lojaHtml} ${iconHtml} ${srcBadge}</td>
         <td class="price"><b>${fmtBRL(total)}</b></td>
-        <td class="price">${second ? (function(){const p=offerPrice(second); const loja=offerStore(second); const href=storeHref(loja, (it.consulta||it.query||it.descricao||it.descrição||""), offerUrl(second)); const txt=fmtBRL(p); return href ? `<a class="storeLink" href="${href}" target="_blank" rel="noopener">${txt}</a>` : txt;})() : "—"}</td>
-        <td class="price">${third ? (function(){const p=offerPrice(third); const loja=offerStore(third); const href=storeHref(loja, (it.consulta||it.query||it.descricao||it.descrição||""), offerUrl(third)); const txt=fmtBRL(p); return href ? `<a class="storeLink" href="${href}" target="_blank" rel="noopener">${txt}</a>` : txt;})() : "—"}</td>
+        <td class="price">${second ? fmtBRL(offerPrice(second)) : "—"}</td>
+        <td class="price">${third ? fmtBRL(offerPrice(third)) : "—"}</td>
       `;
-      tb.appendChild(tr);
+      tb.appendChild(tr);(tr);
     }
 
     box.querySelector("#grandTotal").textContent = fmtBRL(grandTotal);
