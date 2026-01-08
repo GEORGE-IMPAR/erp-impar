@@ -186,7 +186,22 @@
     .modal-title small{font-size:12px;color:var(--muted);}
     .modal-body{padding:14px 16px;}
     .best{color: rgba(205,255,234,.95);}
-    .price{font-variant-numeric: tabular-nums;}
+    
+  .storeLink{
+    color: #e6f3ff;
+    font-weight: 800;
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(230,243,255,.35);
+    padding-bottom: 1px;
+  }
+  .storeLink:hover{ border-bottom-color: rgba(255,255,255,.9); }
+  .storeSub{
+    display:block;
+    font-size: 11px;
+    opacity: .7;
+    margin-top: 2px;
+  }
+.price{font-variant-numeric: tabular-nums;}
     a{color: rgba(180,220,255,.95);}
     a:hover{color: #fff;}
     .subtle{opacity:.85}
@@ -491,6 +506,51 @@ function showOverlay(on, text="Processando..."){
 
   function safeStr(x){ return (x===null||x===undefined) ? "" : String(x); }
 
+  // ---- store link helpers (ERP ÍMPAR) ----
+  function normStore(s){
+    return (s||"").toString().trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/\s+/g," ");
+  }
+  const STORE_HOME = {
+    "loja do mecanico": "https://www.lojadomecanico.com.br/",
+    "lojadomecanico": "https://www.lojadomecanico.com.br/",
+    "mercado livre": "https://www.mercadolivre.com.br/",
+    "mercadolivre": "https://www.mercadolivre.com.br/",
+    "leroy merlin": "https://www.leroymerlin.com.br/",
+    "leroymerlin": "https://www.leroymerlin.com.br/",
+    "magalu": "https://www.magazineluiza.com.br/",
+    "magazine luiza": "https://www.magazineluiza.com.br/",
+    "amazon": "https://www.amazon.com.br/",
+    "shopee": "https://shopee.com.br/",
+    "kabum": "https://www.kabum.com.br/",
+    "riberfluid": "https://www.riberfluid.com.br/",
+    "zavvor ltda": "",
+    "zavvor": ""
+  };
+  function storeHref(storeName, itemQuery, explicitUrl){
+    const url = (explicitUrl||"").toString().trim();
+    if(url) return url;
+    const key = normStore(storeName);
+    if(key && STORE_HOME[key]) return STORE_HOME[key];
+    // fallback: search by store + item
+    const q = encodeURIComponent([storeName, itemQuery].filter(Boolean).join(" ").trim());
+    return q ? ("https://www.google.com/search?q=" + q) : "";
+  }
+  function offerPrice(offer){
+    if(!offer) return NaN;
+    const v = offer.preco ?? offer.preço ?? offer.price;
+    return Number(v);
+  }
+  function offerStore(offer){
+    if(!offer) return "";
+    return offer.loja || offer.Loja || offer.store || offer.armazenar || "";
+  }
+  function offerUrl(offer){
+    if(!offer) return "";
+    return offer.link || offer.url || offer.href || "";
+  }
+
   function loadUser(){
     const raw = localStorage.getItem("usuarioLogado") || localStorage.getItem("ERPIMPAR_USER") || localStorage.getItem("impar_user") || "";
     try{
@@ -649,10 +709,10 @@ function showOverlay(on, text="Processando..."){
         <td>${safeStr(it.descricao||it.descrição||"")}</td>
         <td class="price">${safeStr(qtd)}</td>
         <td class="price"><span class="best">${fmtBRL(bestPrice)}</span></td>
-        <td>${safeStr(bestLoja)} ${bestLink ? `<a href="${bestLink}" target="_blank" rel="noopener">link</a>` : ""}</td>
+        <td>${(function(){const lojaTxt=safeStr(bestLoja)||"—"; const href=storeHref(bestLoja, (it.consulta||it.query||it.descricao||it.descrição||""), bestLink); return href ? `<a class="storeLink" href="${href}" target="_blank" rel="noopener">${lojaTxt}</a>` : lojaTxt;})()}${best ? `<span class="storeSub">${safeStr(best.fonte||best.fonte||best.source||best.fonte_dados||best.fonteDados||best.fonte||"")}</span>` : ""}</td>
         <td class="price"><b>${fmtBRL(total)}</b></td>
-        <td class="price">${second ? fmtBRL(Number(second.preco ?? second.preço ?? second.price)) : "—"}</td>
-        <td class="price">${third ? fmtBRL(Number(third.preco ?? third.preço ?? third.price)) : "—"}</td>
+        <td class="price">${second ? (function(){const p=offerPrice(second); const loja=offerStore(second); const href=storeHref(loja, (it.consulta||it.query||it.descricao||it.descrição||""), offerUrl(second)); const txt=fmtBRL(p); return href ? `<a class="storeLink" href="${href}" target="_blank" rel="noopener">${txt}</a>` : txt;})() : "—"}</td>
+        <td class="price">${third ? (function(){const p=offerPrice(third); const loja=offerStore(third); const href=storeHref(loja, (it.consulta||it.query||it.descricao||it.descrição||""), offerUrl(third)); const txt=fmtBRL(p); return href ? `<a class="storeLink" href="${href}" target="_blank" rel="noopener">${txt}</a>` : txt;})() : "—"}</td>
       `;
       tb.appendChild(tr);
     }
