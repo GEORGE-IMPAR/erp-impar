@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
-  // SweetAlert2 — aplica tema ÍMPAR globalmente (UI only)
+  // SweetAlert2 — aplica tema ÍMPAR globalmente (igual módulo Solicitação)
   if (window.Swal && Swal.mixin) {
     window.Swal = Swal.mixin({
       customClass: {
@@ -18,11 +18,31 @@
       buttonsStyling: false
     });
   }
+  // Transição de entrada (slide suave)
+  window.addEventListener("DOMContentLoaded", () => {
+    document.body.classList.add("impar-enter");
+  });
 </script>
 
 <script>
 
   const API_SAVE_JSON = "https://api.erpimpar.com.br/storage/docs/save_json.php";
+
+  // ===== Loader padrão ERP (igual menu) =====
+  function showPageLoader(title, sub){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.querySelector(".loader-title").textContent = title || "Processando…";
+    el.querySelector(".loader-sub").textContent = sub || "Aguarde…";
+    el.classList.remove("hidden");
+    el.setAttribute("aria-hidden","false");
+  }
+  function hidePageLoader(){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.classList.add("hidden");
+    el.setAttribute("aria-hidden","true");
+  }
 (function(){
  const dataEl=document.getElementById("dataContrato");
  const dataExtEl=document.getElementById("dataExtenso");
@@ -113,21 +133,6 @@ function openSalvarModal(){
     return js || { ok:true, raw:txt };
   }
 
-  function showPageLoader(title, sub){
-    const el = document.getElementById("pageLoader");
-    if(!el) return;
-    const t = document.getElementById("pageLoaderTitle");
-    const s = document.getElementById("pageLoaderSub");
-    if(t) t.textContent = title || "Processando…";
-    if(s) s.textContent = sub || "Aguarde.";
-    el.classList.remove("hidden");
-  }
-  function hidePageLoader(){
-    const el = document.getElementById("pageLoader");
-    if(!el) return;
-    el.classList.add("hidden");
-  }
-
   // ===== Payload: tenta capturar pelos IDs existentes =====
   function getVal(id){
     const el = document.getElementById(id);
@@ -136,7 +141,7 @@ function openSalvarModal(){
   }
   function buildPayload(){
     
-    const u = (typeof getLoggedUser==="function" ? getLoggedUser() : (typeof getLoggeduser==="function" ? getLoggeduser() : {nome:"Usuário", email:""}));
+    const u = getLoggedUser();
 const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
 
     // Etapa 1/2
@@ -203,66 +208,51 @@ const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo"
 
 
   // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
-  async function onFinalizarSalvarJson(e){
-    if(e) e.preventDefault();
-
-    // Loader padrão ERP (substitui a tela grande antiga de "Salvando...")
-    showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
-
-    // valida etapa atual (se existir), sem quebrar fluxo
+  async function onFinalizarSalvarJson(){
     try{
-      if(typeof validateCurrentStep === "function"){
-        const ok = validateCurrentStep();
-        if(!ok){ hidePageLoader(); return; }
-      }
-    }catch(_){}
+      // garante usuário aplicado (todas etapas)
+      try{ applyLoggedUser(); }catch(e){}
 
-    try{
+      // validação defensiva (se existir)
+      try{ if(typeof validateCurrentStep === "function"){ validateCurrentStep(); } }catch(e){}
+
       const payload = buildPayload();
-
-      // código é obrigatório
       if(!payload || !payload.codigo){
-        hidePageLoader();
-        try{ showStep(1); }catch(_){}
+        if(window.showStep) showStep(1);
         try{
-          const codEl = document.getElementById("codigoProjeto") || document.getElementById("codigo");
-          if(codEl){
-            codEl.classList.add("input-error");
-            codEl.focus();
-          }
-        }catch(_){}
-        Swal.fire({
-          icon: "warning",
-          title: "Campo obrigatório",
-          html: "Informe o <b>código</b> para salvar o projeto.",
-          confirmButtonText: "OK"
-        });
+          const inp = document.getElementById("codigoProjeto") || document.getElementById("codigo");
+          if(inp){ inp.classList.add("input-error"); inp.focus(); }
+        }catch(e){}
+        Swal.fire({ icon:"warning", title:"Campo obrigatório", text:"Informe o código do projeto para finalizar." });
         return;
       }
 
-      await postJson(API_SAVE_JSON, payload);
+      showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
+
+      const resp = await postJson(API_SAVE_JSON, payload);
 
       hidePageLoader();
-
       Swal.fire({
-        icon: "success",
-        title: "Sucesso!",
-        html: "Dados salvos com sucesso.",
-        confirmButtonText: "OK"
+        icon:"success",
+        title:"Sucesso!",
+        html:"Dados salvos com sucesso.",
+        confirmButtonText:"OK"
       });
 
+      return resp;
     }catch(err){
       hidePageLoader();
       Swal.fire({
-        icon: "error",
-        title: "Erro ao salvar",
-        html: (err && err.message) ? err.message : String(err),
-        confirmButtonText: "OK"
+        icon:"error",
+        title:"Erro ao salvar",
+        html:(err && (err.message || err.toString())) ? (err.message || err.toString()) : "Falha ao salvar o JSON."
       });
+      console.error(err);
     }
   }
 
-// Alias de compatibilidade: versões antigas chamavam finalizeFlow()
+
+  // Alias de compatibilidade: versões antigas chamavam finalizeFlow()
   async function finalizeFlow(){
     return await onFinalizarSalvarJson();
   }
@@ -292,48 +282,414 @@ const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo"
     
   // ===== Logged user (ERP ÍMPAR) =====
   function getLoggedUser(){
-    const keys = ["usuarioLogado","ERPIMPAR_USER","impar_user","imparUser","user"];
+    // Gabarito (Menu/Solicitação): lê ERPIMPAR_USER do localStorage OU sessionStorage
+    const primaryKey = "ERPIMPAR_USER";
+    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+    const candidates = [];
+    if(rawPrimary) candidates.push(rawPrimary);
+
+    // Compat: chaves antigas do ERP
+    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
     for(const k of keys){
-      const raw = (localStorage.getItem(k) || "").trim();
-      if(!raw) continue;
+      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+      if(raw) candidates.push(raw);
+    }
+
+    for(const raw of candidates){
       try{
         const u = JSON.parse(raw);
-        const nome  = (u.Nome || u.nome || u.name || u.usuario || u.user || "").toString().trim();
-        const email = (u.Email || u.email || u.mail || "").toString().trim();
-        if(nome || email) return { nome: nome || "Usuário", email: email || "—", raw: u };
-      }catch(e){}
+        const nome = u.nome || u.Nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
+        const email = u.email || u.Email || u.mail || u.userEmail || u.usuarioEmail || "";
+        if(nome || email) return { Nome:nome, Email:email, ...u };
+      }catch(e){
+        // se vier "nome|email" simples, tenta parse básico
+        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
+      }
     }
-    return { nome: "Usuário", email: "—", raw: null };
+    return { Nome:"Usuário", Email:"—" };
   }
-
-  // Compat: algumas versões chamam getLoggeduser (u minúsculo)
-  window.getLoggeduser = window.getLoggedUser;
 
   function applyLoggedUser(){
-    const u = (typeof getLoggedUser==="function" ? getLoggedUser() : {nome:"Usuário", email:"—"});
-    const nomeTxt  = (u && (u.nome || u.Nome)) ? String(u.nome || u.Nome).trim() : "Usuário";
-    const emailTxt = (u && (u.email || u.Email)) ? String(u.email || u.Email).trim() : "—";
+    const u = getLoggedUser();
+    const nomeTxt = (u.Nome || u.nome || "Usuário");
+    const emailTxt = (u.Email || u.email || "—");
 
-    // Preenche todos os placeholders possíveis (Etapas 1..5 + variações)
-    const nomeEls = new Set([
-      ...document.querySelectorAll("[id^='userNome']"),
-      ...document.querySelectorAll("[id^='userName']")
-    ]);
-    const emailEls = new Set([
-      ...document.querySelectorAll("[id^='userEmail']")
-    ]);
+    // Preenche todos os placeholders existentes (Etapas 1..5 + variantes)
+    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName"];
+    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail"];
 
-    nomeEls.forEach(el => { try{ el.textContent = nomeTxt || "Usuário"; }catch(e){} });
-    emailEls.forEach(el => { try{ el.textContent = emailTxt || "—"; }catch(e){} });
+    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
+    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
 
-    // casos específicos (se existirem)
-    const elNome = document.getElementById("userNome");
-    const elEmail = document.getElementById("userEmail");
-    if(elNome) elNome.textContent = nomeTxt || "Usuário";
-    if(elEmail) elEmail.textContent = emailTxt || "—";
-
-    return { nome: nomeTxt || "Usuário", email: emailTxt || "—" };
+    return { nome:nomeTxt, email:emailTxt };
   }
+  // ===== /Logged user =====
+
+function bind(){
+      const candidates = [];
+      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+      if(byId) candidates.push(byId);
+      document.querySelectorAll("button, a").forEach(el=>{
+        const t = (el.textContent || "").toUpperCase();
+        if(t.includes("FINALIZAR")) candidates.push(el);
+      });
+      const unique = Array.from(new Set(candidates));
+      unique.forEach(btn=>{
+        try{
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          clone.addEventListener("click", onFinalizarSalvarJson);
+          // garante aparência não alterada
+        }catch(e){}
+      });
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+    else bind();
+  })();
+
+</script>
+  <style>
+    :root{
+      --bg1:#0b1e4a;
+      --bg2:#0e3b6e;
+      --bg3:#0f766e;
+
+      --panel: rgba(2,6,23,.66);
+      --panel2: rgba(2,6,23,.78);
+      --border: rgba(148,163,184,.45);
+
+      --text: #e5e7eb;
+      --soft: rgba(229,231,235,.78);
+
+      --blue:#3b82f6;
+      --green:#22c55e;
+      --red:#ef4444;
+
+      --radius: 18px;
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      min-height:100vh;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:var(--text);
+      background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
+      display:flex;
+      flex-direction:column;
+    }
+
+    /* Entrada suave */
+    body{opacity:0}
+    @keyframes imparEnter{
+      0%{opacity:0; transform: translateY(28px) scale(.98); filter: blur(10px);}
+      100%{opacity:1; transform: translateY(0) scale(1); filter: blur(0);}
+    }
+    body.impar-enter{animation:imparEnter .75s cubic-bezier(.16,1,.3,1) both;}
+    @media (prefers-reduced-motion: reduce){
+      body{opacity:1}
+      body.impar-enter{animation:none}
+    }
+
+    header{
+      padding:14px 14px 10px;
+      display:flex;
+      justify-content:center;
+    }
+    .header-inner{
+      width:100%;
+      max-width:1200px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      text-shadow:0 2px 6px rgba(0,0,0,.75);
+      min-width:0;
+    }
+    .logo-orb{
+      width:36px;height:36px;border-radius:999px;flex:0 0 auto;
+      position:relative;
+      background: conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);
+      box-shadow:0 10px 22px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.18) inset;
+      overflow:hidden;
+    }
+    .logo-orb:before{
+      content:""; position:absolute; inset:-6px;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 55%);
+    }
+    .brand-text{display:flex; flex-direction:column; gap:2px; min-width:0;}
+    .brand-kicker{font-size:12px; letter-spacing:.22em; text-transform:uppercase; font-weight:800; opacity:.9;}
+    .brand-title{font-size:18px; font-weight:900; line-height:1.05;}
+    .brand-sub{font-size:14px; font-weight:800; opacity:.92; line-height:1.1;}
+    .brand-tagline{font-size:12px; opacity:.75; line-height:1.2; max-width:65ch; white-space:normal;}
+
+    .tag-top{
+      margin-left:auto;
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:rgba(15,23,42,.85);
+      border:1px solid rgba(148,163,184,.6);
+      color:var(--soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .pill-btn{
+      border:none;
+      background:transparent;
+      color:inherit;
+      font:inherit;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      cursor:pointer;
+      padding:0;
+    }
+    .pill-btn:hover{filter:brightness(1.08)}
+
+    main{
+      flex:1 0 auto;
+      display:flex;
+      justify-content:center;
+      padding:12px 16px 18px;
+    }
+    .layout{
+      width:100%;
+      max-width:1200px;
+      display:flex;
+      justify-content:center;
+    }
+    .container{
+      width:100%;
+      border-radius:var(--radius);
+      border:1px solid rgba(148,163,184,.6);
+      box-shadow:0 24px 60px rgba(15,23,42,.9);
+      background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
+      padding:18px;
+    }
+
+    /* Topbox (padrão) */
+    .topbox{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:2px solid rgba(34,197,94,.45);
+      background:linear-gradient(120deg, rgba(2,6,23,.78), rgba(2,6,23,.35));
+      box-shadow:0 18px 60px rgba(0,0,0,.35);
+      flex-wrap:wrap;
+    }
+    .topbox-left .title{
+      font-size:18px;
+      font-weight:900;
+      margin-bottom:4px;
+    }
+    .user-label{
+      font-size:11px;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:rgba(156,163,175,.92);
+      margin-bottom:2px;
+      font-weight:800;
+    }
+    .user-values{
+      font-size:12px;
+      color:#cfd8ff;
+      line-height:1.25;
+      font-weight:700;
+    }
+    .topbox-center{
+      flex:1 1 240px;
+      min-width:240px;
+      text-align:center;
+      padding:0 10px;
+    }
+    .code-line{
+      font-size:20px;
+      font-weight:900;
+      letter-spacing:.4px;
+      color:rgba(229,231,235,.98);
+    }
+    .sub-line{
+      margin-top:4px;
+      font-size:16px;
+      color:rgba(229,231,235,.92);
+      opacity:.95;
+    }
+
+    /* Stepper */
+    .stepper-wrap{display:flex; align-items:center; justify-content:flex-end; flex:0 0 auto;}
+    .stepper{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:6px 8px;
+      border-radius:999px;
+      background:rgba(2,6,23,.35);
+      border:1px solid rgba(255,255,255,.06);
+      overflow:auto;
+      max-width:100%;
+    }
+    .dot{
+      width:24px;height:24px;border-radius:999px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:11px; font-weight:900;
+      background:#0b1220;
+      color:#cbd5e1;
+      border:1px solid rgba(148,163,184,.25);
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
+      flex:0 0 auto;
+    }
+    .dot.active{
+      background:linear-gradient(135deg,#22c55e,#16a34a);
+      color:#020617;
+      border-color:rgba(34,197,94,.6);
+      box-shadow:0 14px 34px rgba(22,163,74,.45);
+    }
+    .line{
+      width:56px;height:3px;border-radius:999px;
+      background:rgba(148,163,184,.18);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+      flex:0 0 auto;
+    }
+    .line.active{
+      background:linear-gradient(90deg,#22c55e,#16a34a);
+      box-shadow:0 10px 24px rgba(22,163,74,.35);
+    }
+
+    .hint{
+      margin:10px 2px 10px;
+      font-size:14px;
+      color:rgba(231,236,255,.92);
+      opacity:.95;
+      line-height:1.35;
+      text-shadow:0 2px 10px rgba(0,0,0,.35);
+    }
+
+    .card{
+      margin-top:10px;
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,.35);
+      background:rgba(2,6,23,.55);
+      padding:14px;
+      display:flex;
+      flex-direction:column;
+      min-height:280px;
+      box-shadow:0 18px 48px rgba(0,0,0,.22);
+      backdrop-filter: blur(10px);
+    }
+
+    label{
+      display:block;
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+      color:#9ca3af;
+      margin-bottom:6px;
+      font-weight:900;
+    }
+    .req-star{
+      color:#fbbf24;
+      font-weight:900;
+      text-shadow:0 0 10px rgba(251,191,36,.35);
+      margin-left:2px;
+    }
+    input{
+      width:100%;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid #111827;
+      background:#020617;
+      color:var(--text);
+      font-size:14px;
+      outline:none;
+      transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+    }
+    input:focus{
+      border-color:var(--blue);
+      box-shadow:0 0 0 1px rgba(59,130,246,.95), 0 0 18px rgba(59,130,246,.40), 0 0 46px rgba(29,78,216,.25);
+    }
+    .field-help{
+      margin-top:8px;
+      min-height:14px;
+      font-size:12px;
+      color:#94a3b8;
+    }
+    .field-help.ok{color:#86efac; font-weight:800;}
+    .field-help.err{color:#fca5a5; font-weight:900;}
+
+    /* Efeito premium: vermelho + tremor */
+    @keyframes shakeX{
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-10px)}
+      40%{transform:translateX(10px)}
+      60%{transform:translateX(-8px)}
+      80%{transform:translateX(8px)}
+    }
+    .input-error{
+      border:2px solid rgba(239,68,68,.95) !important;
+      border-color:rgba(239,68,68,.95) !important;
+      box-shadow:0 0 0 1px rgba(239,68,68,.95), 0 0 18px rgba(239,68,68,.35), 0 0 46px rgba(239,68,68,.25) !important;
+      animation:shakeX .38s ease-in-out;
+    }
+
+    .actions{
+      margin-top:auto;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      padding-top:14px;
+    }
+    .actions-left{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-start;
+    }
+    .actions-right{
+      margin-left:auto;
+      display:flex;
+      justify-content:flex-end;
+    }
+
+    .btn{
+      border:none;
+      border-radius:999px;
+      padding:10px 16px;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      font-weight:900;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      min-width:220px;
+      transition: transform .22s cubic-bezier(.16,1,.3,1),
+                  box-shadow .22s cubic-bezier(.16,1,.3,1),
+                  filter .22s cubic-bezier(.16,1,.3,1);
+      will-change: transform;
+    }
+
+/* =========================================================
+   TRANSIÇÃO DE ENTRADA — estilo slide (menu → solicitação)
+   ========================================================= */
+body { opacity: 0; }
+@keyframes imparEnter {
+  0% { opacity:0; transform: translateY(34px) scale(.97); filter: blur(10px); }
+  100% { opacity:1; transform: translateY(0) scale(1); filter: blur(0); }
+}
 body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
 @media (prefers-reduced-motion: reduce) {
   body { opacity: 1; }
@@ -658,95 +1014,66 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 }
 
 
+    /* =========================================================
+       SWEETALERT2 — Tema ÍMPAR Premium (igual Solicitação)
+       ========================================================= */
+    .impar-swal{
+      background: rgba(2,6,23,.92) !important;
+      color: #e5e7eb !important;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      border-radius: 18px !important;
+      box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
+      backdrop-filter: blur(14px);
+    }
+    .impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800; }
+    .impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
+    .impar-swal-confirm, .impar-swal-cancel{
+      border:0 !important;
+      border-radius:12px !important;
+      padding:10px 16px !important;
+      font-weight:900 !important;
+      letter-spacing:.3px !important;
+      cursor:pointer !important;
+      box-shadow:none !important;
+    }
+    .impar-swal-confirm{
+      background: linear-gradient(135deg,#22c55e,#16a34a) !important;
+      color:#020617 !important;
+    }
+    .impar-swal-cancel{
+      background: rgba(148,163,184,.14) !important;
+      color:#e5e7eb !important;
+    }
 
-/* Loader padrão ERP (pageLoader) */
-#pageLoader{
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0,0,0,.22);
-  backdrop-filter: blur(10px) saturate(1.25);
-  -webkit-backdrop-filter: blur(10px) saturate(1.25);
-  z-index: 9999;
-  transition: opacity .35s ease, transform .35s ease, visibility .35s ease;
-}
-#pageLoader.hidden{
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(-6px);
-}
-.loader-card{
-  width: min(520px, 92vw);
-  border-radius: 16px;
-  border: 1px solid rgba(148,163,184,.20);
-  background: rgba(2,6,23,.72);
-  box-shadow: 0 20px 60px rgba(0,0,0,.55);
-  padding: 18px 18px 16px;
-  text-align: center;
-}
-#pageLoader .spinner{
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  border: 4px solid rgba(255,255,255,.12);
-  border-top-color: rgba(34,197,94,.95);
-  border-right-color: rgba(59,130,246,.95);
-  margin: 2px auto 10px;
-  animation: imparSpin 1s linear infinite;
-}
-.loader-title{
-  font-weight: 800;
-  letter-spacing: .2px;
-  margin-top: 4px;
-}
-.loader-sub{
-  color: var(--texto-suave, #9ca3af);
-  font-size: 12.5px;
-  margin-top: 4px;
-}
-@keyframes imparSpin{ to { transform: rotate(360deg); } }
-
-/* =========================================================
-   SWEETALERT2 — Tema ÍMPAR Premium
-   ========================================================= */
-.impar-swal{
-  background: rgba(2,6,23,.92) !important;
-  color: #e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
-  border-radius: 18px !important;
-  box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
-  backdrop-filter: blur(14px);
-}
-.impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800; }
-.impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
-.impar-swal .swal2-icon{ border-color: rgba(59,130,246,.8) !important; }
-.impar-swal .swal2-loader{
-  border-color: rgba(59,130,246,.25) !important;
-  border-top-color: rgba(59,130,246,.95) !important;
-}
-.impar-swal-confirm{
-  border: 0 !important;
-  border-radius: 12px !important;
-  padding: 10px 14px !important;
-  font-weight: 800 !important;
-  color: #fff !important;
-  background: linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e) !important;
-  box-shadow: 0 18px 38px rgba(0,0,0,.35) !important;
-}
-.impar-swal-cancel{
-  border: 1px solid rgba(255,255,255,.16) !important;
-  border-radius: 12px !important;
-  padding: 10px 14px !important;
-  font-weight: 800 !important;
-  color: #e5e7eb !important;
-  background: rgba(255,255,255,.06) !important;
-}
-.impar-swal .swal2-close{ color: rgba(229,231,235,.7) !important; }
-
+    /* =========================================================
+       PAGE LOADER — padrão ERP (spinner pequeno + texto)
+       ========================================================= */
+    #pageLoader{
+      position:fixed; inset:0; z-index:99999;
+      display:flex; align-items:center; justify-content:center;
+      background: rgba(2,6,23,.55);
+      backdrop-filter: blur(10px);
+    }
+    #pageLoader.hidden{ display:none; }
+    #pageLoader .loader-card{
+      width:min(720px, 92vw);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(2,6,23,.78);
+      box-shadow: 0 30px 90px rgba(0,0,0,.55);
+      padding: 18px 18px;
+      display:flex; gap:14px; align-items:center;
+    }
+    #pageLoader .loader-spin{
+      width:22px; height:22px; border-radius:999px;
+      border: 2px solid rgba(148,163,184,.35);
+      border-top-color: rgba(226,232,240,.95);
+      animation: imparSpin .85s linear infinite;
+      flex: 0 0 auto;
+    }
+    #pageLoader .loader-title{ font-weight:900; letter-spacing:.3px; }
+    #pageLoader .loader-sub{ font-size:12px; color: rgba(226,232,240,.78); margin-top:2px; }
+    @keyframes imparSpin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1260,8 +1587,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   }
 
   function showStep(step){
-    try{ applyLoggedUser(); }catch(e){}
-
     currentStep = step;
     document.querySelectorAll(".step-pane").forEach(p => p.classList.remove("active","pane-in"));
     const pane = document.getElementById("step"+step);
@@ -1999,8 +2324,6 @@ function wire(){
   // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
   (function(){
     function bind(){
-      try{ applyLoggedUser(); }catch(e){}
-
       const candidates = [];
       const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
       if(byId) candidates.push(byId);
@@ -2052,14 +2375,16 @@ function wire(){
   </div>
 
 
-
-<!-- Loader padrão ERP -->
-<div aria-busy="true" aria-live="polite" id="pageLoader" class="hidden">
-  <div class="loader-card">
-    <div class="spinner"></div>
-    <div class="loader-title" id="pageLoaderTitle">Processando…</div>
-    <div class="loader-sub" id="pageLoaderSub">Aguarde.</div>
+  <!-- Loader padrão ERP (usado no FINALIZAR) -->
+  <div id="pageLoader" class="hidden" aria-hidden="true">
+    <div class="loader-card">
+      <div class="loader-spin" aria-hidden="true"></div>
+      <div>
+        <div class="loader-title">Processando…</div>
+        <div class="loader-sub">Aguarde…</div>
+      </div>
+    </div>
   </div>
-</div>
+
 </body>
 </html>
