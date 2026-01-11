@@ -1831,10 +1831,99 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
   }
 
 
+
+/* ====== Usuário logado (robusto) ====== */
+function parseMaybeJSON(v){
+  if(!v || typeof v!=='string') return null;
+  const s=v.trim();
+  if(!s) return null;
+  if((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))){
+    try{ return JSON.parse(s); }catch(e){ return null; }
+  }
+  return null;
+}
+function pick(obj, keys){
+  if(!obj) return null;
+  for(const k of keys){
+    if(obj[k]!==undefined && obj[k]!==null && String(obj[k]).trim()!=='') return String(obj[k]).trim();
+  }
+  return null;
+}
+function findUserFromStorage(){
+  const candidates = [];
+  const pushKV=(k)=>{
+    const v = localStorage.getItem(k) ?? sessionStorage.getItem(k);
+    if(v!==null && v!==undefined) candidates.push({key:k, raw:v});
+  };
+  [
+    'usuarioLogado','usuario_logado','usuario','user','userData','user_data','loginData','login_data',
+    'erp_usuario','erp_user','currentUser','current_user','auth','authUser','auth_user'
+  ].forEach(pushKV);
+
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(!k) continue;
+      const lk = k.toLowerCase();
+      if(lk.includes('usuario') || lk.includes('user') || lk.includes('login') || lk.includes('auth')){
+        pushKV(k);
+      }
+    }
+  }catch(e){}
+
+  const nameKeys  = ['nome','name','usuario','user','username','nomeUsuario','nome_usuario','displayName','display_name'];
+  const emailKeys = ['email','mail','emailUsuario','email_usuario'];
+
+  for(const c of candidates){
+    const j = parseMaybeJSON(c.raw);
+    if(j){
+      const pools = [j, j.user, j.usuario, j.data, j.result, j.profile, j.perfil];
+      for(const p of pools){
+        const nome = pick(p, nameKeys);
+        const email = pick(p, emailKeys);
+        if(nome || email) return {nome, email};
+      }
+    }else{
+      const raw = String(c.raw).trim();
+      if(raw.includes('@') && raw.includes('.')) return {nome:null, email:raw};
+      if(raw.length >= 3 && raw.length <= 60) return {nome:raw, email:null};
+    }
+  }
+
+  try{
+    const usp = new URLSearchParams(location.search);
+    const nome = usp.get('nome') || usp.get('user') || usp.get('usuario');
+    const email = usp.get('email');
+    if(nome || email) return {nome, email};
+  }catch(e){}
+
+  try{
+    const g = (window.usuarioLogado || window.currentUser || window.user || null);
+    if(g){
+      const nome = pick(g, ['nome','name','usuario','user','username']);
+      const email = pick(g, ['email','mail']);
+      if(nome || email) return {nome, email};
+    }
+  }catch(e){}
+  return {nome:null, email:null};
+}
+function applyLoggedUser(){
+  const u = findUserFromStorage();
+  if(!u.nome && !u.email) return;
+
+  // existem múltiplas etapas com ids repetidos; atualiza todos por seletor de atributo
+  const nomes = document.querySelectorAll('[id="userNome"]');
+  const emails = document.querySelectorAll('[id="userEmail"]');
+
+  nomes.forEach(el=>{ if(u.nome) el.textContent = u.nome; });
+  emails.forEach(el=>{ if(u.email) el.textContent = u.email; });
+}
+
 function wire(){
     // Entrada
     window.addEventListener("DOMContentLoaded", () => {
       document.body.classList.add("impar-enter");
+      applyLoggedUser();
       wireStep3MasksAndRules(); 
       // Finalizar: abre modal de escolha (Contrato / OS)
       const btnFinal = document.getElementById("btnFinalizar");
@@ -1857,6 +1946,7 @@ function wire(){
 
     window.addEventListener("DOMContentLoaded", () => {
       document.body.classList.add("impar-enter");
+      applyLoggedUser();
       wireStep4MasksAndRules();
       wireStep5Logo();
       wireStep5(); 
@@ -1921,7 +2011,7 @@ function wire(){
       if(!validateStep5()) return;
       // Placeholder do finalizar (sem mensagens)
       // Aqui no próximo passo a gente gera o documento/JSON.
-      alert("Etapa 5 validou. Próximo passo: gerar documento.");
+      
     });
 
 
