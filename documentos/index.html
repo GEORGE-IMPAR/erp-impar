@@ -43,6 +43,101 @@
     el.classList.add("hidden");
     el.setAttribute("aria-hidden","true");
   }
+
+  // ===== Logged user (ERP ÍMPAR) — GABARITO (menu/solicitação) =====
+  function getLoggedUser(){
+    const primaryKey = "ERPIMPAR_USER";
+    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+    const candidates = [];
+    if(rawPrimary) candidates.push(rawPrimary);
+
+    // Compat: chaves antigas do ERP
+    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
+    for(const k of keys){
+      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+      if(raw) candidates.push(raw);
+    }
+
+    for(const raw of candidates){
+      try{
+        const u = JSON.parse(raw);
+        const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
+        const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
+        if(nome || email) return { Nome:nome, Email:email };
+      }catch(e){
+        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
+      }
+    }
+    return { Nome:"Usuário", Email:"—" };
+  }
+
+  // Alias para compatibilidade (algumas versões chamam getLoggeduser)
+  
+  // Garantia: função global getLoggedUser (compatível com o RP/SSO)
+  if (typeof window.getLoggedUser !== "function") {
+    window.getLoggedUser = function getLoggedUser() {
+      const keys = ["ERPIMPAR_USER","usuarioLogado","impar_user","ERPIMPARUSER","USER","user"];
+      let raw = "";
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        for (const k of keys) {
+          try {
+            raw = store.getItem(k) || "";
+            if (raw) break;
+          } catch (e) {}
+        }
+        if (raw) break;
+      }
+      if (!raw) return { Nome: "Usuário", Email: "—" };
+      try {
+        const u = JSON.parse(raw);
+        return {
+          Nome: u.Nome || u.nome || u.userNome || u.name || "Usuário",
+          Email: u.Email || u.email || u.userEmail || u.mail || "—"
+        };
+      } catch (e) {
+        if (raw.includes("@")) {
+          const parts = raw.split("|");
+          return { Nome: (parts[0] || "Usuário"), Email: (parts[1] || raw) };
+        }
+        return { Nome: "Usuário", Email: "—" };
+      }
+    };
+  }
+
+
+  function getLoggeduser(){
+    return (typeof window.getLoggedUser==="function") ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"};
+  }
+
+
+  function applyLoggedUser(){
+    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
+    const nomeTxt = (u.Nome || "Usuário");
+    const emailTxt = (u.Email || "—");
+
+    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName","userNameTxt"];
+    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail","userEmailTxt"];
+
+    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
+    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
+
+    return { nome:nomeTxt, email:emailTxt };
+  }
+
+  // expõe global (evita erro de escopo no FINALIZAR)
+  window.getLoggedUser = getLoggedUser;
+  window.getLoggeduser = getLoggedUser; // compat com typo
+  window.applyLoggedUser = applyLoggedUser;
+
+  // aplica usuário logo na entrada (padrão RP)
+  (function(){
+    try{
+      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
+      else applyLoggedUser();
+    }catch(e){}
+  })();
+  // ===== /Logged user =====
+
 (function(){
  const dataEl=document.getElementById("dataContrato");
  const dataExtEl=document.getElementById("dataExtenso");
@@ -133,65 +228,6 @@ function openSalvarModal(){
     return js || { ok:true, raw:txt };
   }
 
-
-  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
-  (function(){
-    
-  // ===== Logged user (ERP ÍMPAR) =====
-  function getLoggedUser(){
-    // Gabarito (Menu/Solicitação): lê ERPIMPAR_USER do localStorage OU sessionStorage
-    const primaryKey = "ERPIMPAR_USER";
-    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
-    const candidates = [];
-    if(rawPrimary) candidates.push(rawPrimary);
-
-    // Compat: chaves antigas do ERP
-    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
-    for(const k of keys){
-      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
-      if(raw) candidates.push(raw);
-    }
-
-    for(const raw of candidates){
-      try{
-        const u = JSON.parse(raw);
-        const nome = u.nome || u.Nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
-        const email = u.email || u.Email || u.mail || u.userEmail || u.usuarioEmail || "";
-        if(nome || email) return { Nome:nome, Email:email, ...u };
-      }catch(e){
-        // se vier "nome|email" simples, tenta parse básico
-        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
-      }
-    }
-    return { Nome:"Usuário", Email:"—" };
-  }
-
-  function applyLoggedUser(){
-    const u = getLoggedUser();
-    const nomeTxt = (u.Nome || u.nome || "Usuário");
-    const emailTxt = (u.Email || u.email || "—");
-
-    // Preenche todos os placeholders existentes (Etapas 1..5 + variantes)
-    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName"];
-    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail"];
-
-    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
-    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
-
-    return { nome:nomeTxt, email:emailTxt };
-  }
-  // ===== /Logged user =====
-
-
-  // aplica usuário logo na entrada (padrão RP)
-  (function(){
-    try{
-      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
-      else applyLoggedUser();
-    }catch(e){}
-  })();
-
-
   // ===== Payload: tenta capturar pelos IDs existentes =====
   function getVal(id){
     const el = document.getElementById(id);
@@ -200,7 +236,7 @@ function openSalvarModal(){
   }
   function buildPayload(){
     
-    const u = getLoggedUser();
+    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
     const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
 
     // Etapa 1/2
@@ -261,7 +297,7 @@ function openSalvarModal(){
       clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
       dataContrato, dataExtenso,
 
-      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.nome||"Usuário"), usuario_email: (u.email||"—") }
+      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.Nome||"Usuário"), usuario_email: (u.Email||"—") }
     };
   }
 
@@ -336,7 +372,8 @@ function openSalvarModal(){
   })();
 
 
-
+  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
+  (function(){
 function bind(){
       const candidates = [];
       const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
@@ -2259,8 +2296,9 @@ function wire(){
       wireStep5(); 
     });
 
-    document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{
-    window.location.href = "../index.html";
+    // Menu principal (placeholder)
+    $("#btnVoltarMenu").addEventListener("click", () => {
+      /* placeholder */ console.log("Menu principal (placeholder)");
     });
 
     $("#btnAtualizar").addEventListener("click", () => {
