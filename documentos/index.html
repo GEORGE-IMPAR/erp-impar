@@ -98,6 +98,21 @@ function openSalvarModal(){
     return js || { ok:true, raw:txt };
   }
 
+  function showPageLoader(title, sub){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    const t = document.getElementById("pageLoaderTitle");
+    const s = document.getElementById("pageLoaderSub");
+    if(t) t.textContent = title || "Processando…";
+    if(s) s.textContent = sub || "Aguarde.";
+    el.classList.remove("hidden");
+  }
+  function hidePageLoader(){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.classList.add("hidden");
+  }
+
   // ===== Payload: tenta capturar pelos IDs existentes =====
   function getVal(id){
     const el = document.getElementById(id);
@@ -106,7 +121,7 @@ function openSalvarModal(){
   }
   function buildPayload(){
     
-    const u = getLoggedUser();
+    const u = (typeof getLoggedUser==="function" ? getLoggedUser() : (typeof getLoggeduser==="function" ? getLoggeduser() : {nome:"Usuário", email:""}));
 const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
 
     // Etapa 1/2
@@ -175,40 +190,64 @@ const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo"
   // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
   async function onFinalizarSalvarJson(e){
     if(e) e.preventDefault();
-    openSalvarModal();
 
-    if(e) e.preventDefault();
+    // Loader padrão ERP (substitui a tela grande antiga de "Salvando...")
+    showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
 
-    // garante que a etapa 5 está ativa antes de validar (se existir)
+    // valida etapa atual (se existir), sem quebrar fluxo
     try{
       if(typeof validateCurrentStep === "function"){
         const ok = validateCurrentStep();
-        if(!ok) return;
+        if(!ok){ hidePageLoader(); return; }
       }
     }catch(_){}
 
-    const payload = buildPayload();
-
-    if(!payload.codigo){
-      // volta para etapa 1 e marca erro no código, sem mensagem (padrão)
-      try{ if(typeof showStep === "function") showStep(1); }catch(_){}
-      const codeInput = document.getElementById("codigoProjeto") || document.getElementById("codigo");
-      if(codeInput && typeof markError === "function"){ markError(codeInput); }
-      if(codeInput) codeInput.focus();
-      return;
-    }
-
-    openSalvarModal();
     try{
+      const payload = buildPayload();
+
+      // código é obrigatório
+      if(!payload || !payload.codigo){
+        hidePageLoader();
+        try{ showStep(1); }catch(_){}
+        try{
+          const codEl = document.getElementById("codigoProjeto") || document.getElementById("codigo");
+          if(codEl){
+            codEl.classList.add("input-error");
+            codEl.focus();
+          }
+        }catch(_){}
+        Swal.fire({
+          icon: "warning",
+          title: "Campo obrigatório",
+          html: "Informe o <b>código</b> para salvar o projeto.",
+          confirmButtonText: "OK"
+        });
+        return;
+      }
+
       await postJson(API_SAVE_JSON, payload);
-      showSalvarSuccess();
+
+      hidePageLoader();
+
+      Swal.fire({
+        icon: "success",
+        title: "Sucesso!",
+        html: "Dados salvos com sucesso.",
+        confirmButtonText: "OK"
+      });
+
     }catch(err){
-      showSalvarError(err && err.message ? err.message : String(err));
+      hidePageLoader();
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao salvar",
+        html: (err && err.message) ? err.message : String(err),
+        confirmButtonText: "OK"
+      });
     }
   }
 
-
-  // Alias de compatibilidade: versões antigas chamavam finalizeFlow()
+// Alias de compatibilidade: versões antigas chamavam finalizeFlow()
   async function finalizeFlow(){
     return await onFinalizarSalvarJson();
   }
@@ -252,35 +291,17 @@ const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo"
     return { nome: "Usuário", email: "—", raw: null };
   }
 
+  // Compat: algumas versões chamam getLoggeduser (u minúsculo)
+  window.getLoggeduser = window.getLoggedUser;
+
   function applyLoggedUser(){
-    const u = getLoggedUser();
-
-    // suporta múltiplos placeholders de usuário (step cards)
-    const nomeIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName"];
-    const emailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5"];
-
-    nomeIds.forEach(id=>{
-      const el = document.getElementById(id);
-      if(el) el.textContent = u.nome || "Usuário";
-    });
-    emailIds.forEach(id=>{
-      const el = document.getElementById(id);
-      if(el) el.textContent = u.email || "—";
-    });
-
-    // se existir link de e-mail (como no menu), atualiza href
-    const a = document.querySelector("a#userEmail");
-    if(a){
-      a.textContent = u.email || "—";
-      a.href = u.email ? ("mailto:" + u.email) : "#";
-    }
+    const u = (typeof getLoggedUser==="function" ? getLoggedUser() : (typeof getLoggeduser==="function" ? getLoggeduser() : {nome:"Usuário", email:""}));
+    const elNome = document.getElementById("userNome");
+    const elEmail = document.getElementById("userEmail");
+    if(elNome) elNome.textContent = u.nome || "Usuário";
+    if(elEmail) elEmail.textContent = u.email || "—";
     return u;
   }
-  // aplica na entrada
-  (function(){
-    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
-    else applyLoggedUser();
-  })();
   // ===== /Logged user =====
 
 function bind(){
@@ -971,6 +992,58 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 0 18px rgba(59,130,246,.45) !important;
 }
 
+
+
+/* Loader padrão ERP (pageLoader) */
+#pageLoader{
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,.22);
+  backdrop-filter: blur(10px) saturate(1.25);
+  -webkit-backdrop-filter: blur(10px) saturate(1.25);
+  z-index: 9999;
+  transition: opacity .35s ease, transform .35s ease, visibility .35s ease;
+}
+#pageLoader.hidden{
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px);
+}
+.loader-card{
+  width: min(520px, 92vw);
+  border-radius: 16px;
+  border: 1px solid rgba(148,163,184,.20);
+  background: rgba(2,6,23,.72);
+  box-shadow: 0 20px 60px rgba(0,0,0,.55);
+  padding: 18px 18px 16px;
+  text-align: center;
+}
+#pageLoader .spinner{
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 4px solid rgba(255,255,255,.12);
+  border-top-color: rgba(34,197,94,.95);
+  border-right-color: rgba(59,130,246,.95);
+  margin: 2px auto 10px;
+  animation: imparSpin 1s linear infinite;
+}
+.loader-title{
+  font-weight: 800;
+  letter-spacing: .2px;
+  margin-top: 4px;
+}
+.loader-sub{
+  color: var(--texto-suave, #9ca3af);
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+@keyframes imparSpin{ to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1454,7 +1527,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v1.0 • validação limpa por etapa</div>
+    <div>v2.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2271,5 +2344,15 @@ function wire(){
     </div>
   </div>
 
+
+
+<!-- Loader padrão ERP -->
+<div aria-busy="true" aria-live="polite" id="pageLoader" class="hidden">
+  <div class="loader-card">
+    <div class="spinner"></div>
+    <div class="loader-title" id="pageLoaderTitle">Processando…</div>
+    <div class="loader-sub" id="pageLoaderSub">Aguarde.</div>
+  </div>
+</div>
 </body>
 </html>
