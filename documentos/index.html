@@ -5,6 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ERP ÍMPAR – Gerador de Documentos (Rebuild V1)</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+  // SweetAlert2 — aplica tema ÍMPAR globalmente (UI only)
+  if (window.Swal && Swal.mixin) {
+    window.Swal = Swal.mixin({
+      customClass: {
+        popup: "impar-swal",
+        confirmButton: "impar-swal-confirm",
+        cancelButton: "impar-swal-cancel"
+      },
+      buttonsStyling: false
+    });
+  }
+</script>
+
 <script>
 
   const API_SAVE_JSON = "https://api.erpimpar.com.br/storage/docs/save_json.php";
@@ -295,380 +310,30 @@ const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo"
   window.getLoggeduser = window.getLoggedUser;
 
   function applyLoggedUser(){
-    const u = (typeof getLoggedUser==="function" ? getLoggedUser() : (typeof getLoggeduser==="function" ? getLoggeduser() : {nome:"Usuário", email:""}));
+    const u = (typeof getLoggedUser==="function" ? getLoggedUser() : {nome:"Usuário", email:"—"});
+    const nomeTxt  = (u && (u.nome || u.Nome)) ? String(u.nome || u.Nome).trim() : "Usuário";
+    const emailTxt = (u && (u.email || u.Email)) ? String(u.email || u.Email).trim() : "—";
+
+    // Preenche todos os placeholders possíveis (Etapas 1..5 + variações)
+    const nomeEls = new Set([
+      ...document.querySelectorAll("[id^='userNome']"),
+      ...document.querySelectorAll("[id^='userName']")
+    ]);
+    const emailEls = new Set([
+      ...document.querySelectorAll("[id^='userEmail']")
+    ]);
+
+    nomeEls.forEach(el => { try{ el.textContent = nomeTxt || "Usuário"; }catch(e){} });
+    emailEls.forEach(el => { try{ el.textContent = emailTxt || "—"; }catch(e){} });
+
+    // casos específicos (se existirem)
     const elNome = document.getElementById("userNome");
     const elEmail = document.getElementById("userEmail");
-    if(elNome) elNome.textContent = u.nome || "Usuário";
-    if(elEmail) elEmail.textContent = u.email || "—";
-    return u;
+    if(elNome) elNome.textContent = nomeTxt || "Usuário";
+    if(elEmail) elEmail.textContent = emailTxt || "—";
+
+    return { nome: nomeTxt || "Usuário", email: emailTxt || "—" };
   }
-  // ===== /Logged user =====
-
-function bind(){
-      const candidates = [];
-      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
-      if(byId) candidates.push(byId);
-      document.querySelectorAll("button, a").forEach(el=>{
-        const t = (el.textContent || "").toUpperCase();
-        if(t.includes("FINALIZAR")) candidates.push(el);
-      });
-      const unique = Array.from(new Set(candidates));
-      unique.forEach(btn=>{
-        try{
-          const clone = btn.cloneNode(true);
-          btn.parentNode.replaceChild(clone, btn);
-          clone.addEventListener("click", onFinalizarSalvarJson);
-          // garante aparência não alterada
-        }catch(e){}
-      });
-    }
-    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
-    else bind();
-  })();
-
-</script>
-  <style>
-    :root{
-      --bg1:#0b1e4a;
-      --bg2:#0e3b6e;
-      --bg3:#0f766e;
-
-      --panel: rgba(2,6,23,.66);
-      --panel2: rgba(2,6,23,.78);
-      --border: rgba(148,163,184,.45);
-
-      --text: #e5e7eb;
-      --soft: rgba(229,231,235,.78);
-
-      --blue:#3b82f6;
-      --green:#22c55e;
-      --red:#ef4444;
-
-      --radius: 18px;
-    }
-
-    *{box-sizing:border-box;margin:0;padding:0}
-    html,body{height:100%}
-    body{
-      min-height:100vh;
-      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
-      color:var(--text);
-      background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
-      display:flex;
-      flex-direction:column;
-    }
-
-    /* Entrada suave */
-    body{opacity:0}
-    @keyframes imparEnter{
-      0%{opacity:0; transform: translateY(28px) scale(.98); filter: blur(10px);}
-      100%{opacity:1; transform: translateY(0) scale(1); filter: blur(0);}
-    }
-    body.impar-enter{animation:imparEnter .75s cubic-bezier(.16,1,.3,1) both;}
-    @media (prefers-reduced-motion: reduce){
-      body{opacity:1}
-      body.impar-enter{animation:none}
-    }
-
-    header{
-      padding:14px 14px 10px;
-      display:flex;
-      justify-content:center;
-    }
-    .header-inner{
-      width:100%;
-      max-width:1200px;
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:12px;
-      flex-wrap:wrap;
-    }
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      text-shadow:0 2px 6px rgba(0,0,0,.75);
-      min-width:0;
-    }
-    .logo-orb{
-      width:36px;height:36px;border-radius:999px;flex:0 0 auto;
-      position:relative;
-      background: conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);
-      box-shadow:0 10px 22px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.18) inset;
-      overflow:hidden;
-    }
-    .logo-orb:before{
-      content:""; position:absolute; inset:-6px;
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 55%);
-    }
-    .brand-text{display:flex; flex-direction:column; gap:2px; min-width:0;}
-    .brand-kicker{font-size:12px; letter-spacing:.22em; text-transform:uppercase; font-weight:800; opacity:.9;}
-    .brand-title{font-size:18px; font-weight:900; line-height:1.05;}
-    .brand-sub{font-size:14px; font-weight:800; opacity:.92; line-height:1.1;}
-    .brand-tagline{font-size:12px; opacity:.75; line-height:1.2; max-width:65ch; white-space:normal;}
-
-    .tag-top{
-      margin-left:auto;
-      font-size:11px;
-      padding:6px 10px;
-      border-radius:999px;
-      background:rgba(15,23,42,.85);
-      border:1px solid rgba(148,163,184,.6);
-      color:var(--soft);
-      display:flex;
-      align-items:center;
-      gap:8px;
-    }
-    .pill-btn{
-      border:none;
-      background:transparent;
-      color:inherit;
-      font:inherit;
-      display:flex;
-      align-items:center;
-      gap:6px;
-      cursor:pointer;
-      padding:0;
-    }
-    .pill-btn:hover{filter:brightness(1.08)}
-
-    main{
-      flex:1 0 auto;
-      display:flex;
-      justify-content:center;
-      padding:12px 16px 18px;
-    }
-    .layout{
-      width:100%;
-      max-width:1200px;
-      display:flex;
-      justify-content:center;
-    }
-    .container{
-      width:100%;
-      border-radius:var(--radius);
-      border:1px solid rgba(148,163,184,.6);
-      box-shadow:0 24px 60px rgba(15,23,42,.9);
-      background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
-      padding:18px;
-    }
-
-    /* Topbox (padrão) */
-    .topbox{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:16px;
-      padding:12px 14px;
-      border-radius:14px;
-      border:2px solid rgba(34,197,94,.45);
-      background:linear-gradient(120deg, rgba(2,6,23,.78), rgba(2,6,23,.35));
-      box-shadow:0 18px 60px rgba(0,0,0,.35);
-      flex-wrap:wrap;
-    }
-    .topbox-left .title{
-      font-size:18px;
-      font-weight:900;
-      margin-bottom:4px;
-    }
-    .user-label{
-      font-size:11px;
-      letter-spacing:.12em;
-      text-transform:uppercase;
-      color:rgba(156,163,175,.92);
-      margin-bottom:2px;
-      font-weight:800;
-    }
-    .user-values{
-      font-size:12px;
-      color:#cfd8ff;
-      line-height:1.25;
-      font-weight:700;
-    }
-    .topbox-center{
-      flex:1 1 240px;
-      min-width:240px;
-      text-align:center;
-      padding:0 10px;
-    }
-    .code-line{
-      font-size:20px;
-      font-weight:900;
-      letter-spacing:.4px;
-      color:rgba(229,231,235,.98);
-    }
-    .sub-line{
-      margin-top:4px;
-      font-size:16px;
-      color:rgba(229,231,235,.92);
-      opacity:.95;
-    }
-
-    /* Stepper */
-    .stepper-wrap{display:flex; align-items:center; justify-content:flex-end; flex:0 0 auto;}
-    .stepper{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:6px 8px;
-      border-radius:999px;
-      background:rgba(2,6,23,.35);
-      border:1px solid rgba(255,255,255,.06);
-      overflow:auto;
-      max-width:100%;
-    }
-    .dot{
-      width:24px;height:24px;border-radius:999px;
-      display:flex; align-items:center; justify-content:center;
-      font-size:11px; font-weight:900;
-      background:#0b1220;
-      color:#cbd5e1;
-      border:1px solid rgba(148,163,184,.25);
-      box-shadow:0 10px 24px rgba(0,0,0,.25);
-      flex:0 0 auto;
-    }
-    .dot.active{
-      background:linear-gradient(135deg,#22c55e,#16a34a);
-      color:#020617;
-      border-color:rgba(34,197,94,.6);
-      box-shadow:0 14px 34px rgba(22,163,74,.45);
-    }
-    .line{
-      width:56px;height:3px;border-radius:999px;
-      background:rgba(148,163,184,.18);
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
-      flex:0 0 auto;
-    }
-    .line.active{
-      background:linear-gradient(90deg,#22c55e,#16a34a);
-      box-shadow:0 10px 24px rgba(22,163,74,.35);
-    }
-
-    .hint{
-      margin:10px 2px 10px;
-      font-size:14px;
-      color:rgba(231,236,255,.92);
-      opacity:.95;
-      line-height:1.35;
-      text-shadow:0 2px 10px rgba(0,0,0,.35);
-    }
-
-    .card{
-      margin-top:10px;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.35);
-      background:rgba(2,6,23,.55);
-      padding:14px;
-      display:flex;
-      flex-direction:column;
-      min-height:280px;
-      box-shadow:0 18px 48px rgba(0,0,0,.22);
-      backdrop-filter: blur(10px);
-    }
-
-    label{
-      display:block;
-      font-size:11px;
-      text-transform:uppercase;
-      letter-spacing:.08em;
-      color:#9ca3af;
-      margin-bottom:6px;
-      font-weight:900;
-    }
-    .req-star{
-      color:#fbbf24;
-      font-weight:900;
-      text-shadow:0 0 10px rgba(251,191,36,.35);
-      margin-left:2px;
-    }
-    input{
-      width:100%;
-      padding:10px 12px;
-      border-radius:12px;
-      border:1px solid #111827;
-      background:#020617;
-      color:var(--text);
-      font-size:14px;
-      outline:none;
-      transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
-    }
-    input:focus{
-      border-color:var(--blue);
-      box-shadow:0 0 0 1px rgba(59,130,246,.95), 0 0 18px rgba(59,130,246,.40), 0 0 46px rgba(29,78,216,.25);
-    }
-    .field-help{
-      margin-top:8px;
-      min-height:14px;
-      font-size:12px;
-      color:#94a3b8;
-    }
-    .field-help.ok{color:#86efac; font-weight:800;}
-    .field-help.err{color:#fca5a5; font-weight:900;}
-
-    /* Efeito premium: vermelho + tremor */
-    @keyframes shakeX{
-      0%,100%{transform:translateX(0)}
-      20%{transform:translateX(-10px)}
-      40%{transform:translateX(10px)}
-      60%{transform:translateX(-8px)}
-      80%{transform:translateX(8px)}
-    }
-    .input-error{
-      border:2px solid rgba(239,68,68,.95) !important;
-      border-color:rgba(239,68,68,.95) !important;
-      box-shadow:0 0 0 1px rgba(239,68,68,.95), 0 0 18px rgba(239,68,68,.35), 0 0 46px rgba(239,68,68,.25) !important;
-      animation:shakeX .38s ease-in-out;
-    }
-
-    .actions{
-      margin-top:auto;
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      justify-content:space-between;
-      padding-top:14px;
-    }
-    .actions-left{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      justify-content:flex-start;
-    }
-    .actions-right{
-      margin-left:auto;
-      display:flex;
-      justify-content:flex-end;
-    }
-
-    .btn{
-      border:none;
-      border-radius:999px;
-      padding:10px 16px;
-      font-size:12px;
-      text-transform:uppercase;
-      letter-spacing:.12em;
-      font-weight:900;
-      cursor:pointer;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:10px;
-      min-width:220px;
-      transition: transform .22s cubic-bezier(.16,1,.3,1),
-                  box-shadow .22s cubic-bezier(.16,1,.3,1),
-                  filter .22s cubic-bezier(.16,1,.3,1);
-      will-change: transform;
-    }
-
-/* =========================================================
-   TRANSIÇÃO DE ENTRADA — estilo slide (menu → solicitação)
-   ========================================================= */
-body { opacity: 0; }
-@keyframes imparEnter {
-  0% { opacity:0; transform: translateY(34px) scale(.97); filter: blur(10px); }
-  100% { opacity:1; transform: translateY(0) scale(1); filter: blur(0); }
-}
 body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
 @media (prefers-reduced-motion: reduce) {
   body { opacity: 1; }
@@ -1044,6 +709,44 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   margin-top: 4px;
 }
 @keyframes imparSpin{ to { transform: rotate(360deg); } }
+
+/* =========================================================
+   SWEETALERT2 — Tema ÍMPAR Premium
+   ========================================================= */
+.impar-swal{
+  background: rgba(2,6,23,.92) !important;
+  color: #e5e7eb !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
+  backdrop-filter: blur(14px);
+}
+.impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800; }
+.impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
+.impar-swal .swal2-icon{ border-color: rgba(59,130,246,.8) !important; }
+.impar-swal .swal2-loader{
+  border-color: rgba(59,130,246,.25) !important;
+  border-top-color: rgba(59,130,246,.95) !important;
+}
+.impar-swal-confirm{
+  border: 0 !important;
+  border-radius: 12px !important;
+  padding: 10px 14px !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  background: linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e) !important;
+  box-shadow: 0 18px 38px rgba(0,0,0,.35) !important;
+}
+.impar-swal-cancel{
+  border: 1px solid rgba(255,255,255,.16) !important;
+  border-radius: 12px !important;
+  padding: 10px 14px !important;
+  font-weight: 800 !important;
+  color: #e5e7eb !important;
+  background: rgba(255,255,255,.06) !important;
+}
+.impar-swal .swal2-close{ color: rgba(229,231,235,.7) !important; }
+
 </style>
 </head>
 <body>
@@ -1527,7 +1230,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v2.0 • validação limpa por etapa</div>
+    <div>v1.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -1557,6 +1260,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   }
 
   function showStep(step){
+    try{ applyLoggedUser(); }catch(e){}
+
     currentStep = step;
     document.querySelectorAll(".step-pane").forEach(p => p.classList.remove("active","pane-in"));
     const pane = document.getElementById("step"+step);
@@ -2294,6 +1999,8 @@ function wire(){
   // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
   (function(){
     function bind(){
+      try{ applyLoggedUser(); }catch(e){}
+
       const candidates = [];
       const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
       if(byId) candidates.push(byId);
