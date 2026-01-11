@@ -5,12 +5,204 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ERP ÍMPAR – Gerador de Documentos (Rebuild V1)</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11">
+
+  const API_SAVE_JSON = "https://api.erpimpar.com.br/storage/docs/save_json.php";
 (function(){
  const dataEl=document.getElementById("dataContrato");
  const dataExtEl=document.getElementById("dataExtenso");
  function dataPorExtensoISO(iso){if(!iso)return"";const[y,m,d]=iso.split("-").map(x=>parseInt(x,10));const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];return `${d} de ${meses[m-1]} de ${y}`}
  if(dataEl){dataEl.addEventListener("change",()=>{const iso=dataEl.value;if(dataExtEl){dataExtEl.value=iso?dataPorExtensoISO(iso):"";}})}
 })();
+
+  // ===== Helpers: Modal ÍMPAR (Salvar JSON) =====
+  function openSalvarModal(){
+    const m = document.getElementById("modalImparSalvar");
+    if(!m) return;
+    m.setAttribute("aria-hidden","false");
+    // reset visual
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const body = document.getElementById("modalSalvarBody");
+    const loading = document.getElementById("modalSalvarLoading");
+    const title = document.getElementById("modalSalvarTitulo");
+    const sub = document.getElementById("modalSalvarSub");
+    const msg = document.getElementById("modalSalvarMsg");
+    if(okBtn) okBtn.style.display = "none";
+    if(body) body.style.display = "none";
+    if(loading) loading.style.display = "flex";
+    if(title) title.textContent = "Salvando...";
+    if(sub) sub.textContent = "Gravando o JSON do projeto no servidor.";
+    if(msg) msg.textContent = "";
+  }
+  function closeSalvarModal(){
+    const m = document.getElementById("modalImparSalvar");
+    if(!m) return;
+    m.setAttribute("aria-hidden","true");
+  }
+  function showSalvarSuccess(){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const body = document.getElementById("modalSalvarBody");
+    const loading = document.getElementById("modalSalvarLoading");
+    const title = document.getElementById("modalSalvarTitulo");
+    const sub = document.getElementById("modalSalvarSub");
+    const msg = document.getElementById("modalSalvarMsg");
+    if(loading) loading.style.display = "none";
+    if(body) body.style.display = "block";
+    if(title) title.textContent = "Gerado com sucesso!";
+    if(sub) sub.textContent = "JSON salvo no padrão ÍMPAR.";
+    if(msg) msg.textContent = "Documento salvo com sucesso. Os dados foram registrados e estão prontos para gerar Contrato ou Ordem de Serviço.";
+    if(okBtn) okBtn.style.display = "inline-flex";
+  }
+  function showSalvarError(text){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const body = document.getElementById("modalSalvarBody");
+    const loading = document.getElementById("modalSalvarLoading");
+    const title = document.getElementById("modalSalvarTitulo");
+    const sub = document.getElementById("modalSalvarSub");
+    const msg = document.getElementById("modalSalvarMsg");
+    if(loading) loading.style.display = "none";
+    if(body) body.style.display = "block";
+    if(title) title.textContent = "Erro ao salvar";
+    if(sub) sub.textContent = "Verifique a API e tente novamente.";
+    if(msg) msg.textContent = text || "Erro desconhecido.";
+    if(okBtn) okBtn.style.display = "inline-flex";
+  }
+  (function(){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const m = document.getElementById("modalImparSalvar");
+    const backdrop = document.querySelector("#modalImparSalvar .impar-modal-backdrop");
+    if(okBtn) okBtn.addEventListener("click", closeSalvarModal);
+    if(backdrop) backdrop.addEventListener("click", closeSalvarModal);
+    if(m) m.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeSalvarModal(); });
+  })();
+
+  async function postJson(url, data){
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(data)
+    });
+    const txt = await res.text();
+    let js=null;
+    try{ js = JSON.parse(txt); }catch(e){}
+    if(!res.ok){
+      const msg = (js && js.error) ? js.error : (txt || "Erro no servidor");
+      throw new Error(msg);
+    }
+    return js || { ok:true, raw:txt };
+  }
+
+  // ===== Payload: tenta capturar pelos IDs existentes =====
+  function getVal(id){
+    const el = document.getElementById(id);
+    if(!el) return "";
+    return (el.value ?? "").toString().trim();
+  }
+  function buildPayload(){
+    const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
+
+    // Etapa 1/2
+    const nomeObra = getVal("nomeObra") || getVal("nome_obra") || getVal("nomeObraInput");
+    const servico = getVal("servicoObra") || getVal("servico") || getVal("servico_obra");
+    const enderecoObra = getVal("enderecoObra") || getVal("endereco") || getVal("endereco_obra");
+    const projetista = getVal("projetista") || getVal("projetistaObra") || "";
+
+    // Etapa 3 - Contratante
+    const nomeContratante = getVal("nomeContratante");
+    const contatoContratante = getVal("contatoContratante");
+    const telefoneContratante = getVal("telefoneContratante");
+    const cepContratante = getVal("cepContratante");
+    const cpfCnpjContratante = getVal("cpfCnpjContratante") || getVal("cpfCnpj");
+    const logradouroContratante = getVal("logradouroContratante");
+    const numeroContratante = getVal("numeroContratante");
+    const bairroContratante = getVal("bairroContratante");
+    const cidadeContratante = getVal("cidadeContratante");
+    const ufContratante = getVal("ufContratante");
+    const complementoContratante = getVal("complementoContratante");
+    const emailContratante = getVal("emailContratante");
+
+    // Etapa 4 - Contratada
+    const nomeContratada = getVal("nomeContratada");
+    const contatoContratada = getVal("contatoContratada");
+    const telefoneContratada = getVal("telefoneContratada");
+    const cepContratada = getVal("cepContratada");
+    const cpfCnpjContratada = getVal("cpfCnpjContratada");
+    const logradouroContratada = getVal("logradouroContratada");
+    const numeroContratada = getVal("numeroContratada");
+    const bairroContratada = getVal("bairroContratada");
+    const cidadeContratada = getVal("cidadeContratada");
+    const ufContratada = getVal("ufContratada");
+    const complementoContratada = getVal("complementoContratada");
+    const emailContratada = getVal("emailContratada");
+
+    // Etapa 5
+    const clausulas = getVal("clausulas") || getVal("clausulasCondicoes") || "";
+    const condicoesPagamento = getVal("condPagamento") || getVal("condicoesPagamento") || getVal("condicoes") || "";
+    const valor = getVal("valorContrato") || getVal("valor") || "";
+    const valorExtenso = getVal("valorExtenso") || getVal("Extenso_Valor") || "";
+    const prazoDias = getVal("prazoDias") || getVal("prazo") || "";
+    const dataContrato = getVal("dataContrato") || getVal("data") || "";
+    const dataExtenso = getVal("dataExtenso") || getVal("data_por_extenso") || "";
+
+    return {
+      codigo,
+      nomeObra, servico, enderecoObra, projetista,
+
+      nomeContratante, contatoContratante, telefoneContratante, emailContratante,
+      cpfCnpjContratante, cepContratante, logradouroContratante, numeroContratante,
+      complementoContratante, bairroContratante, cidadeContratante, ufContratante,
+
+      nomeContratada, contatoContratada, telefoneContratada, emailContratada,
+      cpfCnpjContratada, cepContratada, logradouroContratada, numeroContratada,
+      complementoContratada, bairroContratada, cidadeContratada, ufContratada,
+
+      clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
+      dataContrato, dataExtenso,
+
+      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString() }
+    };
+  }
+
+
+  // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
+  async function onFinalizarSalvarJson(e){
+    if(e) e.preventDefault();
+
+    // garante que a etapa 5 está ativa antes de validar (se existir)
+    try{
+      if(typeof validateCurrentStep === "function"){
+        const ok = validateCurrentStep();
+        if(!ok) return;
+      }
+    }catch(_){}
+
+    const payload = buildPayload();
+
+    if(!payload.codigo){
+      // volta para etapa 1 e marca erro no código, sem mensagem (padrão)
+      try{ if(typeof showStep === "function") showStep(1); }catch(_){}
+      const codeInput = document.getElementById("codigoProjeto") || document.getElementById("codigo");
+      if(codeInput && typeof markError === "function"){ markError(codeInput); }
+      if(codeInput) codeInput.focus();
+      return;
+    }
+
+    openSalvarModal();
+    try{
+      await postJson(API_SAVE_JSON, payload);
+      showSalvarSuccess();
+    }catch(err){
+      showSalvarError(err && err.message ? err.message : String(err));
+    }
+  }
+
+  // liga no botão FINALIZAR
+  (function(){
+    const btn = document.getElementById("btnFinalizar");
+    if(btn){
+      btn.addEventListener("click", onFinalizarSalvarJson);
+    }
+  })();
+
 </script>
   <style>
     :root{
@@ -631,7 +823,7 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
   box-shadow:0 0 0 2px rgba(2,6,23,.90),0 0 0 4px rgba(34,197,94,.80),0 0 28px rgba(34,197,94,.65),0 22px 55px rgba(22,163,74,.55);
 }
 
-/* ===== Modal ÍMPAR (Contrato / OS) ===== */
+/* ===== Modal ÍMPAR ===== */
 .impar-modal{position:fixed; inset:0; display:none; z-index:9999;}
 .impar-modal[aria-hidden="false"]{display:block;}
 .impar-modal-backdrop{position:absolute; inset:0; background:rgba(0,0,0,.55); backdrop-filter: blur(6px);}
@@ -657,20 +849,25 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
 }
 .impar-modal-title{font-size:22px; font-weight:800; letter-spacing:.2px; color:rgba(255,255,255,.92);}
 .impar-modal-subtitle{margin-top:4px; font-size:13px; color:rgba(229,231,235,.72);}
-.impar-modal-actions{display:flex; gap:12px; justify-content:flex-start; padding:14px 0 10px;}
-.impar-modal-footer{display:flex; justify-content:flex-end; padding-top:6px;}
+.impar-modal-footer{display:flex; justify-content:flex-end; padding-top:10px;}
 .impar-modal-loading{
   position:absolute; inset:0; border-radius:22px;
   background:rgba(2,6,23,.82);
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
 }
 .impar-modal-loading-text{color:rgba(229,231,235,.85); font-size:13px;}
-.btn-ghost{
-  background: rgba(148,163,184,.10);
-  border:1px solid rgba(148,163,184,.20);
-  color: rgba(229,231,235,.88);
+.impar-modal-body{padding:8px 0 0;}
+.impar-modal-message{color:rgba(229,231,235,.88); font-size:14px; line-height:1.35;}
+
+
+/* ===== Override: foco azul brilhante (garantia) ===== */
+button:focus, .btn:focus, .btn:focus-visible,
+input:focus, textarea:focus, select:focus,
+input:focus-visible, textarea:focus-visible, select:focus-visible{
+  outline:none !important;
+  border-color: rgba(59,130,246,.95) !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 0 18px rgba(59,130,246,.45) !important;
 }
-.btn-ghost:hover{filter:brightness(1.08);}
 
 </style>
 </head>
@@ -1831,122 +2028,15 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
   }
 
 
-
-/* ====== Usuário logado (robusto) ====== */
-function parseMaybeJSON(v){
-  if(!v || typeof v!=='string') return null;
-  const s=v.trim();
-  if(!s) return null;
-  if((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))){
-    try{ return JSON.parse(s); }catch(e){ return null; }
-  }
-  return null;
-}
-function pick(obj, keys){
-  if(!obj) return null;
-  for(const k of keys){
-    if(obj[k]!==undefined && obj[k]!==null && String(obj[k]).trim()!=='') return String(obj[k]).trim();
-  }
-  return null;
-}
-function findUserFromStorage(){
-  const candidates = [];
-  const pushKV=(k)=>{
-    const v = localStorage.getItem(k) ?? sessionStorage.getItem(k);
-    if(v!==null && v!==undefined) candidates.push({key:k, raw:v});
-  };
-  [
-    'usuarioLogado','usuario_logado','usuario','user','userData','user_data','loginData','login_data',
-    'erp_usuario','erp_user','currentUser','current_user','auth','authUser','auth_user'
-  ].forEach(pushKV);
-
-  try{
-    for(let i=0;i<localStorage.length;i++){
-      const k = localStorage.key(i);
-      if(!k) continue;
-      const lk = k.toLowerCase();
-      if(lk.includes('usuario') || lk.includes('user') || lk.includes('login') || lk.includes('auth')){
-        pushKV(k);
-      }
-    }
-  }catch(e){}
-
-  const nameKeys  = ['nome','name','usuario','user','username','nomeUsuario','nome_usuario','displayName','display_name'];
-  const emailKeys = ['email','mail','emailUsuario','email_usuario'];
-
-  for(const c of candidates){
-    const j = parseMaybeJSON(c.raw);
-    if(j){
-      const pools = [j, j.user, j.usuario, j.data, j.result, j.profile, j.perfil];
-      for(const p of pools){
-        const nome = pick(p, nameKeys);
-        const email = pick(p, emailKeys);
-        if(nome || email) return {nome, email};
-      }
-    }else{
-      const raw = String(c.raw).trim();
-      if(raw.includes('@') && raw.includes('.')) return {nome:null, email:raw};
-      if(raw.length >= 3 && raw.length <= 60) return {nome:raw, email:null};
-    }
-  }
-
-  try{
-    const usp = new URLSearchParams(location.search);
-    const nome = usp.get('nome') || usp.get('user') || usp.get('usuario');
-    const email = usp.get('email');
-    if(nome || email) return {nome, email};
-  }catch(e){}
-
-  try{
-    const g = (window.usuarioLogado || window.currentUser || window.user || null);
-    if(g){
-      const nome = pick(g, ['nome','name','usuario','user','username']);
-      const email = pick(g, ['email','mail']);
-      if(nome || email) return {nome, email};
-    }
-  }catch(e){}
-  return {nome:null, email:null};
-}
-function applyLoggedUser(){
-  const u = findUserFromStorage();
-  if(!u.nome && !u.email) return;
-
-  // existem múltiplas etapas com ids repetidos; atualiza todos por seletor de atributo
-  const nomes = document.querySelectorAll('[id="userNome"]');
-  const emails = document.querySelectorAll('[id="userEmail"]');
-
-  nomes.forEach(el=>{ if(u.nome) el.textContent = u.nome; });
-  emails.forEach(el=>{ if(u.email) el.textContent = u.email; });
-}
-
 function wire(){
     // Entrada
     window.addEventListener("DOMContentLoaded", () => {
       document.body.classList.add("impar-enter");
-      applyLoggedUser();
       wireStep3MasksAndRules(); 
-      // Finalizar: abre modal de escolha (Contrato / OS)
-      const btnFinal = document.getElementById("btnFinalizar");
-      if(btnFinal){
-        btnFinal.addEventListener("click", (e)=>{
-          e.preventDefault();
-          openModalGeracao();
-        });
-      }
-
-      // Modal buttons
-      const bC = document.getElementById("btnGerarContrato");
-      const bO = document.getElementById("btnGerarOS");
-      const bX = document.getElementById("btnCancelarModal");
-      if(bC) bC.addEventListener("click", ()=>finalizeFlow());
-      if(bO) bO.addEventListener("click", ()=>finalizeFlow());
-      if(bX) bX.addEventListener("click", ()=>closeModalGeracao());
-
     });
 
     window.addEventListener("DOMContentLoaded", () => {
       document.body.classList.add("impar-enter");
-      applyLoggedUser();
       wireStep4MasksAndRules();
       wireStep5Logo();
       wireStep5(); 
@@ -2011,7 +2101,7 @@ function wire(){
       if(!validateStep5()) return;
       // Placeholder do finalizar (sem mensagens)
       // Aqui no próximo passo a gente gera o documento/JSON.
-      
+      alert("Etapa 5 validou. Próximo passo: gerar documento.");
     });
 
 
@@ -2027,30 +2117,29 @@ function wire(){
 })();
 </script>
 
-  <!-- ===== Modal: Escolher geração (Contrato / OS) ===== -->
-  <div id="modalGeracao" class="impar-modal" aria-hidden="true">
+  <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
+  <div id="modalImparSalvar" class="impar-modal" aria-hidden="true">
     <div class="impar-modal-backdrop"></div>
-    <div class="impar-modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+    <div class="impar-modal-card" role="dialog" aria-modal="true" aria-labelledby="modalSalvarTitulo">
       <div class="impar-modal-head">
-        <div class="impar-modal-icon">🧾</div>
+        <div id="modalSalvarIcon" class="impar-modal-icon">💾</div>
         <div class="impar-modal-titles">
-          <div id="modalTitulo" class="impar-modal-title">Gerar documento</div>
-          <div class="impar-modal-subtitle">Escolha o tipo de documento para gerar a partir dos dados preenchidos.</div>
+          <div id="modalSalvarTitulo" class="impar-modal-title">Salvando...</div>
+          <div id="modalSalvarSub" class="impar-modal-subtitle">Gravando o JSON do projeto no servidor.</div>
         </div>
       </div>
 
-      <div class="impar-modal-actions">
-        <button id="btnGerarContrato" class="btn btn-green">Gerar CONTRATO</button>
-        <button id="btnGerarOS" class="btn btn-green">Gerar ORDEM DE SERVIÇO</button>
+      <div id="modalSalvarBody" class="impar-modal-body" style="display:none;">
+        <div class="impar-modal-message" id="modalSalvarMsg"></div>
       </div>
 
       <div class="impar-modal-footer">
-        <button id="btnCancelarModal" class="btn btn-ghost">Cancelar</button>
+        <button id="btnModalSalvarOk" class="btn btn-green" style="display:none;">OK</button>
       </div>
 
-      <div id="modalLoading" class="impar-modal-loading" style="display:none;">
+      <div id="modalSalvarLoading" class="impar-modal-loading">
         <div class="spinner"></div>
-        <div class="impar-modal-loading-text" id="modalLoadingText">Processando...</div>
+        <div class="impar-modal-loading-text" id="modalSalvarLoadingText">Salvando dados...</div>
       </div>
     </div>
   </div>
