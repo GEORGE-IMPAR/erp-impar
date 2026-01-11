@@ -94,6 +94,29 @@ function openSalvarModal(){
       const msg = (js && js.error) ? js.error : (txt || "Erro no servidor");
       throw new Error(msg);
     }
+
+
+// POST simples (x-www-form-urlencoded) para evitar preflight/CORS em alguns ambientes
+async function postFormSimple(url, dataObj){
+  const form = new URLSearchParams();
+  // Envia o objeto completo como JSON dentro do campo "payload"
+  form.set("payload", JSON.stringify(dataObj || {}));
+  // Campo auxiliar (ajuda no backend)
+  if(dataObj && dataObj.codigo) form.set("codigo", String(dataObj.codigo));
+  const res = await fetch(url, { method:"POST", body: form });
+  const txt = await res.text();
+  let out;
+  try{ out = JSON.parse(txt); }catch(e){ out = { ok:false, error:"Resposta inválida", raw: txt }; }
+  if(!res.ok || out.ok === false){
+    const err = out && (out.error || out.message) ? (out.error || out.message) : ("HTTP " + res.status);
+    const e = new Error(err);
+    e.status = res.status;
+    e.payload = out;
+    throw e;
+  }
+  return out;
+}
+
     return js || { ok:true, raw:txt };
   }
 
@@ -172,6 +195,9 @@ function openSalvarModal(){
   // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
   async function onFinalizarSalvarJson(e){
     if(e) e.preventDefault();
+    openSalvarModal();
+
+    if(e) e.preventDefault();
 
     // garante que a etapa 5 está ativa antes de validar (se existir)
     try{
@@ -194,7 +220,7 @@ function openSalvarModal(){
 
     openSalvarModal();
     try{
-      await postJson(API_SAVE_JSON, payload);
+      await postFormSimple(API_SAVE_JSON, payload);
       showSalvarSuccess();
     }catch(err){
       showSalvarError(err && err.message ? err.message : String(err));
@@ -224,6 +250,31 @@ function openSalvarModal(){
     const clone = btn.cloneNode(true);
     btn.parentNode.replaceChild(clone, btn);
     clone.addEventListener("click", onFinalizarSalvarJson);
+  })();
+
+
+  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
+  (function(){
+    function bind(){
+      const candidates = [];
+      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+      if(byId) candidates.push(byId);
+      document.querySelectorAll("button, a").forEach(el=>{
+        const t = (el.textContent || "").toUpperCase();
+        if(t.includes("FINALIZAR")) candidates.push(el);
+      });
+      const unique = Array.from(new Set(candidates));
+      unique.forEach(btn=>{
+        try{
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          clone.addEventListener("click", onFinalizarSalvarJson);
+          // garante aparência não alterada
+        }catch(e){}
+      });
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+    else bind();
   })();
 
 </script>
@@ -2138,6 +2189,31 @@ function wire(){
  function dataPorExtensoISO(iso){if(!iso)return"";const[y,m,d]=iso.split("-").map(x=>parseInt(x,10));const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];return `${d} de ${meses[m-1]} de ${y}`}
  if(dataEl){dataEl.addEventListener("change",()=>{const iso=dataEl.value;if(dataExtEl){dataExtEl.value=iso?dataPorExtensoISO(iso):"";}})}
 })();
+
+  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
+  (function(){
+    function bind(){
+      const candidates = [];
+      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+      if(byId) candidates.push(byId);
+      document.querySelectorAll("button, a").forEach(el=>{
+        const t = (el.textContent || "").toUpperCase();
+        if(t.includes("FINALIZAR")) candidates.push(el);
+      });
+      const unique = Array.from(new Set(candidates));
+      unique.forEach(btn=>{
+        try{
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          clone.addEventListener("click", onFinalizarSalvarJson);
+          // garante aparência não alterada
+        }catch(e){}
+      });
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+    else bind();
+  })();
+
 </script>
 
   <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
