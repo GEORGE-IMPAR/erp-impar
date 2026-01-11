@@ -54,8 +54,8 @@ function openSalvarModal(){
     const msg = document.getElementById("modalSalvarMsg");
     if(loading) loading.style.display = "none";
     if(body) body.style.display = "block";
-    if(title) title.textContent = "Gerado com sucesso!";
-    if(sub) sub.textContent = "JSON salvo no padrão ÍMPAR.";
+    if(title) title.textContent = "Sucesso!";
+    if(sub) sub.textContent = "JSON salvo no padrão ÍMPAR";;
     if(msg) msg.textContent = "Documento salvo com sucesso. Os dados foram registrados e estão prontos para gerar Contrato ou Ordem de Serviço.";
     if(okBtn) okBtn.style.display = "inline-flex";
   }
@@ -105,7 +105,9 @@ function openSalvarModal(){
     return (el.value ?? "").toString().trim();
   }
   function buildPayload(){
-    const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
+    
+    const u = getLoggedUser();
+const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
 
     // Etapa 1/2
     const nomeObra = getVal("nomeObra") || getVal("nome_obra") || getVal("nomeObraInput");
@@ -165,7 +167,7 @@ function openSalvarModal(){
       clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
       dataContrato, dataExtenso,
 
-      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString() }
+      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.nome||"Usuário"), usuario_email: (u.email||"—") }
     };
   }
 
@@ -233,7 +235,34 @@ function openSalvarModal(){
 
   // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
   (function(){
-    function bind(){
+    
+  // ===== Logged user (ERP ÍMPAR) =====
+  function getLoggedUser(){
+    const keys = ["usuarioLogado","ERPIMPAR_USER","impar_user","imparUser","user"];
+    for(const k of keys){
+      const raw = (localStorage.getItem(k) || "").trim();
+      if(!raw) continue;
+      try{
+        const u = JSON.parse(raw);
+        const nome  = (u.Nome || u.nome || u.name || u.usuario || u.user || "").toString().trim();
+        const email = (u.Email || u.email || u.mail || "").toString().trim();
+        if(nome || email) return { nome: nome || "Usuário", email: email || "—", raw: u };
+      }catch(e){}
+    }
+    return { nome: "Usuário", email: "—", raw: null };
+  }
+
+  function applyLoggedUser(){
+    const u = getLoggedUser();
+    const elNome = document.getElementById("userNome");
+    const elEmail = document.getElementById("userEmail");
+    if(elNome) elNome.textContent = u.nome || "Usuário";
+    if(elEmail) elEmail.textContent = u.email || "—";
+    return u;
+  }
+  // ===== /Logged user =====
+
+function bind(){
       const candidates = [];
       const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
       if(byId) candidates.push(byId);
@@ -2211,7 +2240,7 @@ function wire(){
       </div>
 
       <div class="impar-modal-footer">
-        <button id="btnModalSalvarOk" class="btn btn-green" style="display:none;">OK</button>
+        <button id="btnModalSalvarOk" class="btn btn-primary" style="display:none;">OK</button>
       </div>
 
       <div id="modalSalvarLoading" class="impar-modal-loading">
