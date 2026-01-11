@@ -133,6 +133,65 @@ function openSalvarModal(){
     return js || { ok:true, raw:txt };
   }
 
+
+  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
+  (function(){
+    
+  // ===== Logged user (ERP ÍMPAR) =====
+  function getLoggedUser(){
+    // Gabarito (Menu/Solicitação): lê ERPIMPAR_USER do localStorage OU sessionStorage
+    const primaryKey = "ERPIMPAR_USER";
+    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+    const candidates = [];
+    if(rawPrimary) candidates.push(rawPrimary);
+
+    // Compat: chaves antigas do ERP
+    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
+    for(const k of keys){
+      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+      if(raw) candidates.push(raw);
+    }
+
+    for(const raw of candidates){
+      try{
+        const u = JSON.parse(raw);
+        const nome = u.nome || u.Nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
+        const email = u.email || u.Email || u.mail || u.userEmail || u.usuarioEmail || "";
+        if(nome || email) return { Nome:nome, Email:email, ...u };
+      }catch(e){
+        // se vier "nome|email" simples, tenta parse básico
+        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
+      }
+    }
+    return { Nome:"Usuário", Email:"—" };
+  }
+
+  function applyLoggedUser(){
+    const u = getLoggedUser();
+    const nomeTxt = (u.Nome || u.nome || "Usuário");
+    const emailTxt = (u.Email || u.email || "—");
+
+    // Preenche todos os placeholders existentes (Etapas 1..5 + variantes)
+    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName"];
+    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail"];
+
+    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
+    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
+
+    return { nome:nomeTxt, email:emailTxt };
+  }
+  // ===== /Logged user =====
+
+
+  // aplica usuário logo na entrada (padrão RP)
+  (function(){
+    try{
+      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
+      else applyLoggedUser();
+    }catch(e){}
+  })();
+
+
   // ===== Payload: tenta capturar pelos IDs existentes =====
   function getVal(id){
     const el = document.getElementById(id);
@@ -276,59 +335,7 @@ function openSalvarModal(){
     clone.addEventListener("click", onFinalizarSalvarJson);
   })();
 
-  // ===== Logged user (ERP ÍMPAR) =====
-  function getLoggedUser(){
-    // Gabarito (Menu/Solicitação): lê ERPIMPAR_USER do localStorage OU sessionStorage
-    const primaryKey = "ERPIMPAR_USER";
-    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
-    const candidates = [];
-    if(rawPrimary) candidates.push(rawPrimary);
 
-    // Compat: chaves antigas do ERP
-    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
-    for(const k of keys){
-      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
-      if(raw) candidates.push(raw);
-    }
-
-    for(const raw of candidates){
-      try{
-        const u = JSON.parse(raw);
-        const nome = u.nome || u.Nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
-        const email = u.email || u.Email || u.mail || u.userEmail || u.usuarioEmail || "";
-        if(nome || email) return { Nome:nome, Email:email, ...u };
-      }catch(e){
-        // se vier "nome|email" simples, tenta parse básico
-        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
-      }
-    }
-    return { Nome:"Usuário", Email:"—" };
-  }
-
-  function applyLoggedUser(){
-    const u = getLoggedUser();
-    const nomeTxt = (u.Nome || u.nome || "Usuário");
-    const emailTxt = (u.Email || u.email || "—");
-
-    // Preenche todos os placeholders existentes (Etapas 1..5 + variantes)
-    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName"];
-    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail"];
-
-    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
-    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
-
-    return { nome:nomeTxt, email:emailTxt };
-  }
-  // ===== /Logged user =====
-
-
-  // aplica usuário logo na entrada (padrão RP)
-  (function(){
-    try{
-      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
-      else applyLoggedUser();
-    }catch(e){}
-  })();
 
 function bind(){
       const candidates = [];
@@ -1562,7 +1569,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v2.0 • validação limpa por etapa</div>
+    <div>v1.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2349,17 +2356,6 @@ function wire(){
     else bind();
   })();
 
-</script>
-
-<script>
-/* ==== FIX GLOBAL DE ESCOPO — NÃO REMOVER ==== */
-if (typeof window.getLoggedUser === "undefined" && typeof getLoggedUser === "function") {
-    window.getLoggedUser = getLoggedUser;
-}
-
-if (typeof window.applyLoggedUser === "undefined" && typeof applyLoggedUser === "function") {
-    window.applyLoggedUser = applyLoggedUser;
-}
 </script>
 
   <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
