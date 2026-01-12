@@ -5,9 +5,139 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ERP ÍMPAR – Gerador de Documentos (Rebuild V1)</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+  // SweetAlert2 — aplica tema ÍMPAR globalmente (igual módulo Solicitação)
+  if (window.Swal && Swal.mixin) {
+    window.Swal = Swal.mixin({
+      customClass: {
+        popup: "impar-swal",
+        confirmButton: "impar-swal-confirm",
+        cancelButton: "impar-swal-cancel"
+      },
+      buttonsStyling: false
+    });
+  }
+  // Transição de entrada (slide suave)
+  window.addEventListener("DOMContentLoaded", () => {
+    document.body.classList.add("impar-enter");
+  });
+</script>
+
 <script>
 
   const API_SAVE_JSON = "https://api.erpimpar.com.br/storage/docs/save_json.php";
+
+  // ===== Loader padrão ERP (igual menu) =====
+  function showPageLoader(title, sub){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.querySelector(".loader-title").textContent = title || "Processando…";
+    el.querySelector(".loader-sub").textContent = sub || "Aguarde…";
+    el.classList.remove("hidden");
+    el.setAttribute("aria-hidden","false");
+  }
+  function hidePageLoader(){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.classList.add("hidden");
+    el.setAttribute("aria-hidden","true");
+  }
+
+  // ===== Logged user (ERP ÍMPAR) — GABARITO (menu/solicitação) =====
+  function getLoggedUser(){
+    const primaryKey = "ERPIMPAR_USER";
+    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+    const candidates = [];
+    if(rawPrimary) candidates.push(rawPrimary);
+
+    // Compat: chaves antigas do ERP
+    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
+    for(const k of keys){
+      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+      if(raw) candidates.push(raw);
+    }
+
+    for(const raw of candidates){
+      try{
+        const u = JSON.parse(raw);
+        const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
+        const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
+        if(nome || email) return { Nome:nome, Email:email };
+      }catch(e){
+        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
+      }
+    }
+    return { Nome:"Usuário", Email:"—" };
+  }
+
+  // Alias para compatibilidade (algumas versões chamam getLoggeduser)
+  
+  // Garantia: função global getLoggedUser (compatível com o RP/SSO)
+  if (typeof window.getLoggedUser !== "function") {
+    window.getLoggedUser = function getLoggedUser() {
+      const keys = ["ERPIMPAR_USER","usuarioLogado","impar_user","ERPIMPARUSER","USER","user"];
+      let raw = "";
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        for (const k of keys) {
+          try {
+            raw = store.getItem(k) || "";
+            if (raw) break;
+          } catch (e) {}
+        }
+        if (raw) break;
+      }
+      if (!raw) return { Nome: "Usuário", Email: "—" };
+      try {
+        const u = JSON.parse(raw);
+        return {
+          Nome: u.Nome || u.nome || u.userNome || u.name || "Usuário",
+          Email: u.Email || u.email || u.userEmail || u.mail || "—"
+        };
+      } catch (e) {
+        if (raw.includes("@")) {
+          const parts = raw.split("|");
+          return { Nome: (parts[0] || "Usuário"), Email: (parts[1] || raw) };
+        }
+        return { Nome: "Usuário", Email: "—" };
+      }
+    };
+  }
+
+
+  function getLoggeduser(){
+    return (typeof window.getLoggedUser==="function") ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"};
+  }
+
+
+  function applyLoggedUser(){
+    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
+    const nomeTxt = (u.Nome || "Usuário");
+    const emailTxt = (u.Email || "—");
+
+    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName","userNameTxt"];
+    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail","userEmailTxt"];
+
+    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
+    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
+
+    return { nome:nomeTxt, email:emailTxt };
+  }
+
+  // expõe global (evita erro de escopo no FINALIZAR)
+  window.getLoggedUser = getLoggedUser;
+  window.getLoggeduser = getLoggedUser; // compat com typo
+  window.applyLoggedUser = applyLoggedUser;
+
+  // aplica usuário logo na entrada (padrão RP)
+  (function(){
+    try{
+      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
+      else applyLoggedUser();
+    }catch(e){}
+  })();
+  // ===== /Logged user =====
+
 (function(){
  const dataEl=document.getElementById("dataContrato");
  const dataExtEl=document.getElementById("dataExtenso");
@@ -106,8 +236,8 @@ function openSalvarModal(){
   }
   function buildPayload(){
     
-    const u = getLoggedUser();
-const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
+    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
+    const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
 
     // Etapa 1/2
     const nomeObra = getVal("nomeObra") || getVal("nome_obra") || getVal("nomeObraInput");
@@ -118,8 +248,7 @@ const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo"
     // Etapa 3 - Contratante
     const nomeContratante = getVal("nomeContratante");
     const contatoContratante = getVal("contatoContratante");
-        const cpfContatoContratante = getVal("cpfContatoContratante");
-const telefoneContratante = getVal("telefoneContratante");
+    const telefoneContratante = getVal("telefoneContratante");
     const cepContratante = getVal("cepContratante");
     const cpfCnpjContratante = getVal("cpfCnpjContratante") || getVal("cpfCnpj");
     const logradouroContratante = getVal("logradouroContratante");
@@ -133,8 +262,7 @@ const telefoneContratante = getVal("telefoneContratante");
     // Etapa 4 - Contratada
     const nomeContratada = getVal("nomeContratada");
     const contatoContratada = getVal("contatoContratada");
-        const cpfContatoContratada = getVal("cpfContatoContratada");
-const telefoneContratada = getVal("telefoneContratada");
+    const telefoneContratada = getVal("telefoneContratada");
     const cepContratada = getVal("cepContratada");
     const cpfCnpjContratada = getVal("cpfCnpjContratada");
     const logradouroContratada = getVal("logradouroContratada");
@@ -158,54 +286,63 @@ const telefoneContratada = getVal("telefoneContratada");
       codigo,
       nomeObra, servico, enderecoObra, projetista,
 
-      nomeContratante, contatoContratante, cpfContatoContratante, telefoneContratante, emailContratante,
+      nomeContratante, contatoContratante, telefoneContratante, emailContratante,
       cpfCnpjContratante, cepContratante, logradouroContratante, numeroContratante,
       complementoContratante, bairroContratante, cidadeContratante, ufContratante,
 
-      nomeContratada, contatoContratada, cpfContatoContratada, telefoneContratada, emailContratada,
+      nomeContratada, contatoContratada, telefoneContratada, emailContratada,
       cpfCnpjContratada, cepContratada, logradouroContratada, numeroContratada,
       complementoContratada, bairroContratada, cidadeContratada, ufContratada,
 
       clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
       dataContrato, dataExtenso,
 
-      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.nome||"Usuário"), usuario_email: (u.email||"—") }
+      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.Nome||"Usuário"), usuario_email: (u.Email||"—") }
     };
   }
 
 
   // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
-  async function onFinalizarSalvarJson(e){
-    if(e) e.preventDefault();
-    openSalvarModal();
-
-    if(e) e.preventDefault();
-
-    // garante que a etapa 5 está ativa antes de validar (se existir)
+  async function onFinalizarSalvarJson(){
     try{
-      if(typeof validateCurrentStep === "function"){
-        const ok = validateCurrentStep();
-        if(!ok) return;
+      // garante usuário aplicado (todas etapas)
+      try{ applyLoggedUser(); }catch(e){}
+
+      // validação defensiva (se existir)
+      try{ if(typeof validateCurrentStep === "function"){ validateCurrentStep(); } }catch(e){}
+
+      const payload = buildPayload();
+      if(!payload || !payload.codigo){
+        if(window.showStep) showStep(1);
+        try{
+          const inp = document.getElementById("codigoProjeto") || document.getElementById("codigo");
+          if(inp){ inp.classList.add("input-error"); inp.focus(); }
+        }catch(e){}
+        Swal.fire({ icon:"warning", title:"Campo obrigatório", text:"Informe o código do projeto para finalizar." });
+        return;
       }
-    }catch(_){}
 
-    const payload = buildPayload();
+      showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
 
-    if(!payload.codigo){
-      // volta para etapa 1 e marca erro no código, sem mensagem (padrão)
-      try{ if(typeof showStep === "function") showStep(1); }catch(_){}
-      const codeInput = document.getElementById("codigoProjeto") || document.getElementById("codigo");
-      if(codeInput && typeof markError === "function"){ markError(codeInput); }
-      if(codeInput) codeInput.focus();
-      return;
-    }
+      const resp = await postJson(API_SAVE_JSON, payload);
 
-    openSalvarModal();
-    try{
-      await postJson(API_SAVE_JSON, payload);
-      showSalvarSuccess();
+      hidePageLoader();
+      Swal.fire({
+        icon:"success",
+        title:"Sucesso!",
+        html:"Dados salvos com sucesso.",
+        confirmButtonText:"OK"
+      });
+
+      return resp;
     }catch(err){
-      showSalvarError(err && err.message ? err.message : String(err));
+      hidePageLoader();
+      Swal.fire({
+        icon:"error",
+        title:"Erro ao salvar",
+        html:(err && (err.message || err.toString())) ? (err.message || err.toString()) : "Falha ao salvar o JSON."
+      });
+      console.error(err);
     }
   }
 
@@ -237,33 +374,6 @@ const telefoneContratada = getVal("telefoneContratada");
 
   // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
   (function(){
-    
-  // ===== Logged user (ERP ÍMPAR) =====
-  function getLoggedUser(){
-    const keys = ["usuarioLogado","ERPIMPAR_USER","impar_user","imparUser","user"];
-    for(const k of keys){
-      const raw = (localStorage.getItem(k) || "").trim();
-      if(!raw) continue;
-      try{
-        const u = JSON.parse(raw);
-        const nome  = (u.Nome || u.nome || u.name || u.usuario || u.user || "").toString().trim();
-        const email = (u.Email || u.email || u.mail || "").toString().trim();
-        if(nome || email) return { nome: nome || "Usuário", email: email || "—", raw: u };
-      }catch(e){}
-    }
-    return { nome: "Usuário", email: "—", raw: null };
-  }
-
-  function applyLoggedUser(){
-    const u = getLoggedUser();
-    const elNome = document.getElementById("userNome");
-    const elEmail = document.getElementById("userEmail");
-    if(elNome) elNome.textContent = u.nome || "Usuário";
-    if(elEmail) elEmail.textContent = u.email || "—";
-    return u;
-  }
-  // ===== /Logged user =====
-
 function bind(){
       const candidates = [];
       const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
@@ -952,6 +1062,67 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 0 18px rgba(59,130,246,.45) !important;
 }
 
+
+    /* =========================================================
+       SWEETALERT2 — Tema ÍMPAR Premium (igual Solicitação)
+       ========================================================= */
+    .impar-swal{
+      background: rgba(2,6,23,.92) !important;
+      color: #e5e7eb !important;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      border-radius: 18px !important;
+      box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
+      backdrop-filter: blur(14px);
+    }
+    .impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800; }
+    .impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
+    .impar-swal-confirm, .impar-swal-cancel{
+      border:0 !important;
+      border-radius:12px !important;
+      padding:10px 16px !important;
+      font-weight:900 !important;
+      letter-spacing:.3px !important;
+      cursor:pointer !important;
+      box-shadow:none !important;
+    }
+    .impar-swal-confirm{
+      background: linear-gradient(135deg,#22c55e,#16a34a) !important;
+      color:#020617 !important;
+    }
+    .impar-swal-cancel{
+      background: rgba(148,163,184,.14) !important;
+      color:#e5e7eb !important;
+    }
+
+    /* =========================================================
+       PAGE LOADER — padrão ERP (spinner pequeno + texto)
+       ========================================================= */
+    #pageLoader{
+      position:fixed; inset:0; z-index:99999;
+      display:flex; align-items:center; justify-content:center;
+      background: rgba(2,6,23,.55);
+      backdrop-filter: blur(10px);
+    }
+    #pageLoader.hidden{ display:none; }
+    #pageLoader .loader-card{
+      width:min(720px, 92vw);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(2,6,23,.78);
+      box-shadow: 0 30px 90px rgba(0,0,0,.55);
+      padding: 18px 18px;
+      display:flex; gap:14px; align-items:center;
+    }
+    #pageLoader .loader-spin{
+      width:22px; height:22px; border-radius:999px;
+      border: 2px solid rgba(148,163,184,.35);
+      border-top-color: rgba(226,232,240,.95);
+      animation: imparSpin .85s linear infinite;
+      flex: 0 0 auto;
+    }
+    #pageLoader .loader-title{ font-weight:900; letter-spacing:.3px; }
+    #pageLoader .loader-sub{ font-size:12px; color: rgba(226,232,240,.78); margin-top:2px; }
+    @keyframes imparSpin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -1149,13 +1320,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
                 <label for="nomeContratante">NOME <span class="req-star">*</span></label>
                 <input id="nomeContratante" type="text" placeholder="Ex.: João da Silva / Empresa LTDA"/>
               </div>
-                            <div class="c8">
+              <div class="c12">
                 <label for="contatoContratante">CONTATO <span class="req-star">*</span></label>
                 <input id="contatoContratante" type="text" placeholder="Ex.: Responsável / Referência"/>
-              </div>
-              <div class="c4">
-                <label for="cpfContatoContratante">CPF DO CONTATO <span class="req-star">*</span></label>
-                <input id="cpfContatoContratante" type="text" placeholder="000.000.000-00"/>
               </div>
 
               <!-- Linha 2 -->
@@ -1263,13 +1430,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
                 <label for="nomeContratada">NOME <span class="req-star">*</span></label>
                 <input id="nomeContratada" type="text" placeholder="Ex.: João da Silva / Empresa LTDA"/>
               </div>
-                            <div class="c8">
+              <div class="c12">
                 <label for="contatoContratada">CONTATO <span class="req-star">*</span></label>
                 <input id="contatoContratada" type="text" placeholder="Ex.: Responsável / Referência"/>
-              </div>
-              <div class="c4">
-                <label for="cpfContatoContratada">CPF DO CONTATO <span class="req-star">*</span></label>
-                <input id="cpfContatoContratada" type="text" placeholder="000.000.000-00"/>
               </div>
 
               <!-- Linha 2 -->
@@ -1558,7 +1721,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
   function validateStep4(){
     const requiredIds = [
-      "nomeContratada","contatoContratada","cpfContatoContratada","telefoneContratada","cepContratada",
+      "nomeContratada","contatoContratada","telefoneContratada","cepContratada",
       "cpfCnpjContratada","logradouroContratada","numeroContratada","bairroContratada",
       "cidadeContratada","ufContratada","emailContratada"
     ];
@@ -1595,13 +1758,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
       if(!ok){ markError(doc); doc.focus(); return false; }
     }
 
-        const cpfContato = document.getElementById("cpfContatoContratada");
-    if(cpfContato){
-      const d = onlyDigits(cpfContato.value);
-      if(d.length !== 11 || !isValidCPF(d)){ markError(cpfContato); cpfContato.focus(); return false; }
-    }
-
-const uf = document.getElementById("ufContratada");
+    const uf = document.getElementById("ufContratada");
     if(uf){
       const u = (uf.value||"").trim();
       if(u.length !== 2){ markError(uf); uf.focus(); return false; }
@@ -1614,7 +1771,7 @@ const uf = document.getElementById("ufContratada");
 
   function validateStep3(){
     const requiredIds = [
-      "nomeContratante","contatoContratante","cpfContatoContratante","telefoneContratante","cepContratante",
+      "nomeContratante","contatoContratante","telefoneContratante","cepContratante",
       "cpfCnpjContratante","logradouroContratante","numeroContratante","bairroContratante",
       "cidadeContratante","ufContratante","emailContratante"
     ];
@@ -1651,13 +1808,7 @@ const uf = document.getElementById("ufContratada");
       if(!ok){ markError(doc); doc.focus(); return false; }
     }
 
-        const cpfContato = document.getElementById("cpfContatoContratante");
-    if(cpfContato){
-      const d = onlyDigits(cpfContato.value);
-      if(d.length !== 11 || !isValidCPF(d)){ markError(cpfContato); cpfContato.focus(); return false; }
-    }
-
-const uf = document.getElementById("ufContratante");
+    const uf = document.getElementById("ufContratante");
     if(uf){
       const u = (uf.value||"").trim();
       if(u.length !== 2){ markError(uf); uf.focus(); return false; }
@@ -1870,8 +2021,7 @@ const uf = document.getElementById("ufContratante");
     const tel = document.getElementById("telefoneContratada");
     const cep = document.getElementById("cepContratada");
     const doc = document.getElementById("cpfCnpjContratada");
-        const cpfContato = document.getElementById("cpfContatoContratada");
-const num = document.getElementById("numeroContratada");
+    const num = document.getElementById("numeroContratada");
     const uf  = document.getElementById("ufContratada");
 
     if(tel){
@@ -1883,17 +2033,6 @@ const num = document.getElementById("numeroContratada");
         if(d.length < 10 || d.length > 11) markError(tel);
       });
     }
-
-    if(cpfContato){
-      cpfContato.setAttribute("inputmode","numeric");
-      cpfContato.addEventListener("input", ()=>{ cpfContato.value = maskCPF(cpfContato.value); clearError(cpfContato); });
-      cpfContato.addEventListener("blur", ()=>{
-        cpfContato.value = maskCPF(cpfContato.value);
-        const d = onlyDigits(cpfContato.value);
-        if(d.length !== 11 || !isValidCPF(d)) markError(cpfContato);
-      });
-    }
-
 
     if(cep){
       cep.setAttribute("inputmode","numeric");
@@ -1935,8 +2074,7 @@ const num = document.getElementById("numeroContratada");
     const tel = document.getElementById("telefoneContratante");
     const cep = document.getElementById("cepContratante");
     const doc = document.getElementById("cpfCnpjContratante");
-        const cpfContato = document.getElementById("cpfContatoContratante");
-const num = document.getElementById("numeroContratante");
+    const num = document.getElementById("numeroContratante");
     const uf  = document.getElementById("ufContratante");
 
     if(tel){
@@ -1948,17 +2086,6 @@ const num = document.getElementById("numeroContratante");
         if(d.length < 10 || d.length > 11) markError(tel);
       });
     }
-
-    if(cpfContato){
-      cpfContato.setAttribute("inputmode","numeric");
-      cpfContato.addEventListener("input", ()=>{ cpfContato.value = maskCPF(cpfContato.value); clearError(cpfContato); });
-      cpfContato.addEventListener("blur", ()=>{
-        cpfContato.value = maskCPF(cpfContato.value);
-        const d = onlyDigits(cpfContato.value);
-        if(d.length !== 11 || !isValidCPF(d)) markError(cpfContato);
-      });
-    }
-
 
     if(cep){
       cep.setAttribute("inputmode","numeric");
@@ -2292,6 +2419,18 @@ function wire(){
       <div id="modalSalvarLoading" class="impar-modal-loading">
         <div class="spinner"></div>
         <div class="impar-modal-loading-text" id="modalSalvarLoadingText">Salvando dados...</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Loader padrão ERP (usado no FINALIZAR) -->
+  <div id="pageLoader" class="hidden" aria-hidden="true">
+    <div class="loader-card">
+      <div class="loader-spin" aria-hidden="true"></div>
+      <div>
+        <div class="loader-title">Processando…</div>
+        <div class="loader-sub">Aguarde…</div>
       </div>
     </div>
   </div>
