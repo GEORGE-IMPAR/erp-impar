@@ -313,7 +313,17 @@ function openSalvarModal(){
       // validação defensiva (se existir)
       try{ if(typeof validateCurrentStep === "function"){ validateCurrentStep(); } }catch(e){}
 
-      const payload = buildPayload();
+      
+      // valida etapa 5 antes de finalizar (consistência total)
+      try{
+        if(typeof validateStep5 === "function"){
+          if(!validateStep5()){
+            try{ if(window.showStep) showStep(5); }catch(e){}
+            return;
+          }
+        }
+      }catch(e){}
+const payload = buildPayload();
       if(!payload || !payload.codigo){
         if(window.showStep) showStep(1);
         try{
@@ -1577,7 +1587,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
                 <input id="prazoDias" type="text" placeholder="Ex.: 30" inputmode="numeric"/>
               </div>
               <div class="c12">
-                <label for="logoEmpresa">IMPORTE O LOGO DA EMPRESA</label></label>
+                <label for="logoEmpresa">IMPORTE O LOGO DA EMPRESA</label>
                 <input id="logoEmpresa" type="file" accept="image/*"/>
               </div>
               <div class="c8">
@@ -1667,7 +1677,31 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
       if(r5 && projectCode) r5.textContent = projectCode;
       window.scrollTo({top:0, behavior:"smooth"});
     }
-  }
+
+    // Etapa 5 — garante campos derivados sempre atualizados ao entrar na etapa
+    if(step === 5){
+      try{
+        const valor = document.getElementById("valorContrato");
+        const vext  = document.getElementById("valorExtenso");
+        if(valor && vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+      }catch(e){}
+      try{
+        const data = document.getElementById("dataContrato");
+        const dext = document.getElementById("dataExtenso");
+        if(data && dext) dext.value = dateToExtensoPt(data.value);
+      }catch(e){}
+      try{ if(typeof wireStep5Logo === "function") wireStep5Logo(); }catch(e){}
+    }
+
+  
+    // Hook: ao entrar na Etapa 5, garante listeners + sincronização (máscara/por extenso/prévia)
+    if(step===5){
+      try{ wireStep5Logo(); }catch(e){}
+      try{ wireStep5(); }catch(e){}
+    }
+
+}
+
 
   function clearError(el){
     if(!el) return;
@@ -1767,6 +1801,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
       const d = onlyDigits(doc.value);
       const ok = (d.length === 11 && isValidCPF(d)) || (d.length === 14 && isValidCNPJ(d));
       if(!ok){ markError(doc); doc.focus(); return false; }
+
+    if(cpfContato){
+      const d = onlyDigits(cpfContato.value);
+      const ok = (d.length === 11 && isValidCPF(d));
+      if(!ok){ markError(cpfContato); cpfContato.focus(); return false; }
+    }
     }
 
     const uf = document.getElementById("ufContratada");
@@ -1818,6 +1858,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
       const d = onlyDigits(doc.value);
       const ok = (d.length === 11 && isValidCPF(d)) || (d.length === 14 && isValidCNPJ(d));
       if(!ok){ markError(doc); doc.focus(); return false; }
+
+    if(cpfContato){
+      const d = onlyDigits(cpfContato.value);
+      const ok = (d.length === 11 && isValidCPF(d));
+      if(!ok){ markError(cpfContato); cpfContato.focus(); return false; }
+    }
     }
 
     const uf = document.getElementById("ufContratante");
@@ -2033,6 +2079,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
     const tel = document.getElementById("telefoneContratada");
     const cep = document.getElementById("cepContratada");
     const doc = document.getElementById("cpfCnpjContratada");
+    const cpfContato = document.getElementById("cpfContatoContratada");
     const num = document.getElementById("numeroContratada");
     const uf  = document.getElementById("ufContratada");
 
@@ -2072,11 +2119,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
     if(cpfContato){
       cpfContato.setAttribute("inputmode","numeric");
-      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(cpfContato.value); clearError(cpfContato); });
+      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(onlyDigits(cpfContato.value)); clearError(cpfContato); });
       cpfContato.addEventListener("blur", () => {
         cpfContato.value = maskCPF(cpfContato.value);
         const d = onlyDigits(cpfContato.value);
-        if(d.length !== 11) markError(cpfContato);
+        const ok = (d.length === 11) && isValidCPF(d);
+        if(!ok) markError(cpfContato);
       });
     }
 
@@ -2136,11 +2184,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
     if(cpfContato){
       cpfContato.setAttribute("inputmode","numeric");
-      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(cpfContato.value); clearError(cpfContato); });
+      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(onlyDigits(cpfContato.value)); clearError(cpfContato); });
       cpfContato.addEventListener("blur", () => {
         cpfContato.value = maskCPF(cpfContato.value);
         const d = onlyDigits(cpfContato.value);
-        if(d.length !== 11) markError(cpfContato);
+        const ok = (d.length === 11) && isValidCPF(d);
+        if(!ok) markError(cpfContato);
       });
     }
 
@@ -2163,7 +2212,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   // =========================
   function formatBRL(cents){
     const v = Math.max(0, Number(cents)||0)/100;
-    return v.toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
+    const s = v.toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
+    return "R$ " + s;
   }
   function parseBRLToCents(str){
     const d = (str||"").toString().replace(/\D+/g,"");
@@ -2236,26 +2286,51 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   function wireStep5(){
     const valor = document.getElementById("valorContrato");
     const prazo = document.getElementById("prazoDias");
-    const data  = document.getElementById("dataDocumento");
+    const data  = document.getElementById("dataContrato");
     const vext  = document.getElementById("valorExtenso");
     const dext  = document.getElementById("dataExtenso");
 
-    if(valor){
-      valor.addEventListener("input", ()=>{ clearError(valor); maskMoneyBRL(valor); if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value)); });
-      valor.addEventListener("blur", ()=>{ maskMoneyBRL(valor); if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value)); });
+    // Sempre sincroniza campos derivados ao entrar na etapa 5 (ou re-entrar)
+    try{
+      if(valor){
+        maskMoneyBRL(valor);
+        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+      }
+      if(data && dext){
+        dext.value = dateToExtensoPt(data.value);
+      }
+    }catch(e){}
+
+    // Evita duplicar listeners caso a etapa 5 seja reaberta
+    if(valor && valor.dataset.wiredStep5 !== "1"){
+      valor.dataset.wiredStep5 = "1";
+      valor.addEventListener("input", ()=>{
+        clearError(valor);
+        maskMoneyBRL(valor);
+        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+      });
+      valor.addEventListener("blur", ()=>{
+        maskMoneyBRL(valor);
+        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+        if(parseBRLToCents(valor.value) <= 0) markError(valor);
+      });
     }
-    if(prazo){
+
+    if(prazo && prazo.dataset.wiredStep5 !== "1"){
+      prazo.dataset.wiredStep5 = "1";
       prazo.addEventListener("input", ()=>{ clearError(prazo); prazo.value = (prazo.value||"").replace(/\D+/g,"").slice(0,4); });
       prazo.addEventListener("blur", ()=>{ if(!prazo.value.trim()) markError(prazo); });
     }
-    if(data){
+
+    if(data && data.dataset.wiredStep5 !== "1"){
+      data.dataset.wiredStep5 = "1";
       data.addEventListener("input", ()=>{ clearError(data); if(dext) dext.value = dateToExtensoPt(data.value); });
       data.addEventListener("blur", ()=>{ if(!data.value) markError(data); else if(dext) dext.value = dateToExtensoPt(data.value); });
     }
   }
 
   function validateStep5(){
-    const requiredIds = ["valorContrato","prazoDias","dataDocumento","condPagamento","clausulas"];
+    const requiredIds = ["valorContrato","prazoDias","dataContrato","condPagamento","clausulas"];
     let firstBad=null;
     requiredIds.forEach(id=>{
       const el=document.getElementById(id);
@@ -2286,6 +2361,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
     const empty = document.getElementById("logoEmpty");
     if(!input || !img) return;
 
+
+    if(input.dataset.wiredLogo === "1") return;
+    input.dataset.wiredLogo = "1";
     input.addEventListener("change", () => {
       const file = input.files && input.files[0];
       if(!file){
@@ -2384,12 +2462,28 @@ function wire(){
 
     // Step 5
     $("#btnVoltar5").addEventListener("click", () => showStep(4));
-    $("#btnFinalizar").addEventListener("click", () => {
-      if(!validateStep5()) return;
-      // Placeholder do finalizar (sem mensagens)
-      // Aqui no próximo passo a gente gera o documento/JSON.
-      alert("Etapa 5 validou. Próximo passo: gerar documento.");
-    });
+$("#btnFinalizar").addEventListener("click", async () => {
+
+  if(!validateStep5()) return;
+
+  const overlay = document.getElementById("overlaySaving");
+  overlay.style.display = "flex";
+
+  // pequena pausa estética (UX premium)
+  await new Promise(r => setTimeout(r, 9000));
+
+  // aqui você chama sua função real de salvar
+  const ok = await salvarProjetoJSON(); // <-- sua função já existente
+
+  overlay.style.display = "none";
+
+  if(ok){
+    showSuccessModal("Sucesso!", "Dados salvos com sucesso.");
+  }else{
+    showErrorModal("Erro", "Não foi possível salvar os dados.");
+  }
+
+});
 
 
   }
