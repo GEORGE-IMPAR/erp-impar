@@ -1051,6 +1051,44 @@ async function withProcessing(fn, title, sub, minMs=800){
   }
 }
 
+<?php
+header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: *');
+
+$id = isset($_GET['id']) ? (string)$_GET['id'] : '';
+$id = preg_replace('/[^0-9A-Za-z_\-]/', '', $id);
+
+if ($id === '') {
+  http_response_code(400);
+  echo json_encode(['ok'=>false,'error'=>'MISSING_ID']);
+  exit;
+}
+
+$baseDir = __DIR__ . '/storage';
+$file = $baseDir . '/' . $id . '.json';
+
+if (!is_file($file)) {
+  http_response_code(404);
+  echo json_encode(['ok'=>false,'error'=>'NOT_FOUND']);
+  exit;
+}
+
+$contents = file_get_contents($file);
+if ($contents === false) {
+  http_response_code(500);
+  echo json_encode(['ok'=>false,'error'=>'READ_FAILED']);
+  exit;
+}
+
+$decoded = json_decode($contents, true);
+if (!is_array($decoded)) {
+  http_response_code(500);
+  echo json_encode(['ok'=>false,'error'=>'INVALID_JSON_FILE']);
+  exit;
+}
+
+echo json_encode(['ok'=>true,'data'=>$decoded], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  
 function swalBase(){
   return {
     customClass:{
@@ -1583,40 +1621,55 @@ function pushHistory(payloadFinal){
 }
 
 function renderHistory(){
-  const hist=loadHist();
-  const items=hist.items||[];
-  histListEl.innerHTML="";
-  if(items.length===0){
-    histListEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Nenhum registro encontrado.</div>';
-    return;
+async function renderHistory(){
+  histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Carregando histórico…</div>';
+
+  try{
+    const items = await apiList();
+
+    histListEl.innerHTML = "";
+    if(items.length === 0){
+      histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Nenhum registro encontrado.</div>';
+      return;
+    }
+
+    items.slice(0, 50).forEach(it => {
+      const date = it.dayKey || it.date || "—";
+      const total = it.total ?? "—";
+      const pend = it.pend ?? "—";
+      const user = it.userName || "Usuário";
+
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hist-item";
+      card.style.textAlign = "left";
+      card.style.padding = "12px 14px";
+      card.style.borderRadius = "14px";
+      card.style.width = "100%";
+      card.style.border = "1px solid rgba(148,163,184,.18)";
+      card.style.background = "rgba(2,6,23,.30)";
+      card.style.cursor = "pointer";
+      card.style.color = "inherit";
+
+      card.innerHTML =
+        `<div style="font-weight:1000;letter-spacing:.2px;">${escapeHtml(date)} - ATIVIDADES EXECUTADAS</div>` +
+        `<div style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:6px;">` +
+        `<span>Linhas: <b>${total}</b> - Pendências: <b>${pend}</b> &nbsp; Usuário: <b>${escapeHtml(user)}</b></span>` +
+        `</div>`;
+
+      card.addEventListener("click", async()=> {
+        await withProcessing(async()=>{}, "Buscando histórico…", "PROCESSANDO DADOS......", 700);
+        const payload = await apiGet(it.id);
+        openPrintWindow(payload);
+      });
+
+      histListEl.appendChild(card);
+    });
+
+  }catch(e){
+    console.warn(e);
+    histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Erro ao carregar histórico do servidor.</div>';
   }
-  items.slice(0,30).forEach(p=>{
-    const rows=p.rows||[];
-    const date=(rows[0]&&rows[0].data)?rows[0].data:"—";
-    const total=rows.length;
-    const pend=rows.filter(r=>{ const pct=pctToNumber(r.percentual); return pct!==null && pct<100; }).length;
-
-    const card=document.createElement("button");
-    card.type="button";
-    card.className="hist-item";
-    card.style.textAlign="left";
-    card.style.padding="12px 14px";
-    card.style.borderRadius="14px";
-    card.style.width="100%";
-    card.style.border="1px solid rgba(148,163,184,.18)";
-    card.style.background="rgba(2,6,23,.30)";
-    card.style.cursor="pointer";
-    card.style.color="inherit";
-
-    card.innerHTML =
-      '<div style="font-weight:1000;letter-spacing:.2px;">'+escapeHtml(date)+' - ATIVIDADES EXECUTADAS</div>'+
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:6px;">'+
-        '<span>Linhas: <b>'+total+'</b> - Pendências: <b>'+pend+'</b> &nbsp; Usuário logado: <b>'+escapeHtml((p.usuario&&p.usuario.nome)||"Usuário")+'</b></span>'+
-      '</div>';
-
-    card.addEventListener("click", async()=>{ await withProcessing(async()=>{}, "Buscando histórico…", "PROCESSANDO DADOS......", 700); openPrintWindow(p); });
-    histListEl.appendChild(card);
-  });
 }
 
 async function gerarPDF(){
@@ -1650,6 +1703,38 @@ async function finalizeDay(){
   }
 
   const payload=getPayload("final");
+
+    // ✅ campos que o PHP espera
+  payloadFinal.date = payloadFinal.dayKey || payloadFinal.date || new Date().toISOString().slice(0,10);
+  payloadFinal.finalizedAt = new Date().toISOString();
+
+  // meta rápida (pra lista ficar leve e útil)
+  const rows = payloadFinal.rows || [];
+  payloadFinal.total = rows.length;
+  payloadFinal.pend = rows.filter(r => {
+    const pct = pctToNumber(r.percentual);
+    return pct !== null && pct < 100;
+  }).length;
+
+  const u = getUser();
+  payloadFinal.userName = u.nome || "";
+  payloadFinal.userEmail = u.email || "";
+
+  // (opcional) salva local como backup - se você quiser manter:
+  // localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payloadFinal));
+
+  // ✅ SALVA NO SERVIDOR
+  await withProcessing(async()=>{}, "Salvando no servidor…", "PROCESSANDO DADOS......", 900);
+  const serverId = await apiSave(payloadFinal);
+  payloadFinal.id = serverId; // garante id
+
+  // abre PDF usando o payload final
+  openPrintWindow(payloadFinal);
+
+  // depois disso, trava (se você já trava hoje)
+  lockDay();
+}
+
   const miss = missingNames(payload.rows);
   if(miss.length>0){
     alertWarn("Não pode finalizar.\n\nFaltam atividades para:\n- " + miss.join("\n- ") + "\n\nUse Obra = FALTA, FÉRIAS ou EMPRESA quando necessário.");
@@ -1660,6 +1745,36 @@ async function finalizeDay(){
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
   pushPendenciasFromFinal(payload);
   pushHistory(payload);
+  async function salvarNoServidor(payload){
+  // caminho padrão do seu ERP (ajuste se necessário)
+  const url = "/api/atividades/save.php";
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      // o PHP exige date
+      date: payload.dayKey || payload.date || new Date().toISOString().slice(0,10),
+
+      // opcional: id (se não mandar, o PHP gera)
+      id: payload.histId || "",
+
+      // guarda tudo
+      ...payload,
+
+      // extra útil pra listar
+      userName: (payload.usuario && payload.usuario.nome) || "",
+      userEmail: (payload.usuario && payload.usuario.email) || ""
+    })
+  });
+
+  const j = await r.json().catch(()=>null);
+  if(!r.ok || !j || !j.ok){
+    throw new Error((j && j.error) ? j.error : "Falha ao salvar no servidor");
+  }
+  return j.id;
+}
+
   setLockedFinal(true);
   renderHistory();
   refreshNameChecklist();
