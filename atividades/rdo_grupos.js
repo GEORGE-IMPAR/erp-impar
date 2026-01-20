@@ -114,7 +114,8 @@
 
   async function fetchJson(url) {
     const r = await fetch(url, { cache: "no-store" });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (r.status === 404) return { ok:true, items:[], updated_at:null };
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
 
