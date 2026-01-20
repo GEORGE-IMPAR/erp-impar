@@ -222,33 +222,24 @@
 
   // ===== state =====
   const cache = new Map(); // slug -> { groupName, ok, items, updatedAt }
+  const BASE_PATH = "https://api.erpimpar.com.br/atividades/rdo";
 
-  async function loadOne(groupName) {
-    const slug = slugify(groupName);
-    const url = `${BASE_PATH}/${slug}.json`;
+async function loadOne(groupName){
+  const slug = slugify(groupName);
+  const url = `${BASE_PATH}/${slug}.json?ts=${Date.now()}`; // cache bust OK
 
-    try {
-      const json = await fetchJson(url);
-      const { items, updatedAt } = normalizeItems(json);
-      const filtered = filterLastDays(items, 7);
-
-      cache.set(slug, {
-        groupName,
-        ok: true,
-        items: filtered,
-        updatedAt: updatedAt || ""
-      });
-      return true;
-    } catch (e) {
-      cache.set(slug, {
-        groupName,
-        ok: false,
-        items: [],
-        updatedAt: ""
-      });
-      return false;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn("RDO não encontrado:", url);
+      return null;
     }
+    return await res.json();
+  } catch (e) {
+    console.error("Erro ao carregar RDO:", e);
+    return null;
   }
+}
 
   function render() {
     if (!elGrid) return;
