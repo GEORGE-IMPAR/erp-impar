@@ -54,7 +54,8 @@
 
   // base path (do dataset). Ex: /atividades/rdo
   window.RDO_BASE_PATH = window.RDO_BASE_PATH || (elWrap.getAttribute("https://api.erpimpar.com.br") || "/atividades/rdo").replace(/\/$/, "");
-  const BASE_PATH = "https://api.erpimpar.com.br/atividades/rdo"
+  const BASE_PATH = (window.RDO_BASE_PATH || "https://api.erpimpar.com.br/atividades/rdo").replace(/\/$/, "");
+
 // ===== utils =====
   function stripAccents(str) {
     return String(str)
@@ -225,7 +226,7 @@
 
   async function loadOne(groupName) {
     const slug = slugify(groupName);
-    const url = `${BASE_PATH}?slug=${slug}&ts=${Date.now()}`;
+    const url = `${BASE_PATH}/{slug}&ts=${Date.now()}`;
 
     try {
       const json = await fetchJson(url);
