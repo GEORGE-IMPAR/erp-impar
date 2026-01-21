@@ -194,7 +194,7 @@
 
   async function loadOne(groupName) {
     const slug = slugify(groupName);
-    const url = `${BASE_PATH}/${slug}.json?ts=${Date.now()}`; // JSON direto (sem PHP/slug query)
+    const url = `https://api.erpimpar.com.br/atividades/rdo/${slug}.json`;
     const json = await fetchJson(url);
 
     const items = normalizeItems(json);
