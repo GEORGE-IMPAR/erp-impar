@@ -54,7 +54,7 @@
 
   // base path (do dataset). Ex: /atividades/rdo
   window.RDO_BASE_PATH = window.RDO_BASE_PATH || (elWrap.getAttribute("https://api.erpimpar.com.br") || "/atividades/rdo").replace(/\/$/, "");
-  const BASE_PATH = window.RDO_BASE_PATH;
+  const BASE_PATH = "https://api.erpimpar.com.br/atividades/rdo"
 // ===== utils =====
   function stripAccents(str) {
     return String(str)
