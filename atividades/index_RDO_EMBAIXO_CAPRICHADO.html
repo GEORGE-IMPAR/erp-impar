@@ -952,7 +952,6 @@ body{opacity:1 !important;}
 
 </style>
 
-/* FIX_BUILD: 2026-01-18 05:13:03 API:https://api.erpimpar.com.br/atividades CORS_FIX2 */
 
 <style>
 /* RDO GRID FINAL */
@@ -1548,118 +1547,134 @@ const html =
   pdfModal.style.display = "block";
 }
 
-function buildMultiSelect(options, selected=[], labelText='Selecionar', searchPh='Buscar...'){
-  const wrap=document.createElement('div');
-  wrap.className='multi';
-  wrap.innerHTML =
-  '<button type="button" class="multi-btn" aria-haspopup="listbox" aria-expanded="false">' +
-    '<span class="txt">' + labelText + '</span>' +
-    '<span class="cnt">0</span>' +
-  '</button>' +
-  '<div class="multi-popup" role="dialog" aria-label="Selecionados">' +
-    '<div class="pop-title">Selecionados</div>' +
-    '<div class="pop-items"></div>' +
-  '</div>' +
-  '<div class="multi-drop" role="listbox">' +
-    '<input class="input multi-search" type="text" placeholder="' + searchPh + '"/>' +
-    '<div class="multi-list"></div>' +
-  '</div>';
+function buildMultiSelect(options, selected, labelText, searchPh) {
+  const wrap = document.createElement("div");
+  wrap.className = "multi";
 
-  const btn=wrap.querySelector('.multi-btn');
-  const txt=wrap.querySelector('.txt');
-  const cnt=wrap.querySelector('.cnt');
-  const popup=wrap.querySelector('.multi-popup');
-  const popItems=wrap.querySelector('.pop-items');
-  const search=wrap.querySelector('.multi-search');
-  const list=wrap.querySelector('.multi-list');
+  // botão
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-btn";
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
 
-  // --- Portal para dropdown (evita ficar por trás / ser cortado por overflow/stacking)
-  const dropEl = wrap.querySelector('.multi-drop');
-  const dropParent = wrap;
-  let dropIsPortaled = false;
+  const spanTxt = document.createElement("span");
+  spanTxt.className = "txt";
+  spanTxt.textContent = labelText;
 
-  function positionDrop(){
-    if(!dropIsPortaled) return;
-    const r = btn.getBoundingClientRect();
-    dropEl.style.position = 'fixed';
-    dropEl.style.left = (r.left) + 'px';
-    dropEl.style.top  = (r.bottom + 8) + 'px';
-    dropEl.style.width = (r.width) + 'px';
-    dropEl.style.zIndex = '2147483647';
-    dropEl.style.pointerEvents = 'auto';
-  }
+  const spanCnt = document.createElement("span");
+  spanCnt.className = "cnt";
+  spanCnt.textContent = selected.size;
 
-  function portalDrop(){
-    if(dropIsPortaled) return;
-    document.body.appendChild(dropEl);
-    dropIsPortaled = true
-  }
+  btn.appendChild(spanTxt);
+  btn.appendChild(spanCnt);
 
-  function unportalDrop(){
-    if(!dropIsPortaled) return;
-    dropParent.appendChild(dropEl);
-    dropEl.removeAttribute('style');
-    dropIsPortaled = false;
-  }
+  // popup selecionados
+  const popup = document.createElement("div");
+  popup.className = "multi-popup";
+  popup.setAttribute("role", "dialog");
 
-  const state={selected:new Set((selected||[]).filter(Boolean)), onChange:null};
+  const popTitle = document.createElement("div");
+  popTitle.className = "pop-title";
+  popTitle.textContent = "Selecionados";
 
-  function emit(){ if(typeof state.onChange==='function') state.onChange([...state.selected]); }
+  const popItems = document.createElement("div");
+  popItems.className = "pop-items";
 
-  function renderHeader(){
-    const arr=[...state.selected];
-    cnt.textContent=String(arr.length);
-    // Mantém texto fixo como placeholder (não cresce com os nomes)
-    txt.textContent = labelText;
-    btn.title = arr.join(', ');
-  }
+  popup.appendChild(popTitle);
+  popup.appendChild(popItems);
 
-  function renderPopup(){
-    const arr=[...state.selected];
-    popItems.innerHTML='';
-    if(!arr.length){
-      popItems.innerHTML = '<div class="pop-empty">(nenhum)</div>';
+  // dropdown
+  const drop = document.createElement("div");
+  drop.className = "multi-drop";
+  drop.setAttribute("role", "listbox");
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "input multi-search";
+  input.placeholder = searchPh || "Buscar...";
+
+  const list = document.createElement("div");
+  list.className = "multi-list";
+
+  drop.appendChild(input);
+  drop.appendChild(list);
+
+  wrap.appendChild(btn);
+  wrap.appendChild(popup);
+  wrap.appendChild(drop);
+
+  // ===== render selecionados =====
+  function renderPopup() {
+    popItems.innerHTML = "";
+    if (!selected.size) {
+      const empty = document.createElement("div");
+      empty.className = "pop-empty";
+      empty.textContent = "Nenhum";
+      popItems.appendChild(empty);
       return;
     }
-    arr.sort().forEach(v=>{
-      const div=document.createElement('div');
-      div.className='pop-pill';
-      div.innerHTML = '<div class="nm">${escapeHtml(v)}</div><button type="button" class="x" title="Remover">✖</button>';
-      div.querySelector('.x').addEventListener('click', (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        state.selected.delete(v);
-        // Atualiza checkbox na lista se existir
-        div.innerHTML =
-          '<div class="nm">' + escapeHtml(v) + '</div>' +
-          '<button type="button" class="x" title="Remover">×</button>';
-        if(cb) cb.checked=false;
-        renderHeader();
+
+    Array.from(selected).sort().forEach(v => {
+      const row = document.createElement("div");
+      row.className = "pop-pill";
+
+      const nm = document.createElement("div");
+      nm.className = "nm";
+      nm.textContent = v;
+
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "x";
+      x.textContent = "×";
+      x.onclick = () => {
+        selected.delete(v);
         renderPopup();
-        emit();
-      });
-      popItems.appendChild(div);
+        renderList();
+      };
+
+      row.appendChild(nm);
+      row.appendChild(x);
+      popItems.appendChild(row);
+    });
+
+    spanCnt.textContent = selected.size;
+  }
+
+  // ===== render lista =====
+  function renderList() {
+    list.innerHTML = "";
+    options.forEach(v => {
+      const row = document.createElement("label");
+      row.className = "multi-opt";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selected.has(v);
+      cb.onchange = () => {
+        cb.checked ? selected.add(v) : selected.delete(v);
+        renderPopup();
+      };
+
+      const txt = document.createElement("span");
+      txt.textContent = v;
+
+      row.appendChild(cb);
+      row.appendChild(txt);
+      list.appendChild(row);
     });
   }
 
-  function renderList(filter=''){
-    list.innerHTML='';
-    const f=(filter||'').trim().toLowerCase();
-    (options||[]).filter(v=>!f || String(v).toLowerCase().includes(f)).forEach(v=>{
-      const item=document.createElement('label');
-      item.className='multi-item';
-      const vv=String(v);
-      item.innerHTML = '<input type="checkbox" ${state.selected.has(vv)?'checked':''} data-val="${escapeHtml(vv)}"/><div class="lbl">${escapeHtml(vv)}</div>';
-      const cb=item.querySelector('input');
-      cb.addEventListener('change', ()=>{
-        if(cb.checked) state.selected.add(vv); else state.selected.delete(vv);
-        renderHeader();
-        renderPopup();
-        emit();
-      });
-      list.appendChild(item);
-    });
-  }
+  btn.onclick = () => {
+    const open = wrap.classList.toggle("open");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+
+  renderPopup();
+  renderList();
+
+  return wrap;
+}
 
   function open(){
     wrap.classList.add('open');
