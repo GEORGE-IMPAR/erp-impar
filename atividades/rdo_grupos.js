@@ -226,7 +226,8 @@
 
   async function loadOne(groupName) {
     const slug = slugify(groupName);
-    const url = `${BASE_PATH}/{slug}&ts=${Date.now()}`;
+    const url = `https://api.erpimpar.com.br/atividades/rdo/${slug}.json`;
+
 
     try {
       const json = await fetchJson(url);
