@@ -53,8 +53,8 @@
   const GROUPS = rawList ? rawList.split("|").map((s) => s.trim()).filter(Boolean) : DEFAULT_GROUPS;
 
   // base path (do dataset). Ex: /atividades/rdo
-  window.RDO_BASE_PATH = window.RDO_BASE_PATH || (elWrap.getAttribute("data-basepath") || "/atividades/rdo").replace(/\/$/, "");
-  const BASE_PATH = window.RDO_BASE_PATH;
+  const BASE_PATH = window.BASE_PATH;
+
 // ===== utils =====
   function stripAccents(str) {
     return String(str)
