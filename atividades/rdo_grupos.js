@@ -225,7 +225,7 @@
 
   async function loadOne(groupName) {
     const slug = slugify(groupName);
-    const url = `${BASE_PATH}/${slug}.json?ts=${Date.now()}`;
+    const url = `${BASE_PATH}?slug=${slug}&ts=${Date.now()}`;
 
     try {
       const json = await fetchJson(url);
