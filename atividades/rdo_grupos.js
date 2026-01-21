@@ -222,7 +222,9 @@
 
   // ===== state =====
   const cache = new Map(); // slug -> { groupName, ok, items, updatedAt }
-  const BASE_PATH = "https://api.erpimpar.com.br/atividades/rdo";
+  window.RDO_BASE_PATH = window.RDO_BASE_PATH || "https://api.erpimpar.com.br/atividades/rdo";
+  const BASE_PATH = window.RDO_BASE_PATH;
+
 
 async function loadOne(groupName){
   const slug = slugify(groupName);
