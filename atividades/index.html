@@ -1468,173 +1468,233 @@ function openPrintWindow(payload){
   pdfModal.style.display = "block";
 }
 
-function buildMultiSelect(options, selected=[], labelText='Selecionar', searchPh='Buscar...'){
-  const wrap=document.createElement('div');
-  wrap.className='multi';
-  wrap.innerHTML =
-  "<button type='button' class='multi-btn' aria-haspopup='listbox' aria-expanded='false'>" +
-    "<span class='txt'>" + labelText + "</span>" +
-    "<span class='cnt'>0</span>" +
-  "</button>" +
-  "<div class='multi-popup' role='dialog' aria-label='Selecionados'>" +
-    "<div class='pop-title'>Selecionados</div>" +
-    "<div class='pop-items'></div>" +
-  "</div>" +
-  "<div class='multi-drop' role='listbox'>" +
-    "<input class='input multi-search' type='text' placeholder='" + searchPh + "'/>" +
-    "<div class='multi-list'></div>" +
-  "</div>";
+function buildMultiSelect(options, selected, labelText, searchPh){
+  options   = options   || [];
+  selected  = selected  || [];
+  labelText = labelText || "Selecionar";
+  searchPh  = searchPh  || "Buscar...";
 
-  const btn=wrap.querySelector('.multi-btn');
-  const txt=wrap.querySelector('.txt');
-  const cnt=wrap.querySelector('.cnt');
-  const popup=wrap.querySelector('.multi-popup');
-  const popItems=wrap.querySelector('.pop-items');
-  const search=wrap.querySelector('.multi-search');
-  const list=wrap.querySelector('.multi-list');
+  const wrap = document.createElement("div");
+  wrap.className = "multi";
+
+  wrap.innerHTML =
+    "<button type='button' class='multi-btn' aria-haspopup='listbox' aria-expanded='false'>" +
+      "<span class='txt'>" + escapeHtml(labelText) + "</span>" +
+      "<span class='cnt'>0</span>" +
+    "</button>" +
+    "<div class='multi-popup' role='dialog' aria-label='Selecionados'>" +
+      "<div class='pop-title'>Selecionados</div>" +
+      "<div class='pop-items'></div>" +
+    "</div>" +
+    "<div class='multi-drop' role='listbox'>" +
+      "<input class='input multi-search' type='text' placeholder='" + escapeHtml(searchPh) + "'/>" +
+      "<div class='multi-list'></div>" +
+    "</div>";
+
+  const btn      = wrap.querySelector(".multi-btn");
+  const txt      = wrap.querySelector(".txt");
+  const cnt      = wrap.querySelector(".cnt");
+  const popup    = wrap.querySelector(".multi-popup");
+  const popItems = wrap.querySelector(".pop-items");
+  const search   = wrap.querySelector(".multi-search");
+  const list     = wrap.querySelector(".multi-list");
 
   // --- Portal para dropdown (evita ficar por trás / ser cortado por overflow/stacking)
-  const dropEl = wrap.querySelector('.multi-drop');
+  const dropEl = wrap.querySelector(".multi-drop");
   const dropParent = wrap;
   let dropIsPortaled = false;
 
   function positionDrop(){
     if(!dropIsPortaled) return;
     const r = btn.getBoundingClientRect();
-    dropEl.style.position = 'fixed';
-    dropEl.style.left = (r.left) + 'px';
-    dropEl.style.top  = (r.bottom + 8) + 'px';
-    dropEl.style.width = (r.width) + 'px';
-    dropEl.style.zIndex = '2147483647';
-    dropEl.style.pointerEvents = 'auto';
+    dropEl.style.position = "fixed";
+    dropEl.style.left = (r.left) + "px";
+    dropEl.style.top  = (r.bottom + 8) + "px";
+    dropEl.style.width = (r.width) + "px";
+    dropEl.style.zIndex = "2147483647";
+    dropEl.style.pointerEvents = "auto";
   }
 
   function portalDrop(){
     if(dropIsPortaled) return;
     document.body.appendChild(dropEl);
-    dropIsPortaled = true
+    dropIsPortaled = true;
   }
 
   function unportalDrop(){
     if(!dropIsPortaled) return;
     dropParent.appendChild(dropEl);
-    dropEl.removeAttribute('style');
+    dropEl.removeAttribute("style");
     dropIsPortaled = false;
   }
 
-  const state={selected:new Set((selected||[]).filter(Boolean)), onChange:null};
+  const state = {
+    selected: new Set((selected || []).filter(Boolean)),
+    onChange: null
+  };
 
-  function emit(){ if(typeof state.onChange==='function') state.onChange([...state.selected]); }
+  function emit(){
+    if(typeof state.onChange === "function"){
+      state.onChange([].concat(Array.from(state.selected)));
+    }
+  }
 
   function renderHeader(){
-    const arr=[...state.selected];
-    cnt.textContent=String(arr.length);
-    // Mantém texto fixo como placeholder (não cresce com os nomes)
-    txt.textContent = labelText;
-    btn.title = arr.join(', ');
+    const arr = Array.from(state.selected);
+    cnt.textContent = String(arr.length);
+    txt.textContent = labelText; // placeholder fixo
+    btn.title = arr.join(", ");
   }
 
   function renderPopup(){
-    const arr=[...state.selected];
-    popItems.innerHTML='';
+    const arr = Array.from(state.selected);
+    popItems.innerHTML = "";
+
     if(!arr.length){
-      popItems.innerHTML = `<div class="pop-empty">(nenhum)</div>`;
+      popItems.innerHTML = "<div class='pop-empty'>(nenhum)</div>";
       return;
     }
-    arr.sort().forEach(v=>{
-      const div=document.createElement('div');
-      div.className='pop-pill';
-      div.innerHTML = `<div class="nm">${escapeHtml(v)}</div><button type="button" class="x" title="Remover">✖</button>`;
-      div.querySelector('.x').addEventListener('click', (e)=>{
+
+    arr.sort().forEach(function(v){
+      const vv = String(v);
+      const div = document.createElement("div");
+      div.className = "pop-pill";
+
+      div.innerHTML =
+        "<div class='nm'>" + escapeHtml(vv) + "</div>" +
+        "<button type='button' class='x' title='Remover'>✖</button>";
+
+      div.querySelector(".x").addEventListener("click", function(e){
         e.preventDefault();
         e.stopPropagation();
-        state.selected.delete(v);
+
+        state.selected.delete(vv);
+
         // Atualiza checkbox na lista se existir
-        const cb = list.querySelector(`input[type=checkbox][data-val="${CSS.escape(v)}"]`);
-        if(cb) cb.checked=false;
+        // (CSS.escape pode não existir em browsers antigos — por segurança fazemos fallback)
+        let sel = "input[type=checkbox][data-val=\"" + (window.CSS && CSS.escape ? CSS.escape(vv) : escapeHtml(vv)) + "\"]";
+        const cb = list.querySelector(sel);
+        if(cb) cb.checked = false;
+
         renderHeader();
         renderPopup();
         emit();
       });
+
       popItems.appendChild(div);
     });
   }
 
-  function renderList(filter=''){
-    list.innerHTML='';
-    const f=(filter||'').trim().toLowerCase();
-    (options||[]).filter(v=>!f || String(v).toLowerCase().includes(f)).forEach(v=>{
-      const item=document.createElement('label');
-      item.className='multi-item';
-      const vv=String(v);
-      item.innerHTML = `<input type="checkbox" ${state.selected.has(vv)?'checked':''} data-val="${escapeHtml(vv)}"/><div class="lbl">${escapeHtml(vv)}</div>`;
-      const cb=item.querySelector('input');
-      cb.addEventListener('change', ()=>{
-        if(cb.checked) state.selected.add(vv); else state.selected.delete(vv);
-        renderHeader();
-        renderPopup();
-        emit();
+  function renderList(filter){
+    list.innerHTML = "";
+    const f = String(filter || "").trim().toLowerCase();
+
+    options
+      .map(function(x){ return String(x); })
+      .filter(function(v){ return !f || v.toLowerCase().indexOf(f) >= 0; })
+      .forEach(function(vv){
+        const item = document.createElement("label");
+        item.className = "multi-item";
+
+        const checked = state.selected.has(vv) ? "checked" : "";
+        item.innerHTML =
+          "<input type='checkbox' " + checked + " data-val=\"" + escapeHtml(vv) + "\"/>" +
+          "<div class='lbl'>" + escapeHtml(vv) + "</div>";
+
+        const cb = item.querySelector("input");
+        cb.addEventListener("change", function(){
+          if(cb.checked) state.selected.add(vv);
+          else state.selected.delete(vv);
+
+          renderHeader();
+          renderPopup();
+          emit();
+        });
+
+        list.appendChild(item);
       });
-      list.appendChild(item);
-    });
   }
 
   function open(){
-    wrap.classList.add('open');
-    btn.setAttribute('aria-expanded','true');
-    // porta o dropdown para o <body> (acima de tudo)
+    wrap.classList.add("open");
+    btn.setAttribute("aria-expanded", "true");
+
     portalDrop();
     positionDrop();
-    const row = wrap.closest('.row');
-    if(row) row.classList.add('row-open');
+
+    const row = wrap.closest(".row");
+    if(row) row.classList.add("row-open");
+
     renderList(search.value);
-    // quando está portaled, precisa forçar display
-    if(dropIsPortaled) dropEl.style.display = 'block';
+
+    if(dropIsPortaled) dropEl.style.display = "block";
     search.focus();
   }
+
   function close(){
-    wrap.classList.remove('open');
-    btn.setAttribute('aria-expanded','false');
+    wrap.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+
     unportalDrop();
-    const row = wrap.closest('.row');
-    if(row) row.classList.remove('row-open');
+
+    const row = wrap.closest(".row");
+    if(row) row.classList.remove("row-open");
   }
 
-  // Clique abre/fecha o dropdown
-  btn.addEventListener('click', (e)=>{
+  btn.addEventListener("click", function(e){
     e.preventDefault();
-    if(wrap.classList.contains('open')) close(); else open();
+    if(wrap.classList.contains("open")) close();
+    else open();
   });
 
-  // Popup aparece no foco, some no blur (sem mexer na estrutura)
-  btn.addEventListener('focus', ()=>{ wrap.classList.add('show-popup'); renderPopup(); });
-  btn.addEventListener('blur', ()=>{ setTimeout(()=>wrap.classList.remove('show-popup'), 120); });
+  btn.addEventListener("focus", function(){
+    wrap.classList.add("show-popup");
+    renderPopup();
+  });
 
-  // Mantém popup visível enquanto o usuário interage dentro dele
-  popup.addEventListener('mousedown', (e)=>{ e.preventDefault(); });
+  btn.addEventListener("blur", function(){
+    setTimeout(function(){
+      wrap.classList.remove("show-popup");
+    }, 120);
+  });
 
-  search.addEventListener('input', ()=>renderList(search.value));
+  popup.addEventListener("mousedown", function(e){
+    e.preventDefault();
+  });
 
-  window.addEventListener('scroll', ()=>{ if(wrap.classList.contains('open')) positionDrop(); }, true);
-  window.addEventListener('resize', ()=>{ if(wrap.classList.contains('open')) positionDrop(); });
+  search.addEventListener("input", function(){
+    renderList(search.value);
+  });
 
-  // Clique fora fecha tudo
-  document.addEventListener('click', (e)=>{
+  window.addEventListener("scroll", function(){
+    if(wrap.classList.contains("open")) positionDrop();
+  }, true);
+
+  window.addEventListener("resize", function(){
+    if(wrap.classList.contains("open")) positionDrop();
+  });
+
+  document.addEventListener("click", function(e){
     if(!wrap.contains(e.target) && !(dropIsPortaled && dropEl.contains(e.target))){
       close();
-      wrap.classList.remove('show-popup');
+      wrap.classList.remove("show-popup");
     }
   });
 
   wrap._multi = {
-    get: ()=>[...state.selected],
-    set: (arr)=>{ state.selected=new Set((arr||[]).filter(Boolean)); renderHeader(); renderPopup(); renderList(search.value); },
-    onChange: (fn)=>state.onChange=fn
+    get: function(){ return Array.from(state.selected); },
+    set: function(arr){
+      state.selected = new Set((arr || []).filter(Boolean).map(String));
+      renderHeader();
+      renderPopup();
+      renderList(search.value);
+    },
+    onChange: function(fn){ state.onChange = fn; }
   };
 
   renderHeader();
   renderPopup();
-  renderList('');
+  renderList("");
   return wrap;
 }
 
@@ -1766,7 +1826,6 @@ function newRow(pref={}){
     validateRow(row,"draft");
     refreshNameChecklist();
   }
-  row._refs.multiNomes
   row._refs.multiNomes._multi.onChange(()=>anyChange());
   if(row._refs.multiObras && row._refs.multiObras._multi) row._refs.multiObras._multi.onChange(()=>anyChange());
   [row._refs.inpDate,row._refs.selCarro,row._refs.selPerc,row._refs.txtAtiv,row._refs.txtMot]
@@ -1933,7 +1992,7 @@ function pushHistory(payloadFinal){
 }
 
 
-async async function renderHistoryServer(){
+  async function renderHistoryServer(){
   const LS_SERVER_CACHE = "ERPIMPAR_ATIVIDADES_SERVER_CACHE_V1";
   const dt = (document.getElementById("histDate")?.value || "").trim();
 
@@ -2342,96 +2401,6 @@ if(btnNewDay) btnNewDay.addEventListener("click", newDay);
 }
 @keyframes rdoPulse{ 0%,100%{opacity:.25} 50%{opacity:.85} }
 
-/* ===== RDO Modal bonito ===== */
-#rdoModal{position:fixed; inset:0; display:none; z-index:9999;}
-#rdoModal.is-open{display:block;}
-#rdoModal .backdrop{
-  position:absolute; inset:0;
-  background: rgba(2,8,20,.70);
-  backdrop-filter: blur(8px);
-  animation: fadeIn .18s ease-out;
-}
-#rdoModal .panel{
-  position:absolute;
-  left:50%; top:50%;
-  transform: translate(-50%,-50%) scale(.98);
-  width:min(920px, calc(100vw - 28px));
-  max-height: min(80vh, 720px);
-  background: linear-gradient(180deg, rgba(7,18,35,.96), rgba(8,28,55,.96));
-  border:1px solid rgba(255,255,255,.12);
-  border-radius: 18px;
-  box-shadow: 0 18px 60px rgba(0,0,0,.55);
-  overflow:hidden;
-  animation: popIn .22s ease-out forwards;
-}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes popIn{from{opacity:0; transform:translate(-50%,-50%) scale(.96)}to{opacity:1; transform:translate(-50%,-50%) scale(1)}}
-#rdoModal .head{
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-}
-#rdoModal .head .hleft{min-width:0}
-#rdoModal .head .title{
-  margin:0;
-  font-weight:900;
-  font-size: 14px;
-  color: rgba(255,255,255,.92);
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-#rdoModal .head .sub{
-  margin-top:3px;
-  font-size: 12px;
-  color: rgba(255,255,255,.68);
-}
-#rdoModal .head .actions{display:flex; gap:8px; align-items:center;}
-#rdoModal .head .btn-x{
-  border-radius: 12px;
-  border:1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.06);
-  color: rgba(255,255,255,.85);
-  padding: 8px 10px;
-  cursor:pointer;
-  transition: .15s ease;
-}
-#rdoModal .head .btn-x:hover{
-  background: rgba(255,255,255,.10);
-  border-color: rgba(59,130,246,.55);
-}
-#rdoModal .body{
-  padding: 12px 14px 14px;
-  max-height: calc(min(80vh, 720px) - 56px);
-  overflow:auto;
-}
-.rdo-msg{
-  display:grid;
-  grid-template-columns: 68px 1fr;
-  gap:10px;
-  padding: 10px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(255,255,255,.04);
-  margin-bottom: 10px;
-}
-.rdo-msg .t{
-  font-size:12px;
-  color: rgba(255,255,255,.70);
-  font-weight:800;
-  text-align:right;
-}
-.rdo-msg .c{
-  font-size:13px;
-  color: rgba(255,255,255,.86);
-  line-height:1.35;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-@media (max-width:560px){
-  .rdo-msg{grid-template-columns:1fr}
-  .rdo-msg .t{text-align:left}
-}
 </style>
 <!-- RDO MODAL (leitura bonita da conversa) -->
 <div id="rdoModal" aria-hidden="true">
