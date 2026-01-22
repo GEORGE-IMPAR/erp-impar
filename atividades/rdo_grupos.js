@@ -346,9 +346,6 @@
     grid.innerHTML = "";
     var ok = 0;
 
-    // ✅ cria o controller do modal uma vez
-    var modalCtl = ensureModalWiring();
-
     // 🔴 total de mensagens novas (somatório)
     var totalNewMsgs = 0;
 
@@ -360,24 +357,32 @@
 
         totalNewMsgs += Number(rec.newMsgs || 0) || 0;
 
-        renderCard(grid, rec, async function(r){
-          try{
-            var data = await fetchJson(
-              API_GET + encodeURIComponent(r.slug) + "&ts=" + String(Date.now())
-            );
+renderCard(grid, rec, async function(r){
+  try{
+    var data = await fetchJson(
+      API_GET + encodeURIComponent(r.slug) + "&ts=" + String(Date.now())
+    );
 
-            renderModal(r.groupName, r.slug, data);
+    renderModal(r.groupName, r.slug, data);
 
-            // ✅ abre modal (fix principal: usa is-open e wiring correto)
-            if (modalCtl && modalCtl.open) modalCtl.open();
+    // ✅ PEGA O MODALCTL NA HORA DO CLIQUE (agora ele já existe no DOM)
+    var modalCtlNow = ensureModalWiring();
+    if (modalCtlNow && modalCtlNow.open) modalCtlNow.open();
 
-            // ✅ após abrir, atualiza cards + badge (vai cair pra 0 nesse grupo)
-            reloadAll();
+    // ✅ fallback ultra seguro (caso seu CSS esteja diferente)
+    var modalEl = document.getElementById("rdoModal");
+    if (modalEl){
+      modalEl.classList.add("is-open");
+      modalEl.style.display = "block";
+    }
 
-          }catch(e){
-            alert("Não consegui abrir este registro.\n" + String(e && e.message ? e.message : e));
-          }
-        });
+    // ⚠️ importante: só recarrega DEPOIS de abrir
+    setTimeout(function(){ reloadAll(); }, 60);
+
+  }catch(e){
+    alert("Não consegui abrir este registro.\n" + String(e && e.message ? e.message : e));
+  }
+});
 
       }catch(e){
         var c = document.createElement("div");
@@ -409,4 +414,5 @@
   else boot();
 
 })();
+
 
