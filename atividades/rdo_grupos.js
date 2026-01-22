@@ -1,296 +1,270 @@
+/* ERP ÍMPAR — RDO ao vivo (Grupos) | versão caprichada (cards + modal + highlight) */
+(() => {
+  const elRoot = document.getElementById("rdoLive");
+  if (!elRoot) return;
 
-/* RDO ao vivo - ERP ÍMPAR (garimpo estável)
-   - URL CHUMBADA (sem variáveis confusas)
-   - Sem crases / sem template string
-   - Cards premium + modal bonito para leitura
-*/
-(function(){
-  "use strict";
+  const BASE_PATH = (elRoot.dataset.basepath || "https://api.erpimpar.com.br/atividades/rdo").replace(/\/$/, "");
+  const elGrid = document.getElementById("rdoGrid");
+  const elEmpty = document.getElementById("rdoEmpty");
+  const elStatus = document.getElementById("rdoStatus");
+  const btnRefresh = document.getElementById("btnRdoRefresh");
 
-  var DEFAULT_GROUPS = [
-  "RDO-Contato Ecoparque Araranguá",
-  "RDO-Giassi Araranguá",
-  "Rdo-SOS Cárdio/Clínica Ritmo 2°Pavimento",
-  "Rdo-Fórum de Araquari",
-  "RDO-Residencial FUSION",
-  "RDO - Residencial João Lohn Jurerê",
-  "RDO - Tubarão Giassi",
-  "RDO - Impact Hub",
-  "RDO - UBS São ludgero",
-  "RDO KHRONOS",
-  "RDO - Auditório Praia Grande",
-  "RDO - Artisti",
-  "RDO - Cassol Centerlar",
-  "RDO-CASA GRANDE",
-  "Rdo-Hospital São Brás São Camilo Porto Vitória"
-];
+  // Modal
+  const elModal = document.getElementById("rdoModal");
+  const elModalTitle = document.getElementById("rdoModalTitle");
+  const elModalSub = document.getElementById("rdoModalSub");
+  const elModalBody = document.getElementById("rdoModalBody");
+  const btnModalClose = document.getElementById("rdoModalClose");
 
-  function $(sel){ return document.querySelector(sel); }
-  function esc(s){
-    s = (s === null || s === undefined) ? "" : String(s);
-    return s.replace(/[&<>"]/g, function(m){ return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" })[m]; });
-  }
-  function slugify(name){
-    // Mantém padrão já usado: "RDO - X" / "RDO-X" / "Rdo-X"
-    var s = String(name || "").toLowerCase().trim();
-    s = s.replace(/[ãáàâä]/g,"a").replace(/[ẽéèêë]/g,"e").replace(/[ĩíìîï]/g,"i")
-         .replace(/[õóòôö]/g,"o").replace(/[ũúùûü]/g,"u").replace(/ç/g,"c");
-    s = s.replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
-    if (s.indexOf("rdo-") !== 0) s = "rdo-" + s;
-    return s;
+  const cache = new Map(); // slug -> { groupName, items, updatedAt, fp, isNew }
+
+  function setStatus(ok, text) {
+    if (!elStatus) return;
+    const dot = elStatus.querySelector("span");
+    const label = elStatus.querySelectorAll("span")[1];
+    if (dot) dot.style.background = ok ? "#2bd27f" : "#ff5a5a";
+    if (label) label.textContent = text || (ok ? "ok" : "erro");
   }
 
-  // >>> URL CERTA (chumbada) <<<
-  var API_GET = "https://api.erpimpar.com.br/atividades/rdo/rdo_get.php?slug=";
+  function slugify(s) {
+    return (s || "")
+      .toString()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
 
-  async function fetchJson(url){
-    var r = await fetch(url, { cache: "no-store" });
-    if (r.status === 404) return { ok:true, items:[], updated_at:null };
-    if (!r.ok) throw new Error("HTTP " + r.status);
+  async function fetchJson(url) {
+    const r = await fetch(url, { cache: "no-store" });
+    if (r.status === 404) return { ok: true, items: [], updated_at: null };
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   }
 
-  function pickUpdatedAt(data){
-    return data && (data.updated_at || data.updatedAt || data.updated || data.last_update || null);
+  function normalizeItems(json) {
+    // Aceita: {items:[...]}, {messages:[...]}, [ ... ]
+    let items = [];
+    if (Array.isArray(json)) items = json;
+    else if (json && Array.isArray(json.items)) items = json.items;
+    else if (json && Array.isArray(json.messages)) items = json.messages;
+    // Normaliza campos comuns
+    items = items
+      .map((it) => {
+        if (typeof it === "string") return { text: it, ts: null, who: "" };
+        return {
+          text: (it.text ?? it.msg ?? it.message ?? it.body ?? "").toString(),
+          ts: it.ts ?? it.time ?? it.date ?? it.created_at ?? it.createdAt ?? null,
+          who: (it.who ?? it.from ?? it.author ?? "").toString(),
+        };
+      })
+      .filter((it) => it.text && it.text.trim().length);
+
+    return items;
   }
 
-  function normalizeItems(data){
-    var items = (data && Array.isArray(data.items)) ? data.items : [];
-    var updatedAt = pickUpdatedAt(data);
-    return { items: items, updatedAt: updatedAt };
+  function formatTime(ts) {
+    if (!ts) return "";
+    // aceita ISO, epoch ms, epoch s, ou "HH:MM"
+    if (typeof ts === "string" && /^\d{2}:\d{2}/.test(ts)) return ts.slice(0, 5);
+    let d;
+    if (typeof ts === "number") d = new Date(ts < 2e10 ? ts * 1000 : ts);
+    else d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return "";
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
   }
 
-  function lastKey(slug){ return "ERPIMPAR_RDO_SEEN_" + slug; }
-  function markSeen(slug, value){
-    try{ localStorage.setItem(lastKey(slug), String(value || "")); }catch(e){}
-  }
-  function getSeen(slug){
-    try{ return localStorage.getItem(lastKey(slug)) || ""; }catch(e){ return ""; }
-  }
-
-  function fmtShortDate(d){
-    try{
-      var dt = (d instanceof Date) ? d : new Date(d);
-      if (isNaN(dt.getTime())) return "";
-      var hh = String(dt.getHours()).padStart(2,"0");
-      var mm = String(dt.getMinutes()).padStart(2,"0");
-      var dd = String(dt.getDate()).padStart(2,"0");
-      var mo = String(dt.getMonth()+1).padStart(2,"0");
-      return dd + "/" + mo + " " + hh + ":" + mm;
-    }catch(e){ return ""; }
+  function fingerprint(items) {
+    const last = items[items.length - 1] || {};
+    const seed = `${items.length}|${last.ts ?? ""}|${(last.text || "").slice(0, 120)}`;
+    // hash simples
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return String(h);
   }
 
-  function statusDot(count){
-    // 0 msgs => ok (verde), 1-2 => warn, >=3 => azul (tratado como ok+)
-    if (count >= 3) return { cls:"", label:"novas" };
-    if (count >= 1) return { cls:"warn", label:"atenção" };
-    return { cls:"", label:"ok" };
+  function isNewForSlug(slug, fp) {
+    const key = `ERPIMPAR_RDO_FP_${slug}`;
+    const old = localStorage.getItem(key);
+    // Se nunca viu antes, não marca como "novo" (senão tudo fica piscando na 1ª carga)
+    if (!old) return false;
+    return old !== fp;
   }
 
-  function ensureModalWiring(){
-    var modal = $("#rdoModal");
-    if (!modal) return;
-    var btnClose = $("#rdoModalClose");
-    var backdrop = modal.querySelector(".backdrop");
-    function close(){
-      modal.classList.remove("open");
-      modal.setAttribute("aria-hidden","true");
-      document.body.style.overflow = "";
-    }
-    function open(){
-      modal.classList.add("open");
-      modal.setAttribute("aria-hidden","false");
-      document.body.style.overflow = "hidden";
-    }
-    if (btnClose) btnClose.addEventListener("click", close);
-    if (backdrop) backdrop.addEventListener("click", close);
-    document.addEventListener("keydown", function(ev){
-      if (ev.key === "Escape" && modal.classList.contains("open")) close();
-    });
-    return { open: open, close: close };
+  function markSeen(slug, fp) {
+    localStorage.setItem(`ERPIMPAR_RDO_FP_${slug}`, fp);
   }
 
-  function renderModal(groupName, slug, data){
-    var modal = $("#rdoModal");
-    if (!modal) return;
-    var title = $("#rdoModalTitle");
-    var sub = $("#rdoModalSub");
-    var body = $("#rdoModalBody");
-    if (title) title.textContent = groupName;
-    var updatedAt = pickUpdatedAt(data);
-    var meta = updatedAt ? ("Atualizado: " + fmtShortDate(updatedAt)) : "Últimos 7 dias";
-    if (sub) sub.textContent = meta;
-    if (body) body.innerHTML = "";
+  function buildCard(slug, groupName, items, updatedAt, fp, isNew) {
+    const card = document.createElement("div");
+    card.className = "rdo-card" + (isNew ? " rdo-new" : "");
+    card.dataset.slug = slug;
 
-    var items = (data && Array.isArray(data.items)) ? data.items : [];
-    if (!items.length){
-      var empty = document.createElement("div");
-      empty.className = "msg";
-      empty.innerHTML = '<div class="mmeta">Sem mensagens</div><div>—</div>';
-      body.appendChild(empty);
-      return;
-    }
-
-    for (var i=0;i<items.length;i++){
-      var it = items[i];
-      var when = "";
-      var who = "";
-      var txt = "";
-
-      if (typeof it === "string"){
-        txt = it;
-      } else if (it && typeof it === "object"){
-        when = it.ts || it.time || it.hora || it.datetime || it.date || "";
-        who = it.user || it.autor || it.from || it.remetente || "";
-        txt = it.text || it.msg || it.mensagem || it.body || JSON.stringify(it);
-      } else {
-        txt = String(it);
-      }
-
-      var card = document.createElement("div");
-      card.className = "msg";
-      var mmeta = document.createElement("div");
-      mmeta.className = "mmeta";
-      var metaParts = [];
-      if (when) metaParts.push(fmtShortDate(when) || String(when));
-      if (who) metaParts.push(String(who));
-      mmeta.textContent = metaParts.join(" • ") || "Mensagem";
-      var mtxt = document.createElement("div");
-      mtxt.innerHTML = esc(txt).replace(/\n/g,"<br>");
-      card.appendChild(mmeta);
-      card.appendChild(mtxt);
-      body.appendChild(card);
-    }
-
-    // marcou como lido
-    var keyVal = (updatedAt || items.length || Date.now());
-    markSeen(slug, keyVal);
-  }
-
-  async function loadOne(groupName){
-    var slug = slugify(groupName);
-    var url = API_GET + encodeURIComponent(slug) + "&ts=" + String(Date.now());
-
-    var json = await fetchJson(url);
-    var norm = normalizeItems(json);
-
-    var updatedAt = norm.updatedAt;
-    var items = norm.items || [];
-    var lastSeen = getSeen(slug);
-    var keyVal = String(updatedAt || items.length || "");
-    var isNew = keyVal && keyVal !== lastSeen && items.length > 0;
-
-    return {
-      groupName: groupName,
-      slug: slug,
-      ok: true,
-      items: items,
-      updatedAt: updatedAt,
-      isNew: isNew,
-      keyVal: keyVal
-    };
-  }
-
-  function renderCard(container, rec, onOpen){
-    var card = document.createElement("div");
-    card.className = "rdo-card" + (rec.isNew ? " is-new" : "");
-    card.setAttribute("role","button");
-    card.setAttribute("tabindex","0");
-
-    var title = document.createElement("div");
+    const title = document.createElement("div");
     title.className = "rdo-title";
-    title.textContent = rec.groupName;
+    title.innerHTML = `<span>${escapeHtml(groupName)}</span><span class="rdo-chip">${items.length} msg(s)</span>`;
 
-    var sub = document.createElement("div");
+    const sub = document.createElement("div");
     sub.className = "rdo-sub";
-    sub.textContent = rec.updatedAt ? ("Atualizado: " + fmtShortDate(rec.updatedAt)) : "—";
+    const preview = items.length ? items[items.length - 1].text : "Sem mensagens";
+    sub.textContent = preview.length > 140 ? preview.slice(0, 140) + "…" : preview;
 
-    var foot = document.createElement("div");
-    foot.className = "rdo-foot";
-
-    var left = document.createElement("div");
-    left.className = "pill";
-    var dot = document.createElement("span");
-    dot.className = "dot" + ((rec.items && rec.items.length) ? " warn" : "");
-    dot.title = (rec.items && rec.items.length) ? "com mensagens" : "ok";
-    left.appendChild(dot);
-
-    var label = document.createElement("span");
-    label.textContent = (rec.items && rec.items.length) ? (String(rec.items.length) + " msg(s)") : "0 msg(s)";
-    left.appendChild(label);
-
-    var right = document.createElement("div");
-    right.className = "pill";
-    right.textContent = rec.isNew ? "NOVO" : "Abrir";
-    foot.appendChild(left);
-    foot.appendChild(right);
+    const meta = document.createElement("div");
+    meta.className = "rdo-meta";
+    const t = items.length ? formatTime(items[items.length - 1].ts) : "";
+    meta.innerHTML = `<span>${t ? ("Última " + t) : "—"}</span><span>clique para abrir</span>`;
 
     card.appendChild(title);
     card.appendChild(sub);
-    card.appendChild(foot);
+    card.appendChild(meta);
 
-    function openIt(){
-      if (typeof onOpen === "function") onOpen(rec);
-    }
-    card.addEventListener("click", openIt);
-    card.addEventListener("keydown", function(ev){
-      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openIt(); }
+    card.addEventListener("click", () => {
+      openModal(slug);
     });
 
-    container.appendChild(card);
+    // guarda em cache
+    cache.set(slug, { slug, groupName, items, updatedAt, fp, isNew });
+
+    return card;
   }
 
-  async function reloadAll(){
-    var grid = $("#rdoGrid");
-    var meta = $("#rdoMeta");
-    var btn = $("#rdoReload");
-    if (!grid) return;
+  function openModal(slug) {
+    const data = cache.get(slug);
+    if (!data || !elModal) return;
 
-    if (btn) btn.disabled = true;
-    if (meta) meta.textContent = "Atualizando…";
+    // marca como lido
+    markSeen(slug, data.fp);
 
-    grid.innerHTML = "";
-    var ok = 0;
-    var modalCtl = ensureModalWiring();
+    // tira glow
+    const card = elGrid?.querySelector(`.rdo-card[data-slug="${CSS.escape(slug)}"]`);
+    if (card) card.classList.remove("rdo-new");
 
-    // carrega sequencial para não estourar
-    for (var i=0;i<DEFAULT_GROUPS.length;i++){
-      var name = DEFAULT_GROUPS[i];
-      try{
-        var rec = await loadOne(name);
-        ok += 1;
-        renderCard(grid, rec, async function(r){
-          try{
-            var data = await fetchJson(API_GET + encodeURIComponent(r.slug) + "&ts=" + String(Date.now()));
-            renderModal(r.groupName, r.slug, data);
-            if (modalCtl && modalCtl.open) modalCtl.open();
-            // após ler, re-render para tirar "NOVO"
-            reloadAll();
-          }catch(e){
-            alert("Não consegui abrir este registro.\n" + String(e && e.message ? e.message : e));
-          }
-        });
-      }catch(e){
-        // card de erro
-        var err = { groupName: name, slug: slugify(name), ok:false, items:[], updatedAt:null, isNew:false, keyVal:"" };
-        var c = document.createElement("div");
-        c.className = "rdo-card";
-        c.innerHTML = '<div class="rdo-title">'+esc(name)+'</div><div class="rdo-sub">Erro ao carregar</div><div class="rdo-foot"><span class="pill"><span class="dot err"></span><span>erro</span></span><span class="pill">—</span></div>';
-        grid.appendChild(c);
-      }
+    elModalTitle.textContent = data.groupName;
+    elModalSub.textContent = "Conversa (últimos 7 dias)";
+
+    // render msgs
+    elModalBody.innerHTML = "";
+    if (!data.items.length) {
+      elModalBody.innerHTML = `<div style="color:rgba(255,255,255,.70);font-size:13px;padding:8px 2px;">Sem mensagens.</div>`;
+    } else {
+      // mostra do mais antigo ao mais novo (mais fácil de ler)
+      data.items.forEach((it) => {
+        const row = document.createElement("div");
+        row.className = "rdo-msg";
+        const time = formatTime(it.ts) || "—";
+        row.innerHTML = `<div class="t">${escapeHtml(time)}</div><div class="c">${escapeHtml(it.text)}</div>`;
+        elModalBody.appendChild(row);
+      });
+      // rola pro final
+      elModalBody.scrollTop = elModalBody.scrollHeight;
     }
 
-    if (meta) meta.textContent = "ok: " + ok + "/" + DEFAULT_GROUPS.length + " grupos";
-    if (btn) btn.disabled = false;
+    elModal.classList.add("is-open");
+    elModal.setAttribute("aria-hidden", "false");
   }
 
-  function boot(){
-    var btn = $("#rdoReload");
-    if (btn) btn.addEventListener("click", reloadAll);
-    reloadAll();
+  function closeModal() {
+    if (!elModal) return;
+    elModal.classList.remove("is-open");
+    elModal.setAttribute("aria-hidden", "true");
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
-  else boot();
+  function escapeHtml(s) {
+    return (s ?? "")
+      .toString()
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  if (btnModalClose) btnModalClose.addEventListener("click", closeModal);
+  if (elModal) {
+    elModal.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-close") === "1") closeModal();
+    });
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
+
+  async function loadOne(groupName) {
+    const slug = slugify(groupName);
+    const url = `https://api.erpimpar.com.br/atividades/rdo/${slug}.json`;
+    const json = await fetchJson(url);
+
+    const items = normalizeItems(json);
+    const fp = fingerprint(items);
+    const isNew = isNewForSlug(slug, fp);
+    const updatedAt = json?.updated_at ?? json?.updatedAt ?? null;
+
+    return { slug, groupName, items, fp, isNew, updatedAt };
+  }
+
+  async function reloadAll() {
+    try {
+      setStatus(true, "carregando…");
+      const groups = (window.RDO_GROUPS && Array.isArray(window.RDO_GROUPS) ? window.RDO_GROUPS : []).slice();
+
+      // fallback: se não vier do index, tenta ler de um data attr (opcional)
+      if (!groups.length) {
+        const raw = elRoot.getAttribute("data-groups");
+        if (raw) {
+          raw.split("|").map((s) => s.trim()).filter(Boolean).forEach((g) => groups.push(g));
+        }
+      }
+
+      elGrid.innerHTML = "";
+      let okCount = 0;
+
+      for (const g of groups) {
+        try {
+          const data = await loadOne(g);
+          const card = buildCard(data.slug, data.groupName, data.items, data.updatedAt, data.fp, data.isNew);
+          elGrid.appendChild(card);
+
+          // só grava como "visto" no 1º load se já tinha registro anterior — se não, deixa neutro
+          if (!localStorage.getItem(`ERPIMPAR_RDO_FP_${data.slug}`)) {
+            localStorage.setItem(`ERPIMPAR_RDO_FP_${data.slug}`, data.fp);
+          }
+
+          okCount++;
+        } catch (err) {
+          // cria card "erro"
+          const slug = slugify(g);
+          const card = document.createElement("div");
+          card.className = "rdo-card";
+          card.innerHTML = `<div class="rdo-title"><span>${escapeHtml(g)}</span><span class="rdo-chip">erro</span></div>
+            <div class="rdo-sub">Não consegui carregar este grupo.</div>
+            <div class="rdo-meta"><span>—</span><span style="color:#ffb4b4">${escapeHtml(err.message || "erro")}</span></div>`;
+          elGrid.appendChild(card);
+        }
+      }
+
+      if (!okCount) {
+        elEmpty.style.display = "block";
+      } else {
+        elEmpty.style.display = "none";
+      }
+      setStatus(true, `ok · ${okCount}/${groups.length} grupos`);
+    } catch (e) {
+      setStatus(false, "erro");
+      console.error(e);
+    }
+  }
+
+  if (btnRefresh) btnRefresh.addEventListener("click", reloadAll);
+
+  // Atualização automática (a cada 30s) sem ficar agressivo
+  let timer = setInterval(() => {
+    reloadAll().catch(() => {});
+  }, 30000);
+
+  // primeira carga
+  reloadAll();
 
 })();
