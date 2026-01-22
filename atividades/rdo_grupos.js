@@ -1,89 +1,37 @@
+
 /* RDO ao vivo - ERP ÍMPAR (garimpo estável)
    - URL CHUMBADA (sem variáveis confusas)
    - Sem crases / sem template string
    - Cards premium + modal bonito para leitura
-   - Badge global (bolinha vermelha topo) com contagem de grupos NOVOS
 */
 (function(){
   "use strict";
 
   var DEFAULT_GROUPS = [
-    "RDO-Contato Ecoparque Araranguá",
-    "RDO-Giassi Araranguá",
-    "Rdo-SOS Cárdio/Clínica Ritmo 2°Pavimento",
-    "Rdo-Fórum de Araquari",
-    "RDO-Residencial FUSION",
-    "RDO - Residencial João Lohn Jurerê",
-    "RDO - Tubarão Giassi",
-    "RDO - Impact Hub",
-    "RDO - UBS São ludgero",
-    "RDO KHRONOS",
-    "RDO - Auditório Praia Grande",
-    "RDO - Artisti",
-    "RDO - Cassol Centerlar",
-    "RDO-CASA GRANDE",
-    "Rdo-Hospital São Brás São Camilo Porto Vitória"
-  ];
-
-  // ===== RDO BADGE GLOBAL (bolinha vermelha topo) =====
-  function ensureRdoGlobalBadge(){
-    var id = "rdoGlobalBadge";
-    var el = document.getElementById(id);
-    if(el) return el;
-
-    el = document.createElement("div");
-    el.id = id;
-
-    el.style.position = "fixed";
-    el.style.top = "14px";
-    el.style.right = "18px";
-    el.style.zIndex = "2147483647";
-    el.style.background = "#e11d48";
-    el.style.color = "#fff";
-    el.style.borderRadius = "999px";
-    el.style.padding = "6px 10px";
-    el.style.fontSize = "12px";
-    el.style.fontWeight = "900";
-    el.style.letterSpacing = "0.2px";
-    el.style.boxShadow = "0 10px 26px rgba(0,0,0,.35)";
-    el.style.border = "1px solid rgba(255,255,255,.25)";
-    el.style.display = "none";
-    el.style.userSelect = "none";
-    el.style.cursor = "pointer";
-    el.setAttribute("title", "Novas mensagens no RDO");
-
-    el.addEventListener("click", function(){
-      try{
-        var sec = document.getElementById("rdoLive");
-        if(sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
-      }catch(e){}
-    });
-
-    document.body.appendChild(el);
-    return el;
-  }
-
-  function setRdoGlobalBadgeCount(n){
-    var el = ensureRdoGlobalBadge();
-    var total = Number(n || 0) || 0;
-    if(total > 0){
-      el.textContent = "● " + total;
-      el.style.display = "block";
-    }else{
-      el.textContent = "";
-      el.style.display = "none";
-    }
-  }
+  "RDO-Contato Ecoparque Araranguá",
+  "RDO-Giassi Araranguá",
+  "Rdo-SOS Cárdio/Clínica Ritmo 2°Pavimento",
+  "Rdo-Fórum de Araquari",
+  "RDO-Residencial FUSION",
+  "RDO - Residencial João Lohn Jurerê",
+  "RDO - Tubarão Giassi",
+  "RDO - Impact Hub",
+  "RDO - UBS São ludgero",
+  "RDO KHRONOS",
+  "RDO - Auditório Praia Grande",
+  "RDO - Artisti",
+  "RDO - Cassol Centerlar",
+  "RDO-CASA GRANDE",
+  "Rdo-Hospital São Brás São Camilo Porto Vitória"
+];
 
   function $(sel){ return document.querySelector(sel); }
   function esc(s){
     s = (s === null || s === undefined) ? "" : String(s);
-    return s.replace(/[&<>"]/g, function(m){
-      return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" })[m];
-    });
+    return s.replace(/[&<>"]/g, function(m){ return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" })[m]; });
   }
-
   function slugify(name){
+    // Mantém padrão já usado: "RDO - X" / "RDO-X" / "Rdo-X"
     var s = String(name || "").toLowerCase().trim();
     s = s.replace(/[ãáàâä]/g,"a").replace(/[ẽéèêë]/g,"e").replace(/[ĩíìîï]/g,"i")
          .replace(/[õóòôö]/g,"o").replace(/[ũúùûü]/g,"u").replace(/ç/g,"c");
@@ -132,31 +80,33 @@
     }catch(e){ return ""; }
   }
 
-  // ✅ Modal wiring: usa ".is-open" (igual seu CSS)
+  function statusDot(count){
+    // 0 msgs => ok (verde), 1-2 => warn, >=3 => azul (tratado como ok+)
+    if (count >= 3) return { cls:"", label:"novas" };
+    if (count >= 1) return { cls:"warn", label:"atenção" };
+    return { cls:"", label:"ok" };
+  }
+
   function ensureModalWiring(){
     var modal = $("#rdoModal");
-    if (!modal) return null;
+    if (!modal) return;
     var btnClose = $("#rdoModalClose");
     var backdrop = modal.querySelector(".backdrop");
-
     function close(){
-      modal.classList.remove("is-open");
+      modal.classList.remove("open");
       modal.setAttribute("aria-hidden","true");
       document.body.style.overflow = "";
     }
     function open(){
-      modal.classList.add("is-open");
+      modal.classList.add("open");
       modal.setAttribute("aria-hidden","false");
       document.body.style.overflow = "hidden";
     }
-
     if (btnClose) btnClose.addEventListener("click", close);
     if (backdrop) backdrop.addEventListener("click", close);
-
     document.addEventListener("keydown", function(ev){
-      if (ev.key === "Escape" && modal.classList.contains("is-open")) close();
+      if (ev.key === "Escape" && modal.classList.contains("open")) close();
     });
-
     return { open: open, close: close };
   }
 
@@ -166,23 +116,18 @@
     var title = $("#rdoModalTitle");
     var sub = $("#rdoModalSub");
     var body = $("#rdoModalBody");
-
     if (title) title.textContent = groupName;
-
     var updatedAt = pickUpdatedAt(data);
     var meta = updatedAt ? ("Atualizado: " + fmtShortDate(updatedAt)) : "Últimos 7 dias";
     if (sub) sub.textContent = meta;
-
     if (body) body.innerHTML = "";
 
     var items = (data && Array.isArray(data.items)) ? data.items : [];
     if (!items.length){
       var empty = document.createElement("div");
-      empty.className = "rdo-msg";
-      empty.innerHTML = '<div class="t">—</div><div class="c">Sem mensagens</div>';
+      empty.className = "msg";
+      empty.innerHTML = '<div class="mmeta">Sem mensagens</div><div>—</div>';
       body.appendChild(empty);
-      // marcou como lido mesmo sem itens (para não ficar “novo” eterno)
-      markSeen(slug, String(updatedAt || "0"));
       return;
     }
 
@@ -202,27 +147,23 @@
         txt = String(it);
       }
 
-      var box = document.createElement("div");
-      box.className = "rdo-msg";
-
-      var t = document.createElement("div");
-      t.className = "t";
-      var left = [];
-      if (when) left.push(fmtShortDate(when) || String(when));
-      if (who) left.push(String(who));
-      t.textContent = left.join(" • ") || "Mensagem";
-
-      var c = document.createElement("div");
-      c.className = "c";
-      c.innerHTML = esc(txt).replace(/\n/g,"<br>");
-
-      box.appendChild(t);
-      box.appendChild(c);
-      body.appendChild(box);
+      var card = document.createElement("div");
+      card.className = "msg";
+      var mmeta = document.createElement("div");
+      mmeta.className = "mmeta";
+      var metaParts = [];
+      if (when) metaParts.push(fmtShortDate(when) || String(when));
+      if (who) metaParts.push(String(who));
+      mmeta.textContent = metaParts.join(" • ") || "Mensagem";
+      var mtxt = document.createElement("div");
+      mtxt.innerHTML = esc(txt).replace(/\n/g,"<br>");
+      card.appendChild(mmeta);
+      card.appendChild(mtxt);
+      body.appendChild(card);
     }
 
     // marcou como lido
-    var keyVal = String(updatedAt || items.length || Date.now());
+    var keyVal = (updatedAt || items.length || Date.now());
     markSeen(slug, keyVal);
   }
 
@@ -252,32 +193,41 @@
 
   function renderCard(container, rec, onOpen){
     var card = document.createElement("div");
-    card.className = "rdo-card" + (rec.isNew ? " rdo-new" : "");
+    card.className = "rdo-card" + (rec.isNew ? " is-new" : "");
     card.setAttribute("role","button");
     card.setAttribute("tabindex","0");
 
     var title = document.createElement("div");
     title.className = "rdo-title";
-
-    var chip = document.createElement("span");
-    chip.className = "rdo-chip";
-    chip.textContent = rec.isNew ? "NOVO" : "ok";
-    title.appendChild(document.createTextNode(rec.groupName));
-    title.appendChild(chip);
+    title.textContent = rec.groupName;
 
     var sub = document.createElement("div");
     sub.className = "rdo-sub";
     sub.textContent = rec.updatedAt ? ("Atualizado: " + fmtShortDate(rec.updatedAt)) : "—";
 
-    var meta = document.createElement("div");
-    meta.className = "rdo-meta";
-    meta.innerHTML =
-      "<span>" + (rec.items && rec.items.length ? (String(rec.items.length) + " msg(s)") : "0 msg(s)") + "</span>" +
-      "<span>Abrir</span>";
+    var foot = document.createElement("div");
+    foot.className = "rdo-foot";
+
+    var left = document.createElement("div");
+    left.className = "pill";
+    var dot = document.createElement("span");
+    dot.className = "dot" + ((rec.items && rec.items.length) ? " warn" : "");
+    dot.title = (rec.items && rec.items.length) ? "com mensagens" : "ok";
+    left.appendChild(dot);
+
+    var label = document.createElement("span");
+    label.textContent = (rec.items && rec.items.length) ? (String(rec.items.length) + " msg(s)") : "0 msg(s)";
+    left.appendChild(label);
+
+    var right = document.createElement("div");
+    right.className = "pill";
+    right.textContent = rec.isNew ? "NOVO" : "Abrir";
+    foot.appendChild(left);
+    foot.appendChild(right);
 
     card.appendChild(title);
     card.appendChild(sub);
-    card.appendChild(meta);
+    card.appendChild(foot);
 
     function openIt(){
       if (typeof onOpen === "function") onOpen(rec);
@@ -290,71 +240,53 @@
     container.appendChild(card);
   }
 
-  function setHeaderStatus(okCount, totalCount){
-    // ✅ IDs do seu HTML (o trecho que você achou): rdoStatus + btnRdoRefresh
-    var status = $("#rdoStatus");
-    if (status){
-      status.innerHTML =
-        '<span style="width:10px;height:10px;border-radius:50%;background:#2bd27f;display:inline-block;"></span>' +
-        "<span>ok • " + String(okCount) + "/" + String(totalCount) + " grupos</span>";
-    }
-  }
-
   async function reloadAll(){
     var grid = $("#rdoGrid");
-    var btn = $("#btnRdoRefresh"); // ✅ id certo
+    var meta = $("#rdoMeta");
+    var btn = $("#rdoReload");
     if (!grid) return;
 
     if (btn) btn.disabled = true;
-    setHeaderStatus(0, DEFAULT_GROUPS.length);
+    if (meta) meta.textContent = "Atualizando…";
 
     grid.innerHTML = "";
     var ok = 0;
     var modalCtl = ensureModalWiring();
-    var newCount = 0;
 
+    // carrega sequencial para não estourar
     for (var i=0;i<DEFAULT_GROUPS.length;i++){
       var name = DEFAULT_GROUPS[i];
       try{
         var rec = await loadOne(name);
         ok += 1;
-        if(rec.isNew) newCount += 1;
-
         renderCard(grid, rec, async function(r){
           try{
             var data = await fetchJson(API_GET + encodeURIComponent(r.slug) + "&ts=" + String(Date.now()));
             renderModal(r.groupName, r.slug, data);
             if (modalCtl && modalCtl.open) modalCtl.open();
-            // re-render para atualizar NOVO + badge
+            // após ler, re-render para tirar "NOVO"
             reloadAll();
           }catch(e){
             alert("Não consegui abrir este registro.\n" + String(e && e.message ? e.message : e));
           }
         });
-
       }catch(e){
+        // card de erro
+        var err = { groupName: name, slug: slugify(name), ok:false, items:[], updatedAt:null, isNew:false, keyVal:"" };
         var c = document.createElement("div");
         c.className = "rdo-card";
-        c.innerHTML =
-          '<div class="rdo-title">' + esc(name) + '<span class="rdo-chip">erro</span></div>' +
-          '<div class="rdo-sub">Erro ao carregar</div>' +
-          '<div class="rdo-meta"><span>—</span><span>—</span></div>';
+        c.innerHTML = '<div class="rdo-title">'+esc(name)+'</div><div class="rdo-sub">Erro ao carregar</div><div class="rdo-foot"><span class="pill"><span class="dot err"></span><span>erro</span></span><span class="pill">—</span></div>';
         grid.appendChild(c);
       }
     }
 
-    setHeaderStatus(ok, DEFAULT_GROUPS.length);
-
-    // ✅ atualiza badge global com quantidade de grupos NOVOS
-    setRdoGlobalBadgeCount(newCount);
-
+    if (meta) meta.textContent = "ok: " + ok + "/" + DEFAULT_GROUPS.length + " grupos";
     if (btn) btn.disabled = false;
   }
 
   function boot(){
-    var btn = $("#btnRdoRefresh"); // ✅ id certo
+    var btn = $("#rdoReload");
     if (btn) btn.addEventListener("click", reloadAll);
-    ensureRdoGlobalBadge();
     reloadAll();
   }
 
