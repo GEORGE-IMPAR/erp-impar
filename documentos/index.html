@@ -2836,26 +2836,21 @@ list.innerHTML = filtered.map(it => {
 }).join("");
 
   list.querySelectorAll(".jsonPickItem").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
+btn.addEventListener("click", async ()=>{
   const codigo = btn.getAttribute("data-codigo");
-  try{
-    showImparLoading("Carregando informações…", `Abrindo o JSON do projeto ${codigo}.`);
+  try {
+    closeJsonPickerModal(); // fecha modal primeiro
+    showImparLoading("Carregando informações…", `Abrindo o projeto ${codigo}.`);
 
-    const url = `${DOCS_BASE}/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
-    const r = await fetch(url, {cache:"no-store"});
-    if(!r.ok) throw new Error(`Não consegui abrir o JSON (${r.status})`);
-
+    const r = await fetch(`${DOCS_BASE}/data/${codigo}.json?ts=${Date.now()}`);
     const data = await r.json();
 
-    // Pequena pausa só pra ficar “cinematográfico” (opcional)
-    await new Promise(res => setTimeout(res, 180));
-
+    await new Promise(res => setTimeout(res, 180)); // toque premium
     applyJsonToForm(data);
 
-    closeJsonPickerModal();
-  }catch(err){
-    Swal.fire({icon:"error", title:"Erro ao carregar", html: err?.message || String(err)});
-  }finally{
+  } catch(err){
+    Swal.fire({ icon:"error", title:"Erro", html: err?.message || String(err) });
+  } finally {
     hideImparLoading();
   }
 });
@@ -2897,34 +2892,24 @@ async function openJsonPickerPremium(){
   try {
     ensureJsonPickerModal();
 
-    // carrega lista ANTES de abrir o modal (fica mais “premium”)
-    let items = await fetchJsonList();   // sua função existente
+    const items = await fetchJsonList();
+
+    // 🔥 FECHA LOADING ANTES DE ABRIR O MODAL
     hideImparLoading();
 
-    // abre modal
-    const overlay = document.getElementById("jsonPickerOverlay");
     openJsonPickerModal();
+    renderJsonList(items);
 
-    // animação suave ao abrir (mesmo sem mexer no CSS original)
-    overlay.animate(
-      [{ opacity: 0 }, { opacity: 1 }],
-      { duration: 180, easing: "ease-out" }
-    );
+    document.getElementById("jsonPickerSearch").oninput =
+      () => renderJsonList(items);
 
-    renderJsonList(items); // sua função existente
-
-    // search/refresh
-    document.getElementById("jsonPickerSearch").oninput = ()=> renderJsonList(items);
-
-    document.getElementById("jsonPickerRefresh").onclick = async ()=> {
-      setBusyOnButton("jsonPickerRefresh", true);
-      showImparLoading("Atualizando lista…", "Recarregando JSONs mais recentes.");
-      try{
-        items = await fetchJsonList();
-        renderJsonList(items);
+    document.getElementById("jsonPickerRefresh").onclick = async () => {
+      showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+      try {
+        const refreshed = await fetchJsonList();
+        renderJsonList(refreshed);
       } finally {
         hideImparLoading();
-        setBusyOnButton("jsonPickerRefresh", false);
       }
     };
 
@@ -2933,7 +2918,7 @@ async function openJsonPickerPremium(){
     Swal.fire({
       icon: "error",
       title: "Erro ao consultar JSONs",
-      html: (err && err.message) ? err.message : String(err)
+      html: err?.message || String(err)
     });
   } finally {
     setBusyOnButton("btnAtualizar", false);
