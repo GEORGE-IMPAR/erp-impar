@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v22.0 • validação limpa por etapa</div>
+    <div>v23.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2744,62 +2744,118 @@ function applyJsonToForm(data){
   if (window.showStep) showStep(1);
 }
 
+/* ================================
+   JSON PICKER MODAL – BLOCO ÚNICO OFICIAL
+   ================================ */
+
 function ensureJsonPickerModal(){
   if (document.getElementById("jsonPickerOverlay")) return;
 
   const overlay = document.createElement("div");
   overlay.id = "jsonPickerOverlay";
 
-  overlay.innerHTML =
-  '<div id="jsonPickerCard" style="'
-+ 'width:min(980px,96vw);max-height:86vh;border-radius:18px;'
-+ 'border:1px solid rgba(148,163,184,.28);background:rgba(2,6,23,.92);'
-+ 'box-shadow:0 28px 90px rgba(0,0,0,.58);color:#e5e7eb;'
-+ 'font-family:Candara,system-ui;overflow:hidden;">'
+  // OBS: tirei backdrop-filter blur pra NÃO borrar tudo
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: radial-gradient(1200px 700px at 50% 40%, rgba(15,118,110,.14), rgba(0,0,0,.72));
+  `;
 
-+   '<div style="display:flex;justify-content:space-between;align-items:center;'
-+   'padding:14px;border-bottom:1px solid rgba(148,163,184,.2);">'
-+     '<div>'
-+       '<div style="font-size:18px;font-weight:900;">Consultar JSONs salvos</div>'
-+       '<div style="font-size:13px;opacity:.8;">Clique em um item para carregar e preencher as 5 etapas.</div>'
-+     '</div>'
-+     '<button id="jsonPickerClose" style="padding:10px 14px;border-radius:12px;'
-+     'border:1px solid rgba(148,163,184,.28);background:linear-gradient(135deg,#0b1e4a,#0f766e);'
-+     'color:#fff;font-weight:800;cursor:pointer;">Fechar</button>'
-+   '</div>'
+  overlay.innerHTML = `
+    <div class="impar-modal" style="
+      width:min(980px, 96vw);
+      max-height:86vh;
+      overflow:hidden;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.28);
+      background: linear-gradient(180deg, rgba(2,6,23,.92), rgba(2,6,23,.72));
+      box-shadow: 0 28px 90px rgba(0,0,0,.58);
+      position:relative;
+    ">
+      <div style="
+        display:flex; align-items:flex-start; justify-content:space-between;
+        gap:12px; padding:14px 14px 10px 14px;
+        border-bottom:1px solid rgba(148,163,184,.18);
+      ">
+        <div>
+          <div style="
+            font-family:Candara,system-ui; font-size:18px; font-weight:900;
+            color:rgba(226,232,240,.96);
+          ">Consultar JSONs salvos</div>
+          <div style="
+            margin-top:2px; font-family:Candara,system-ui; font-size:13px;
+            color:rgba(226,232,240,.76);
+          ">Clique em um item para carregar e preencher as 5 etapas.</div>
+        </div>
 
-+   '<div style="padding:14px;max-height:70vh;overflow:auto;">'
-+     '<input id="jsonPickerSearch" placeholder="Buscar por código ou obra..." style="'
-+     'width:100%;padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.28);'
-+     'background:rgba(2,6,23,.35);color:#e5e7eb;margin-bottom:10px;">'
-+     '<div id="jsonPickerStatus" style="margin-bottom:10px;opacity:.8;">Carregando…</div>'
-+     '<div id="jsonPickerList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;"></div>'
-+   '</div>'
-+ '</div>';
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="jsonPickerRefresh" type="button" style="
+            border:1px solid rgba(148,163,184,.28);
+            background: rgba(2,6,23,.35);
+            color: rgba(226,232,240,.92);
+            padding:10px 14px; border-radius:12px;
+            cursor:pointer; font-weight:900;
+          ">Atualizar</button>
 
+          <button id="jsonPickerClose" type="button" style="
+            border:1px solid rgba(148,163,184,.28);
+            background: linear-gradient(135deg,#0b1e4a,#0f766e);
+            color:#fff; padding:10px 14px; border-radius:12px;
+            cursor:pointer; font-weight:900;
+          ">Fechar</button>
+        </div>
+      </div>
 
-  // 👇 ANEXA DIRETO NO BODY (fora de qualquer stacking context)
+      <div style="padding:12px 14px 14px 14px; overflow:auto; max-height:74vh;">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+          <input id="jsonPickerSearch" type="text" placeholder="Buscar por código ou obra..." style="
+            flex:1; padding:12px 12px; border-radius:12px;
+            border:1px solid rgba(148,163,184,.28);
+            background: rgba(2,6,23,.35);
+            color: rgba(226,232,240,.92);
+            font-family:Candara,system-ui;
+            outline:none;
+          "/>
+        </div>
+
+        <div id="jsonPickerStatus" style="
+          font-family:Candara,system-ui; font-size:13px;
+          color: rgba(226,232,240,.78);
+          margin: 8px 0 10px 0;
+        ">Carregando…</div>
+
+        <div id="jsonPickerList" style="
+          display:grid;
+          grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+          gap:10px;
+        "></div>
+      </div>
+    </div>
+  `;
+
   document.body.appendChild(overlay);
-  console.log("[JSONPICK] innerHTML size:", overlay.innerHTML.length);
-  console.log("[JSONPICK] has modal?", !!overlay.querySelector(".impar-modal"));
 
-  // 🔒 Blindagem total
-  overlay.style.transform = "none";
-  overlay.style.filter = "none";
-
-  const modal = overlay.querySelector(".impar-modal");
-  modal.addEventListener("click", e => e.stopPropagation());
-
+  // Fecha SOMENTE se clicar fora do card
   overlay.addEventListener("click", (e)=>{
-  // só fecha se clicar fora do modal
-  if (e.target === overlay) window.closeJsonPickerModal();
-});
+    if (e.target === overlay) closeJsonPickerModal();
+  });
 
+  // Impede clique dentro do modal de fechar
+  const modal = overlay.querySelector(".impar-modal");
+  if (modal) modal.addEventListener("click", (e) => e.stopPropagation());
 
-  document.getElementById("jsonPickerClose")
-    .addEventListener("click", closeJsonPickerModal);
+  document.getElementById("jsonPickerClose")?.addEventListener("click", (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+    closeJsonPickerModal();
+  });
 
-  document.addEventListener("keydown", e => {
+  document.addEventListener("keydown", (e)=>{
     if (e.key === "Escape") closeJsonPickerModal();
   });
 
@@ -2809,43 +2865,23 @@ function ensureJsonPickerModal(){
 function openJsonPickerModal(){
   const ov = document.getElementById("jsonPickerOverlay");
   if(!ov) return;
-
-  ov.classList.add("is-open");
-
-  // 🔥 força aparecer SEM depender do CSS
-  ov.style.setProperty("display", "flex", "important");
-  ov.style.setProperty("z-index", "999999", "important");
-
-  const modal = ov.querySelector(".impar-modal");
-  if (modal) {
-    modal.style.setProperty("display", "block", "important");
-    modal.style.setProperty("opacity", "1", "important");
-    modal.style.setProperty("visibility", "visible", "important");
-    modal.style.setProperty("transform", "none", "important");
-    modal.style.setProperty("filter", "none", "important");
-    modal.style.setProperty("position", "relative", "important");
-    modal.style.setProperty("z-index", "1000000", "important");
-  }
+  ov.style.display = "flex";
 }
 
 function closeJsonPickerModal(){
   const ov = document.getElementById("jsonPickerOverlay");
   if(!ov) return;
-
-  ov.classList.remove("is-open");
-  ov.style.setProperty("display", "none", "important");
+  ov.style.display = "none";
 }
 
 async function fetchJsonList(){
   const status = document.getElementById("jsonPickerStatus");
   const list   = document.getElementById("jsonPickerList");
+  if (status) status.textContent = "Carregando JSONs…";
+  if (list) list.innerHTML = "";
 
-  status.textContent = "Carregando JSONs…";
-  list.innerHTML = "";
-
-  const r = await fetch(`${DOCS_BASE}/list_json.php?ts=${Date.now()}`);
+  const r = await fetch(`${DOCS_BASE}/list_json.php?ts=${Date.now()}`, { cache:"no-store" });
   const j = await r.json();
-
   if(!j.ok) throw new Error(j.error || "Falha ao listar JSONs");
   return j.items || [];
 }
@@ -2853,49 +2889,114 @@ async function fetchJsonList(){
 function renderJsonList(items){
   const list   = document.getElementById("jsonPickerList");
   const status = document.getElementById("jsonPickerStatus");
-  const q = (document.getElementById("jsonPickerSearch")?.value || "")
-              .toLowerCase();
+  const q = (document.getElementById("jsonPickerSearch")?.value || "").toLowerCase().trim();
 
-  const filtered = items.filter(it =>
-    !q ||
-    (it.codigo||"").toLowerCase().includes(q) ||
-    (it.nomeObra||"").toLowerCase().includes(q)
-  );
+  const filtered = (items || []).filter(it=>{
+    const a = `${it.codigo || ""}`.toLowerCase();
+    const b = `${it.nomeObra || ""}`.toLowerCase();
+    return !q || a.includes(q) || b.includes(q);
+  });
 
-  status.textContent = `${filtered.length} item(ns) encontrado(s).`;
+  if (status) status.textContent = `${filtered.length} item(ns) encontrado(s).`;
 
-  list.innerHTML = filtered.map(it=>`
-    <button class="jsonPickItem" data-codigo="${it.codigo}"
-      style="
-        padding:12px;
+  if (!list) return;
+
+  list.innerHTML = filtered.map(it=>{
+    const cod  = it.codigo || "";
+    const obra = it.nomeObra || "—";
+    const serv = it.servico || "";
+    return `
+      <button type="button" class="jsonPickItem" data-codigo="${cod}" style="
+        text-align:left; padding:12px 12px;
         border-radius:14px;
         border:1px solid rgba(148,163,184,.25);
-        background: rgba(2,6,23,.4);
-        color:#e5e7eb;
-        text-align:left;
+        background: linear-gradient(180deg, rgba(2,6,23,.40), rgba(2,6,23,.28));
+        color: rgba(226,232,240,.92);
         cursor:pointer;
+        transition: transform .14s ease, border-color .18s ease, box-shadow .18s ease;
       ">
-      <div style="font-weight:900">${it.codigo}</div>
-      <div style="font-size:13px;opacity:.9">${it.nomeObra}</div>
-    </button>
-  `).join("");
+        <div style="font-weight:900; font-size:14px;">${cod}</div>
+        <div style="margin-top:4px; font-size:13px; opacity:.92;">${obra}</div>
+        ${serv ? `<div style="margin-top:6px; font-size:12px; opacity:.72; line-height:1.2;">${serv}</div>` : ``}
+      </button>
+    `;
+  }).join("");
 
+  // Clique do item: carrega e aplica (SEM reabrir o modal no finally)
   list.querySelectorAll(".jsonPickItem").forEach(btn=>{
-    btn.onclick = async ()=>{
-      const codigo = btn.dataset.codigo;
-      closeJsonPickerModal();
-      showImparLoading("Carregando informações…", codigo);
-
+    btn.addEventListener("click", async ()=>{
+      const codigo = btn.getAttribute("data-codigo");
       try{
-        const r = await fetch(`${DOCS_BASE}/data/${codigo}.json?ts=${Date.now()}`);
+        closeJsonPickerModal();
+        showImparLoading("Carregando informações…", `Abrindo o projeto ${codigo}.`);
+
+        const r = await fetch(`${DOCS_BASE}/data/${codigo}.json?ts=${Date.now()}`, { cache:"no-store" });
         const data = await r.json();
+
+        await new Promise(res => setTimeout(res, 120)); // toque premium leve
         applyJsonToForm(data);
+
+      } catch(err){
+        Swal.fire({ icon:"error", title:"Erro", html: err?.message || String(err) });
+      } finally {
+        hideImparLoading();
+      }
+    });
+  });
+}
+
+async function openJsonPickerPremium(){
+  console.log("[JSONPICK] click atualizar");
+  hideImparLoading();
+
+  setBusyOnButton("btnAtualizar", true);
+  showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
+
+  try{
+    ensureJsonPickerModal();
+    openJsonPickerModal();
+
+    const status = document.getElementById("jsonPickerStatus");
+    const list   = document.getElementById("jsonPickerList");
+    if (status) status.textContent = "Carregando JSONs…";
+    if (list) list.innerHTML = "";
+
+    const items = await fetchJsonList();
+    hideImparLoading();
+
+    renderJsonList(items);
+
+    const s = document.getElementById("jsonPickerSearch");
+    if (s) s.oninput = ()=> renderJsonList(items);
+
+    const rbtn = document.getElementById("jsonPickerRefresh");
+    if (rbtn) rbtn.onclick = async ()=>{
+      showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+      try{
+        const refreshed = await fetchJsonList();
+        renderJsonList(refreshed);
       } finally {
         hideImparLoading();
       }
     };
-  });
+
+  } catch(err){
+    console.error("[JSONPICK] erro:", err);
+    hideImparLoading();
+    Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
+  } finally {
+    hideImparLoading();
+    setBusyOnButton("btnAtualizar", false);
+  }
 }
+
+// expõe (evita "is not defined" no console e em handlers)
+window.ensureJsonPickerModal = ensureJsonPickerModal;
+window.openJsonPickerModal   = openJsonPickerModal;
+window.closeJsonPickerModal  = closeJsonPickerModal;
+window.fetchJsonList         = fetchJsonList;
+window.renderJsonList        = renderJsonList;
+window.openJsonPickerPremium = openJsonPickerPremium;
 
 // ===== ÍMPAR Premium Loading Overlay =====
 function showImparLoading(title = "Carregando informações…", sub = "Aguarde um instante.") {
@@ -2928,7 +3029,7 @@ async function openJsonPickerPremium(){
   console.log("[JSONPICK] click atualizar");
 
   try{
-    window.ensureJsonPickerModal();
+    
     console.log("[JSONPICK] ensure ok");
 
     window.openJsonPickerModal();
@@ -3153,105 +3254,12 @@ $("#btnFinalizar").addEventListener("click", async () => {
     if (el) obs.observe(el, {attributes:true});
   };
 
-  // tenta observar depois que o modal for criado
-  const _ensure = window.ensureJsonPickerModal;
-  if (typeof _ensure === "function"){
-    window.ensureJsonPickerModal = function(){
-      const r = _ensure.apply(this, arguments);
-      startObs();
-      return r;
-    };
-  } else {
-    document.addEventListener("DOMContentLoaded", startObs);
-  }
 })();
 
-// 🔥 EXPÕE FUNÇÕES PARA O WINDOW (debug / uso global)
-window.ensureJsonPickerModal = ensureJsonPickerModal;
-window.openJsonPickerModal   = openJsonPickerModal;
-window.closeJsonPickerModal  = closeJsonPickerModal;
-window.openJsonPickerPremium = openJsonPickerPremium;
 
 /* ================================
    JSON PICKER MODAL – VERSÃO FINAL
    ================================ */
-
-window.ensureJsonPickerModal = function () {
-  if (document.getElementById("jsonPickerOverlay")) return;
-
-  const overlay = document.createElement("div");
-  overlay.id = "jsonPickerOverlay";
-  overlay.style.cssText = `
-    position:fixed;
-    inset:0;
-    z-index:999999;
-    display:none;
-    align-items:center;
-    justify-content:center;
-    padding:18px;
-    background: rgba(0,0,0,.72);
-    backdrop-filter: blur(10px);
-  `;
-
-  overlay.innerHTML = `
-  overlay.innerHTML = `
-  <div id="jsonPickerCard" style="
-    width:min(980px,96vw);
-    max-height:86vh;
-    border-radius:18px;
-    border:1px solid rgba(148,163,184,.28);
-    background: rgba(2,6,23,.92);
-    box-shadow:0 28px 90px rgba(0,0,0,.58);
-    color:#e5e7eb;
-    font-family:Candara,system-ui;
-    overflow:hidden;
-  ">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;border-bottom:1px solid rgba(148,163,184,.2);">
-      <div>
-        <div style="font-size:18px;font-weight:900;">Consultar JSONs salvos</div>
-        <div style="font-size:13px;opacity:.8;">Clique em um item para carregar e preencher as 5 etapas.</div>
-      </div>
-      <button id="jsonPickerClose" style="
-        padding:10px 14px;border-radius:12px;
-        border:1px solid rgba(148,163,184,.28);
-        background: linear-gradient(135deg,#0b1e4a,#0f766e);
-        color:#fff;font-weight:800;cursor:pointer;
-      ">Fechar</button>
-    </div>
-
-    <div style="padding:14px;max-height:70vh;overflow:auto;">
-      <input id="jsonPickerSearch" placeholder="Buscar por código ou obra..."
-        style="width:100%;padding:12px;border-radius:12px;border:1px solid rgba(148,163,184,.28);
-               background: rgba(2,6,23,.35);color:#e5e7eb;margin-bottom:10px;"
-      />
-      <div id="jsonPickerStatus" style="margin-bottom:10px;opacity:.8;">Carregando…</div>
-      <div id="jsonPickerList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;"></div>
-    </div>
-  </div>
-`;
-
-
-  document.body.appendChild(overlay);
-
-  // fecha clicando fora
-  overlay.addEventListener("click", (e) => {
-  if (e.target === overlay) closeJsonPickerModal();
-});
-
-
-  // impede fechar ao clicar dentro
-  overlay.querySelector(".impar-modal")
-    .addEventListener("click", e => e.stopPropagation());
-
-  document.getElementById("jsonPickerClose")
-    .addEventListener("click", () => window.closeJsonPickerModal());
-
-  document.addEventListener("keydown", e => {
-    if (e.key === "Escape") window.closeJsonPickerModal();
-  });
-
-  console.log("[JSONPICK] modal criado OK");
-};
 
 window.openJsonPickerModal = function () {
   const ov = document.getElementById("jsonPickerOverlay");
