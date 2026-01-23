@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v14.0 • validação limpa por etapa</div>
+    <div>v15.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2750,111 +2750,71 @@ function ensureJsonPickerModal(){
   const overlay = document.createElement("div");
   overlay.id = "jsonPickerOverlay";
 
-  overlay.style.cssText = `
-    position: fixed;
-    inset: 0;
-    z-index: 999999;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    background: radial-gradient(
-      1200px 700px at 50% 40%,
-      rgba(15,118,110,.16),
-      rgba(0,0,0,.72)
-    );
-  `;
-
   overlay.innerHTML = `
-    <div class="impar-modal" style="
-      width: min(980px, 96vw);
-      max-height: 86vh;
-      overflow: hidden;
-      border-radius: 18px;
-      border: 1px solid rgba(148,163,184,.28);
-      background: linear-gradient(180deg, rgba(2,6,23,.88), rgba(2,6,23,.62));
-      box-shadow: 0 28px 90px rgba(0,0,0,.58);
-      position: relative;
-      z-index: 1000000;
-    ">
-      <div style="
-        display:flex;
-        justify-content:space-between;
-        gap:12px;
-        padding:14px;
-        border-bottom:1px solid rgba(148,163,184,.18);
-      ">
+    <div class="impar-modal" role="dialog" aria-modal="true">
+      <div class="impar-modal__header">
         <div>
-          <div style="font-size:18px;font-weight:800;color:#e5e7eb">
-            Consultar JSONs salvos
-          </div>
-          <div style="font-size:13px;color:#cbd5f5">
+          <div class="impar-modal__title">Consultar JSONs salvos</div>
+          <div class="impar-modal__sub">
             Clique em um item para carregar e preencher as 5 etapas.
           </div>
         </div>
-        <button id="jsonPickerClose" style="
-          padding:10px 14px;
-          border-radius:12px;
-          border:1px solid rgba(148,163,184,.28);
-          background: linear-gradient(135deg,#0b1e4a,#0f766e);
-          color:#fff;
-          font-weight:800;
-          cursor:pointer;
-        ">Fechar</button>
+        <div class="impar-modal__actions">
+          <button id="jsonPickerRefresh" class="impar-btn impar-btn--ghost" type="button">
+            Atualizar
+          </button>
+          <button id="jsonPickerClose" class="impar-btn impar-btn--primary" type="button">
+            Fechar
+          </button>
+        </div>
       </div>
 
-      <div style="padding:14px; max-height:72vh; overflow:auto">
-        <input id="jsonPickerSearch" placeholder="Buscar por código ou obra..."
-          style="
-            width:100%;
-            padding:12px;
-            border-radius:12px;
-            border:1px solid rgba(148,163,184,.28);
-            background: rgba(2,6,23,.35);
-            color:#e5e7eb;
-            margin-bottom:10px;
-          "/>
-
-        <div id="jsonPickerStatus"
-          style="font-size:13px;color:#cbd5f5;margin-bottom:8px">
+      <div class="impar-modal__body">
+        <div class="impar-toolbar">
+          <input id="jsonPickerSearch" class="impar-input"
+                 placeholder="Buscar por código ou obra..." />
         </div>
 
-        <div id="jsonPickerList"
-          style="
-            display:grid;
-            grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
-            gap:10px;
-          ">
-        </div>
+        <div id="jsonPickerStatus" class="impar-status"></div>
+        <div id="jsonPickerList" class="impar-grid"></div>
       </div>
     </div>
   `;
 
-  document.documentElement.appendChild(overlay);
+  // 👇 ANEXA DIRETO NO BODY (fora de qualquer stacking context)
+  document.body.appendChild(overlay);
 
-  overlay.querySelector(".impar-modal")
-    .addEventListener("click", e => e.stopPropagation());
+  // 🔒 Blindagem total
+  overlay.style.transform = "none";
+  overlay.style.filter = "none";
+
+  const modal = overlay.querySelector(".impar-modal");
+  modal.addEventListener("click", e => e.stopPropagation());
+
+  overlay.addEventListener("click", closeJsonPickerModal);
 
   document.getElementById("jsonPickerClose")
     .addEventListener("click", closeJsonPickerModal);
 
-  document.addEventListener("keydown", e=>{
-    if(e.key === "Escape") closeJsonPickerModal();
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeJsonPickerModal();
   });
 
-  console.log("[JSONPICK] modal criado");
+  console.log("[JSONPICK] modal criado OK");
 }
 
 function openJsonPickerModal(){
   const ov = document.getElementById("jsonPickerOverlay");
-  if(!ov) return;
-  ov.style.display = "flex";
+  if (!ov) return;
+
+  ov.classList.add("is-open");
 }
 
 function closeJsonPickerModal(){
   const ov = document.getElementById("jsonPickerOverlay");
-  if(!ov) return;
-  ov.style.display = "none";
+  if (!ov) return;
+
+  ov.classList.remove("is-open");
 }
 
 async function fetchJsonList(){
@@ -2946,25 +2906,44 @@ function setBusyOnButton(btnId, isBusy) {
 
   
 async function openJsonPickerPremium(){
-  setBusyOnButton("btnAtualizar", true);
-  showImparLoading("Carregando informações…", "Buscando JSONs salvos");
+  console.log("[JSONPICK] click atualizar");
 
-  try{
+  hideImparLoading();
+  setBusyOnButton("btnAtualizar", true);
+  showImparLoading(
+    "Carregando informações…",
+    "Buscando JSONs salvos no servidor."
+  );
+
+  try {
     ensureJsonPickerModal();
+
     const items = await fetchJsonList();
 
     hideImparLoading();
+
     openJsonPickerModal();
     renderJsonList(items);
 
     const s = document.getElementById("jsonPickerSearch");
     if (s) s.oninput = () => renderJsonList(items);
 
-  } catch(err){
+    const rbtn = document.getElementById("jsonPickerRefresh");
+    if (rbtn) {
+      rbtn.onclick = async () => {
+        showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+        const refreshed = await fetchJsonList();
+        hideImparLoading();
+        renderJsonList(refreshed);
+      };
+    }
+
+  } catch (err) {
     hideImparLoading();
+    console.error(err);
     Swal.fire({
-      icon:"error",
-      title:"Erro ao consultar JSONs",
+      icon: "error",
+      title: "Erro ao consultar JSONs",
       html: err.message || String(err)
     });
   } finally {
