@@ -2392,6 +2392,242 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
     });
   }
 
+// ===== CONSULTA E CARREGAMENTO DE JSON (ATUALIZAR DOCUMENTOS) =====
+const DOCS_BASE = "https://api.erpimpar.com.br/storage/docs"; // mesma origem do site
+
+function setVal(id, value){
+  const el = document.getElementById(id);
+  if(!el) return false;
+  el.value = (value ?? "");
+  el.dispatchEvent(new Event("input", {bubbles:true}));
+  el.dispatchEvent(new Event("change", {bubbles:true}));
+  return true;
+}
+
+function setAny(ids, value){
+  for(const id of ids){
+    if(setVal(id, value)) return true;
+  }
+  return false;
+}
+
+function setText(id, value){
+  const el = document.getElementById(id);
+  if(el) el.textContent = (value ?? "");
+}
+
+function normalizeCodigo(c){
+  return String(c ?? "").trim();
+}
+
+function applyJsonToForm(data){
+  // Step 1
+  setAny(["codigoProjeto","codigo"], data.codigo);
+
+  // Atualiza "resumos" se existirem no layout (o step2 mostra codigoResumo) :contentReference[oaicite:2]{index=2}
+  setText("codigoResumo", data.codigo);
+
+  // Step 2 (Obra)
+  setAny(["nomeObra"], data.nomeObra);
+  setAny(["servicoObra","servico","servico_obra"], data.servico);
+  setAny(["enderecoObra","endereco","endereco_obra"], data.enderecoObra);
+  setAny(["projetista","projetistaObra"], data.projetista);
+
+  // Step 3 (Contratante)
+  setVal("nomeContratante", data.nomeContratante);
+  setVal("contatoContratante", data.contatoContratante);
+  setVal("cpfContatoContratante", data.cpfContatoContratante);
+  setVal("telefoneContratante", data.telefoneContratante);
+  setVal("emailContratante", data.emailContratante);
+
+  setVal("cpfCnpjContratante", data.cpfCnpjContratante);
+  setVal("cepContratante", data.cepContratante);
+  setVal("logradouroContratante", data.logradouroContratante);
+  setVal("numeroContratante", data.numeroContratante);
+  setVal("complementoContratante", data.complementoContratante);
+  setVal("bairroContratante", data.bairroContratante);
+  setVal("cidadeContratante", data.cidadeContratante);
+  setVal("ufContratante", data.ufContratante);
+
+  // Step 4 (Contratada)
+  setVal("nomeContratada", data.nomeContratada);
+  setVal("contatoContratada", data.contatoContratada);
+  setVal("cpfContatoContratada", data.cpfContatoContratada);
+  setVal("telefoneContratada", data.telefoneContratada);
+  setVal("emailContratada", data.emailContratada);
+
+  setVal("cpfCnpjContratada", data.cpfCnpjContratada);
+  setVal("cepContratada", data.cepContratada);
+  setVal("logradouroContratada", data.logradouroContratada);
+  setVal("numeroContratada", data.numeroContratada);
+  setVal("complementoContratada", data.complementoContratada);
+  setVal("bairroContratada", data.bairroContratada);
+  setVal("cidadeContratada", data.cidadeContratada);
+  setVal("ufContratada", data.ufContratada);
+
+  // Step 5
+  setAny(["clausulas","clausulasCondicoes"], data.clausulas);
+  setAny(["condPagamento","condicoesPagamento","condicoes"], data.condicoesPagamento);
+  setAny(["valorContrato","valor"], data.valor);
+  setAny(["valorExtenso","Extenso_Valor"], data.valorExtenso);
+  setAny(["prazoDias","prazo"], data.prazoDias);
+  setAny(["dataContrato","data"], data.dataContrato);
+  setAny(["dataExtenso","data_por_extenso"], data.dataExtenso);
+
+  // opcional: levar pra etapa 1 pra usuário ver que carregou tudo
+  if (window.showStep) showStep(1);
+}
+
+function ensureJsonPickerModal(){
+  if(document.getElementById("jsonPickerOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "jsonPickerOverlay";
+  overlay.style.cssText = `
+    position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,.65);
+    display:none; align-items:center; justify-content:center; padding:18px;
+  `;
+
+  overlay.innerHTML = `
+    <div style="
+      width:min(980px, 96vw); max-height:86vh; overflow:auto;
+      background:rgba(2,6,23,.92);
+      border:1px solid rgba(148,163,184,.35);
+      border-radius:18px; padding:16px 16px 12px 16px;
+      box-shadow:0 24px 80px rgba(0,0,0,.45);
+      color:#e5e7eb;
+      font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    ">
+      <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div>
+          <div style="font-size:18px; font-weight:700;">Consultar JSONs salvos</div>
+          <div style="font-size:13px; opacity:.85;">Clique em um item para carregar e preencher as 5 etapas.</div>
+        </div>
+        <button id="jsonPickerClose" type="button" style="
+          border:1px solid rgba(148,163,184,.35);
+          background:linear-gradient(135deg,#0b1e4a,#0f766e);
+          color:#fff; padding:10px 14px; border-radius:12px;
+          cursor:pointer; font-weight:700;
+        ">Fechar</button>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center; margin:10px 0 12px 0;">
+        <input id="jsonPickerSearch" type="text" placeholder="Buscar por código ou obra..."
+          style="flex:1; padding:12px 12px; border-radius:12px; border:1px solid rgba(148,163,184,.35);
+          background:rgba(2,6,23,.35); color:#e5e7eb; outline:none;" />
+        <button id="jsonPickerRefresh" type="button" style="
+          border:1px solid rgba(148,163,184,.35);
+          background:rgba(2,6,23,.35);
+          color:#e5e7eb; padding:12px 14px; border-radius:12px;
+          cursor:pointer; font-weight:700;
+        ">Atualizar</button>
+      </div>
+
+      <div id="jsonPickerStatus" style="font-size:13px; opacity:.9; margin:6px 0 10px 0;"></div>
+      <div id="jsonPickerList" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:10px;"></div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", (e)=>{
+    if(e.target === overlay) overlay.style.display = "none";
+  });
+
+  document.getElementById("jsonPickerClose").addEventListener("click", ()=>{
+    overlay.style.display = "none";
+  });
+}
+
+async function fetchJsonList(){
+  const status = document.getElementById("jsonPickerStatus");
+  const list = document.getElementById("jsonPickerList");
+  status.textContent = "Carregando JSONs…";
+  list.innerHTML = "";
+
+  const r = await fetch(`${DOCS_BASE}/list_json.php?ts=${Date.now()}`, {cache:"no-store"});
+  const j = await r.json();
+  if(!j.ok) throw new Error(j.error || "Falha ao listar JSONs");
+
+  return j.items || [];
+}
+
+function renderJsonList(items){
+  const list = document.getElementById("jsonPickerList");
+  const status = document.getElementById("jsonPickerStatus");
+  const q = (document.getElementById("jsonPickerSearch").value || "").toLowerCase().trim();
+
+  const filtered = items.filter(it=>{
+    const a = `${it.codigo || ""}`.toLowerCase();
+    const b = `${it.nomeObra || ""}`.toLowerCase();
+    return !q || a.includes(q) || b.includes(q);
+  });
+
+  status.textContent = `${filtered.length} item(ns) encontrado(s).`;
+
+  list.innerHTML = filtered.map(it => {
+    const cod = it.codigo || "";
+    const obra = it.nomeObra || "—";
+    const serv = it.servico || "";
+    return `
+      <button type="button" class="jsonPickItem" data-codigo="${cod}" style="
+        text-align:left;
+        padding:12px 12px;
+        border-radius:14px;
+        border:1px solid rgba(148,163,184,.35);
+        background:rgba(2,6,23,.35);
+        color:#e5e7eb;
+        cursor:pointer;
+      ">
+        <div style="font-weight:800; font-size:14px;">${cod}</div>
+        <div style="font-size:13px; opacity:.9; margin-top:4px;">${obra}</div>
+        ${serv ? `<div style="font-size:12px; opacity:.75; margin-top:6px;">${serv}</div>` : ``}
+      </button>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".jsonPickItem").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const codigo = btn.getAttribute("data-codigo");
+      try{
+        // carrega o JSON direto da pasta data
+        const url = `${DOCS_BASE}/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
+        const r = await fetch(url, {cache:"no-store"});
+        if(!r.ok) throw new Error(`Não consegui abrir o JSON (${r.status})`);
+        const data = await r.json();
+
+        applyJsonToForm(data);
+
+        // fecha modal
+        document.getElementById("jsonPickerOverlay").style.display = "none";
+      }catch(err){
+        Swal.fire({icon:"error", title:"Erro ao carregar", html: (err && err.message) ? err.message : String(err)});
+      }
+    });
+  });
+}
+
+async function openJsonPicker(){
+  ensureJsonPickerModal();
+  const overlay = document.getElementById("jsonPickerOverlay");
+  overlay.style.display = "flex";
+
+  let items = [];
+  try{
+    items = await fetchJsonList();
+    renderJsonList(items);
+
+    document.getElementById("jsonPickerSearch").oninput = ()=> renderJsonList(items);
+    document.getElementById("jsonPickerRefresh").onclick = async ()=> {
+      items = await fetchJsonList();
+      renderJsonList(items);
+    };
+  }catch(err){
+    document.getElementById("jsonPickerStatus").textContent = "Erro ao carregar a lista.";
+    Swal.fire({icon:"error", title:"Erro", html: (err && err.message) ? err.message : String(err)});
+  }
+}
 
 function wire(){
     // Entrada
@@ -2413,7 +2649,7 @@ function wire(){
   });
 
     $("#btnAtualizar").addEventListener("click", () => {
-      /* placeholder */ console.log("Atualizar documentos (placeholder)");
+      openJsonPicker();
           if(!validateStep1()){
         // Sem mensagens — apenas borda vermelha + tremor (UX ÍMPAR)
         return;
