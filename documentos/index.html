@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v17.0 • validação limpa por etapa</div>
+    <div>v18.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2921,41 +2921,24 @@ function setBusyOnButton(btnId, isBusy) {
 }
 
   
-async function openJsonPickerPremium(){
-  console.log("[JSONPICK] click atualizar");
+async function openJsonPickerPremium() {
+  try {
+    ensureJsonPickerModal();
 
-  hideImparLoading();
-  setBusyOnButton("btnAtualizar", true);
-  showImparLoading(
-    "Carregando informações…",
-    "Buscando JSONs salvos no servidor."
-  );
+    openJsonPickerModal();
 
-try {
-  ensureJsonPickerModal();
-  openJsonPickerModal(); // abre na hora
+    const status = document.getElementById("jsonPickerStatus");
+    status.textContent = "Buscando JSONs salvos…";
 
-  const status = document.getElementById("jsonPickerStatus");
-  const list   = document.getElementById("jsonPickerList");
-  if(status) status.textContent = "Carregando JSONs…";
-  if(list) list.innerHTML = "";
+    const items = await fetchJsonList();
+    status.textContent = `Encontrados ${items.length} JSON(s).`;
 
-  const items = await fetchJsonList();
-
-  hideImparLoading();
-  renderJsonList(items);
-}
+    renderJsonList(items);
 
   } catch (err) {
-    hideImparLoading();
     console.error(err);
-    Swal.fire({
-      icon: "error",
-      title: "Erro ao consultar JSONs",
-      html: err.message || String(err)
-    });
-  } finally {
-    setBusyOnButton("btnAtualizar", false);
+    alert("Erro ao carregar JSONs");
+    closeJsonPickerModal();
   }
 }
   
@@ -3182,6 +3165,100 @@ window.openJsonPickerModal   = openJsonPickerModal;
 window.closeJsonPickerModal  = closeJsonPickerModal;
 window.openJsonPickerPremium = openJsonPickerPremium;
 
+/* ================================
+   JSON PICKER MODAL – VERSÃO FINAL
+   ================================ */
+
+window.ensureJsonPickerModal = function () {
+  if (document.getElementById("jsonPickerOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "jsonPickerOverlay";
+  overlay.style.cssText = `
+    position:fixed;
+    inset:0;
+    z-index:999999;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    background: rgba(0,0,0,.72);
+    backdrop-filter: blur(10px);
+  `;
+
+  overlay.innerHTML = `
+    <div class="impar-modal" style="
+      width:min(980px,96vw);
+      max-height:86vh;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.28);
+      background: linear-gradient(180deg, rgba(2,6,23,.95), rgba(2,6,23,.85));
+      box-shadow:0 28px 90px rgba(0,0,0,.58);
+      color:#e5e7eb;
+      font-family:Candara,system-ui;
+      overflow:hidden;
+    ">
+      <div style="
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        padding:14px;
+        border-bottom:1px solid rgba(148,163,184,.2);
+      ">
+        <div style="font-size:18px;font-weight:900;">
+          Consultar JSONs salvos
+        </div>
+        <button id="jsonPickerClose" style="
+          padding:10px 14px;
+          border-radius:12px;
+          border:1px solid rgba(148,163,184,.28);
+          background: linear-gradient(135deg,#0b1e4a,#0f766e);
+          color:#fff;
+          font-weight:800;
+          cursor:pointer;
+        ">Fechar</button>
+      </div>
+
+      <div style="padding:14px;max-height:70vh;overflow:auto;">
+        <div id="jsonPickerStatus" style="margin-bottom:10px;opacity:.8;">
+          Carregando…
+        </div>
+        <div id="jsonPickerList"></div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // fecha clicando fora
+  overlay.addEventListener("click", () => window.closeJsonPickerModal());
+
+  // impede fechar ao clicar dentro
+  overlay.querySelector(".impar-modal")
+    .addEventListener("click", e => e.stopPropagation());
+
+  document.getElementById("jsonPickerClose")
+    .addEventListener("click", () => window.closeJsonPickerModal());
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") window.closeJsonPickerModal();
+  });
+
+  console.log("[JSONPICK] modal criado OK");
+};
+
+window.openJsonPickerModal = function () {
+  const ov = document.getElementById("jsonPickerOverlay");
+  if (!ov) return;
+  ov.style.display = "flex";
+};
+
+window.closeJsonPickerModal = function () {
+  const ov = document.getElementById("jsonPickerOverlay");
+  if (!ov) return;
+  ov.style.display = "none";
+};
+  
 </script>
 
   <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
