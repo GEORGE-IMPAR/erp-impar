@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v8.0 • validação limpa por etapa</div>
+    <div>v9.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -3203,7 +3203,49 @@ $("#btnFinalizar").addEventListener("click", async () => {
 });
 
 })();
-  
+
+// ==== DEBUG: descobrir quem está fechando o modal ====
+(function debugModalClose(){
+  const _close = window.closeJsonPickerModal;
+  if (typeof _close !== "function") return;
+
+  window.closeJsonPickerModal = function(){
+    console.warn("[JSONPICK] closeJsonPickerModal chamado por:");
+    console.trace();
+    return _close.apply(this, arguments);
+  };
+
+  // também vigia mudanças no display do overlay
+  const obs = new MutationObserver((mutations)=>{
+    for (const m of mutations){
+      if (m.type === "attributes" && m.attributeName === "style"){
+        const el = m.target;
+        if (el && el.id === "jsonPickerOverlay"){
+          console.warn("[JSONPICK] style mudou:", el.getAttribute("style"));
+          console.trace();
+        }
+      }
+    }
+  });
+
+  const startObs = () => {
+    const el = document.getElementById("jsonPickerOverlay");
+    if (el) obs.observe(el, {attributes:true});
+  };
+
+  // tenta observar depois que o modal for criado
+  const _ensure = window.ensureJsonPickerModal;
+  if (typeof _ensure === "function"){
+    window.ensureJsonPickerModal = function(){
+      const r = _ensure.apply(this, arguments);
+      startObs();
+      return r;
+    };
+  } else {
+    document.addEventListener("DOMContentLoaded", startObs);
+  }
+})();
+
 </script>
 
   <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
