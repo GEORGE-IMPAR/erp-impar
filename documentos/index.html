@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v3.0 • validação limpa por etapa</div>
+    <div>v4.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2886,27 +2886,40 @@ function setBusyOnButton(btnId, isBusy) {
 
   
 async function openJsonPickerPremium(){
+  console.log("[JSONPICK] click atualizar");
+
+  // garante que nenhum overlay anterior ficou aberto
+  hideImparLoading();
+
   setBusyOnButton("btnAtualizar", true);
   showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
 
   try {
     ensureJsonPickerModal();
 
+    console.log("[JSONPICK] buscando lista...");
     const items = await fetchJsonList();
+    console.log("[JSONPICK] itens:", items?.length);
 
-    // 🔥 FECHA LOADING ANTES DE ABRIR O MODAL
+    // 🔥 FECHA LOADING SEMPRE ANTES DO MODAL
     hideImparLoading();
 
+    // 🔥 ABRE MODAL DO JEITO PREMIUM (classe is-open)
     openJsonPickerModal();
+
     renderJsonList(items);
 
-    document.getElementById("jsonPickerSearch").oninput =
-      () => renderJsonList(items);
+    const s = document.getElementById("jsonPickerSearch");
+    if (s) s.oninput = ()=> renderJsonList(items);
 
-    document.getElementById("jsonPickerRefresh").onclick = async () => {
+    const rbtn = document.getElementById("jsonPickerRefresh");
+    if (rbtn) rbtn.onclick = async ()=> {
+      hideImparLoading();
       showImparLoading("Atualizando lista…", "Recarregando JSONs.");
-      try {
+
+      try{
         const refreshed = await fetchJsonList();
+        hideImparLoading();
         renderJsonList(refreshed);
       } finally {
         hideImparLoading();
@@ -2914,17 +2927,16 @@ async function openJsonPickerPremium(){
     };
 
   } catch (err) {
+    console.error("[JSONPICK] erro:", err);
     hideImparLoading();
-    Swal.fire({
-      icon: "error",
-      title: "Erro ao consultar JSONs",
-      html: err?.message || String(err)
-    });
+    Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
   } finally {
+    // garante que o loading nunca fica preso
+    hideImparLoading();
     setBusyOnButton("btnAtualizar", false);
   }
 }
-
+  
 function wire(){
     // Entrada
     window.addEventListener("DOMContentLoaded", () => {
@@ -3084,6 +3096,18 @@ $("#btnFinalizar").addEventListener("click", async () => {
     else bind();
   })();
 
+
+(function bindAtualizarToPremium(){
+  const oldBtn = document.getElementById("btnAtualizar");
+  if(!oldBtn) return;
+
+  const newBtn = oldBtn.cloneNode(true);
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+
+  newBtn.addEventListener("click", () => openJsonPickerPremium());
+  console.log("[JSONPICK] btnAtualizar rebound -> premium");
+})();
+  
 </script>
 
   <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
