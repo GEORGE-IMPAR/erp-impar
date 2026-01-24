@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v29.0 • validação limpa por etapa</div>
+    <div>v30.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2745,30 +2745,18 @@ function applyJsonToForm(data){
 }
 
 /* ================================
-   JSON PICKER MODAL – BLOCO ÚNICO OFICIAL (SEM BLUR)
+   JSON PICKER MODAL – BLOCO ÚNICO OFICIAL
    ================================ */
 
 function ensureJsonPickerModal(){
-  // se já existe, não recria
   if (document.getElementById("jsonPickerOverlay")) return;
 
   const overlay = document.createElement("div");
   overlay.id = "jsonPickerOverlay";
-
-  // overlay full-screen (sem blur)
-  overlay.style.cssText = `
-    position: fixed;
-    inset: 0;
-    z-index: 999999;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    background: radial-gradient(1200px 700px at 50% 40%, rgba(15,118,110,.14), rgba(0,0,0,.72));
-  `;
+  overlay.setAttribute("aria-hidden", "true");
 
   overlay.innerHTML = `
-    <div id="jsonPickerCard" style="
+    <div class="impar-modal" style="
       width:min(980px, 96vw);
       max-height:86vh;
       overflow:hidden;
@@ -2776,8 +2764,6 @@ function ensureJsonPickerModal(){
       border:1px solid rgba(148,163,184,.28);
       background: linear-gradient(180deg, rgba(2,6,23,.92), rgba(2,6,23,.72));
       box-shadow: 0 28px 90px rgba(0,0,0,.58);
-      color: rgba(226,232,240,.92);
-      font-family:Candara,system-ui;
       position:relative;
     ">
       <div style="
@@ -2786,12 +2772,14 @@ function ensureJsonPickerModal(){
         border-bottom:1px solid rgba(148,163,184,.18);
       ">
         <div>
-          <div style="font-size:18px; font-weight:900; color:rgba(226,232,240,.96);">
-            Consultar JSONs salvos
-          </div>
-          <div style="margin-top:2px; font-size:13px; color:rgba(226,232,240,.76);">
-            Clique em um item para carregar e preencher as 5 etapas.
-          </div>
+          <div style="
+            font-family:Candara,system-ui; font-size:18px; font-weight:900;
+            color:rgba(226,232,240,.96);
+          ">Consultar JSONs salvos</div>
+          <div style="
+            margin-top:2px; font-family:Candara,system-ui; font-size:13px;
+            color:rgba(226,232,240,.76);
+          ">Clique em um item para carregar e preencher as 5 etapas.</div>
         </div>
 
         <div style="display:flex; gap:10px; align-items:center;">
@@ -2825,7 +2813,7 @@ function ensureJsonPickerModal(){
         </div>
 
         <div id="jsonPickerStatus" style="
-          font-size:13px;
+          font-family:Candara,system-ui; font-size:13px;
           color: rgba(226,232,240,.78);
           margin: 8px 0 10px 0;
         ">Carregando…</div>
@@ -2841,25 +2829,19 @@ function ensureJsonPickerModal(){
 
   document.body.appendChild(overlay);
 
-  // fecha SOMENTE se clicar no backdrop
+  // fecha só se clicar no backdrop
   overlay.addEventListener("click", (e)=>{
     if (e.target === overlay) closeJsonPickerModal();
   });
 
-  // impede clique dentro do card fechar
-  const card = document.getElementById("jsonPickerCard");
-  if (card){
-    card.addEventListener("click", (e)=> e.stopPropagation());
-    card.addEventListener("mousedown", (e)=> e.stopPropagation());
-    card.addEventListener("mouseup", (e)=> e.stopPropagation());
-  }
-
+  // botão fechar
   document.getElementById("jsonPickerClose")?.addEventListener("click", (e)=>{
     e.preventDefault();
     e.stopPropagation();
     closeJsonPickerModal();
   });
 
+  // esc
   document.addEventListener("keydown", (e)=>{
     if (e.key === "Escape") closeJsonPickerModal();
   });
@@ -2870,26 +2852,26 @@ function ensureJsonPickerModal(){
 function openJsonPickerModal(){
   const ov = document.getElementById("jsonPickerOverlay");
   if(!ov) return;
-  ov.style.display = "flex";
+  ov.classList.add("is-open");     // 🔥 ESSENCIAL (senão fica opacity:0)
+  ov.setAttribute("aria-hidden", "false");
 }
 
 function closeJsonPickerModal(){
   const ov = document.getElementById("jsonPickerOverlay");
   if(!ov) return;
-  ov.style.display = "none";
+  ov.classList.remove("is-open");
+  ov.setAttribute("aria-hidden", "true");
 }
 
 async function fetchJsonList(){
   const status = document.getElementById("jsonPickerStatus");
   const list   = document.getElementById("jsonPickerList");
-
   if (status) status.textContent = "Carregando JSONs…";
   if (list) list.innerHTML = "";
 
   const r = await fetch(`${DOCS_BASE}/list_json.php?ts=${Date.now()}`, { cache:"no-store" });
   const j = await r.json();
   if(!j.ok) throw new Error(j.error || "Falha ao listar JSONs");
-
   return j.items || [];
 }
 
@@ -2919,7 +2901,6 @@ function renderJsonList(items){
         background: linear-gradient(180deg, rgba(2,6,23,.40), rgba(2,6,23,.28));
         color: rgba(226,232,240,.92);
         cursor:pointer;
-        transition: transform .14s ease, border-color .18s ease, box-shadow .18s ease;
       ">
         <div style="font-weight:900; font-size:14px;">${cod}</div>
         <div style="margin-top:4px; font-size:13px; opacity:.92;">${obra}</div>
@@ -2928,20 +2909,7 @@ function renderJsonList(items){
     `;
   }).join("");
 
-  // hover por JS (opcional, mas fica lindo e não depende de CSS global)
   list.querySelectorAll(".jsonPickItem").forEach(btn=>{
-    btn.addEventListener("mouseenter", ()=>{
-      btn.style.transform = "translateY(-2px)";
-      btn.style.borderColor = "rgba(16,185,129,.55)";
-      btn.style.boxShadow = "0 18px 50px rgba(0,0,0,.35)";
-    });
-    btn.addEventListener("mouseleave", ()=>{
-      btn.style.transform = "none";
-      btn.style.borderColor = "rgba(148,163,184,.25)";
-      btn.style.boxShadow = "none";
-    });
-
-    // clique item
     btn.addEventListener("click", async ()=>{
       const codigo = btn.getAttribute("data-codigo");
       try{
@@ -2970,11 +2938,11 @@ async function openJsonPickerPremium(){
 
   try{
     ensureJsonPickerModal();
+    openJsonPickerModal();
 
     const items = await fetchJsonList();
 
     hideImparLoading();
-    openJsonPickerModal();
     renderJsonList(items);
 
     const s = document.getElementById("jsonPickerSearch");
@@ -3001,25 +2969,7 @@ async function openJsonPickerPremium(){
   }
 }
 
-/* ================================
-   BIND ÚNICO DO BOTÃO ATUALIZAR
-   (remove todos os listeners antigos)
-   ================================ */
-(function bindAtualizarSomenteUmaVez(){
-  const btn = document.getElementById("btnAtualizar");
-  if(!btn) return;
-
-  const clean = btn.cloneNode(true);
-  btn.parentNode.replaceChild(clean, btn);
-
-  clean.addEventListener("click", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await openJsonPickerPremium();
-  });
-})();
-
-// expõe no window pra testar no console
+// expõe (pra console e handlers)
 window.ensureJsonPickerModal = ensureJsonPickerModal;
 window.openJsonPickerModal   = openJsonPickerModal;
 window.closeJsonPickerModal  = closeJsonPickerModal;
@@ -3173,6 +3123,20 @@ wire();
     if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
     else bind();
   })();
+
+(function bindAtualizarSomenteUmaVez(){
+  const btn = document.getElementById("btnAtualizar");
+  if(!btn) return;
+
+  const clean = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clean, btn);
+
+  clean.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await openJsonPickerPremium();
+  });
+})();
 
 </script>
 
