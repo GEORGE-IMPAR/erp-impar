@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v26.0 • validação limpa por etapa</div>
+    <div>v27.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2964,7 +2964,14 @@ function renderJsonList(items){
   });
 });
 }
+// Guarda lista atual pra busca/refresh sem gambiarra
+window.__jsonPickerItems = window.__jsonPickerItems || [];
+window.__jsonPickerOpening = false;
+
 async function openJsonPickerPremium(){
+  if (window.__jsonPickerOpening) return; // evita duplo clique / duplo disparo
+  window.__jsonPickerOpening = true;
+
   console.log("[JSONPICK] click atualizar");
 
   setBusyOnButton("btnAtualizar", true);
@@ -2973,25 +2980,34 @@ async function openJsonPickerPremium(){
   try{
     ensureJsonPickerModal();
 
+    // fetch primeiro (com loading), depois abre modal
     const items = await fetchJsonList();
+    window.__jsonPickerItems = items || [];
 
     hideImparLoading();
+
     openJsonPickerModal();
-    renderJsonList(items);
+    renderJsonList(window.__jsonPickerItems);
 
     const s = document.getElementById("jsonPickerSearch");
-    if (s) s.oninput = ()=> renderJsonList(items);
+    if (s) {
+      s.value = ""; // opcional: limpa busca ao abrir
+      s.oninput = () => renderJsonList(window.__jsonPickerItems);
+    }
 
     const rbtn = document.getElementById("jsonPickerRefresh");
-    if (rbtn) rbtn.onclick = async ()=>{
-      showImparLoading("Atualizando lista…", "Recarregando JSONs.");
-      try{
-        const refreshed = await fetchJsonList();
-        renderJsonList(refreshed);
-      } finally {
-        hideImparLoading();
-      }
-    };
+    if (rbtn) {
+      rbtn.onclick = async () => {
+        showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+        try{
+          const refreshed = await fetchJsonList();
+          window.__jsonPickerItems = refreshed || [];
+          renderJsonList(window.__jsonPickerItems);
+        } finally {
+          hideImparLoading();
+        }
+      };
+    }
 
   } catch(err){
     console.error("[JSONPICK] erro:", err);
@@ -3000,8 +3016,30 @@ async function openJsonPickerPremium(){
   } finally {
     hideImparLoading();
     setBusyOnButton("btnAtualizar", false);
+    window.__jsonPickerOpening = false;
   }
 }
+
+/* ================================
+   BIND ÚNICO DO BOTÃO ATUALIZAR
+   (deixe APENAS este no arquivo)
+   ================================ */
+(function bindAtualizarSomenteUmaVez(){
+  const btn = document.getElementById("btnAtualizar");
+  if(!btn) return;
+
+  // se já bindou, não binda de novo
+  if (btn.dataset && btn.dataset.boundJsonPicker === "1") return;
+
+  // marca como bindado (sem cloneNode)
+  btn.dataset.boundJsonPicker = "1";
+
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await openJsonPickerPremium();
+  }, { passive:false });
+})();
 
 /* ================================
    BIND ÚNICO DO BOTÃO ATUALIZAR
@@ -3161,26 +3199,6 @@ wire();
     if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
     else bind();
   })();
-
-
-(function bindAtualizarSomenteUmaVez(){
-  const btn = document.getElementById("btnAtualizar");
-  if(!btn) return;
-
-  const clean = btn.cloneNode(true);
-  btn.parentNode.replaceChild(clean, btn);
-
-  clean.addEventListener("click", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await openJsonPickerPremium();
-  });
-})();
-
-  const startObs = () => {
-    const el = document.getElementById("jsonPickerOverlay");
-    if (el) obs.observe(el, {attributes:true});
-  };
 
 </script>
 
