@@ -2702,53 +2702,41 @@ $("#btnFinalizar").addEventListener("click", async () => {
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
 
-function applyJsonToFormLoose(data){
-  if(!data || typeof data !== "object") return;
+  function applyJsonToFormLoose(data){
+    if(!data || typeof data !== "object") return;
 
-  // helper: pega o primeiro valor existente entre várias chaves
-  const pick = (obj, keys) => {
-    for (const k of keys){
-      if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null && obj[k] !== "") {
-        return obj[k];
+    // mapeamento mínimo (payload -> ids reais)
+    const map = {
+      codigo: "codigoProjeto",
+      valor: "valorContrato",
+      data: "dataContrato",
+      enderecoObra: "endereco",
+      endereco_da_obra: "endereco",
+      enderecoDaObra: "endereco",
+      condicoesPagamento: "condPagamento",
+      condicoes_de_pagamento: "condPagamento",
+      condicoesPag: "condPagamento"
+    };
+
+    // 1) tenta map explícito
+    Object.keys(map).forEach(k => {
+      if(k in data){
+        setFieldValue(byId(map[k]), data[k]);
       }
+    });
+
+    // 2) para o resto, tenta id igual à chave
+    Object.keys(data).forEach(k => {
+      if(k in map) return;
+      const el = byId(k);
+      if(el) setFieldValue(el, data[k]);
+    });
+
+    // 3) volta para etapa 1 (se existir showStep)
+    if (typeof window.showStep === "function") {
+      window.showStep(1);
     }
-    return undefined;
-  };
-
-  // mapeamento tolerante: (possíveis chaves no JSON) -> (id real no HTML)
-  const map = [
-    { id: "codigoProjeto", keys: ["codigo", "codigoProjeto", "codProjeto", "projetoCodigo"] },
-    { id: "valorContrato", keys: ["valor", "valorContrato", "valorTotal", "valor_total"] },
-    { id: "dataContrato",  keys: ["data", "dataContrato", "data_contrato"] },
-
-    // ✅ os 2 que faltaram:
-    { id: "endereco",      keys: ["endereco", "enderecoObra", "endereco_obra", "obraEndereco", "enderecoDaObra"] },
-    { id: "condPagamento", keys: ["condPagamento", "condicoesPagamento", "condicoes_pagamento", "condPagto", "pagamentoCondicoes"] },
-  ];
-
-  // 1) aplica os campos mapeados (com tolerância de chave)
-  for (const m of map){
-    const el = byId(m.id);
-    if(!el) continue;
-    const v = pick(data, m.keys);
-    if(v !== undefined) setFieldValue(el, v);
   }
-
-  // 2) aplica o resto: tenta id == chave (mantém o comportamento atual)
-  Object.keys(data).forEach(k => {
-    // evita sobrescrever os já mapeados
-    const alreadyMapped = map.some(m => m.keys.includes(k));
-    if (alreadyMapped) return;
-
-    const el = byId(k);
-    if(el) setFieldValue(el, data[k]);
-  });
-
-  // 3) volta para etapa 1 (se existir)
-  if (typeof window.showStep === "function") {
-    window.showStep(1);
-  }
-}
 
   async function loadProjectJson(codigo){
     if(!codigo) throw new Error("Código inválido");
@@ -2810,6 +2798,194 @@ function applyJsonToFormLoose(data){
     wirePickerUi();
   }
 })();
+
+/* ================================
+   GERAR DOCUMENTOS (Contrato / OS)
+   - Abre modal simples (SweetAlert)
+   - Gera DOCX via API (make_contract.php / make_os.php)
+   ================================ */
+
+function getProjetoMetaForFilename(){
+  const codigo = (document.getElementById("codigoProjeto")?.value || "").trim();
+  const nomeObra = (document.getElementById("nomeObra")?.value || "").trim();
+  return { codigo, nomeObra };
+}
+
+function sanitizeFilenamePart(s){
+  return String(s || "")
+    .replace(/[\\\/:*?"<>|]+/g, " ")   // chars inválidos no Windows
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function imparAskDocToGenerate(origin="manual"){
+  // exige código
+  const {codigo} = getProjetoMetaForFilename();
+  if(!codigo){
+    if (typeof validateStep1 === "function") validateStep1();
+    Swal.fire({ icon:"warning", title:"Informe o código do projeto", html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."});
+    return null;
+  }
+
+  const res = await Swal.fire({
+    title: "Qual documento deseja gerar?",
+    html: "Escolha uma opção abaixo:",
+    icon: "question",
+    showDenyButton: true,
+    showCancelButton: true,
+    confirmButtonText: "Gerar Contrato",
+    denyButtonText: "Gerar Ordem de Serviço",
+    cancelButtonText: "Cancelar",
+    allowOutsideClick: true,
+    allowEscapeKey: true
+  });
+
+  if (res.isConfirmed) return "contrato";
+  if (res.isDenied) return "os";
+  return null;
+}
+
+async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
+  const url = endpoint;
+  const headers = { };
+  let body = null;
+
+  if(method === "POST"){
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify({ codigo });
+  }
+
+  const resp = await fetch(url, { method, headers, body, cache:"no-store" });
+
+  // se a API devolver erro em JSON
+  const ct = (resp.headers.get("content-type") || "").toLowerCase();
+  if(!resp.ok){
+    let msg = `Falha ao gerar documento (HTTP ${resp.status}).`;
+    try{
+      if(ct.includes("application/json")){
+        const j = await resp.json();
+        msg = j?.error || j?.message || msg;
+      } else {
+        const t = await resp.text();
+        if(t && t.length < 500) msg = t;
+      }
+    }catch(e){}
+    throw new Error(msg);
+  }
+
+  // se veio JSON mesmo com ok, pode ser payload de erro
+  if(ct.includes("application/json")){
+    const j = await resp.json();
+    if(j?.ok === false) throw new Error(j?.error || "Falha ao gerar documento.");
+    throw new Error("Resposta inesperada da API (JSON).");
+  }
+
+  const blob = await resp.blob();
+  const a = document.createElement("a");
+  const blobUrl = URL.createObjectURL(blob);
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
+}
+
+async function gerarDocumento(tipo){
+  const {codigo, nomeObra} = getProjetoMetaForFilename();
+
+  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
+  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const filename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
+
+  const endpoint = (tipo === "contrato")
+    ? `${DOCS_BASE}/make_contract.php`
+    : `${DOCS_BASE}/make_os.php`;
+
+  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
+
+  try{
+    // 1) tenta POST (mais seguro para payloads)
+    try{
+      await downloadDocxFromApi({ endpoint, codigo, filename, method:"POST" });
+      return true;
+    } catch(postErr){
+      // 2) fallback GET (caso o PHP esteja esperando querystring)
+      const endpointGet = `${endpoint}?codigo=${encodeURIComponent(codigo)}&ts=${Date.now()}`;
+      await downloadDocxFromApi({ endpoint: endpointGet, codigo, filename, method:"GET" });
+      return true;
+    }
+  } finally {
+    hideImparLoading();
+  }
+}
+
+/* ===== Disparos =====
+   1) Botão "GERAR DOCUMENTOS" (Etapa 1)
+   2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
+*/
+(function bindGerarDocumentos(){
+  function bindBtnGerar(){
+    const btn = document.getElementById("btnGerar");
+    if(!btn) return;
+
+    // remove listeners antigos
+    const clean = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clean, btn);
+
+    clean.addEventListener("click", async (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+
+      // se existir validação da etapa 1, respeita
+      if (typeof validateStep1 === "function" && !validateStep1()) return;
+
+      const tipo = await imparAskDocToGenerate("step1");
+      if(!tipo) return;
+
+      try{
+        await gerarDocumento(tipo);
+      }catch(err){
+        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
+      }
+    });
+  }
+
+  function bindGerarDepoisSalvar(){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    if(!okBtn) return;
+
+    // não clona aqui (pode quebrar o modal existente); só adiciona listener "extra"
+    okBtn.addEventListener("click", async ()=>{
+      // heurística: só pergunta se o modal estiver em "sucesso"
+      const titulo = (document.getElementById("modalSalvarTitulo")?.textContent || "").toLowerCase();
+      const msg = (document.getElementById("modalSalvarMsg")?.textContent || "").toLowerCase();
+
+      const isSuccess = titulo.includes("sucesso") || msg.includes("sucesso") || msg.includes("salvo");
+      if(!isSuccess) return;
+
+      const tipo = await imparAskDocToGenerate("afterSave");
+      if(!tipo) return;
+
+      try{
+        await gerarDocumento(tipo);
+      }catch(err){
+        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
+      }
+    });
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", ()=>{
+      bindBtnGerar();
+      bindGerarDepoisSalvar();
+    });
+  } else {
+    bindBtnGerar();
+    bindGerarDepoisSalvar();
+  }
+})();
+
 </script>
 
 </body>
