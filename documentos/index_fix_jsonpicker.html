@@ -1,0 +1,3232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ERP ÍMPAR – Gerador de Documentos (Rebuild V1)</title>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+  // SweetAlert2 — aplica tema ÍMPAR globalmente (igual módulo Solicitação)
+  if (window.Swal && Swal.mixin) {
+    window.Swal = Swal.mixin({
+      customClass: {
+        popup: "impar-swal",
+        confirmButton: "impar-swal-confirm",
+        cancelButton: "impar-swal-cancel"
+      },
+      buttonsStyling: false
+    });
+  }
+  // Transição de entrada (slide suave)
+  window.addEventListener("DOMContentLoaded", () => {
+    document.body.classList.add("impar-enter");
+  });
+</script>
+
+<script>
+
+  const API_SAVE_JSON = "https://api.erpimpar.com.br/storage/docs/save_json.php";
+
+  // ===== Loader padrão ERP (igual menu) =====
+  function showPageLoader(title, sub){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.querySelector(".loader-title").textContent = title || "Processando…";
+    el.querySelector(".loader-sub").textContent = sub || "Aguarde…";
+    el.classList.remove("hidden");
+    el.setAttribute("aria-hidden","false");
+  }
+  function hidePageLoader(){
+    const el = document.getElementById("pageLoader");
+    if(!el) return;
+    el.classList.add("hidden");
+    el.setAttribute("aria-hidden","true");
+  }
+
+  // ===== Logged user (ERP ÍMPAR) — GABARITO (menu/solicitação) =====
+  function getLoggedUser(){
+    const primaryKey = "ERPIMPAR_USER";
+    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+    const candidates = [];
+    if(rawPrimary) candidates.push(rawPrimary);
+
+    // Compat: chaves antigas do ERP
+    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
+    for(const k of keys){
+      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+      if(raw) candidates.push(raw);
+    }
+
+    for(const raw of candidates){
+      try{
+        const u = JSON.parse(raw);
+        const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
+        const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
+        if(nome || email) return { Nome:nome, Email:email };
+      }catch(e){
+        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
+      }
+    }
+    return { Nome:"Usuário", Email:"—" };
+  }
+
+  // Alias para compatibilidade (algumas versões chamam getLoggeduser)
+  
+  // Garantia: função global getLoggedUser (compatível com o RP/SSO)
+  if (typeof window.getLoggedUser !== "function") {
+    window.getLoggedUser = function getLoggedUser() {
+      const keys = ["ERPIMPAR_USER","usuarioLogado","impar_user","ERPIMPARUSER","USER","user"];
+      let raw = "";
+      for (const store of [window.localStorage, window.sessionStorage]) {
+        for (const k of keys) {
+          try {
+            raw = store.getItem(k) || "";
+            if (raw) break;
+          } catch (e) {}
+        }
+        if (raw) break;
+      }
+      if (!raw) return { Nome: "Usuário", Email: "—" };
+      try {
+        const u = JSON.parse(raw);
+        return {
+          Nome: u.Nome || u.nome || u.userNome || u.name || "Usuário",
+          Email: u.Email || u.email || u.userEmail || u.mail || "—"
+        };
+      } catch (e) {
+        if (raw.includes("@")) {
+          const parts = raw.split("|");
+          return { Nome: (parts[0] || "Usuário"), Email: (parts[1] || raw) };
+        }
+        return { Nome: "Usuário", Email: "—" };
+      }
+    };
+  }
+
+
+  function getLoggeduser(){
+    return (typeof window.getLoggedUser==="function") ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"};
+  }
+
+
+  function applyLoggedUser(){
+    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
+    const nomeTxt = (u.Nome || "Usuário");
+    const emailTxt = (u.Email || "—");
+
+    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName","userNameTxt"];
+    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail","userEmailTxt"];
+
+    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
+    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
+
+    return { nome:nomeTxt, email:emailTxt };
+  }
+
+  // expõe global (evita erro de escopo no FINALIZAR)
+  window.getLoggedUser = getLoggedUser;
+  window.getLoggeduser = getLoggedUser; // compat com typo
+  window.applyLoggedUser = applyLoggedUser;
+
+  // aplica usuário logo na entrada (padrão RP)
+  (function(){
+    try{
+      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
+      else applyLoggedUser();
+    }catch(e){}
+  })();
+  // ===== /Logged user =====
+
+(function(){
+ const dataEl=document.getElementById("dataContrato");
+ const dataExtEl=document.getElementById("dataExtenso");
+ function dataPorExtensoISO(iso){if(!iso)return"";const[y,m,d]=iso.split("-").map(x=>parseInt(x,10));const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];return `${d} de ${meses[m-1]} de ${y}`}
+ if(dataEl){dataEl.addEventListener("change",()=>{const iso=dataEl.value;if(dataExtEl){dataExtEl.value=iso?dataPorExtensoISO(iso):"";}})}
+})();
+
+  // ===== Helpers: Modal ÍMPAR (Salvar JSON) =====
+  
+  // Alias para manter compatibilidade com versões antigas (evita erro no console)
+  function openModalGeracao(){
+    try{ openSalvarModal(); }catch(e){}
+  }
+
+function openSalvarModal(){
+    const m = document.getElementById("modalImparSalvar");
+    if(!m) return;
+    m.setAttribute("aria-hidden","false");
+    // reset visual
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const body = document.getElementById("modalSalvarBody");
+    const loading = document.getElementById("modalSalvarLoading");
+    const title = document.getElementById("modalSalvarTitulo");
+    const sub = document.getElementById("modalSalvarSub");
+    const msg = document.getElementById("modalSalvarMsg");
+    if(okBtn) okBtn.style.display = "none";
+    if(body) body.style.display = "none";
+    if(loading) loading.style.display = "flex";
+    if(title) title.textContent = "Salvando...";
+    if(sub) sub.textContent = "Gravando o JSON do projeto no servidor.";
+    if(msg) msg.textContent = "";
+  }
+  function closeSalvarModal(){
+    const m = document.getElementById("modalImparSalvar");
+    if(!m) return;
+    m.setAttribute("aria-hidden","true");
+  }
+  function showSalvarSuccess(){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const body = document.getElementById("modalSalvarBody");
+    const loading = document.getElementById("modalSalvarLoading");
+    const title = document.getElementById("modalSalvarTitulo");
+    const sub = document.getElementById("modalSalvarSub");
+    const msg = document.getElementById("modalSalvarMsg");
+    if(loading) loading.style.display = "none";
+    if(body) body.style.display = "block";
+    if(title) title.textContent = "Sucesso!";
+    if(sub) sub.textContent = "JSON salvo no padrão ÍMPAR";;
+    if(msg) msg.textContent = "Documento salvo com sucesso. Os dados foram registrados e estão prontos para gerar Contrato ou Ordem de Serviço.";
+    if(okBtn) okBtn.style.display = "inline-flex";
+  }
+  function showSalvarError(text){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const body = document.getElementById("modalSalvarBody");
+    const loading = document.getElementById("modalSalvarLoading");
+    const title = document.getElementById("modalSalvarTitulo");
+    const sub = document.getElementById("modalSalvarSub");
+    const msg = document.getElementById("modalSalvarMsg");
+    if(loading) loading.style.display = "none";
+    if(body) body.style.display = "block";
+    if(title) title.textContent = "Erro ao salvar";
+    if(sub) sub.textContent = "Verifique a API e tente novamente.";
+    if(msg) msg.textContent = text || "Erro desconhecido.";
+    if(okBtn) okBtn.style.display = "inline-flex";
+  }
+  (function(){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    const m = document.getElementById("modalImparSalvar");
+    const backdrop = document.querySelector("#modalImparSalvar .impar-modal-backdrop");
+    if(okBtn) okBtn.addEventListener("click", closeSalvarModal);
+    if(backdrop) backdrop.addEventListener("click", closeSalvarModal);
+    if(m) m.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeSalvarModal(); });
+  })();
+
+  async function postJson(url, data){
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(data)
+    });
+    const txt = await res.text();
+    let js=null;
+    try{ js = JSON.parse(txt); }catch(e){}
+    if(!res.ok){
+      const msg = (js && js.error) ? js.error : (txt || "Erro no servidor");
+      throw new Error(msg);
+    }
+    return js || { ok:true, raw:txt };
+  }
+
+  // ===== Payload: tenta capturar pelos IDs existentes =====
+  function getVal(id){
+    const el = document.getElementById(id);
+    if(!el) return "";
+    return (el.value ?? "").toString().trim();
+  }
+  function buildPayload(){
+    
+    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
+    const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
+
+    // Etapa 1/2
+    const nomeObra = getVal("nomeObra") || getVal("nome_obra") || getVal("nomeObraInput");
+    const servico = getVal("servicoObra") || getVal("servico") || getVal("servico_obra");
+    const enderecoObra = getVal("enderecoObra") || getVal("endereco") || getVal("endereco_obra");
+    const projetista = getVal("projetista") || getVal("projetistaObra") || "";
+
+    // Etapa 3 - Contratante
+    const nomeContratante = getVal("nomeContratante");
+    const contatoContratante = getVal("contatoContratante");
+    const cpfContatoContratante = getVal("cpfContatoContratante");
+    const telefoneContratante = getVal("telefoneContratante");
+    const cepContratante = getVal("cepContratante");
+    const cpfCnpjContratante = getVal("cpfCnpjContratante") || getVal("cpfCnpj");
+    const logradouroContratante = getVal("logradouroContratante");
+    const numeroContratante = getVal("numeroContratante");
+    const bairroContratante = getVal("bairroContratante");
+    const cidadeContratante = getVal("cidadeContratante");
+    const ufContratante = getVal("ufContratante");
+    const complementoContratante = getVal("complementoContratante");
+    const emailContratante = getVal("emailContratante");
+
+    // Etapa 4 - Contratada
+    const nomeContratada = getVal("nomeContratada");
+    const contatoContratada = getVal("contatoContratada");
+    const cpfContatoContratada = getVal("cpfContatoContratada");
+    const telefoneContratada = getVal("telefoneContratada");
+    const cepContratada = getVal("cepContratada");
+    const cpfCnpjContratada = getVal("cpfCnpjContratada");
+    const logradouroContratada = getVal("logradouroContratada");
+    const numeroContratada = getVal("numeroContratada");
+    const bairroContratada = getVal("bairroContratada");
+    const cidadeContratada = getVal("cidadeContratada");
+    const ufContratada = getVal("ufContratada");
+    const complementoContratada = getVal("complementoContratada");
+    const emailContratada = getVal("emailContratada");
+
+    // Etapa 5
+    const clausulas = getVal("clausulas") || getVal("clausulasCondicoes") || "";
+    const condicoesPagamento = getVal("condPagamento") || getVal("condicoesPagamento") || getVal("condicoes") || "";
+    const valor = getVal("valorContrato") || getVal("valor") || "";
+    const valorExtenso = getVal("valorExtenso") || getVal("Extenso_Valor") || "";
+    const prazoDias = getVal("prazoDias") || getVal("prazo") || "";
+    const dataContrato = getVal("dataContrato") || getVal("data") || "";
+    const dataExtenso = getVal("dataExtenso") || getVal("data_por_extenso") || "";
+
+    return {
+      codigo,
+      nomeObra, servico, enderecoObra, projetista,
+
+      nomeContratante, contatoContratante, cpfContatoContratante, telefoneContratante, emailContratante,
+      cpfCnpjContratante, cepContratante, logradouroContratante, numeroContratante,
+      complementoContratante, bairroContratante, cidadeContratante, ufContratante,
+
+      nomeContratada, contatoContratada, cpfContatoContratada, telefoneContratada, emailContratada,
+      cpfCnpjContratada, cepContratada, logradouroContratada, numeroContratada,
+      complementoContratada, bairroContratada, cidadeContratada, ufContratada,
+
+      clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
+      dataContrato, dataExtenso,
+
+      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.Nome||"Usuário"), usuario_email: (u.Email||"—") }
+    };
+  }
+
+
+  // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
+  async function onFinalizarSalvarJson(){
+    try{
+      // garante usuário aplicado (todas etapas)
+      try{ applyLoggedUser(); }catch(e){}
+
+      // validação defensiva (se existir)
+      try{ if(typeof validateCurrentStep === "function"){ validateCurrentStep(); } }catch(e){}
+
+      
+      // valida etapa 5 antes de finalizar (consistência total)
+      try{
+        if(typeof validateStep5 === "function"){
+          if(!validateStep5()){
+            try{ if(window.showStep) showStep(5); }catch(e){}
+            return;
+          }
+        }
+      }catch(e){}
+const payload = buildPayload();
+      if(!payload || !payload.codigo){
+        if(window.showStep) showStep(1);
+        try{
+          const inp = document.getElementById("codigoProjeto") || document.getElementById("codigo");
+          if(inp){ inp.classList.add("input-error"); inp.focus(); }
+        }catch(e){}
+        Swal.fire({ icon:"warning", title:"Campo obrigatório", text:"Informe o código do projeto para finalizar." });
+        return;
+      }
+
+      showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
+
+      const resp = await postJson(API_SAVE_JSON, payload);
+
+      hidePageLoader();
+      Swal.fire({
+        icon:"success",
+        title:"Sucesso!",
+        html:"Dados salvos com sucesso.",
+        confirmButtonText:"OK"
+      });
+
+      return resp;
+    }catch(err){
+      hidePageLoader();
+      Swal.fire({
+        icon:"error",
+        title:"Erro ao salvar",
+        html:(err && (err.message || err.toString())) ? (err.message || err.toString()) : "Falha ao salvar o JSON."
+      });
+      console.error(err);
+    }
+  }
+
+
+  // Alias de compatibilidade: versões antigas chamavam finalizeFlow()
+  async function finalizeFlow(){
+    return await onFinalizarSalvarJson();
+  }
+
+
+  // liga no botão FINALIZAR
+  (function(){
+    const btn = document.getElementById("btnFinalizar");
+    if(btn){
+      btn.addEventListener("click", onFinalizarSalvarJson);
+    }
+  })();
+
+
+  // ===== Override seguro: remove listeners antigos do FINALIZAR e aplica o novo =====
+  (function(){
+    const btn = document.getElementById("btnFinal") || document.getElementById("btnFinalizar");
+    if(!btn) return;
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener("click", onFinalizarSalvarJson);
+  })();
+
+
+  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
+  (function(){
+function bind(){
+      const candidates = [];
+      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+      if(byId) candidates.push(byId);
+      document.querySelectorAll("button, a").forEach(el=>{
+        const t = (el.textContent || "").toUpperCase();
+        if(t.includes("FINALIZAR")) candidates.push(el);
+      });
+      const unique = Array.from(new Set(candidates));
+      unique.forEach(btn=>{
+        try{
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          clone.addEventListener("click", onFinalizarSalvarJson);
+          // garante aparência não alterada
+        }catch(e){}
+      });
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+    else bind();
+  })();
+
+</script>
+  <style>
+    :root{
+      --bg1:#0b1e4a;
+      --bg2:#0e3b6e;
+      --bg3:#0f766e;
+
+      --panel: rgba(2,6,23,.66);
+      --panel2: rgba(2,6,23,.78);
+      --border: rgba(148,163,184,.45);
+
+      --text: #e5e7eb;
+      --soft: rgba(229,231,235,.78);
+
+      --blue:#3b82f6;
+      --green:#22c55e;
+      --red:#ef4444;
+
+      --radius: 18px;
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      min-height:100vh;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:var(--text);
+      background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
+      display:flex;
+      flex-direction:column;
+    }
+
+    /* Entrada suave */
+    body{opacity:0}
+    @keyframes imparEnter{
+      0%{opacity:0; transform: translateY(28px) scale(.98); filter: blur(10px);}
+      100%{opacity:1; transform: translateY(0) scale(1); filter: blur(0);}
+    }
+    body.impar-enter{animation:imparEnter .75s cubic-bezier(.16,1,.3,1) both;}
+    @media (prefers-reduced-motion: reduce){
+      body{opacity:1}
+      body.impar-enter{animation:none}
+    }
+
+    header{
+      padding:14px 14px 10px;
+      display:flex;
+      justify-content:center;
+    }
+    .header-inner{
+      width:100%;
+      max-width:1200px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      text-shadow:0 2px 6px rgba(0,0,0,.75);
+      min-width:0;
+    }
+    .logo-orb{
+      width:36px;height:36px;border-radius:999px;flex:0 0 auto;
+      position:relative;
+      background: conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);
+      box-shadow:0 10px 22px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.18) inset;
+      overflow:hidden;
+    }
+    .logo-orb:before{
+      content:""; position:absolute; inset:-6px;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 55%);
+    }
+    .brand-text{display:flex; flex-direction:column; gap:2px; min-width:0;}
+    .brand-kicker{font-size:12px; letter-spacing:.22em; text-transform:uppercase; font-weight:800; opacity:.9;}
+    .brand-title{font-size:18px; font-weight:900; line-height:1.05;}
+    .brand-sub{font-size:14px; font-weight:800; opacity:.92; line-height:1.1;}
+    .brand-tagline{font-size:12px; opacity:.75; line-height:1.2; max-width:65ch; white-space:normal;}
+
+    .tag-top{
+      margin-left:auto;
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:rgba(15,23,42,.85);
+      border:1px solid rgba(148,163,184,.6);
+      color:var(--soft);
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .pill-btn{
+      border:none;
+      background:transparent;
+      color:inherit;
+      font:inherit;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      cursor:pointer;
+      padding:0;
+    }
+    .pill-btn:hover{filter:brightness(1.08)}
+
+    main{
+      flex:1 0 auto;
+      display:flex;
+      justify-content:center;
+      padding:12px 16px 18px;
+    }
+    .layout{
+      width:100%;
+      max-width:1200px;
+      display:flex;
+      justify-content:center;
+    }
+    .container{
+      width:100%;
+      border-radius:var(--radius);
+      border:1px solid rgba(148,163,184,.6);
+      box-shadow:0 24px 60px rgba(15,23,42,.9);
+      background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
+      padding:18px;
+    }
+
+    /* Topbox (padrão) */
+    .topbox{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:2px solid rgba(34,197,94,.45);
+      background:linear-gradient(120deg, rgba(2,6,23,.78), rgba(2,6,23,.35));
+      box-shadow:0 18px 60px rgba(0,0,0,.35);
+      flex-wrap:wrap;
+    }
+    .topbox-left .title{
+      font-size:18px;
+      font-weight:900;
+      margin-bottom:4px;
+    }
+    .user-label{
+      font-size:11px;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:rgba(156,163,175,.92);
+      margin-bottom:2px;
+      font-weight:800;
+    }
+    .user-values{
+      font-size:12px;
+      color:#cfd8ff;
+      line-height:1.25;
+      font-weight:700;
+    }
+    .topbox-center{
+      flex:1 1 240px;
+      min-width:240px;
+      text-align:center;
+      padding:0 10px;
+    }
+    .code-line{
+      font-size:20px;
+      font-weight:900;
+      letter-spacing:.4px;
+      color:rgba(229,231,235,.98);
+    }
+    .sub-line{
+      margin-top:4px;
+      font-size:16px;
+      color:rgba(229,231,235,.92);
+      opacity:.95;
+    }
+
+    /* Stepper */
+    .stepper-wrap{display:flex; align-items:center; justify-content:flex-end; flex:0 0 auto;}
+    .stepper{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:6px 8px;
+      border-radius:999px;
+      background:rgba(2,6,23,.35);
+      border:1px solid rgba(255,255,255,.06);
+      overflow:auto;
+      max-width:100%;
+    }
+    .dot{
+      width:24px;height:24px;border-radius:999px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:11px; font-weight:900;
+      background:#0b1220;
+      color:#cbd5e1;
+      border:1px solid rgba(148,163,184,.25);
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
+      flex:0 0 auto;
+    }
+    .dot.active{
+      background:linear-gradient(135deg,#22c55e,#16a34a);
+      color:#020617;
+      border-color:rgba(34,197,94,.6);
+      box-shadow:0 14px 34px rgba(22,163,74,.45);
+    }
+    .line{
+      width:56px;height:3px;border-radius:999px;
+      background:rgba(148,163,184,.18);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+      flex:0 0 auto;
+    }
+    .line.active{
+      background:linear-gradient(90deg,#22c55e,#16a34a);
+      box-shadow:0 10px 24px rgba(22,163,74,.35);
+    }
+
+    .hint{
+      margin:10px 2px 10px;
+      font-size:14px;
+      color:rgba(231,236,255,.92);
+      opacity:.95;
+      line-height:1.35;
+      text-shadow:0 2px 10px rgba(0,0,0,.35);
+    }
+
+    .card{
+      margin-top:10px;
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,.35);
+      background:rgba(2,6,23,.55);
+      padding:14px;
+      display:flex;
+      flex-direction:column;
+      min-height:280px;
+      box-shadow:0 18px 48px rgba(0,0,0,.22);
+  backdrop-filter: none;
+}
+
+    label{
+      display:block;
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+      color:#9ca3af;
+      margin-bottom:6px;
+      font-weight:900;
+    }
+    .req-star{
+      color:#fbbf24;
+      font-weight:900;
+      text-shadow:0 0 10px rgba(251,191,36,.35);
+      margin-left:2px;
+    }
+    input{
+      width:100%;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid #111827;
+      background:#020617;
+      color:var(--text);
+      font-size:14px;
+      outline:none;
+      transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+    }
+    input:focus{
+      border-color:var(--blue);
+      box-shadow:0 0 0 1px rgba(59,130,246,.95), 0 0 18px rgba(59,130,246,.40), 0 0 46px rgba(29,78,216,.25);
+    }
+    .field-help{
+      margin-top:8px;
+      min-height:14px;
+      font-size:12px;
+      color:#94a3b8;
+    }
+    .field-help.ok{color:#86efac; font-weight:800;}
+    .field-help.err{color:#fca5a5; font-weight:900;}
+
+    /* Efeito premium: vermelho + tremor */
+    @keyframes shakeX{
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-10px)}
+      40%{transform:translateX(10px)}
+      60%{transform:translateX(-8px)}
+      80%{transform:translateX(8px)}
+    }
+    .input-error{
+      border:2px solid rgba(239,68,68,.95) !important;
+      border-color:rgba(239,68,68,.95) !important;
+      box-shadow:0 0 0 1px rgba(239,68,68,.95), 0 0 18px rgba(239,68,68,.35), 0 0 46px rgba(239,68,68,.25) !important;
+      animation:shakeX .38s ease-in-out;
+    }
+
+    .actions{
+      margin-top:auto;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      padding-top:14px;
+    }
+    .actions-left{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-start;
+    }
+    .actions-right{
+      margin-left:auto;
+      display:flex;
+      justify-content:flex-end;
+    }
+
+    .btn{
+      border:none;
+      border-radius:999px;
+      padding:10px 16px;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      font-weight:900;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      min-width:220px;
+      transition: transform .22s cubic-bezier(.16,1,.3,1),
+                  box-shadow .22s cubic-bezier(.16,1,.3,1),
+                  filter .22s cubic-bezier(.16,1,.3,1);
+      will-change: transform;
+    }
+
+/* =========================================================
+   TRANSIÇÃO DE ENTRADA — estilo slide (menu → solicitação)
+   ========================================================= */
+body { opacity: 0; }
+@keyframes imparEnter {
+  0% { opacity:0; transform: translateY(34px) scale(.97); filter: blur(10px); }
+  100% { opacity:1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  body { opacity: 1; }
+  body.impar-enter { animation:none; }
+}
+
+    .btn-primary{
+      background:linear-gradient(135deg,#22c55e,#16a34a);
+      color:#020617;
+      box-shadow:0 10px 30px rgba(22,163,74,.6);
+    }
+    .btn-secondary{
+      background:#111827;
+      color:#fff;
+      border:1px solid #374151;
+    }
+
+
+/* ===== Botões verdes — hover/focus premium (zoom + brilho) ===== */
+.btn-primary{
+  transition: transform .22s cubic-bezier(.16,1,.3,1),
+              box-shadow .22s cubic-bezier(.16,1,.3,1),
+              filter .22s cubic-bezier(.16,1,.3,1);
+  will-change: transform;
+}
+.btn-primary:hover{
+  transform: translateY(-1px) scale(1.035);
+  filter: saturate(1.18) brightness(1.08);
+  box-shadow:
+    0 0 0 1px rgba(34,197,94,.95),
+    0 0 22px rgba(34,197,94,.55),
+    0 18px 45px rgba(22,163,74,.55);
+}
+.btn-primary:active{
+  transform: translateY(0) scale(.99);
+  filter: saturate(1.08) brightness(1.03);
+}
+.btn-primary:focus-visible{
+  outline:none;
+  transform: translateY(-1px) scale(1.035);
+  box-shadow:
+    0 0 0 2px rgba(2,6,23,.90),
+    0 0 0 4px rgba(34,197,94,.75),
+    0 0 26px rgba(34,197,94,.55);
+}
+    .btn-primary.is-loading,
+    .btn-secondary.is-loading{
+      pointer-events:none;
+      opacity:.92;
+      filter:saturate(1.02) brightness(1.01);
+    }
+    .mini-spinner{
+      width:14px;height:14px;
+      border-radius:999px;
+      border:2px solid rgba(2,6,23,.35);
+      border-top-color:rgba(2,6,23,.85);
+      display:inline-block;
+      animation:spin .8s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+.pill-btn{
+  transition: transform .2s cubic-bezier(.16,1,.3,1), box-shadow .2s cubic-bezier(.16,1,.3,1);
+}
+.pill-btn:hover{ transform: translateY(-1px) scale(1.02); box-shadow: 0 12px 28px rgba(0,0,0,.28); }
+.pill-btn:focus-visible{ outline:none; box-shadow: 0 0 0 2px rgba(2,6,23,.9), 0 0 0 4px rgba(47,123,255,.55); }
+
+    .arrow{ display:inline-block; font-weight:900; }
+    .arrow-left{ transform: rotate(180deg); }
+
+
+    /* Panes */
+    .step-pane{display:none;}
+    .step-pane.active{display:block;}
+    @keyframes paneIn{from{opacity:0; transform:translateY(10px) scale(.99);} to{opacity:1; transform:translateY(0) scale(1);}}
+    .pane-in{animation:paneIn .22s ease-out both;}
+
+    /* Placeholder */
+    .coming{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      gap:10px;
+      min-height:220px;
+      padding:10px;
+    }
+    .coming .big{
+      font-size:18px;
+      font-weight:1000;
+      letter-spacing:.02em;
+    }
+    .coming .small{
+      font-size:13px;
+      color:rgba(229,231,235,.82);
+      max-width:70ch;
+      line-height:1.35;
+    }
+
+    footer{
+      margin-top:auto;
+      background:#020617;
+      color:#9ca3af;
+      padding:8px 12px;
+      font-size:10px;
+    }
+    .rodape-inner{
+      max-width:1200px;
+      margin:0 auto;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    @media (max-width: 900px){
+      .topbox-center{text-align:left}
+      .btn{width:100%; min-width:unset;}
+      input{font-size:16px} /* evita zoom no iPhone */
+      .line{width:28px}
+    }
+  
+    .btn:focus{
+      outline:none;
+      box-shadow:
+        0 0 0 2px rgba(2,6,23,.90),
+        0 0 0 4px rgba(34,197,94,.80),
+        0 0 28px rgba(34,197,94,.70),
+        0 22px 55px rgba(22,163,74,.65) !important;
+    }
+
+
+    /* Etapa 3 – grid do miolo (sem mexer no layout geral) */
+    .grid24{
+      display:grid;
+      grid-template-columns: repeat(24, minmax(0, 1fr));
+      gap:14px;
+      align-items:start;
+    }
+    .grid24 > div{min-width:0;}
+    .c12{grid-column: span 12;}
+    .c8{grid-column: span 8;}
+    .c6{grid-column: span 6;}
+    .c5{grid-column: span 5;}
+    .c4{grid-column: span 4;}
+    .c3{grid-column: span 3;}
+    .c2{grid-column: span 2;}
+
+    @media (max-width: 900px){
+      .grid24{grid-template-columns: 1fr; gap:12px;}
+      .c12,.c8,.c6,.c5,.c4,.c3,.c2{grid-column: 1 / -1;}
+    }
+
+
+    /* Campos preenchidos automaticamente via CEP */
+    input[data-autofill="1"]{
+      background: rgba(2,6,23,.72);
+      border-color: rgba(34,197,94,.22);
+      box-shadow: inset 0 0 0 1px rgba(34,197,94,.18);
+      color: rgba(229,231,235,.92);
+    }
+    input[data-autofill="1"][data-auto-set="1"]{
+      background: rgba(16,185,129,.10);
+      border-color: rgba(16,185,129,.55);
+      box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 0 18px rgba(16,185,129,.18);
+    }
+
+    /* Overlay spinner (Atualizando endereço...) */
+    .overlay-loading{
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,.55);
+      backdrop-filter: blur(6px);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index: 9999;
+      padding: 16px;
+    }
+    .overlay-loading.show{display:flex;}
+    .overlay-card{
+      width: min(520px, 92vw);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,.35);
+      background: rgba(2,6,23,.78);
+      box-shadow: 0 24px 70px rgba(0,0,0,.55);
+      padding: 18px 18px 16px;
+      text-align:center;
+    }
+    .overlay-title{
+      font-size: 14px;
+      font-weight: 1000;
+      letter-spacing: .10em;
+      text-transform: uppercase;
+      color: rgba(231,236,255,.95);
+      margin-top: 10px;
+    }
+    .overlay-sub{
+      font-size: 13px;
+      color: rgba(229,231,235,.82);
+      margin-top: 8px;
+    }
+    .spinner-lg{
+      width: 54px;
+      height: 54px;
+      border-radius: 999px;
+      border: 4px solid rgba(148,163,184,.25);
+      border-top-color: rgba(34,197,94,.95);
+      animation: spin .9s linear infinite;
+      margin: 0 auto;
+      box-shadow: 0 0 0 1px rgba(34,197,94,.18), 0 0 26px rgba(34,197,94,.20);
+    }
+
+
+    textarea{
+      width:100%;
+      resize: vertical;
+      padding: 14px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,.22);
+      background: rgba(2,6,23,.55);
+      color: rgba(231,236,255,.92);
+      outline: none;
+    }
+    textarea::placeholder{color: rgba(148,163,184,.65);}
+    textarea:focus{
+      border-color:var(--blue);
+      box-shadow:0 0 0 1px rgba(59,130,246,.95), 0 0 18px rgba(59,130,246,.40), 0 0 46px rgba(29,78,216,.25);
+    }
+
+
+    /* Etapa 5 - data picker ícone e preview de logo */
+    input[type="date"]{
+      padding-right: 42px;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator{
+      opacity: .9;
+      cursor: pointer;
+      filter: invert(1);
+    }
+    .hint{
+      font-size: 12px;
+      color: rgba(229,231,235,.72);
+      margin-top: 6px;
+    }
+    .logo-preview{
+      position: relative;
+      width: 100%;
+      height: 54px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,.28);
+      background: rgba(2,6,23,.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .logo-preview img{
+      max-height: 42px;
+      max-width: 92%;
+      display: none;
+      filter: drop-shadow(0 8px 14px rgba(0,0,0,.35));
+    }
+    .logo-empty{
+      font-size: 12px;
+      color: rgba(229,231,235,.65);
+    }
+
+
+#step5 textarea:focus,
+#step5 input:focus{
+  outline:none;
+  border-color: rgba(34,197,94,.85);
+  box-shadow:0 0 0 2px rgba(2,6,23,.90),0 0 0 4px rgba(34,197,94,.80),0 0 28px rgba(34,197,94,.65),0 22px 55px rgba(22,163,74,.55);
+}
+
+/* ===== Modal ÍMPAR ===== */
+.impar-modal{position:fixed; inset:0; display:none; z-index:9999;}
+.impar-modal[aria-hidden="false"]{display:block;}
+.impar-modal-backdrop{position:absolute; inset:0; background:rgba(0,0,0,.55); backdrop-filter: blur(6px);}
+.impar-modal-card{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:min(720px, calc(100% - 32px));
+  border-radius:22px;
+  border:1px solid rgba(148,163,184,.22);
+  background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,.14), transparent 55%),
+              radial-gradient(900px 500px at 90% 20%, rgba(34,197,94,.12), transparent 55%),
+              rgba(2,6,23,.92);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55);
+  padding:22px 22px 18px;
+}
+.impar-modal-head{display:flex; gap:14px; align-items:flex-start; padding-bottom:10px;}
+.impar-modal-icon{
+  width:46px; height:46px; border-radius:14px;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(59,130,246,.15);
+  border:1px solid rgba(59,130,246,.35);
+  box-shadow: 0 0 24px rgba(59,130,246,.25);
+  font-size:22px;
+}
+.impar-modal-title{font-size:22px; font-weight:800; letter-spacing:.2px; color:rgba(255,255,255,.92);}
+.impar-modal-subtitle{margin-top:4px; font-size:13px; color:rgba(229,231,235,.72);}
+.impar-modal-footer{display:flex; justify-content:flex-end; padding-top:10px;}
+.impar-modal-loading{
+  position:absolute; inset:0; border-radius:22px;
+  background:rgba(2,6,23,.82);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+}
+.impar-modal-loading-text{color:rgba(229,231,235,.85); font-size:13px;}
+.impar-modal-body{padding:8px 0 0;}
+.impar-modal-message{color:rgba(229,231,235,.88); font-size:14px; line-height:1.35;}
+
+
+/* ===== Override: foco azul brilhante (garantia) ===== */
+button:focus, .btn:focus, .btn:focus-visible,
+input:focus, textarea:focus, select:focus,
+input:focus-visible, textarea:focus-visible, select:focus-visible{
+  outline:none !important;
+  border-color: rgba(59,130,246,.95) !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 0 18px rgba(59,130,246,.45) !important;
+}
+
+
+    /* =========================================================
+       SWEETALERT2 — Tema ÍMPAR Premium (igual Solicitação)
+       ========================================================= */
+    .impar-swal{
+      background: rgba(2,6,23,.92) !important;
+      color: #e5e7eb !important;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      border-radius: 18px !important;
+      box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
+      backdrop-filter: blur(14px);
+    }
+    .impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800; }
+    .impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
+    .impar-swal-confirm, .impar-swal-cancel{
+      border:0 !important;
+      border-radius:12px !important;
+      padding:10px 16px !important;
+      font-weight:900 !important;
+      letter-spacing:.3px !important;
+      cursor:pointer !important;
+      box-shadow:none !important;
+    }
+    .impar-swal-confirm{
+      background: linear-gradient(135deg,#22c55e,#16a34a) !important;
+      color:#020617 !important;
+    }
+    .impar-swal-cancel{
+      background: rgba(148,163,184,.14) !important;
+      color:#e5e7eb !important;
+    }
+
+    /* =========================================================
+       PAGE LOADER — padrão ERP (spinner pequeno + texto)
+       ========================================================= */
+    #pageLoader{
+      position:fixed; inset:0; z-index:99999;
+      display:flex; align-items:center; justify-content:center;
+      background: rgba(2,6,23,.55);
+  backdrop-filter: none;
+}
+    #pageLoader.hidden{ display:none; }
+    #pageLoader .loader-card{
+      width:min(720px, 92vw);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(2,6,23,.78);
+      box-shadow: 0 30px 90px rgba(0,0,0,.55);
+      padding: 18px 18px;
+      display:flex; gap:14px; align-items:center;
+    }
+    #pageLoader .loader-spin{
+      width:22px; height:22px; border-radius:999px;
+      border: 2px solid rgba(148,163,184,.35);
+      border-top-color: rgba(226,232,240,.95);
+      animation: imparSpin .85s linear infinite;
+      flex: 0 0 auto;
+    }
+    #pageLoader .loader-title{ font-weight:900; letter-spacing:.3px; }
+    #pageLoader .loader-sub{ font-size:12px; color: rgba(226,232,240,.78); margin-top:2px; }
+    @keyframes imparSpin { to { transform: rotate(360deg); } }
+
+/* ===== ÍMPAR Premium: Overlay Loading ===== */
+.impar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: radial-gradient(1200px 600px at 50% 40%, rgba(15, 118, 110, .18), rgba(0,0,0,.70));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+opacity: 0;
+  transition: opacity .22s ease;
+}
+
+.impar-overlay.is-open {
+  display: flex;
+  opacity: 1;
+}
+
+.impar-loading-card {
+  width: min(560px, 92vw);
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  background: linear-gradient(180deg, rgba(2,6,23,.82), rgba(2,6,23,.58));
+  box-shadow: 0 28px 90px rgba(0,0,0,.55);
+  padding: 16px 16px 14px 16px;
+  transform: translateY(10px) scale(.985);
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+
+.impar-overlay.is-open .impar-loading-card {
+  transform: translateY(0) scale(1);
+}
+
+.impar-loading-top {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.impar-spinner {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 3px solid rgba(148,163,184,.28);
+  border-top-color: rgba(16,185,129,.95);
+  border-right-color: rgba(59,130,246,.85);
+  animation: imparSpin .85s linear infinite;
+  box-shadow: 0 0 18px rgba(16,185,129,.18);
+}
+
+@keyframes imparSpin {
+  to { transform: rotate(360deg); }
+}
+
+.impar-loading-title {
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-weight: 800;
+  letter-spacing: .2px;
+  color: rgba(226,232,240,.96);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.impar-loading-sub {
+  margin-top: 4px;
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  color: rgba(226,232,240,.78);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.impar-loading-bar {
+  margin-top: 12px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148,163,184,.15);
+  overflow: hidden;
+  position: relative;
+}
+
+.impar-loading-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, rgba(59,130,246,.0), rgba(59,130,246,.45), rgba(16,185,129,.55), rgba(16,185,129,0));
+  animation: imparShimmer 1.1s ease-in-out infinite;
+}
+
+@keyframes imparShimmer {
+  0% { transform: translateX(-60%); opacity: .6; }
+  50% { opacity: 1; }
+  100% { transform: translateX(170%); opacity: .6; }
+}
+
+/* deixa os botões “travados” durante loading */
+.impar-disabled {
+  pointer-events: none !important;
+  opacity: .6 !important;
+  filter: saturate(.75);
+  transition: opacity .2s ease;
+}
+
+/* ===== Modal JSON Picker (ÍMPAR Premium) ===== */
+#jsonPickerOverlay{
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: radial-gradient(1200px 700px at 50% 40%, rgba(15,118,110,.16), rgba(0,0,0,.72));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+opacity: 0;
+  transition: opacity .18s ease;
+}
+#jsonPickerOverlay.is-open{
+  display:flex;
+  opacity: 1;
+}
+
+.impar-modal{
+  width: min(980px, 96vw);
+  max-height: 86vh;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(148,163,184,.28);
+  background: linear-gradient(180deg, rgba(2,6,23,.88), rgba(2,6,23,.62));
+  box-shadow: 0 28px 90px rgba(0,0,0,.58);
+  transform: translateY(10px) scale(.985);
+  transition: transform .22s ease, box-shadow .22s ease;
+}
+#jsonPickerOverlay.is-open .impar-modal{
+  transform: translateY(0) scale(1);
+}
+
+.impar-modal__header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 14px 14px 10px 14px;
+  border-bottom: 1px solid rgba(148,163,184,.18);
+}
+.impar-modal__title{
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .2px;
+  color: rgba(226,232,240,.96);
+}
+.impar-modal__sub{
+  margin-top: 2px;
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-size: 13px;
+  color: rgba(226,232,240,.76);
+}
+
+.impar-modal__actions{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+}
+
+.impar-btn{
+  border: 1px solid rgba(148,163,184,.28);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 800;
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  transition: transform .12s ease, filter .12s ease, box-shadow .18s ease, opacity .12s ease;
+  user-select: none;
+}
+.impar-btn:active{ transform: translateY(1px) scale(.99); }
+.impar-btn--primary{
+  background: linear-gradient(135deg, #0b1e4a, #0f766e);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(15,118,110,.18);
+}
+.impar-btn--ghost{
+  background: rgba(2,6,23,.35);
+  color: rgba(226,232,240,.92);
+}
+.impar-btn:hover{ filter: brightness(1.06); }
+
+.impar-modal__body{
+  padding: 12px 14px 14px 14px;
+  overflow: auto;
+  max-height: 74vh;
+}
+
+.impar-toolbar{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+  margin-bottom: 10px;
+}
+.impar-input{
+  flex: 1;
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148,163,184,.28);
+  background: rgba(2,6,23,.35);
+  color: rgba(226,232,240,.92);
+  outline: none;
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.impar-input:focus{
+  border-color: rgba(16,185,129,.55);
+  box-shadow: 0 0 0 3px rgba(16,185,129,.12);
+}
+
+.impar-status{
+  font-family: Candara, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-size: 13px;
+  color: rgba(226,232,240,.78);
+  margin: 8px 0 10px 0;
+}
+
+.impar-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.impar-card{
+  text-align:left;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148,163,184,.25);
+  background: linear-gradient(180deg, rgba(2,6,23,.40), rgba(2,6,23,.28));
+  color: rgba(226,232,240,.92);
+  cursor:pointer;
+  transition: transform .14s ease, border-color .18s ease, box-shadow .18s ease, filter .14s ease;
+}
+.impar-card:hover{
+  transform: translateY(-2px);
+  border-color: rgba(16,185,129,.35);
+  box-shadow: 0 16px 34px rgba(0,0,0,.35);
+  filter: brightness(1.03);
+}
+.impar-card__code{
+  font-weight: 900;
+  font-size: 14px;
+}
+.impar-card__obra{
+  margin-top: 4px;
+  font-size: 13px;
+  opacity: .92;
+}
+.impar-card__serv{
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: .72;
+  line-height: 1.2;
+}
+   
+    
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <div class="logo-orb" aria-hidden="true"></div>
+      <div class="brand-text">
+        <div class="brand-kicker">PLATAFORMA</div>
+        <div class="brand-title">ERP ÍMPAR</div>
+        <div class="brand-sub">Gerador de Documentos</div>
+      </div>
+    </div>
+    <div class="tag-top">
+      <button class="pill-btn" id="btnVoltarMenu" type="button"><span>🏠</span> Menu principal</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="layout">
+    <div class="container">
+
+      <!-- STEP 1 -->
+      <section class="step-pane active pane-in" id="step1" data-step="1">
+        <div class="topbox">
+          <div class="topbox-left">
+            <div class="title">Gerador de Documentos - ÍMPAR</div>
+            <div class="user-label">Usuário</div>
+            <div class="user-values">
+              <strong id="userNome">Usuário</strong><br/>
+              <span id="userEmail">email@imparsistemas.com</span>
+            </div>
+          </div>
+
+          <div class="topbox-center">
+            <div class="code-line">Etapa 1</div>
+            <div class="sub-line">Identificação do projeto</div>
+          </div>
+
+          <div class="stepper-wrap">
+            <div class="stepper" aria-label="Etapas">
+              <div class="dot active" id="dot1">1</div><div class="line" id="line12"></div>
+              <div class="dot" id="dot2">2</div><div class="line" id="line23"></div>
+              <div class="dot" id="dot3">3</div><div class="line" id="line34"></div>
+              <div class="dot" id="dot4">4</div><div class="line" id="line45"></div>
+              <div class="dot" id="dot5">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Informar o <b>código do projeto</b> no campo abaixo. Esse código será a chave para busca de documentos e utilizado para outras funcionalidades importantes na empresa.
+        </div>
+
+        <div class="card">
+          <form id="formEtapa1" autocomplete="off">
+            <div>
+              <label for="codigoProjeto">CÓDIGO <span class="req-star">*</span></label>
+              <input id="codigoProjeto" type="text" inputmode="text" maxlength="20" placeholder="Digite o código do projeto (ex.: 036)"/>
+              <div class="field-help" id="codigoHelp"></div>
+            </div>
+
+            <div class="actions">
+              <div class="actions-left">
+                <button class="btn btn-primary" id="btnAtualizar" type="button">ATUALIZAR DOCUMENTOS</button>
+                <button class="btn btn-primary" id="btnGerar" type="button">GERAR DOCUMENTOS</button>
+              </div>
+              <div class="actions-right">
+                <button class="btn btn-primary" id="btnContinuar1" type="button">
+                  <span>CONTINUAR</span>
+                  <span class="arrow-right">➜</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      
+      <!-- STEP 2 -->
+      <section class="step-pane" id="step2" data-step="2">
+        <div class="topbox">
+          <div class="topbox-left">
+            <div class="title">Gerador de Documentos - ÍMPAR</div>
+            <div class="user-label">Usuário</div>
+            <div class="user-values">
+              <strong id="userNome2">Usuário</strong><br/>
+              <span id="userEmail2">email@imparsistemas.com</span>
+            </div>
+          </div>
+
+          <div class="topbox-center">
+            <div class="code-line">Código: <span id="codigoResumo">AC00022</span></div>
+            <div class="sub-line">Etapa 2 — Informações da Obra</div>
+          </div>
+
+          <div class="stepper-wrap">
+            <div class="stepper" aria-label="Etapas">
+              <div class="dot active">1</div><div class="line active"></div>
+              <div class="dot active">2</div><div class="line"></div>
+              <div class="dot">3</div><div class="line"></div>
+              <div class="dot">4</div><div class="line"></div>
+              <div class="dot">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Preencha as informações básicas da obra. Campos com <b>*</b> são obrigatórios.
+          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
+        </div>
+
+        <div class="card">
+          <form id="formEtapa2" autocomplete="off">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+              <div>
+                <label for="nomeObra">NOME DA OBRA <span class="req-star">*</span></label>
+                <input id="nomeObra" type="text" placeholder="Ex.: Residencial João Lohn"/>
+              </div>
+
+              <div>
+                <label for="projetista">PROJETISTA</label>
+                <input id="projetista" type="text" placeholder="Ex.: Nome do projetista (opcional)"/>
+              </div>
+
+              <div style="grid-column: 1 / -1;">
+                <label for="servico">SERVIÇO <span class="req-star">*</span></label>
+                <input id="servico" type="text" placeholder="Ex.: Instalação de HVAC / Manutenção / Retrofit"/>
+              </div>
+
+              <div style="grid-column: 1 / -1;">
+                <label for="endereco">ENDEREÇO DA OBRA <span class="req-star">*</span></label>
+                <input id="endereco" type="text" placeholder="Rua, número, bairro, cidade/UF"/>
+              </div>
+            </div>
+
+            <div class="actions">
+              <div class="actions-left">
+                <button class="btn btn-primary" id="btnVoltar2" type="button">
+                  <span class="arrow arrow-left">➜</span>
+                  <span>VOLTAR</span>
+                </button>
+              </div>
+              <div class="actions-right">
+                <button class="btn btn-primary" id="btnContinuar2" type="button">
+                  <span>CONTINUAR</span>
+                  <span class="arrow">➜</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- STEP 3 (placeholder) -->
+      
+     <section class="step-pane" id="step3" data-step="3">
+        <div class="topbox">
+          <div class="topbox-left">
+            <div class="title">Gerador de Documentos - ÍMPAR</div>
+            <div class="user-label">Usuário</div>
+            <div class="user-values">
+              <strong id="userNome3">Usuário</strong><br/>
+              <span id="userEmail3">email@imparsistemas.com</span>
+            </div>
+          </div>
+
+          <div class="topbox-center">
+            <div class="code-line">Código: <span id="codigoResumo3"></span></div>
+            <div class="sub-line">Etapa 3 — Dados do Contratante</div>
+          </div>
+
+          <div class="stepper-wrap">
+            <div class="stepper" aria-label="Etapas">
+              <div class="dot active">1</div><div class="line active"></div>
+              <div class="dot active">2</div><div class="line active"></div>
+              <div class="dot active">3</div><div class="line"></div>
+              <div class="dot">4</div><div class="line"></div>
+              <div class="dot">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Preencha os dados do contratante. Campos com <b>*</b> são obrigatórios.
+          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
+        </div>
+
+        <div class="card">
+          <form id="formEtapa3" autocomplete="off">
+            <div class="grid24">
+              <!-- Linha 1 -->
+              <div class="c12">
+                <label for="nomeContratante">NOME <span class="req-star">*</span></label>
+                <input id="nomeContratante" type="text" placeholder="Ex.: João da Silva / Empresa LTDA"/>
+              </div>
+              <div class="c8">
+                <label for="contatoContratante">CONTATO <span class="req-star">*</span></label>
+                <input id="contatoContratante" type="text" placeholder="Ex.: Responsável / Referência"/>
+              </div>
+              <div class="c4">
+                <label for="cpfContatoContratante">CPF DO CONTATO <span class="req-star">*</span></label>
+                <input id="cpfContatoContratante" type="text" placeholder="000.000.000-00"/>
+              </div>
+
+              <!-- Linha 2 -->
+              <div class="c5">
+                <label for="telefoneContratante">TELEFONE <span class="req-star">*</span></label>
+                <input id="telefoneContratante" type="text" placeholder="(00) 00000-0000"/>
+              </div>
+              <div class="c3">
+                <label for="cepContratante">CEP <span class="req-star">*</span></label>
+                <input id="cepContratante" type="text" placeholder="00000-000"/>
+              </div>
+              <div class="c4">
+                <label for="cpfCnpjContratante">CPF/CNPJ <span class="req-star">*</span></label>
+                <input id="cpfCnpjContratante" type="text" placeholder="Somente números"/>
+              </div>
+              <div class="c12">
+                <label for="logradouroContratante">LOGRADOURO <span class="req-star">*</span></label>
+                <input id="logradouroContratante" type="text" placeholder="Rua / Av. + Nome"/ readonly data-autofill="1">
+              </div>
+
+              <!-- Linha 3 -->
+              <div class="c2">
+                <label for="numeroContratante">Nº <span class="req-star">*</span></label>
+                <input id="numeroContratante" type="text" placeholder="123"/>
+              </div>
+              <div class="c5">
+                <label for="bairroContratante">BAIRRO <span class="req-star">*</span></label>
+                <input id="bairroContratante" type="text" placeholder="Ex.: Centro"/ readonly data-autofill="1">
+              </div>
+              <div class="c5">
+                <label for="cidadeContratante">CIDADE <span class="req-star">*</span></label>
+                <input id="cidadeContratante" type="text" placeholder="Ex.: Florianópolis"/ readonly data-autofill="1">
+              </div>
+              <div class="c2">
+                <label for="ufContratante">UF <span class="req-star">*</span></label>
+                <input id="ufContratante" type="text" placeholder="SC" maxlength="2"/ readonly data-autofill="1">
+              </div>
+              <div class="c4">
+                <label for="complementoContratante">COMPLEMENTO</label>
+                <input id="complementoContratante" type="text" placeholder="Apto / Sala (opcional)"/>
+              </div>
+              <div class="c6">
+                <label for="emailContratante">E-MAIL <span class="req-star">*</span></label>
+                <input id="emailContratante" type="email" placeholder="email@dominio.com"/>
+              </div>
+            </div>
+
+            <div class="actions">
+              <div class="actions-left">
+                <button class="btn btn-primary" id="btnVoltar3" type="button">
+                  <span class="arrow arrow-left">➜</span>
+                  <span>VOLTAR</span>
+                </button>
+              </div>
+              <div class="actions-right">
+                <button class="btn btn-primary" id="btnContinuar3" type="button">
+                  <span>CONTINUAR</span>
+                  <span class="arrow arrow-right">➜</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- STEP 4 (placeholder) -->
+      
+     <section class="step-pane" id="step4" data-step="4">
+        <div class="topbox">
+          <div class="topbox-left">
+            <div class="title">Gerador de Documentos - ÍMPAR</div>
+            <div class="user-label">Usuário</div>
+            <div class="user-values">
+              <strong id="userNome4">Usuário</strong><br/>
+              <span id="userEmail4">email@imparsistemas.com</span>
+            </div>
+          </div>
+
+          <div class="topbox-center">
+            <div class="code-line">Código: <span id="codigoResumo4"></span></div>
+            <div class="sub-line">Etapa 4 — Dados do Contratada</div>
+          </div>
+
+          <div class="stepper-wrap">
+            <div class="stepper" aria-label="Etapas">
+              <div class="dot active">1</div><div class="line active"></div>
+              <div class="dot active">2</div><div class="line active"></div>
+              <div class="dot active">3</div><div class="line active"></div>
+              <div class="dot active">4</div><div class="line"></div>
+              <div class="dot">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Preencha os dados do contratada. Campos com <b>*</b> são obrigatórios.
+          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
+        </div>
+
+        <div class="card">
+          <form id="formEtapa4" autocomplete="off">
+            <div class="grid24">
+              <!-- Linha 1 -->
+              <div class="c12">
+                <label for="nomeContratada">NOME <span class="req-star">*</span></label>
+                <input id="nomeContratada" type="text" placeholder="Ex.: João da Silva / Empresa LTDA"/>
+              </div>
+              <div class="c8">
+                <label for="contatoContratada">CONTATO <span class="req-star">*</span></label>
+                <input id="contatoContratada" type="text" placeholder="Ex.: Responsável / Referência"/>
+              </div>
+              <div class="c4">
+                <label for="cpfContatoContratada">CPF DO CONTATO <span class="req-star">*</span></label>
+                <input id="cpfContatoContratada" type="text" placeholder="000.000.000-00"/>
+              </div>
+
+              <!-- Linha 2 -->
+              <div class="c5">
+                <label for="telefoneContratada">TELEFONE <span class="req-star">*</span></label>
+                <input id="telefoneContratada" type="text" placeholder="(00) 00000-0000"/>
+              </div>
+              <div class="c3">
+                <label for="cepContratada">CEP <span class="req-star">*</span></label>
+                <input id="cepContratada" type="text" placeholder="00000-000"/>
+              </div>
+              <div class="c4">
+                <label for="cpfCnpjContratada">CPF/CNPJ <span class="req-star">*</span></label>
+                <input id="cpfCnpjContratada" type="text" placeholder="Somente números"/>
+              </div>
+              <div class="c12">
+                <label for="logradouroContratada">LOGRADOURO <span class="req-star">*</span></label>
+                <input id="logradouroContratada" type="text" placeholder="Rua / Av. + Nome"/ readonly data-autofill="1">
+              </div>
+
+              <!-- Linha 3 -->
+              <div class="c2">
+                <label for="numeroContratada">Nº <span class="req-star">*</span></label>
+                <input id="numeroContratada" type="text" placeholder="123"/>
+              </div>
+              <div class="c5">
+                <label for="bairroContratada">BAIRRO <span class="req-star">*</span></label>
+                <input id="bairroContratada" type="text" placeholder="Ex.: Centro"/ readonly data-autofill="1">
+              </div>
+              <div class="c5">
+                <label for="cidadeContratada">CIDADE <span class="req-star">*</span></label>
+                <input id="cidadeContratada" type="text" placeholder="Ex.: Florianópolis"/ readonly data-autofill="1">
+              </div>
+              <div class="c2">
+                <label for="ufContratada">UF <span class="req-star">*</span></label>
+                <input id="ufContratada" type="text" placeholder="SC" maxlength="2"/ readonly data-autofill="1">
+              </div>
+              <div class="c4">
+                <label for="complementoContratada">COMPLEMENTO</label>
+                <input id="complementoContratada" type="text" placeholder="Apto / Sala (opcional)"/>
+              </div>
+              <div class="c6">
+                <label for="emailContratada">E-MAIL <span class="req-star">*</span></label>
+                <input id="emailContratada" type="email" placeholder="email@dominio.com"/>
+              </div>
+            </div>
+
+            <div class="actions">
+              <div class="actions-left">
+                <button class="btn btn-primary" id="btnVoltar4" type="button">
+                  <span class="arrow arrow-left">➜</span>
+                  <span>VOLTAR</span>
+                </button>
+              </div>
+              <div class="actions-right">
+                <button class="btn btn-primary" id="btnContinuar4" type="button">
+                  <span>CONTINUAR</span>
+                  <span class="arrow arrow-right">➜</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- STEP 5 -->
+     <section class="step-pane" id="step5" data-step="5">
+        <div class="topbox">
+          <div class="topbox-left">
+            <div class="title">Gerador de Documentos - ÍMPAR</div>
+            <div class="user-label">Usuário</div>
+            <div class="user-values">
+              <strong id="userNome5">Usuário</strong><br/>
+              <span id="userEmail5">email@imparsistemas.com</span>
+            </div>
+          </div>
+
+          <div class="topbox-center">
+            <div class="code-line">Código: <span id="codigoResumo5"></span></div>
+            <div class="sub-line">Etapa 5 — Dados finais do documento</div>
+          </div>
+
+
+          <div class="stepper-wrap">
+            <div class="stepper" aria-label="Etapas">
+              <div class="dot active">1</div><div class="line active"></div>
+              <div class="dot active">2</div><div class="line active"></div>
+              <div class="dot active">3</div><div class="line active"></div>
+              <div class="dot active">4</div><div class="line active"></div>
+              <div class="dot active">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Preencha as informações finais do documento. Campos com <b>*</b> são obrigatórios.
+          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
+        </div>
+
+          <form id="formEtapa5" autocomplete="off">
+            <div class="grid24">
+              <!-- Linha 1 -->
+              <div class="c12">
+                <label for="clausulas">CLÁUSULAS E CONDIÇÕES <span class="req-star">*</span></label>
+                <textarea id="clausulas" rows="4" placeholder="Descreva cláusulas e condições"></textarea>
+              </div>
+              <div class="c12">
+                <label for="condPagamento">CONDIÇÕES DE PAGAMENTO <span class="req-star">*</span></label>
+                <textarea id="condPagamento" rows="4" placeholder="Descreva as condições de pagamento"></textarea>
+              </div>
+
+              <!-- Linha 2 -->
+              <div class="c3">
+                <label for="valorContrato">VALOR (R$) <span class="req-star">*</span></label>
+                <input id="valorContrato" type="text" placeholder="R$ 0,00" inputmode="numeric"/>
+              </div>
+              <div class="c12">
+                <label for="valorExtenso">VALOR POR EXTENSO</label>
+                <input id="valorExtenso" type="text" placeholder="(gerado automaticamente)" readonly data-autofill="1"/>
+              </div>
+              <div class="c4">
+                <label for="dataContrato">DATA <span class="req-star">*</span></label>
+                <input id="dataContrato" type="date"/>
+              </div>
+              <div class="c5">
+                <label for="dataExtenso">DATA POR EXTENSO</label>
+                <input id="dataExtenso" type="text" placeholder="(gerado automaticamente)" readonly data-autofill="1"/>
+              </div>
+              <!-- Linha 3 -->
+              <div class="c3">
+                <label for="prazoDias">PRAZO (dias) <span class="req-star">*</span></label>
+                <input id="prazoDias" type="text" placeholder="Ex.: 30" inputmode="numeric"/>
+              </div>
+              <div class="c12">
+                <label for="logoEmpresa">IMPORTE O LOGO DA EMPRESA</label>
+                <input id="logoEmpresa" type="file" accept="image/*"/>
+              </div>
+              <div class="c8">
+                <label>PRÉVIA</label>
+                <div class="logo-preview">
+                  <img id="logoPreview" alt="Prévia da logo" />
+                  <div class="logo-empty" id="logoEmpty">Nenhuma logo importada</div>
+                </div>
+              </div>
+            </div>
+
+          </form>
+
+          <div class="actions">
+            <div class="actions-left">
+              <button class="btn btn-primary" id="btnVoltar5" type="button">
+                <span class="arrow arrow-left">➜</span>
+                <span>VOLTAR</span>
+              </button>
+            </div>
+            <div class="actions-right">
+              <button class="btn btn-primary" id="btnFinalizar" type="button" style="min-width:220px;">
+                <span>FINALIZAR</span>
+                <span class="arrow arrow-right">➜</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="rodape-inner">
+    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
+    <div>v31.0 • validação limpa por etapa</div>
+  </div>
+</footer>
+
+  <div class="overlay-loading" id="overlayLoading" aria-hidden="true">
+    <div class="overlay-card">
+      <div class="spinner-lg" aria-hidden="true"></div>
+      <div class="overlay-title">Atualizando endereço</div>
+      <div class="overlay-sub">Consultando CEP e preenchendo logradouro, bairro, cidade e UF...</div>
+    </div>
+  </div>
+
+
+<script>
+  // SweetAlert2 removido no Rebuild V1 (sem mensagens de validação)
+
+  // Tema do Swal (inline simples, sem depender de CSS externo)
+  
+  // Helpers
+  const $ = (sel, root=document) => root.querySelector(sel);
+
+  let currentStep = 1;
+  let projectCode = "";
+
+  function setStepper(step){
+    // stepper principal (step1) - atualiza dots/lines se quiser
+    // (mantemos simples agora: só step1 ativo)
+  }
+
+  function showStep(step){
+    currentStep = step;
+    document.querySelectorAll(".step-pane").forEach(p => p.classList.remove("active","pane-in"));
+    const pane = document.getElementById("step"+step);
+    if (pane){
+      pane.classList.add("active","pane-in");
+      const r3 = document.getElementById("codigoResumo3");
+      if(r3 && projectCode) r3.textContent = projectCode;
+      window.scrollTo({top:0, behavior:"smooth"});
+    }
+    if (pane){
+      pane.classList.add("active","pane-in");
+      const r4 = document.getElementById("codigoResumo4");
+      if(r4 && projectCode) r4.textContent = projectCode;
+      window.scrollTo({top:0, behavior:"smooth"});
+    }
+    if (pane){
+      pane.classList.add("active","pane-in");
+      const r5 = document.getElementById("codigoResumo5");
+      if(r5 && projectCode) r5.textContent = projectCode;
+      window.scrollTo({top:0, behavior:"smooth"});
+    }
+
+    // Etapa 5 — garante campos derivados sempre atualizados ao entrar na etapa
+    if(step === 5){
+      try{
+        const valor = document.getElementById("valorContrato");
+        const vext  = document.getElementById("valorExtenso");
+        if(valor && vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+      }catch(e){}
+      try{
+        const data = document.getElementById("dataContrato");
+        const dext = document.getElementById("dataExtenso");
+        if(data && dext) dext.value = dateToExtensoPt(data.value);
+      }catch(e){}
+      try{ if(typeof wireStep5Logo === "function") wireStep5Logo(); }catch(e){}
+    }
+
+  
+    // Hook: ao entrar na Etapa 5, garante listeners + sincronização (máscara/por extenso/prévia)
+    if(step===5){
+      try{ wireStep5Logo(); }catch(e){}
+      try{ wireStep5(); }catch(e){}
+    }
+
+}
+
+
+  function clearError(el){
+    if(!el) return;
+    el.classList.remove("input-error");
+  }
+  function markError(el){
+    if(!el) return;
+    el.classList.remove("input-error");
+    // força reflow pra reiniciar animação
+    void el.offsetWidth;
+    el.classList.add("input-error");
+  }
+
+  function normalizeCode(v){
+    return (v||"").trim();
+  }
+
+  function validateStep1(){
+    const input = $("#codigoProjeto");
+    const help = $("#codigoHelp");
+    const raw = normalizeCode(input.value);
+
+    clearError(input);
+    help.textContent = "";
+    help.className = "field-help";
+
+    if(!raw){
+      markError(input);
+      help.textContent = "";
+      help.classList.add("err");
+      input.focus();
+      return false;
+    }
+
+    // regra mínima e segura: pelo menos 2 chars, alfanum + - _
+    const ok = /^[A-Za-z0-9_-]{2,20}$/.test(raw);
+    if(!ok){
+      markError(input);
+      help.textContent = "";
+      help.classList.add("err");
+      input.focus();
+      return false;
+    }
+
+    help.textContent = "";
+    help.classList.add("ok");
+
+    // preenche resumo da etapa 2 (se existir)
+    const resumo = $("#codigoResumo");
+    projectCode = raw;
+    if(resumo) resumo.textContent = raw;
+    const resumo3 = $("#codigoResumo3");
+    if(resumo3) resumo3.textContent = raw;
+    return true;
+    const resumo4 = $("#codigoResumo4");
+    if(resumo4) resumo4.textContent = raw;
+    const resumo5 = $("#codigoResumo5");
+    if(resumo5) resumo5.textContent = raw;
+    return true;
+  }
+
+  function validateStep4(){
+    const requiredIds = [
+      "nomeContratada","contatoContratada","cpfContatoContratada","telefoneContratada","cepContratada",
+      "cpfCnpjContratada","logradouroContratada","numeroContratada","bairroContratada",
+      "cidadeContratada","ufContratada","emailContratada"
+    ];
+    let firstBad = null;
+    requiredIds.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      clearError(el);
+      const v = (el.value||"").trim();
+      if(!v){
+        markError(el);
+        if(!firstBad) firstBad = el;
+      }
+    });
+    if(firstBad){ firstBad.focus(); return false; }
+    
+    // Checagens de formato (sem mensagens)
+    const tel = document.getElementById("telefoneContratada");
+    if(tel){
+      const d = onlyDigits(tel.value);
+      if(d.length < 10 || d.length > 11){ markError(tel); tel.focus(); return false; }
+    }
+
+    const cep = document.getElementById("cepContratada");
+    if(cep){
+      const c = onlyDigits(cep.value);
+      if(c.length !== 8){ markError(cep); cep.focus(); return false; }
+    }
+
+    const doc = document.getElementById("cpfCnpjContratada");
+    const cpfContato = document.getElementById("cpfContatoContratada");
+    if(doc){
+      const d = onlyDigits(doc.value);
+      const ok = (d.length === 11 && isValidCPF(d)) || (d.length === 14 && isValidCNPJ(d));
+      if(!ok){ markError(doc); doc.focus(); return false; }
+
+    if(cpfContato){
+      const d = onlyDigits(cpfContato.value);
+      const ok = (d.length === 11 && isValidCPF(d));
+      if(!ok){ markError(cpfContato); cpfContato.focus(); return false; }
+    }
+    }
+
+    const uf = document.getElementById("ufContratada");
+    if(uf){
+      const u = (uf.value||"").trim();
+      if(u.length !== 2){ markError(uf); uf.focus(); return false; }
+    }
+
+    return true;
+
+  }
+
+
+  function validateStep3(){
+    const requiredIds = [
+      "nomeContratante","contatoContratante","cpfContatoContratante","telefoneContratante","cepContratante",
+      "cpfCnpjContratante","logradouroContratante","numeroContratante","bairroContratante",
+      "cidadeContratante","ufContratante","emailContratante"
+    ];
+    let firstBad = null;
+    requiredIds.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      clearError(el);
+      const v = (el.value||"").trim();
+      if(!v){
+        markError(el);
+        if(!firstBad) firstBad = el;
+      }
+    });
+    if(firstBad){ firstBad.focus(); return false; }
+    
+    // Checagens de formato (sem mensagens)
+    const tel = document.getElementById("telefoneContratante");
+    if(tel){
+      const d = onlyDigits(tel.value);
+      if(d.length < 10 || d.length > 11){ markError(tel); tel.focus(); return false; }
+    }
+
+    const cep = document.getElementById("cepContratante");
+    if(cep){
+      const c = onlyDigits(cep.value);
+      if(c.length !== 8){ markError(cep); cep.focus(); return false; }
+    }
+
+    const doc = document.getElementById("cpfCnpjContratante");
+    const cpfContato = document.getElementById("cpfContatoContratante");
+    if(doc){
+      const d = onlyDigits(doc.value);
+      const ok = (d.length === 11 && isValidCPF(d)) || (d.length === 14 && isValidCNPJ(d));
+      if(!ok){ markError(doc); doc.focus(); return false; }
+
+    if(cpfContato){
+      const d = onlyDigits(cpfContato.value);
+      const ok = (d.length === 11 && isValidCPF(d));
+      if(!ok){ markError(cpfContato); cpfContato.focus(); return false; }
+    }
+    }
+
+    const uf = document.getElementById("ufContratante");
+    if(uf){
+      const u = (uf.value||"").trim();
+      if(u.length !== 2){ markError(uf); uf.focus(); return false; }
+    }
+
+    return true;
+
+  }
+
+  function validateStep2(){
+
+    const requiredIds = ["nomeObra","servico","endereco"];
+    let firstBad = null;
+    requiredIds.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      clearError(el);
+      const v = (el.value||"").trim();
+      if(!v){
+        markError(el);
+        if(!firstBad) firstBad = el;
+      }
+    });
+    if(firstBad){
+      firstBad.focus();
+      return false;
+    }
+    return true;
+
+  }
+
+
+  // =========================
+  // Etapa 3 e 4 — Máscaras/Validações (sem mexer no layout)
+  // =========================
+  const onlyDigits = (s) => (s || "").replace(/\D+/g, "");
+  const setLoading = (on) => {
+    const ov = document.getElementById("overlayLoading");
+    if(!ov) return;
+    ov.classList.toggle("show", !!on);
+    ov.setAttribute("aria-hidden", on ? "false" : "true");
+  };
+
+  function maskTelefone(v){
+    const d = onlyDigits(v).slice(0, 11);
+    if(d.length === 0) return "";
+    if(d.length <= 2) return `(${d}`;
+    if(d.length <= 6) return `(${d.slice(0,2)}) ${d.slice(2)}`;
+    if(d.length <= 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+    return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  }
+
+  function maskCEP(v){
+    const d = onlyDigits(v).slice(0, 8);
+    if(d.length <= 5) return d;
+    return `${d.slice(0,5)}-${d.slice(5)}`;
+  }
+
+  function maskCPF(v){
+    const d = onlyDigits(v).slice(0, 11);
+    if(d.length <= 3) return d;
+    if(d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`;
+    if(d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+    return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+  }
+
+  function maskCNPJ(v){
+    const d = onlyDigits(v).slice(0, 14);
+    if(d.length <= 2) return d;
+    if(d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`;
+    if(d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`;
+    if(d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
+    return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+  }
+
+  function isValidCPF(v){
+    const d = onlyDigits(v);
+    if(d.length !== 11) return false;
+    if(/^(\d)\1{10}$/.test(d)) return false;
+    let sum = 0;
+    for(let i=0;i<9;i++) sum += parseInt(d[i],10) * (10-i);
+    let r = (sum * 10) % 11; if(r === 10) r = 0;
+    if(r !== parseInt(d[9],10)) return false;
+    sum = 0;
+    for(let i=0;i<10;i++) sum += parseInt(d[i],10) * (11-i);
+    r = (sum * 10) % 11; if(r === 10) r = 0;
+    return r === parseInt(d[10],10);
+  }
+
+  function isValidCNPJ(v){
+    const d = onlyDigits(v);
+    if(d.length !== 14) return false;
+    if(/^(\d)\1{13}$/.test(d)) return false;
+    const calc = (base) => {
+      const w = base.length === 12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2];
+      let s = 0;
+      for(let i=0;i<w.length;i++) s += parseInt(base[i],10) * w[i];
+      const mod = s % 11;
+      return mod < 2 ? 0 : 11 - mod;
+    };
+    const d1 = calc(d.slice(0,12));
+    const d2 = calc(d.slice(0,12) + String(d1));
+    return d1 === parseInt(d[12],10) && d2 === parseInt(d[13],10);
+  }
+
+  function applyAutoFilledStyle(autoSet){
+    ["logradouroContratante","bairroContratante","cidadeContratante","ufContratante"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(autoSet) el.setAttribute("data-auto-set","1");
+      else el.removeAttribute("data-auto-set");
+    });
+  }
+
+  function applyAutoFilledStyle4(autoSet){
+    ["logradouroContratada","bairroContratada","cidadeContratada","ufContratada"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(autoSet) el.setAttribute("data-auto-set","1");
+      else el.removeAttribute("data-auto-set");
+    });
+  }
+
+  async function fetchCEPAndFill(){
+    const cepEl = document.getElementById("cepContratante");
+    if(!cepEl) return false;
+    const cep = onlyDigits(cepEl.value);
+    clearError(cepEl);
+    applyAutoFilledStyle(false);
+
+    if(cep.length !== 8){
+      markError(cepEl);
+      return false;
+    }
+
+    setLoading(true);
+    try{
+      const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {cache:"no-store"});
+      if(!resp.ok) throw new Error("CEP request failed");
+      const data = await resp.json();
+      if(data.erro){
+        markError(cepEl);
+        return false;
+      }
+
+      const logEl = document.getElementById("logradouroContratante");
+      const baiEl = document.getElementById("bairroContratante");
+      const cidEl = document.getElementById("cidadeContratante");
+      const ufEl  = document.getElementById("ufContratante");
+
+      if(logEl) logEl.value = (data.logradouro || "").trim();
+      if(baiEl) baiEl.value = (data.bairro || "").trim();
+      if(cidEl) cidEl.value = (data.localidade || "").trim();
+      if(ufEl)  ufEl.value  = (data.uf || "").trim().toUpperCase();
+
+      applyAutoFilledStyle(true);
+      return true;
+    }catch(e){
+      markError(cepEl);
+      return false;
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  async function fetchCEPAndFill4(){
+    const cepEl = document.getElementById("cepContratada");
+    if(!cepEl) return false;
+    const cep = onlyDigits(cepEl.value);
+    clearError(cepEl);
+    applyAutoFilledStyle4(false);
+
+    if(cep.length !== 8){
+      markError(cepEl);
+      return false;
+    }
+
+    setLoading(true);
+    try{
+      const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {cache:"no-store"});
+      if(!resp.ok) throw new Error("CEP request failed");
+      const data = await resp.json();
+      if(data.erro){
+        markError(cepEl);
+        return false;
+      }
+
+      const logEl = document.getElementById("logradouroContratada");
+      const baiEl = document.getElementById("bairroContratada");
+      const cidEl = document.getElementById("cidadeContratada");
+      const ufEl  = document.getElementById("ufContratada");
+
+      if(logEl) logEl.value = (data.logradouro || "").trim();
+      if(baiEl) baiEl.value = (data.bairro || "").trim();
+      if(cidEl) cidEl.value = (data.localidade || "").trim();
+      if(ufEl)  ufEl.value  = (data.uf || "").trim().toUpperCase();
+
+      applyAutoFilledStyle4(true);
+      return true;
+    }catch(e){
+      markError(cepEl);
+      return false;
+    }finally{
+      setLoading(false);
+    }
+  }
+
+
+  function wireStep4MasksAndRules(){
+    const tel = document.getElementById("telefoneContratada");
+    const cep = document.getElementById("cepContratada");
+    const doc = document.getElementById("cpfCnpjContratada");
+    const cpfContato = document.getElementById("cpfContatoContratada");
+    const num = document.getElementById("numeroContratada");
+    const uf  = document.getElementById("ufContratada");
+
+    if(tel){
+      tel.setAttribute("inputmode","numeric");
+      tel.addEventListener("input", () => { tel.value = maskTelefone(tel.value); clearError(tel); });
+      tel.addEventListener("blur", () => {
+        tel.value = maskTelefone(tel.value);
+        const d = onlyDigits(tel.value);
+        if(d.length < 10 || d.length > 11) markError(tel);
+      });
+    }
+
+    if(cep){
+      cep.setAttribute("inputmode","numeric");
+      cep.addEventListener("input", () => { cep.value = maskCEP(cep.value); clearError(cep); });
+      cep.addEventListener("blur", async () => {
+        cep.value = maskCEP(cep.value);
+        await fetchCEPAndFill4();
+      });
+    }
+
+    if(doc){
+      doc.setAttribute("inputmode","numeric");
+      doc.addEventListener("input", () => {
+        const d = onlyDigits(doc.value);
+        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
+        clearError(doc);
+      });
+      doc.addEventListener("blur", () => {
+        const d = onlyDigits(doc.value);
+        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
+        const ok = (d.length == 11 && isValidCPF(d)) || (d.length == 14 && isValidCNPJ(d));
+        if(!ok) markError(doc);
+      });
+    }
+
+    if(cpfContato){
+      cpfContato.setAttribute("inputmode","numeric");
+      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(onlyDigits(cpfContato.value)); clearError(cpfContato); });
+      cpfContato.addEventListener("blur", () => {
+        cpfContato.value = maskCPF(cpfContato.value);
+        const d = onlyDigits(cpfContato.value);
+        const ok = (d.length === 11) && isValidCPF(d);
+        if(!ok) markError(cpfContato);
+      });
+    }
+
+    if(num){
+      num.setAttribute("inputmode","numeric");
+      num.addEventListener("input", () => { num.value = onlyDigits(num.value).slice(0, 8); clearError(num); });
+      num.addEventListener("blur", () => { if(!onlyDigits(num.value)) markError(num); });
+    }
+
+    if(uf){
+      uf.addEventListener("input", () => { uf.value = (uf.value||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2); clearError(uf); });
+      uf.addEventListener("blur", () => { if((uf.value||"").length !== 2) markError(uf); });
+    }
+  }
+
+  function wireStep3MasksAndRules(){
+    const tel = document.getElementById("telefoneContratante");
+    const cep = document.getElementById("cepContratante");
+    const doc = document.getElementById("cpfCnpjContratante");
+    const cpfContato = document.getElementById("cpfContatoContratante");
+    const num = document.getElementById("numeroContratante");
+    const uf  = document.getElementById("ufContratante");
+
+    if(tel){
+      tel.setAttribute("inputmode","numeric");
+      tel.addEventListener("input", () => { tel.value = maskTelefone(tel.value); clearError(tel); });
+      tel.addEventListener("blur", () => {
+        tel.value = maskTelefone(tel.value);
+        const d = onlyDigits(tel.value);
+        if(d.length < 10 || d.length > 11) markError(tel);
+      });
+    }
+
+    if(cep){
+      cep.setAttribute("inputmode","numeric");
+      cep.addEventListener("input", () => { cep.value = maskCEP(cep.value); clearError(cep); });
+      cep.addEventListener("blur", async () => {
+        cep.value = maskCEP(cep.value);
+        await fetchCEPAndFill();
+      });
+    }
+
+    if(doc){
+      doc.setAttribute("inputmode","numeric");
+      doc.addEventListener("input", () => {
+        const d = onlyDigits(doc.value);
+        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
+        clearError(doc);
+      });
+      doc.addEventListener("blur", () => {
+        const d = onlyDigits(doc.value);
+        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
+        const ok = (d.length == 11 && isValidCPF(d)) || (d.length == 14 && isValidCNPJ(d));
+        if(!ok) markError(doc);
+      });
+    }
+
+    if(cpfContato){
+      cpfContato.setAttribute("inputmode","numeric");
+      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(onlyDigits(cpfContato.value)); clearError(cpfContato); });
+      cpfContato.addEventListener("blur", () => {
+        cpfContato.value = maskCPF(cpfContato.value);
+        const d = onlyDigits(cpfContato.value);
+        const ok = (d.length === 11) && isValidCPF(d);
+        if(!ok) markError(cpfContato);
+      });
+    }
+
+    if(num){
+      num.setAttribute("inputmode","numeric");
+      num.addEventListener("input", () => { num.value = onlyDigits(num.value).slice(0, 8); clearError(num); });
+      num.addEventListener("blur", () => { if(!onlyDigits(num.value)) markError(num); });
+    }
+
+    if(uf){
+      uf.addEventListener("input", () => { uf.value = (uf.value||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2); clearError(uf); });
+      uf.addEventListener("blur", () => { if((uf.value||"").length !== 2) markError(uf); });
+    }
+  }
+
+
+  
+  // =========================
+  // Etapa 5 — Máscaras / Extenso / Validação
+  // =========================
+  function formatBRL(cents){
+    const v = Math.max(0, Number(cents)||0)/100;
+    const s = v.toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
+    return "R$ " + s;
+  }
+  function parseBRLToCents(str){
+    const d = (str||"").toString().replace(/\D+/g,"");
+    if(!d) return 0;
+    // últimos 2 dígitos = centavos
+    return Number(d);
+  }
+  function maskMoneyBRL(inputEl){
+    const cents = parseBRLToCents(inputEl.value);
+    inputEl.value = formatBRL(cents);
+    return cents;
+  }
+
+  function numToWordsPt(n){
+    // básico até milhões (suficiente para contratos comuns)
+    const u = ["zero","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
+    const d = ["","dez","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
+    const c = ["","cem","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
+    const join = (a,b)=> a && b ? a+" e "+b : (a||b);
+
+    function below100(x){
+      if(x<20) return u[x];
+      const ده = Math.floor(x/10), r=x%10;
+      return join(d[ده], r?u[r]:"");
+    }
+    function below1000(x){
+      if(x===0) return "";
+      if(x===100) return "cem";
+      const cen = Math.floor(x/100), r=x%100;
+      return join(c[cen], r?below100(r):"");
+    }
+    if(n===0) return "zero";
+    let res="";
+    const milhoes = Math.floor(n/1_000_000); n%=1_000_000;
+    const milhares = Math.floor(n/1000); n%=1000;
+    const centenas = n;
+
+    if(milhoes){
+      res = join(res, milhoes===1 ? "um milhão" : (below1000(milhoes)+" milhões"));
+    }
+    if(milhares){
+      res = join(res, milhares===1 ? "mil" : (below1000(milhares)+" mil"));
+    }
+    if(centenas){
+      res = join(res, below1000(centenas));
+    }
+    return res;
+  }
+
+  function moneyToExtensoBRL(cents){
+    const inteiro = Math.floor((Number(cents)||0)/100);
+    const cent = (Number(cents)||0)%100;
+    const reais = inteiro===1 ? "real" : "reais";
+    const centavos = cent===1 ? "centavo" : "centavos";
+    let out = `${numToWordsPt(inteiro)} ${reais}`;
+    if(cent>0){
+      out += ` e ${numToWordsPt(cent)} ${centavos}`;
+    }
+    return out;
+  }
+
+  function dateToExtensoPt(dateStr){
+    if(!dateStr) return "";
+    const [y,m,d] = dateStr.split("-").map(Number);
+    if(!y||!m||!d) return "";
+    const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    return `${d} de ${meses[m-1]} de ${y}`;
+  }
+
+  function wireStep5(){
+    const valor = document.getElementById("valorContrato");
+    const prazo = document.getElementById("prazoDias");
+    const data  = document.getElementById("dataContrato");
+    const vext  = document.getElementById("valorExtenso");
+    const dext  = document.getElementById("dataExtenso");
+
+    // Sempre sincroniza campos derivados ao entrar na etapa 5 (ou re-entrar)
+    try{
+      if(valor){
+        maskMoneyBRL(valor);
+        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+      }
+      if(data && dext){
+        dext.value = dateToExtensoPt(data.value);
+      }
+    }catch(e){}
+
+    // Evita duplicar listeners caso a etapa 5 seja reaberta
+    if(valor && valor.dataset.wiredStep5 !== "1"){
+      valor.dataset.wiredStep5 = "1";
+      valor.addEventListener("input", ()=>{
+        clearError(valor);
+        maskMoneyBRL(valor);
+        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+      });
+      valor.addEventListener("blur", ()=>{
+        maskMoneyBRL(valor);
+        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
+        if(parseBRLToCents(valor.value) <= 0) markError(valor);
+      });
+    }
+
+    if(prazo && prazo.dataset.wiredStep5 !== "1"){
+      prazo.dataset.wiredStep5 = "1";
+      prazo.addEventListener("input", ()=>{ clearError(prazo); prazo.value = (prazo.value||"").replace(/\D+/g,"").slice(0,4); });
+      prazo.addEventListener("blur", ()=>{ if(!prazo.value.trim()) markError(prazo); });
+    }
+
+    if(data && data.dataset.wiredStep5 !== "1"){
+      data.dataset.wiredStep5 = "1";
+      data.addEventListener("input", ()=>{ clearError(data); if(dext) dext.value = dateToExtensoPt(data.value); });
+      data.addEventListener("blur", ()=>{ if(!data.value) markError(data); else if(dext) dext.value = dateToExtensoPt(data.value); });
+    }
+  }
+
+  function validateStep5(){
+    const requiredIds = ["valorContrato","prazoDias","dataContrato","condPagamento","clausulas"];
+    let firstBad=null;
+    requiredIds.forEach(id=>{
+      const el=document.getElementById(id);
+      if(!el) return;
+      clearError(el);
+      const v=(el.value||"").trim();
+      if(!v){
+        markError(el);
+        if(!firstBad) firstBad=el;
+      }
+    });
+    if(firstBad){ firstBad.focus(); return false; }
+
+    const cents = parseBRLToCents(document.getElementById("valorContrato").value);
+    if(cents<=0){ markError(document.getElementById("valorContrato")); document.getElementById("valorContrato").focus(); return false; }
+
+    const prazo = Number((document.getElementById("prazoDias").value||"").trim());
+    if(!prazo || prazo<=0){ markError(document.getElementById("prazoDias")); document.getElementById("prazoDias").focus(); return false; }
+
+    return true;
+  }
+
+  
+  // Etapa 5 — Importar logo (prévia)
+  function wireStep5Logo(){
+    const input = document.getElementById("logoEmpresa");
+    const img = document.getElementById("logoPreview");
+    const empty = document.getElementById("logoEmpty");
+    if(!input || !img) return;
+
+
+    if(input.dataset.wiredLogo === "1") return;
+    input.dataset.wiredLogo = "1";
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if(!file){
+        img.src = "";
+        img.style.display = "none";
+        if(empty) empty.style.display = "block";
+        window.__logoDataUrl = null;
+        return;
+      }
+      if(!file.type.startsWith("image/")){
+        input.value = "";
+        img.src = "";
+        img.style.display = "none";
+        if(empty) empty.style.display = "block";
+        window.__logoDataUrl = null;
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        window.__logoDataUrl = String(reader.result || "");
+        img.src = window.__logoDataUrl;
+        img.style.display = "block";
+        if(empty) empty.style.display = "none";
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+// ===== CONSULTA E CARREGAMENTO DE JSON (ATUALIZAR DOCUMENTOS) =====
+const DOCS_BASE = "https://api.erpimpar.com.br/storage/docs"; // mesma origem do site
+
+function setVal(id, value){
+  const el = document.getElementById(id);
+  if(!el) return false;
+  el.value = (value ?? "");
+  el.dispatchEvent(new Event("input", {bubbles:true}));
+  el.dispatchEvent(new Event("change", {bubbles:true}));
+  return true;
+}
+
+function setAny(ids, value){
+  for(const id of ids){
+    if(setVal(id, value)) return true;
+  }
+  return false;
+}
+
+function setText(id, value){
+  const el = document.getElementById(id);
+  if(el) el.textContent = (value ?? "");
+}
+
+function normalizeCodigo(c){
+  return String(c ?? "").trim();
+}
+
+function applyJsonToForm(data){
+  // Step 1
+  setAny(["codigoProjeto","codigo"], data.codigo);
+
+  // Atualiza "resumos" se existirem no layout (o step2 mostra codigoResumo) :contentReference[oaicite:2]{index=2}
+  setText("codigoResumo", data.codigo);
+
+  // Step 2 (Obra)
+  setAny(["nomeObra"], data.nomeObra);
+  setAny(["servicoObra","servico","servico_obra"], data.servico);
+  setAny(["enderecoObra","endereco","endereco_obra"], data.enderecoObra);
+  setAny(["projetista","projetistaObra"], data.projetista);
+
+  // Step 3 (Contratante)
+  setVal("nomeContratante", data.nomeContratante);
+  setVal("contatoContratante", data.contatoContratante);
+  setVal("cpfContatoContratante", data.cpfContatoContratante);
+  setVal("telefoneContratante", data.telefoneContratante);
+  setVal("emailContratante", data.emailContratante);
+
+  setVal("cpfCnpjContratante", data.cpfCnpjContratante);
+  setVal("cepContratante", data.cepContratante);
+  setVal("logradouroContratante", data.logradouroContratante);
+  setVal("numeroContratante", data.numeroContratante);
+  setVal("complementoContratante", data.complementoContratante);
+  setVal("bairroContratante", data.bairroContratante);
+  setVal("cidadeContratante", data.cidadeContratante);
+  setVal("ufContratante", data.ufContratante);
+
+  // Step 4 (Contratada)
+  setVal("nomeContratada", data.nomeContratada);
+  setVal("contatoContratada", data.contatoContratada);
+  setVal("cpfContatoContratada", data.cpfContatoContratada);
+  setVal("telefoneContratada", data.telefoneContratada);
+  setVal("emailContratada", data.emailContratada);
+
+  setVal("cpfCnpjContratada", data.cpfCnpjContratada);
+  setVal("cepContratada", data.cepContratada);
+  setVal("logradouroContratada", data.logradouroContratada);
+  setVal("numeroContratada", data.numeroContratada);
+  setVal("complementoContratada", data.complementoContratada);
+  setVal("bairroContratada", data.bairroContratada);
+  setVal("cidadeContratada", data.cidadeContratada);
+  setVal("ufContratada", data.ufContratada);
+
+  // Step 5
+  setAny(["clausulas","clausulasCondicoes"], data.clausulas);
+  setAny(["condPagamento","condicoesPagamento","condicoes"], data.condicoesPagamento);
+  setAny(["valorContrato","valor"], data.valor);
+  setAny(["valorExtenso","Extenso_Valor"], data.valorExtenso);
+  setAny(["prazoDias","prazo"], data.prazoDias);
+  setAny(["dataContrato","data"], data.dataContrato);
+  setAny(["dataExtenso","data_por_extenso"], data.dataExtenso);
+
+  // opcional: levar pra etapa 1 pra usuário ver que carregou tudo
+  if (window.showStep) showStep(1);
+}
+
+/* ================================
+   JSON PICKER – BLOCO ÚNICO (OFICIAL)
+   ================================ */
+
+(function(){
+  // evita “duplicar listeners” entre versões
+  if (window.__JSONPICK_INSTALLED__) return;
+  window.__JSONPICK_INSTALLED__ = true;
+
+  function ensureJsonPickerModal(){
+    if (document.getElementById("jsonPickerOverlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "jsonPickerOverlay";
+    overlay.setAttribute("aria-hidden", "true");
+
+    // SEM blur aqui (blur só se você quiser de propósito)
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 9999999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: radial-gradient(1200px 700px at 50% 40%, rgba(15,118,110,.16), rgba(0,0,0,.72));
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    `;
+
+    overlay.innerHTML = `
+      <div class="impar-modal" role="dialog" aria-modal="true" style="
+        width:min(980px, 96vw);
+        max-height:86vh;
+        overflow:hidden;
+        border-radius:18px;
+        border:1px solid rgba(148,163,184,.28);
+        background: linear-gradient(180deg, rgba(2,6,23,.92), rgba(2,6,23,.72));
+        box-shadow: 0 28px 90px rgba(0,0,0,.58);
+      ">
+        <div style="
+          display:flex; align-items:flex-start; justify-content:space-between;
+          gap:12px; padding:14px 14px 10px 14px;
+          border-bottom:1px solid rgba(148,163,184,.18);
+        ">
+          <div>
+            <div style="font-family:Candara,system-ui; font-size:18px; font-weight:900; color:rgba(226,232,240,.96);">
+              Consultar JSONs salvos
+            </div>
+            <div style="margin-top:2px; font-family:Candara,system-ui; font-size:13px; color:rgba(226,232,240,.76);">
+              Clique em um item para carregar e preencher as 5 etapas.
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button id="jsonPickerRefresh" type="button" style="
+              border:1px solid rgba(148,163,184,.28);
+              background: rgba(2,6,23,.35);
+              color: rgba(226,232,240,.92);
+              padding:10px 14px; border-radius:12px;
+              cursor:pointer; font-weight:900;
+            ">Atualizar</button>
+
+            <button id="jsonPickerClose" type="button" style="
+              border:1px solid rgba(148,163,184,.28);
+              background: linear-gradient(135deg,#0b1e4a,#0f766e);
+              color:#fff; padding:10px 14px; border-radius:12px;
+              cursor:pointer; font-weight:900;
+            ">Fechar</button>
+          </div>
+        </div>
+
+        <div style="padding:12px 14px 14px 14px; overflow:auto; max-height:74vh;">
+          <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+            <input id="jsonPickerSearch" type="text" placeholder="Buscar por código ou obra..." style="
+              flex:1; padding:12px 12px; border-radius:12px;
+              border:1px solid rgba(148,163,184,.28);
+              background: rgba(2,6,23,.35);
+              color: rgba(226,232,240,.92);
+              font-family:Candara,system-ui;
+              outline:none;
+            "/>
+          </div>
+
+          <div id="jsonPickerStatus" style="
+            font-family:Candara,system-ui; font-size:13px;
+            color: rgba(226,232,240,.78);
+            margin: 8px 0 10px 0;
+          ">Carregando…</div>
+
+          <div id="jsonPickerList" style="
+            display:grid;
+            grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+            gap:10px;
+          "></div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Fecha SOMENTE se clicar no backdrop (não fecha por clicar no card)
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeJsonPickerModal();
+    });
+
+    overlay.querySelector(".impar-modal")?.addEventListener("click", (e) => e.stopPropagation());
+
+    document.getElementById("jsonPickerClose")?.addEventListener("click", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      closeJsonPickerModal();
+    });
+
+    // Só registra ESC uma vez
+    if (!window.__JSONPICK_ESC__) {
+      window.__JSONPICK_ESC__ = true;
+      document.addEventListener("keydown", (e)=>{
+        if (e.key === "Escape") closeJsonPickerModal();
+      });
+    }
+
+    console.log("[JSONPICK] modal criado OK");
+  }
+
+  function openJsonPickerModal(){
+    const ov = document.getElementById("jsonPickerOverlay");
+    if(!ov) return;
+
+    // IMPORTANT: o CSS controla visibilidade via .is-open (evita ficar "invisível" com opacity:0)
+    ov.classList.add("is-open");
+
+    // blindagens (caso algum container tenha transform/filter)
+    ov.style.position = "fixed";
+    ov.style.inset = "0";
+    ov.style.transform = "none";
+    ov.style.filter = "none";
+
+    // garante que o overlay do JSON fique acima de tudo
+    ov.style.zIndex = "9999999";
+
+    // mata blur do overlay (não borra o sistema)
+    ov.style.setProperty("backdrop-filter", "none", "important");
+    ov.style.setProperty("-webkit-backdrop-filter", "none", "important");
+}
+
+function closeJsonPickerModal(){
+    const ov = document.getElementById("jsonPickerOverlay");
+    if(!ov) return;
+    ov.classList.remove("is-open");
+}
+
+async function fetchJsonList(){
+    const status = document.getElementById("jsonPickerStatus");
+    const list   = document.getElementById("jsonPickerList");
+    if (status) status.textContent = "Carregando JSONs…";
+    if (list) list.innerHTML = "";
+
+    const r = await fetch(`${DOCS_BASE}/list_json.php?ts=${Date.now()}`, { cache:"no-store" });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || "Falha ao listar JSONs");
+    return j.items || [];
+  }
+
+  function renderJsonList(items){
+    const list   = document.getElementById("jsonPickerList");
+    const status = document.getElementById("jsonPickerStatus");
+    const q = (document.getElementById("jsonPickerSearch")?.value || "").toLowerCase().trim();
+
+    const filtered = (items || []).filter(it=>{
+      const a = `${it.codigo || ""}`.toLowerCase();
+      const b = `${it.nomeObra || ""}`.toLowerCase();
+      return !q || a.includes(q) || b.includes(q);
+    });
+
+    if (status) status.textContent = `${filtered.length} item(ns) encontrado(s).`;
+    if (!list) return;
+
+    list.innerHTML = filtered.map(it=>{
+      const cod  = it.codigo || "";
+      const obra = it.nomeObra || "—";
+      const serv = it.servico || "";
+      return `
+        <button type="button" class="jsonPickItem" data-codigo="${cod}" style="
+          text-align:left; padding:12px 12px;
+          border-radius:14px;
+          border:1px solid rgba(148,163,184,.25);
+          background: linear-gradient(180deg, rgba(2,6,23,.40), rgba(2,6,23,.28));
+          color: rgba(226,232,240,.92);
+          cursor:pointer;
+        ">
+          <div style="font-weight:900; font-size:14px;">${cod}</div>
+          <div style="margin-top:4px; font-size:13px; opacity:.92;">${obra}</div>
+          ${serv ? `<div style="margin-top:6px; font-size:12px; opacity:.72; line-height:1.2;">${serv}</div>` : ``}
+        </button>
+      `;
+    }).join("");
+
+    list.querySelectorAll(".jsonPickItem").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const codigo = btn.getAttribute("data-codigo");
+        try{
+          closeJsonPickerModal();
+          showImparLoading("Carregando informações…", `Abrindo o projeto ${codigo}.`);
+
+          const r = await fetch(`${DOCS_BASE}/data/${codigo}.json?ts=${Date.now()}`, { cache:"no-store" });
+          const data = await r.json();
+          applyJsonToForm(data);
+
+        } catch(err){
+          Swal.fire({ icon:"error", title:"Erro", html: err?.message || String(err) });
+        } finally {
+          hideImparLoading();
+        }
+      });
+    });
+  }
+
+  async function openJsonPickerPremium(){
+    console.log("[JSONPICK] click atualizar");
+
+    setBusyOnButton("btnAtualizar", true);
+    showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
+
+    try{
+      ensureJsonPickerModal();
+      const items = await fetchJsonList();
+
+      // FECHA LOADING ANTES DE ABRIR O MODAL (e evita ele ficar por cima)
+      hideImparLoading();
+
+      // abre no PRÓXIMO FRAME para não fechar no mesmo clique
+      requestAnimationFrame(() => {
+        openJsonPickerModal();
+        renderJsonList(items);
+
+        const s = document.getElementById("jsonPickerSearch");
+        if (s) s.oninput = ()=> renderJsonList(items);
+
+        const rbtn = document.getElementById("jsonPickerRefresh");
+        if (rbtn) rbtn.onclick = async ()=>{
+          showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+          try{
+            const refreshed = await fetchJsonList();
+            renderJsonList(refreshed);
+          } finally {
+            hideImparLoading();
+          }
+        };
+      });
+
+    } catch(err){
+      console.error("[JSONPICK] erro:", err);
+      hideImparLoading();
+      Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
+    } finally {
+      hideImparLoading();
+      setBusyOnButton("btnAtualizar", false);
+    }
+  }
+
+  // expõe no window
+  window.ensureJsonPickerModal = ensureJsonPickerModal;
+  window.openJsonPickerModal   = openJsonPickerModal;
+  window.closeJsonPickerModal  = closeJsonPickerModal;
+  window.fetchJsonList         = fetchJsonList;
+  window.renderJsonList        = renderJsonList;
+  window.openJsonPickerPremium = openJsonPickerPremium;
+})();
+
+// ===== ÍMPAR Premium Loading Overlay =====
+function showImparLoading(title = "Carregando informações…", sub = "Aguarde um instante.") {
+  const ov = document.getElementById("imparLoadingOverlay");
+  if (!ov) return;
+
+  const t = document.getElementById("imparLoadingTitle");
+  const s = document.getElementById("imparLoadingSub");
+  if (t) t.textContent = title;
+  if (s) s.textContent = sub;
+
+  ov.classList.add("is-open");
+}
+
+function hideImparLoading() {
+  const ov = document.getElementById("imparLoadingOverlay");
+  if (!ov) return;
+  ov.classList.remove("is-open");
+}
+
+function setBusyOnButton(btnId, isBusy) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  if (isBusy) btn.classList.add("impar-disabled");
+  else btn.classList.remove("impar-disabled");
+}
+
+ 
+function wire(){
+    // Entrada
+    window.addEventListener("DOMContentLoaded", () => {
+      document.body.classList.add("impar-enter");
+      wireStep3MasksAndRules(); 
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      document.body.classList.add("impar-enter");
+      wireStep4MasksAndRules();
+      wireStep5Logo();
+      wireStep5(); 
+    });
+
+    // Menu principal (placeholder)
+  document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{
+    window.location.href = "../index.html";
+  });
+
+    $("#btnGerar").addEventListener("click", () => {
+      /* placeholder */ console.log("Gerar documentos (placeholder)");
+      if(!validateStep1()){
+        // Sem mensagens — apenas borda vermelha + tremor (UX ÍMPAR)
+        return;
+      }
+    });
+
+    // Validação on-blur (padrão premium)
+    $("#codigoProjeto").addEventListener("blur", () => validateStep1());
+    $("#codigoProjeto").addEventListener("input", () => clearError($("#codigoProjeto")));
+
+    $("#btnContinuar1").addEventListener("click", () => {
+      if(!validateStep1()){
+        // Sem mensagens — apenas borda vermelha + tremor (UX ÍMPAR)
+        return;
+      }
+      showStep(2);
+    });
+
+    // Step 2
+    $("#btnVoltar2").addEventListener("click", () => showStep(1));
+    $("#btnContinuar2").addEventListener("click", () => {
+      if(!validateStep2()) return; // sem mensagens
+      showStep(3);
+    });
+
+    // Step 3
+    $("#btnVoltar3").addEventListener("click", () => showStep(2));
+    $("#btnContinuar3").addEventListener("click", () => {
+      if(!validateStep3()) return; // sem mensagens
+      showStep(4);
+    });
+
+    // Step 4
+    $("#btnVoltar4").addEventListener("click", () => showStep(3));
+    $("#btnContinuar4").addEventListener("click", () => {
+      if(!validateStep4()) return;
+      showStep(5);
+    });
+
+    // Step 5
+    $("#btnVoltar5").addEventListener("click", () => showStep(4));
+    $("#btnFinalizar").addEventListener("click", async () => {
+
+    if(!validateStep5()) return;
+
+    const overlay = document.getElementById("overlaySaving");
+    overlay.style.display = "flex";
+
+    // pequena pausa estética (UX premium)
+    await new Promise(r => setTimeout(r, 9000));
+
+  // aqui você chama sua função real de salvar
+  const ok = await salvarProjetoJSON(); // <-- sua função já existente
+
+  overlay.style.display = "none";
+
+  if(ok){
+    showSuccessModal("Sucesso!", "Dados salvos com sucesso.");
+  }else{
+    showErrorModal("Erro", "Não foi possível salvar os dados.");
+  }
+
+ });
+ }
+
+wire();
+
+(function(){
+ const dataEl=document.getElementById("dataContrato");
+ const dataExtEl=document.getElementById("dataExtenso");
+ function dataPorExtensoISO(iso){if(!iso)return"";const[y,m,d]=iso.split("-").map(x=>parseInt(x,10));const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];return `${d} de ${meses[m-1]} de ${y}`}
+ if(dataEl){dataEl.addEventListener("change",()=>{const iso=dataEl.value;if(dataExtEl){dataExtEl.value=iso?dataPorExtensoISO(iso):"";}})}
+})();
+
+  
+  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
+  (function(){
+    function bind(){
+      const candidates = [];
+      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+      if(byId) candidates.push(byId);
+      document.querySelectorAll("button, a").forEach(el=>{
+        const t = (el.textContent || "").toUpperCase();
+        if(t.includes("FINALIZAR")) candidates.push(el);
+      });
+      const unique = Array.from(new Set(candidates));
+      unique.forEach(btn=>{
+        try{
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          clone.addEventListener("click", onFinalizarSalvarJson);
+          // garante aparência não alterada
+        }catch(e){}
+      });
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+    else bind();
+  })();
+
+(function bindAtualizarSomenteUmaVez(){
+  const btn = document.getElementById("btnAtualizar");
+  if(!btn) return;
+
+  const clean = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clean, btn);
+
+  clean.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openJsonPickerPremium();
+  });
+})();
+
+</script>
+
+  <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
+  <div id="modalImparSalvar" class="impar-modal" aria-hidden="true">
+    <div class="impar-modal-backdrop"></div>
+    <div class="impar-modal-card" role="dialog" aria-modal="true" aria-labelledby="modalSalvarTitulo">
+      <div class="impar-modal-head">
+        <div id="modalSalvarIcon" class="impar-modal-icon">💾</div>
+        <div class="impar-modal-titles">
+          <div id="modalSalvarTitulo" class="impar-modal-title">Salvando...</div>
+          <div id="modalSalvarSub" class="impar-modal-subtitle">Gravando o JSON do projeto no servidor.</div>
+        </div>
+      </div>
+
+      <div id="modalSalvarBody" class="impar-modal-body" style="display:none;">
+        <div class="impar-modal-message" id="modalSalvarMsg"></div>
+      </div>
+
+      <div class="impar-modal-footer">
+        <button id="btnModalSalvarOk" class="btn btn-primary" style="display:none;">OK</button>
+      </div>
+
+      <div id="modalSalvarLoading" class="impar-modal-loading">
+        <div class="spinner"></div>
+        <div class="impar-modal-loading-text" id="modalSalvarLoadingText">Salvando dados...</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Loader padrão ERP (usado no FINALIZAR) -->
+  <div id="pageLoader" class="hidden" aria-hidden="true">
+    <div class="loader-card">
+      <div class="loader-spin" aria-hidden="true"></div>
+      <div>
+        <div class="loader-title">Processando…</div>
+        <div class="loader-sub">Aguarde…</div>
+      </div>
+    </div>
+  </div>
+<div id="imparLoadingOverlay" class="impar-overlay">
+  <div class="impar-loading-card">
+    <div class="impar-loading-top">
+      <div class="impar-spinner" aria-hidden="true"></div>
+      <div>
+        <div id="imparLoadingTitle" class="impar-loading-title">Carregando informações…</div>
+        <div id="imparLoadingSub" class="impar-loading-sub">Aguarde um instante.</div>
+      </div>
+    </div>
+    <div class="impar-loading-bar" aria-hidden="true"></div>
+  </div>
+</div>
+
+</body>
+</html>
