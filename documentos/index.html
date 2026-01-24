@@ -2702,35 +2702,53 @@ $("#btnFinalizar").addEventListener("click", async () => {
     el.dispatchEvent(new Event("change", {bubbles:true}));
   }
 
-  function applyJsonToFormLoose(data){
-    if(!data || typeof data !== "object") return;
+function applyJsonToFormLoose(data){
+  if(!data || typeof data !== "object") return;
 
-    // mapeamento mínimo (payload -> ids reais)
-    const map = {
-      codigo: "codigoProjeto",
-      valor: "valorContrato",
-      data: "dataContrato"
-    };
-
-    // 1) tenta map explícito
-    Object.keys(map).forEach(k => {
-      if(k in data){
-        setFieldValue(byId(map[k]), data[k]);
+  // helper: pega o primeiro valor existente entre várias chaves
+  const pick = (obj, keys) => {
+    for (const k of keys){
+      if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null && obj[k] !== "") {
+        return obj[k];
       }
-    });
-
-    // 2) para o resto, tenta id igual à chave
-    Object.keys(data).forEach(k => {
-      if(k in map) return;
-      const el = byId(k);
-      if(el) setFieldValue(el, data[k]);
-    });
-
-    // 3) volta para etapa 1 (se existir showStep)
-    if (typeof window.showStep === "function") {
-      window.showStep(1);
     }
+    return undefined;
+  };
+
+  // mapeamento tolerante: (possíveis chaves no JSON) -> (id real no HTML)
+  const map = [
+    { id: "codigoProjeto", keys: ["codigo", "codigoProjeto", "codProjeto", "projetoCodigo"] },
+    { id: "valorContrato", keys: ["valor", "valorContrato", "valorTotal", "valor_total"] },
+    { id: "dataContrato",  keys: ["data", "dataContrato", "data_contrato"] },
+
+    // ✅ os 2 que faltaram:
+    { id: "endereco",      keys: ["endereco", "enderecoObra", "endereco_obra", "obraEndereco", "enderecoDaObra"] },
+    { id: "condPagamento", keys: ["condPagamento", "condicoesPagamento", "condicoes_pagamento", "condPagto", "pagamentoCondicoes"] },
+  ];
+
+  // 1) aplica os campos mapeados (com tolerância de chave)
+  for (const m of map){
+    const el = byId(m.id);
+    if(!el) continue;
+    const v = pick(data, m.keys);
+    if(v !== undefined) setFieldValue(el, v);
   }
+
+  // 2) aplica o resto: tenta id == chave (mantém o comportamento atual)
+  Object.keys(data).forEach(k => {
+    // evita sobrescrever os já mapeados
+    const alreadyMapped = map.some(m => m.keys.includes(k));
+    if (alreadyMapped) return;
+
+    const el = byId(k);
+    if(el) setFieldValue(el, data[k]);
+  });
+
+  // 3) volta para etapa 1 (se existir)
+  if (typeof window.showStep === "function") {
+    window.showStep(1);
+  }
+}
 
   async function loadProjectJson(codigo){
     if(!codigo) throw new Error("Código inválido");
