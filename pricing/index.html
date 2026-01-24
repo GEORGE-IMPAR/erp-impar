@@ -312,6 +312,8 @@ tr.row-best td{
 }
 /* ===== /Premium modal goodies ===== */
 
+
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono','Courier New', monospace; font-size:12px; opacity:.9}
 </style>
 </head>
 <body>
@@ -356,6 +358,14 @@ tr.row-best td{
           </div>
         </div>
 
+        <div class="field" style="margin-top:10px">
+          <label>Busca (Brasil)</label>
+          <label class="chip" style="display:inline-flex;align-items:center;gap:10px;padding:10px 12px">
+            <input type="checkbox" id="eanMode" checked style="transform:scale(1.1)">
+            <span>Priorizar <b>EAN</b> (depois Descrição+NCM, depois Descrição)</span>
+          </label>
+        </div>
+
         <div class="drop" style="margin-top:12px">
           <div>
             <b>Arraste o CSV aqui</b>
@@ -383,6 +393,7 @@ tr.row-best td{
           <thead>
             <tr>
               <th style="width:90px">Código</th>
+              <th style="width:150px">EAN</th>
               <th>Descrição</th>
               <th style="width:70px">Qtd</th>
               <th style="width:90px">NCM</th>
@@ -394,7 +405,7 @@ tr.row-best td{
 
         <div class="footer">
           <div>© 2026 ERP ÍMPAR • Pricing</div>
-          <div>v3.0 • layout ÍMPAR Premium</div>
+          <div>v2.0 • layout ÍMPAR Premium</div>
         </div>
       </div>
 
@@ -714,6 +725,7 @@ function escAttr(s){
       const tr=document.createElement("tr");
       tr.innerHTML = `
         <td>${safeStr(it.codigo)}</td>
+        <td class="mono">${safeStr(it.ean||"")}</td>
         <td>${safeStr(it.descricao)}</td>
         <td class="price">${safeStr(it.qtd)}</td>
         <td>${safeStr(it.ncm)}</td>
@@ -772,6 +784,7 @@ function escAttr(s){
         <thead>
           <tr>
             <th style="width:90px">Código</th>
+            <th style="width:150px">EAN</th>
             <th>Item</th>
             <th style="width:70px">Qtd</th>
             <th style="width:130px">Melhor (R$)</th>
@@ -922,23 +935,13 @@ function storeHomepage(store){
       const out = await apiPost("/create_quote.php", payload);
       toast("ok", `Cotação criada: ${out.quote_id || out.id || "OK"}`);
 
-      const qid = String(out.quote_id || out.id || "");
-      if(qid){
-        // Processa imediatamente (SerpAPI) e faz polling até concluir
-        showOverlay(true, "Cotando (consultando lojas na internet)...");
-
-        try{
-          await triggerProcess(qid);
-        }catch(err){
-          // Se a SERPAPI_KEY não estiver configurada, o backend pode retornar pending/err
-          console.warn("triggerProcess falhou:", err);
-        }
-
-        // Sempre tenta abrir o detalhe e fazer polling (autoPoll=true)
-        await openDetail(qid, true);
+      // Dispara o processamento (SerpAPI) no servidor.
+      // (Se o servidor ainda não estiver com SERPAPI_KEY configurada, a cotação ficará como pending.)
+      if (out && (out.quote_id || out.id)) {
+        triggerProcess(String(out.quote_id || out.id)).catch(()=>{});
       }
-
       await loadQuotes();
+      if(out.quote_id) await openDetail(out.quote_id, true);
       showOverlay(false);
     }catch(e){
       showOverlay(false);
