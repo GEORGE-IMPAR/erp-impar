@@ -312,8 +312,6 @@ tr.row-best td{
 }
 /* ===== /Premium modal goodies ===== */
 
-
-  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono','Courier New', monospace; font-size:12px; opacity:.9}
 </style>
 </head>
 <body>
@@ -358,14 +356,6 @@ tr.row-best td{
           </div>
         </div>
 
-        <div class="field" style="margin-top:10px">
-          <label>Busca (Brasil)</label>
-          <label class="chip" style="display:inline-flex;align-items:center;gap:10px;padding:10px 12px">
-            <input type="checkbox" id="eanMode" checked style="transform:scale(1.1)">
-            <span>Priorizar <b>EAN</b> (depois Descrição+NCM, depois Descrição)</span>
-          </label>
-        </div>
-
         <div class="drop" style="margin-top:12px">
           <div>
             <b>Arraste o CSV aqui</b>
@@ -393,7 +383,7 @@ tr.row-best td{
           <thead>
             <tr>
               <th style="width:90px">Código</th>
-              <th style="width:150px">EAN</th>
+              <th style="width:140px">EAN</th>
               <th>Descrição</th>
               <th style="width:70px">Qtd</th>
               <th style="width:90px">NCM</th>
@@ -405,7 +395,7 @@ tr.row-best td{
 
         <div class="footer">
           <div>© 2026 ERP ÍMPAR • Pricing</div>
-          <div>v4.0 • layout ÍMPAR Premium</div>
+          <div>v2.0 • layout ÍMPAR Premium</div>
         </div>
       </div>
 
@@ -650,6 +640,18 @@ function offerTitle(o){
   if(!o) return "";
   return (o.title ?? o.titulo ?? o.nome ?? o.name ?? "");
 }
+
+  function parsePtNumber(v){
+    if(v==null) return NaN;
+    let t=String(v).trim();
+    if(!t) return NaN;
+    t=t.replace(/\s+/g,"");
+    // pt-BR decimal: "0,121" -> 0.121 ; remove thousand separators if any
+    if(t.includes(",")) t=t.replace(/\./g,"").replace(/,/g,".");
+    const n=Number(t);
+    return Number.isFinite(n)?n:NaN;
+  }
+
 function offerSource(o){
   if(!o) return "";
   return (o.fonte ?? o.source ?? o.origem ?? o.provider ?? "");
@@ -679,30 +681,58 @@ function escAttr(s){
     }
   }
 
-  function parseCSV(text){
-    const lines = text.replace(/\r/g,"").split("\n").filter(l=>l.trim().length);
-    if(!lines.length) return [];
-    const sep = (lines[0].includes(";") && !lines[0].includes(",")) ? ";" : ",";
-    const header = lines[0].split(sep).map(h=>h.trim().toLowerCase());
-    const getIdx = (...names)=> names.map(n=>header.indexOf(n)).find(i=>i>=0);
-    const idxCodigo = getIdx("codigo","código","cod");
-    const idxProd   = getIdx("produto","descricao","descrição","description","item");
-    const idxNcm    = getIdx("ncm");
-    const idxQtd    = getIdx("quantidade","qtd","qtde","quant");
-    const idxUn     = getIdx("un","unidade");
+    function parseCSV(text){
+    const lines = String(text||"").replace(//g,"").split(/
++/).filter(Boolean);
+    if(lines.length<2) return [];
+    const headRaw = lines[0];
+    const sep = headRaw.includes(";") ? ";" : ","; // prefer ;
+    const headers = headRaw.split(sep).map(h=>String(h||"").trim().toLowerCase());
+
+    const idxCodigo = headers.findIndex(h=>["codigo","código","cod","id"].includes(h));
+    const idxEAN    = headers.findIndex(h=>["ean","gtin","barcode","codbarras","cod_barras","código de barras"].includes(h));
+    const idxProd   = headers.findIndex(h=>["produto","descrição","descricao","item","material"].includes(h));
+    const idxNcm    = headers.findIndex(h=>["ncm"].includes(h));
+    const idxQtd    = headers.findIndex(h=>["quantidade","qtd","qtde","q"].includes(h));
+    const idxUn     = headers.findIndex(h=>["un","unidade","und","u.m.","um"].includes(h));
+
+    function splitLine(line){
+      const out=[]; let cur=""; let inQ=false;
+      for(let i=0;i<line.length;i++){
+        const ch=line[i];
+        if(ch === '"'){
+          if(inQ && line[i+1] === '"'){ cur+='"'; i++; }
+          else inQ=!inQ;
+          continue;
+        }
+        if(!inQ && ch===sep){ out.push(cur); cur=""; continue; }
+        cur+=ch;
+      }
+      out.push(cur);
+      return out.map(x=>String(x||"").trim());
+    }
+
     const out=[];
     for(let i=1;i<lines.length;i++){
-      const cols = lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,""));
-      if(cols.length===1 && !cols[0]) continue;
-      const codigo = safeStr(cols[idxCodigo]).trim();
-      const descricao = safeStr(cols[idxProd]).trim();
-      const qtd = Number(String(cols[idxQtd]||"").replace(",","."));
-      const ncm = safeStr(cols[idxNcm]).trim();
-      const un = safeStr(cols[idxUn]).trim();
-      if(!codigo && !descricao) continue;
-      out.push({ codigo: codigo||"", descricao: descricao||"", ncm: ncm||"", qtd: (isFinite(qtd)&&qtd>0 ? qtd : 1), un: un||"" });
+      const cols=splitLine(lines[i]);
+      const codigo = idxCodigo>=0 ? cols[idxCodigo] : (cols[0]||"");
+      const ean    = idxEAN>=0 ? cols[idxEAN] : "";
+      const desc   = idxProd>=0 ? cols[idxProd] : (cols[1]||"");
+      const ncm    = idxNcm>=0 ? cols[idxNcm] : "";
+      const qtdRaw = idxQtd>=0 ? cols[idxQtd] : (cols[2]||"1");
+      const un     = idxUn>=0 ? cols[idxUn] : "";
+
+      const qtdNum = parsePtNumber(qtdRaw);
+      out.push({
+        codigo: String(codigo||"").trim(),
+        ean: String(ean||"").trim(),
+        descricao: String(desc||"").trim(),
+        ncm: String(ncm||"").trim(),
+        qtd: Number.isFinite(qtdNum)?qtdNum:1,
+        un: String(un||"").trim()
+      });
     }
-    return out;
+    return out.filter(r=>r.codigo || r.descricao || r.ean);
   }
 
   function modelCSV(){
@@ -725,7 +755,7 @@ function escAttr(s){
       const tr=document.createElement("tr");
       tr.innerHTML = `
         <td>${safeStr(it.codigo)}</td>
-        <td class="mono">${safeStr(it.ean||"")}</td>
+        <td>${safeStr(it.ean||"")}</td>
         <td>${safeStr(it.descricao)}</td>
         <td class="price">${safeStr(it.qtd)}</td>
         <td>${safeStr(it.ncm)}</td>
@@ -784,7 +814,6 @@ function escAttr(s){
         <thead>
           <tr>
             <th style="width:90px">Código</th>
-            <th style="width:150px">EAN</th>
             <th>Item</th>
             <th style="width:70px">Qtd</th>
             <th style="width:130px">Melhor (R$)</th>
