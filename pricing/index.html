@@ -383,8 +383,7 @@ tr.row-best td{
           <thead>
             <tr>
               <th style="width:90px">Código</th>
-              <th style="width:140px">EAN</th>
-              <th>Descrição</th>
+              <th>EAN</th><th>Descrição</th>
               <th style="width:70px">Qtd</th>
               <th style="width:90px">NCM</th>
               <th style="width:70px">UN</th>
@@ -640,18 +639,6 @@ function offerTitle(o){
   if(!o) return "";
   return (o.title ?? o.titulo ?? o.nome ?? o.name ?? "");
 }
-
-  function parsePtNumber(v){
-    if(v==null) return NaN;
-    let t=String(v).trim();
-    if(!t) return NaN;
-    t=t.replace(/\s+/g,"");
-    // pt-BR decimal: "0,121" -> 0.121 ; remove thousand separators if any
-    if(t.includes(",")) t=t.replace(/\./g,"").replace(/,/g,".");
-    const n=Number(t);
-    return Number.isFinite(n)?n:NaN;
-  }
-
 function offerSource(o){
   if(!o) return "";
   return (o.fonte ?? o.source ?? o.origem ?? o.provider ?? "");
@@ -681,62 +668,63 @@ function escAttr(s){
     }
   }
 
-    function parseCSV(text){
-    const lines = String(text||"").replace(//g,"").split(/
-+/).filter(Boolean);
-    if(lines.length<2) return [];
-    const headRaw = lines[0];
-    const sep = headRaw.includes(";") ? ";" : ","; // prefer ;
-    const headers = headRaw.split(sep).map(h=>String(h||"").trim().toLowerCase());
+  function parseCSV(text){
+    // Aceita CSV com separador ";" (preferido) ou "," e headers em PT/EN.
+    const raw = String(text||"").replace(//g,"").trim();
+    if(!raw) return [];
+    const lines = raw.split("
+").map(l=>l.trim()).filter(Boolean);
+    if(!lines.length) return [];
 
-    const idxCodigo = headers.findIndex(h=>["codigo","código","cod","id"].includes(h));
-    const idxEAN    = headers.findIndex(h=>["ean","gtin","barcode","codbarras","cod_barras","código de barras"].includes(h));
-    const idxProd   = headers.findIndex(h=>["produto","descrição","descricao","item","material"].includes(h));
-    const idxNcm    = headers.findIndex(h=>["ncm"].includes(h));
-    const idxQtd    = headers.findIndex(h=>["quantidade","qtd","qtde","q"].includes(h));
-    const idxUn     = headers.findIndex(h=>["un","unidade","und","u.m.","um"].includes(h));
+    const headerRaw = lines[0];
+    const sep = headerRaw.includes(";") ? ";" : ",";
 
-    function splitLine(line){
-      const out=[]; let cur=""; let inQ=false;
-      for(let i=0;i<line.length;i++){
-        const ch=line[i];
-        if(ch === '"'){
-          if(inQ && line[i+1] === '"'){ cur+='"'; i++; }
-          else inQ=!inQ;
-          continue;
-        }
-        if(!inQ && ch===sep){ out.push(cur); cur=""; continue; }
-        cur+=ch;
+    const header = headerRaw.split(sep).map(h=>String(h||"").trim().toLowerCase());
+    const getIdx = (...names)=> {
+      for(const n of names){
+        const i = header.indexOf(String(n).toLowerCase());
+        if(i>=0) return i;
       }
-      out.push(cur);
-      return out.map(x=>String(x||"").trim());
-    }
+      return -1;
+    };
+
+    const idxCodigo = getIdx("codigo","código","cod");
+    const idxEAN   = getIdx("ean","gtin","barcode");
+    const idxProd  = getIdx("produto","descricao","descrição","description","item");
+    const idxNcm   = getIdx("ncm");
+    const idxQtd   = getIdx("quantidade","qtd","qtde","quant");
+    const idxUn    = getIdx("un","unidade");
 
     const out=[];
     for(let i=1;i<lines.length;i++){
-      const cols=splitLine(lines[i]);
-      const codigo = idxCodigo>=0 ? cols[idxCodigo] : (cols[0]||"");
-      const ean    = idxEAN>=0 ? cols[idxEAN] : "";
-      const desc   = idxProd>=0 ? cols[idxProd] : (cols[1]||"");
-      const ncm    = idxNcm>=0 ? cols[idxNcm] : "";
-      const qtdRaw = idxQtd>=0 ? cols[idxQtd] : (cols[2]||"1");
-      const un     = idxUn>=0 ? cols[idxUn] : "";
+      const cols = lines[i].split(sep).map(c=>String(c||"").trim().replace(/^"|"$/g,""));
+      if(cols.length===1 && !cols[0]) continue;
 
-      const qtdNum = parsePtNumber(qtdRaw);
+      const codigo = safeStr(cols[idxCodigo]).trim();
+      const ean    = safeStr(cols[idxEAN]).trim();
+      const descricao = safeStr(cols[idxProd]).trim();
+      const ncm = safeStr(cols[idxNcm]).trim();
+      const un  = safeStr(cols[idxUn]).trim();
+      const qtd = Number(String(cols[idxQtd]||"").replace(",","."));
+
+      if(!codigo && !descricao && !ean) continue;
       out.push({
-        codigo: String(codigo||"").trim(),
-        ean: String(ean||"").trim(),
-        descricao: String(desc||"").trim(),
-        ncm: String(ncm||"").trim(),
-        qtd: Number.isFinite(qtdNum)?qtdNum:1,
-        un: String(un||"").trim()
+        codigo: codigo||"",
+        ean: ean||"",
+        descricao: descricao||"",
+        ncm: ncm||"",
+        qtd: (isFinite(qtd)&&qtd>0 ? qtd : 1),
+        un: un||""
       });
     }
-    return out.filter(r=>r.codigo || r.descricao || r.ean);
+    return out;
+  }
+    return out;
   }
 
   function modelCSV(){
-    const csv = "codigo,produto,ncm,quantidade,un\n2734,RED CA/C SCH 40 6 X 4,73079200,4,\n9999,TUBO ACO CARBONO SCH40,73064000,4,\n";
+    const csv = "codigo;ean;produto;ncm;quantidade;un
+2734;7890000000000;RED CA/C SCH 40 6 X 4;73079200;4;\n9999;7890000000001;TUBO ACO CARBONO SCH40;73064000;4;\n";
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
@@ -755,7 +743,7 @@ function escAttr(s){
       const tr=document.createElement("tr");
       tr.innerHTML = `
         <td>${safeStr(it.codigo)}</td>
-        <td>${safeStr(it.ean||"")}</td>
+        <td>${safeStr(it.ean||'')}</td>
         <td>${safeStr(it.descricao)}</td>
         <td class="price">${safeStr(it.qtd)}</td>
         <td>${safeStr(it.ncm)}</td>
@@ -953,12 +941,17 @@ function storeHomepage(store){
     try{
       const payload = {
         obra_id: obra,
+        search: {
+        market: (document.getElementById("market")?.value || "br"),
+        prefer_ean: !!document.getElementById("preferEAN")?.checked
+      },
         items: items.map(x=>({
           codigo: x.codigo,
           descricao: x.descricao,
           ncm: x.ncm || null,
           qtd: Number(x.qtd)||1,
-          un: x.un || null
+          un: x.un || null,
+          ean: x.ean || null
         }))
       };
       const out = await apiPost("/create_quote.php", payload);
@@ -1090,4 +1083,3 @@ function storeHomepage(store){
   </script>
 </body>
 </html>
-
