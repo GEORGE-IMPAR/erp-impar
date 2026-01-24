@@ -646,8 +646,8 @@ function bind(){
       flex-direction:column;
       min-height:280px;
       box-shadow:0 18px 48px rgba(0,0,0,.22);
-      backdrop-filter: blur(10px);
-    }
+  backdrop-filter: none;
+}
 
     label{
       display:block;
@@ -1113,8 +1113,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
       position:fixed; inset:0; z-index:99999;
       display:flex; align-items:center; justify-content:center;
       background: rgba(2,6,23,.55);
-      backdrop-filter: blur(10px);
-    }
+  backdrop-filter: none;
+}
     #pageLoader.hidden{ display:none; }
     #pageLoader .loader-card{
       width:min(720px, 92vw);
@@ -1146,9 +1146,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   justify-content: center;
   padding: 18px;
   background: radial-gradient(1200px 600px at 50% 40%, rgba(15, 118, 110, .18), rgba(0,0,0,.70));
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  opacity: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+opacity: 0;
   transition: opacity .22s ease;
 }
 
@@ -1252,7 +1252,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   justify-content: center;
   padding: 18px;
   background: radial-gradient(1200px 700px at 50% 40%, rgba(15,118,110,.16), rgba(0,0,0,.72));
-  opacity: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+opacity: 0;
   transition: opacity .18s ease;
 }
 #jsonPickerOverlay.is-open{
@@ -1890,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v33.0 • validação limpa por etapa</div>
+    <div>v31.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2867,27 +2869,34 @@ function applyJsonToForm(data){
     console.log("[JSONPICK] modal criado OK");
   }
 
-function openJsonPickerModal(){
-  const ov = document.getElementById("jsonPickerOverlay");
-  if(!ov) return;
+  function openJsonPickerModal(){
+    const ov = document.getElementById("jsonPickerOverlay");
+    if(!ov) return;
 
-  // abre do jeito que o CSS espera
-  ov.classList.add("is-open");
-  ov.style.setProperty("display", "flex", "important"); // reforço
-  ov.style.setProperty("opacity", "1", "important");   // reforço
-  ov.setAttribute("aria-hidden", "false");
+    // IMPORTANT: o CSS controla visibilidade via .is-open (evita ficar "invisível" com opacity:0)
+    ov.classList.add("is-open");
+
+    // blindagens (caso algum container tenha transform/filter)
+    ov.style.position = "fixed";
+    ov.style.inset = "0";
+    ov.style.transform = "none";
+    ov.style.filter = "none";
+
+    // garante que o overlay do JSON fique acima de tudo
+    ov.style.zIndex = "9999999";
+
+    // mata blur do overlay (não borra o sistema)
+    ov.style.setProperty("backdrop-filter", "none", "important");
+    ov.style.setProperty("-webkit-backdrop-filter", "none", "important");
 }
 
 function closeJsonPickerModal(){
-  const ov = document.getElementById("jsonPickerOverlay");
-  if(!ov) return;
-
-  ov.classList.remove("is-open");
-  ov.style.setProperty("display", "none", "important");
-  ov.setAttribute("aria-hidden", "true");
+    const ov = document.getElementById("jsonPickerOverlay");
+    if(!ov) return;
+    ov.classList.remove("is-open");
 }
 
-  async function fetchJsonList(){
+async function fetchJsonList(){
     const status = document.getElementById("jsonPickerStatus");
     const list   = document.getElementById("jsonPickerList");
     if (status) status.textContent = "Carregando JSONs…";
@@ -2953,48 +2962,48 @@ function closeJsonPickerModal(){
     });
   }
 
-async function openJsonPickerPremium(){
-  console.log("[JSONPICK] click atualizar");
+  async function openJsonPickerPremium(){
+    console.log("[JSONPICK] click atualizar");
 
-  setBusyOnButton("btnAtualizar", true);
-  showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
+    setBusyOnButton("btnAtualizar", true);
+    showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
 
-  try{
-    ensureJsonPickerModal();
+    try{
+      ensureJsonPickerModal();
+      const items = await fetchJsonList();
 
-    // carrega lista
-    const items = await fetchJsonList();
+      // FECHA LOADING ANTES DE ABRIR O MODAL (e evita ele ficar por cima)
+      hideImparLoading();
 
-    // FECHA LOADING ANTES de abrir modal (pra não ficar por cima)
-    hideImparLoading();
+      // abre no PRÓXIMO FRAME para não fechar no mesmo clique
+      requestAnimationFrame(() => {
+        openJsonPickerModal();
+        renderJsonList(items);
 
-    // abre modal imediatamente (sem depender de rAF)
-    openJsonPickerModal();
-    renderJsonList(items);
+        const s = document.getElementById("jsonPickerSearch");
+        if (s) s.oninput = ()=> renderJsonList(items);
 
-    const s = document.getElementById("jsonPickerSearch");
-    if (s) s.oninput = ()=> renderJsonList(items);
+        const rbtn = document.getElementById("jsonPickerRefresh");
+        if (rbtn) rbtn.onclick = async ()=>{
+          showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+          try{
+            const refreshed = await fetchJsonList();
+            renderJsonList(refreshed);
+          } finally {
+            hideImparLoading();
+          }
+        };
+      });
 
-    const rbtn = document.getElementById("jsonPickerRefresh");
-    if (rbtn) rbtn.onclick = async ()=>{
-      showImparLoading("Atualizando lista…", "Recarregando JSONs.");
-      try{
-        const refreshed = await fetchJsonList();
-        renderJsonList(refreshed);
-      } finally {
-        hideImparLoading();
-      }
-    };
-
-  } catch(err){
-    console.error("[JSONPICK] erro:", err);
-    hideImparLoading();
-    Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
-  } finally {
-    hideImparLoading();
-    setBusyOnButton("btnAtualizar", false);
+    } catch(err){
+      console.error("[JSONPICK] erro:", err);
+      hideImparLoading();
+      Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
+    } finally {
+      hideImparLoading();
+      setBusyOnButton("btnAtualizar", false);
+    }
   }
-}
 
   // expõe no window
   window.ensureJsonPickerModal = ensureJsonPickerModal;
@@ -3005,7 +3014,7 @@ async function openJsonPickerPremium(){
   window.openJsonPickerPremium = openJsonPickerPremium;
 })();
 
-// ===== ÍMPAR Premium Loading Overlay (SEM TRAVAR) =====
+// ===== ÍMPAR Premium Loading Overlay =====
 function showImparLoading(title = "Carregando informações…", sub = "Aguarde um instante.") {
   const ov = document.getElementById("imparLoadingOverlay");
   if (!ov) return;
@@ -3021,21 +3030,14 @@ function showImparLoading(title = "Carregando informações…", sub = "Aguarde 
 function hideImparLoading() {
   const ov = document.getElementById("imparLoadingOverlay");
   if (!ov) return;
-
   ov.classList.remove("is-open");
-
-  // “failsafe”: garante que some mesmo se algum CSS/estado bugou
-  ov.style.display = "";
-  ov.style.opacity = "";
-  ov.style.pointerEvents = "";
 }
 
 function setBusyOnButton(btnId, isBusy) {
   const btn = document.getElementById(btnId);
   if (!btn) return;
-
-  btn.classList.toggle("impar-disabled", !!isBusy);
-  btn.disabled = !!isBusy; // evita duplo clique real
+  if (isBusy) btn.classList.add("impar-disabled");
+  else btn.classList.remove("impar-disabled");
 }
 
  
@@ -3136,38 +3138,41 @@ wire();
 
   
   // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
-//  (function(){
- //   function bind(){
- //     const candidates = [];
- //     const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
- //     if(byId) candidates.push(byId);
- //     document.querySelectorAll("button, a").forEach(el=>{
- //       const t = (el.textContent || "").toUpperCase();
-//        if(t.includes("FINALIZAR")) candidates.push(el);
-//      });
-//      const unique = Array.from(new Set(candidates));
-//      unique.forEach(btn=>{
-//        try{
-//          const clone = btn.cloneNode(true);
-//          btn.parentNode.replaceChild(clone, btn);
-//          clone.addEventListener("click", onFinalizarSalvarJson);
+  (function(){
+    function bind(){
+      const candidates = [];
+      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+      if(byId) candidates.push(byId);
+      document.querySelectorAll("button, a").forEach(el=>{
+        const t = (el.textContent || "").toUpperCase();
+        if(t.includes("FINALIZAR")) candidates.push(el);
+      });
+      const unique = Array.from(new Set(candidates));
+      unique.forEach(btn=>{
+        try{
+          const clone = btn.cloneNode(true);
+          btn.parentNode.replaceChild(clone, btn);
+          clone.addEventListener("click", onFinalizarSalvarJson);
           // garante aparência não alterada
-//        }catch(e){}
-//      });
-//    }
-//    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
-//    else bind();
-//  })();
+        }catch(e){}
+      });
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+    else bind();
+  })();
 
 (function bindAtualizarSomenteUmaVez(){
   const btn = document.getElementById("btnAtualizar");
   if(!btn) return;
 
-  btn.addEventListener("click", async (e) => {
+  const clean = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clean, btn);
+
+  clean.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    await openJsonPickerPremium();
-  }, { once: false });
+    openJsonPickerPremium();
+  });
 })();
 
 </script>
