@@ -1890,7 +1890,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v32.0 • validação limpa por etapa</div>
+    <div>v33.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2953,48 +2953,48 @@ function closeJsonPickerModal(){
     });
   }
 
-  async function openJsonPickerPremium(){
-    console.log("[JSONPICK] click atualizar");
+async function openJsonPickerPremium(){
+  console.log("[JSONPICK] click atualizar");
 
-    setBusyOnButton("btnAtualizar", true);
-    showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
+  setBusyOnButton("btnAtualizar", true);
+  showImparLoading("Carregando informações…", "Buscando JSONs salvos no servidor.");
 
-    try{
-      ensureJsonPickerModal();
-      const items = await fetchJsonList();
+  try{
+    ensureJsonPickerModal();
 
-      // FECHA LOADING ANTES DE ABRIR O MODAL (e evita ele ficar por cima)
-      hideImparLoading();
+    // carrega lista
+    const items = await fetchJsonList();
 
-      // abre no PRÓXIMO FRAME para não fechar no mesmo clique
-      requestAnimationFrame(() => {
-        openJsonPickerModal();
-        renderJsonList(items);
+    // FECHA LOADING ANTES de abrir modal (pra não ficar por cima)
+    hideImparLoading();
 
-        const s = document.getElementById("jsonPickerSearch");
-        if (s) s.oninput = ()=> renderJsonList(items);
+    // abre modal imediatamente (sem depender de rAF)
+    openJsonPickerModal();
+    renderJsonList(items);
 
-        const rbtn = document.getElementById("jsonPickerRefresh");
-        if (rbtn) rbtn.onclick = async ()=>{
-          showImparLoading("Atualizando lista…", "Recarregando JSONs.");
-          try{
-            const refreshed = await fetchJsonList();
-            renderJsonList(refreshed);
-          } finally {
-            hideImparLoading();
-          }
-        };
-      });
+    const s = document.getElementById("jsonPickerSearch");
+    if (s) s.oninput = ()=> renderJsonList(items);
 
-    } catch(err){
-      console.error("[JSONPICK] erro:", err);
-      hideImparLoading();
-      Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
-    } finally {
-      hideImparLoading();
-      setBusyOnButton("btnAtualizar", false);
-    }
+    const rbtn = document.getElementById("jsonPickerRefresh");
+    if (rbtn) rbtn.onclick = async ()=>{
+      showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+      try{
+        const refreshed = await fetchJsonList();
+        renderJsonList(refreshed);
+      } finally {
+        hideImparLoading();
+      }
+    };
+
+  } catch(err){
+    console.error("[JSONPICK] erro:", err);
+    hideImparLoading();
+    Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
+  } finally {
+    hideImparLoading();
+    setBusyOnButton("btnAtualizar", false);
   }
+}
 
   // expõe no window
   window.ensureJsonPickerModal = ensureJsonPickerModal;
@@ -3005,7 +3005,7 @@ function closeJsonPickerModal(){
   window.openJsonPickerPremium = openJsonPickerPremium;
 })();
 
-// ===== ÍMPAR Premium Loading Overlay =====
+// ===== ÍMPAR Premium Loading Overlay (SEM TRAVAR) =====
 function showImparLoading(title = "Carregando informações…", sub = "Aguarde um instante.") {
   const ov = document.getElementById("imparLoadingOverlay");
   if (!ov) return;
@@ -3021,14 +3021,21 @@ function showImparLoading(title = "Carregando informações…", sub = "Aguarde 
 function hideImparLoading() {
   const ov = document.getElementById("imparLoadingOverlay");
   if (!ov) return;
+
   ov.classList.remove("is-open");
+
+  // “failsafe”: garante que some mesmo se algum CSS/estado bugou
+  ov.style.display = "";
+  ov.style.opacity = "";
+  ov.style.pointerEvents = "";
 }
 
 function setBusyOnButton(btnId, isBusy) {
   const btn = document.getElementById(btnId);
   if (!btn) return;
-  if (isBusy) btn.classList.add("impar-disabled");
-  else btn.classList.remove("impar-disabled");
+
+  btn.classList.toggle("impar-disabled", !!isBusy);
+  btn.disabled = !!isBusy; // evita duplo clique real
 }
 
  
@@ -3129,41 +3136,38 @@ wire();
 
   
   // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
-  (function(){
-    function bind(){
-      const candidates = [];
-      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
-      if(byId) candidates.push(byId);
-      document.querySelectorAll("button, a").forEach(el=>{
-        const t = (el.textContent || "").toUpperCase();
-        if(t.includes("FINALIZAR")) candidates.push(el);
-      });
-      const unique = Array.from(new Set(candidates));
-      unique.forEach(btn=>{
-        try{
-          const clone = btn.cloneNode(true);
-          btn.parentNode.replaceChild(clone, btn);
-          clone.addEventListener("click", onFinalizarSalvarJson);
+//  (function(){
+ //   function bind(){
+ //     const candidates = [];
+ //     const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
+ //     if(byId) candidates.push(byId);
+ //     document.querySelectorAll("button, a").forEach(el=>{
+ //       const t = (el.textContent || "").toUpperCase();
+//        if(t.includes("FINALIZAR")) candidates.push(el);
+//      });
+//      const unique = Array.from(new Set(candidates));
+//      unique.forEach(btn=>{
+//        try{
+//          const clone = btn.cloneNode(true);
+//          btn.parentNode.replaceChild(clone, btn);
+//          clone.addEventListener("click", onFinalizarSalvarJson);
           // garante aparência não alterada
-        }catch(e){}
-      });
-    }
-    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
-    else bind();
-  })();
+//        }catch(e){}
+//      });
+//    }
+//    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+//    else bind();
+//  })();
 
 (function bindAtualizarSomenteUmaVez(){
   const btn = document.getElementById("btnAtualizar");
   if(!btn) return;
 
-  const clean = btn.cloneNode(true);
-  btn.parentNode.replaceChild(clean, btn);
-
-  clean.addEventListener("click", (e) => {
+  btn.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openJsonPickerPremium();
-  });
+    await openJsonPickerPremium();
+  }, { once: false });
 })();
 
 </script>
