@@ -749,38 +749,7 @@ function escAttr(s){
 
   function closeModal(){ document.getElementById("modalBack").classList.remove("on"); }
 
-  
-  // ===== Loja -> homepage (para clicar no nome da loja) =====
-  function storeHomepage(store){
-    if(!store) return "";
-    const s = String(store).toLowerCase().trim();
-
-    // domínios já explícitos (ex: epizeus.com.br)
-    if(/\.[a-z]{2,}(\.[a-z]{2,})?$/.test(s) && !s.includes(" ")){
-      const dom = s.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
-      return `https://${dom}`;
-    }
-
-    // Mapa de lojas conhecidas (adicione mais conforme aparecer)
-    const map = [
-      ["mercado livre", "https://www.mercadolivre.com.br"],
-      ["amazon", "https://www.amazon.com.br"],
-      ["shopee", "https://shopee.com.br"],
-      ["magalu", "https://www.magazineluiza.com.br"],
-      ["kabum", "https://www.kabum.com.br"],
-      ["leroy", "https://www.leroymerlin.com.br"],
-      ["loja do mecanico", "https://www.lojadomecanico.com.br"],
-      ["zavvor", "https://www.zavvor.com.br"],
-      ["riberfluid", "https://www.riberfluid.com.br"],
-      ["epizeus", "https://www.epizeus.com.br"]
-    ];
-    for(const [k,url] of map){
-      if(s.includes(k)) return url;
-    }
-    return "";
-  }
-
-function renderDetail(quote){
+  function renderDetail(quote){
     quote = quote?.quote || quote; // <-- se vier envelope, extrai
     currentDetail = quote;
     document.getElementById("modalTitle").textContent = `Cotação: ${quote.quote_id || quote.id || ""}`;
@@ -866,7 +835,7 @@ function renderDetail(quote){
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.59 13.41a1 1 0 0 0 1.41 0l4.59-4.59V11a1 1 0 1 0 2 0V6a2 2 0 0 0-2-2h-5a1 1 0 1 0 0 2h2.17L12 10.17l-1.41-1.41a3 3 0 0 0-4.24 0l-2.83 2.83a3 3 0 0 0 0 4.24l2.83 2.83a3 3 0 0 0 4.24 0l1.41-1.41a1 1 0 1 0-1.41-1.41l-1.41 1.41a1 1 0 0 1-1.41 0l-2.83-2.83a1 1 0 0 1 0-1.41l2.83-2.83a1 1 0 0 1 1.41 0l1.41 1.41-1.41 1.41a1 1 0 0 0 0 1.41Z"/></svg>
           </a>`
         : "";
-const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` : "";
+      const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` : "";
       const itemTip = escAttr(bestTitle || (it.descricao||it.descrição||""));
       tr.innerHTML = `
         <td>${safeStr(it.codigo||it.código||"")}</td>
@@ -884,6 +853,34 @@ const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` 
     box.querySelector("#grandTotal").textContent = fmtBRL(grandTotal);
     document.getElementById("modalBack").classList.add("on");
   }
+
+function storeHomepage(store){
+  if(!store) return "";
+
+  const map = {
+    "zavvor": "https://www.zavvor.com.br",
+    "riberfluid": "https://www.riberfluid.com.br",
+    "epizeus": "https://www.epizeus.com.br",
+    "mercado livre": "https://www.mercadolivre.com.br",
+    "amazon": "https://www.amazon.com.br",
+    "shopee": "https://shopee.com.br",
+    "kabum": "https://www.kabum.com.br",
+    "leroy": "https://www.leroymerlin.com.br",
+    "loja do mecanico": "https://www.lojadomecanico.com.br",
+    "magalu": "https://www.magazineluiza.com.br"
+  };
+
+  const key = store.toLowerCase();
+
+  for(const name in map){
+    if(key.includes(name)){
+      return map[name];
+    }
+  }
+
+  return "";
+}
+
 
   async function loadQuotes(){
     const q = (document.getElementById("q").value || "").trim();
@@ -925,13 +922,23 @@ const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` 
       const out = await apiPost("/create_quote.php", payload);
       toast("ok", `Cotação criada: ${out.quote_id || out.id || "OK"}`);
 
-      // Dispara o processamento (SerpAPI) no servidor.
-      // (Se o servidor ainda não estiver com SERPAPI_KEY configurada, a cotação ficará como pending.)
-      if (out && (out.quote_id || out.id)) {
-        triggerProcess(String(out.quote_id || out.id)).catch(()=>{});
+      const qid = String(out.quote_id || out.id || "");
+      if(qid){
+        // Processa imediatamente (SerpAPI) e faz polling até concluir
+        showOverlay(true, "Cotando (consultando lojas na internet)...");
+
+        try{
+          await triggerProcess(qid);
+        }catch(err){
+          // Se a SERPAPI_KEY não estiver configurada, o backend pode retornar pending/err
+          console.warn("triggerProcess falhou:", err);
+        }
+
+        // Sempre tenta abrir o detalhe e fazer polling (autoPoll=true)
+        await openDetail(qid, true);
       }
+
       await loadQuotes();
-      if(out.quote_id) await openDetail(out.quote_id, true);
       showOverlay(false);
     }catch(e){
       showOverlay(false);
@@ -1051,3 +1058,4 @@ const srcBadge = bestSrc ? `<span class="badge-src">${safeStr(bestSrc)}</span>` 
   </script>
 </body>
 </html>
+
