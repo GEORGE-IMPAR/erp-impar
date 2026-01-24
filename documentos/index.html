@@ -1892,7 +1892,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v27.0 • validação limpa por etapa</div>
+    <div>v28.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2969,9 +2969,6 @@ window.__jsonPickerItems = window.__jsonPickerItems || [];
 window.__jsonPickerOpening = false;
 
 async function openJsonPickerPremium(){
-  if (window.__jsonPickerOpening) return; // evita duplo clique / duplo disparo
-  window.__jsonPickerOpening = true;
-
   console.log("[JSONPICK] click atualizar");
 
   setBusyOnButton("btnAtualizar", true);
@@ -2980,43 +2977,33 @@ async function openJsonPickerPremium(){
   try{
     ensureJsonPickerModal();
 
-    // fetch primeiro (com loading), depois abre modal
     const items = await fetchJsonList();
-    window.__jsonPickerItems = items || [];
 
+    // 🔥 ISSO É O PONTO-CHAVE
     hideImparLoading();
 
     openJsonPickerModal();
-    renderJsonList(window.__jsonPickerItems);
+    renderJsonList(items);
 
     const s = document.getElementById("jsonPickerSearch");
-    if (s) {
-      s.value = ""; // opcional: limpa busca ao abrir
-      s.oninput = () => renderJsonList(window.__jsonPickerItems);
-    }
+    if (s) s.oninput = () => renderJsonList(items);
 
     const rbtn = document.getElementById("jsonPickerRefresh");
-    if (rbtn) {
-      rbtn.onclick = async () => {
-        showImparLoading("Atualizando lista…", "Recarregando JSONs.");
-        try{
-          const refreshed = await fetchJsonList();
-          window.__jsonPickerItems = refreshed || [];
-          renderJsonList(window.__jsonPickerItems);
-        } finally {
-          hideImparLoading();
-        }
-      };
-    }
+    if (rbtn) rbtn.onclick = async () => {
+      showImparLoading("Atualizando lista…", "Recarregando JSONs.");
+      try{
+        const refreshed = await fetchJsonList();
+        renderJsonList(refreshed);
+      } finally {
+        hideImparLoading();
+      }
+    };
 
   } catch(err){
-    console.error("[JSONPICK] erro:", err);
     hideImparLoading();
-    Swal.fire({ icon:"error", title:"Erro ao consultar JSONs", html: err?.message || String(err) });
+    Swal.fire({ icon:"error", title:"Erro", html: err?.message || String(err) });
   } finally {
-    hideImparLoading();
     setBusyOnButton("btnAtualizar", false);
-    window.__jsonPickerOpening = false;
   }
 }
 
