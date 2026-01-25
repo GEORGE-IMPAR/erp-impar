@@ -358,26 +358,7 @@ tr.row-best td{
 
         <div class="drop" style="margin-top:12px">
           <div>
-            <b>Arraste o CSV aqui
- (Brasil)
-          <div class="row" style="margin-top:10px;gap:14px;align-items:center">
-            <div class="pill" style="display:flex;gap:10px;align-items:center">
-              <input id="onlyBR" type="checkbox" checked style="transform:scale(1.1)"/>
-              <div style="line-height:1.1">
-                <div style="font-weight:800">Buscar somente Brasil</div>
-                <div class="muted" style="font-size:12px">Desative para China (em breve)</div>
-              </div>
-            </div>
-
-            <div class="pill" style="display:flex;gap:10px;align-items:center">
-              <input id="priorEan" type="checkbox" checked style="transform:scale(1.1)"/>
-              <div style="line-height:1.1">
-                <div style="font-weight:800">Priorizar EAN</div>
-                <div class="muted" style="font-size:12px">EAN → Descrição+NCM → Descrição</div>
-              </div>
-            </div>
-          </div>
-</b>
+            <b>Arraste o CSV aqui</b>
             <div class="hint">Colunas: <b>codigo,produto</b> (ou descricao), <b>ncm</b>, <b>quantidade</b> (ou qtd). (opcional: un)</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
@@ -402,8 +383,8 @@ tr.row-best td{
           <thead>
             <tr>
               <th style="width:90px">Código</th>
-              <th>EAN</th>
-              <th>Descrição</th>
+              <th style="width:140px">EAN</th>
+              <th>Descrição</th
               <th style="width:70px">Qtd</th>
               <th style="width:90px">NCM</th>
               <th style="width:70px">UN</th>
@@ -414,7 +395,7 @@ tr.row-best td{
 
         <div class="footer">
           <div>© 2026 ERP ÍMPAR • Pricing</div>
-          <div>v2.0 • layout ÍMPAR Premium</div>
+          <div>v3.0 • layout ÍMPAR Premium</div>
         </div>
       </div>
 
@@ -688,77 +669,43 @@ function escAttr(s){
     }
   }
 
-  
   function parseCSV(text){
-    // Aceita CSV com separador ";" (preferido) ou ",".
-    // Colunas: codigo;ean;produto/descricao;ncm;quantidade/qtd;un (unidade)
-    const lines = String(text || "")
-   .replace(/\r/g, "")
-   .split("\n")
-   .map(l => l.trim())
-   .filter(Boolean);
+    const lines = text.replace(/\r/g,"").split("\n").filter(l=>l.trim().length);
     if(!lines.length) return [];
-
-    const head = lines[0];
-    const sep = head.includes(";") ? ";" : ",";
-
-    const header = head.split(sep).map(h=>h.trim().toLowerCase());
+    const sep = (lines[0].includes(";") && !lines[0].includes(",")) ? ";" : ",";
+    const header = lines[0].split(sep).map(h=>h.trim().toLowerCase());
     const getIdx = (...names)=> names.map(n=>header.indexOf(n)).find(i=>i>=0);
-
     const idxCodigo = getIdx("codigo","código","cod");
     const idxEan    = getIdx("ean","gtin","barcode","codbarras","código de barras","codigo de barras");
     const idxProd   = getIdx("produto","descricao","descrição","description","item");
     const idxNcm    = getIdx("ncm");
     const idxQtd    = getIdx("quantidade","qtd","qtde","quant");
     const idxUn     = getIdx("un","unidade");
-
     const out=[];
     for(let i=1;i<lines.length;i++){
-      const cols = lines[i].split(sep).map(c=>String(c||"").trim().replace(/^"|"$/g,""));
+      const cols = lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,""));
       if(cols.length===1 && !cols[0]) continue;
-
       const codigo = safeStr(cols[idxCodigo]).trim();
-      const ean = safeStr(cols[idxEan]).trim();
       const descricao = safeStr(cols[idxProd]).trim();
       const qtd = Number(String(cols[idxQtd]||"").replace(",","."));
       const ncm = safeStr(cols[idxNcm]).trim();
       const un = safeStr(cols[idxUn]).trim();
-
-      if(!codigo && !descricao && !ean) continue;
-
-      out.push({
-        codigo: codigo||"",
-        ean: ean||"",
-        descricao: descricao||"",
-        ncm: ncm||"",
-        qtd: (isFinite(qtd)&&qtd>0 ? qtd : 1),
-        un: un||""
-      });
+      if(!codigo && !descricao) continue;
+      const ean = safeStr(cols[idxEan]).trim();
+      out.push({ codigo: codigo||"", ean: ean||"", descricao: descricao||"", ncm: ncm||"", qtd: (isFinite(qtd)&&qtd>0 ? qtd : 1), un: un||"" });
     }
     return out;
   }
 
-
-function downloadModelCSV() {
-  const csv = [
-    "codigo;ean;produto;ncm;quantidade;un",
-    "2734;;RED CA/C SCH 40 6 X 4;73079200;4;",
-    "9999;;TUBO ACO CARBONO SCH40;73064000;4;"
-  ].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "modelo_cotacao.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  URL.revokeObjectURL(url);
-}
-  
+  function modelCSV(){
+    const csv = "codigo;ean;produto;ncm;quantidade;un\n2734;;RED CA/C SCH 40 6 X 4;73079200;4;\n9999;;TUBO ACO CARBONO SCH40;73064000;4;kg/m\n";
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="modelo_itens_obra.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }
 
   let items = [];
   let currentDetail = null;
@@ -970,6 +917,7 @@ function storeHomepage(store){
         obra_id: obra,
         items: items.map(x=>({
           codigo: x.codigo,
+          ean: x.ean || "",
           descricao: x.descricao,
           ncm: x.ncm || null,
           qtd: Number(x.qtd)||1,
@@ -1071,10 +1019,7 @@ function storeHomepage(store){
   });
 
   document.getElementById("btnPick").addEventListener("click", ()=>document.getElementById("csvFile").click());
-  const btn = document.getElementById("btnModel");
-  if (btn) {
-    btn.addEventListener("click", downloadModelCSV);
-  }
+  document.getElementById("btnModel").addEventListener("click", modelCSV);
   document.getElementById("btnPreview").addEventListener("click", loadCSVAndPreview);
   document.getElementById("btnCreate").addEventListener("click", createQuote);
 
