@@ -356,18 +356,28 @@ tr.row-best td{
           </div>
         </div>
 
-
-<div class="row" style="margin-top:10px">
-  <div class="field" style="display:flex;align-items:center;gap:10px">
-    <input type="checkbox" id="onlyBrasil" checked />
-    <label for="onlyBrasil" style="margin:0">Buscar somente Brasil</label>
-    <span class="hint">Prioriza <b>EAN</b> → Descrição+NCM → Descrição</span>
-  </div>
-</div>
-
         <div class="drop" style="margin-top:12px">
           <div>
-            <b>Arraste o CSV aqui</b>
+            <b>Arraste o CSV aqui
+ (Brasil)
+          <div class="row" style="margin-top:10px;gap:14px;align-items:center">
+            <div class="pill" style="display:flex;gap:10px;align-items:center">
+              <input id="onlyBR" type="checkbox" checked style="transform:scale(1.1)"/>
+              <div style="line-height:1.1">
+                <div style="font-weight:800">Buscar somente Brasil</div>
+                <div class="muted" style="font-size:12px">Desative para China (em breve)</div>
+              </div>
+            </div>
+
+            <div class="pill" style="display:flex;gap:10px;align-items:center">
+              <input id="priorEan" type="checkbox" checked style="transform:scale(1.1)"/>
+              <div style="line-height:1.1">
+                <div style="font-weight:800">Priorizar EAN</div>
+                <div class="muted" style="font-size:12px">EAN → Descrição+NCM → Descrição</div>
+              </div>
+            </div>
+          </div>
+</b>
             <div class="hint">Colunas: <b>codigo,produto</b> (ou descricao), <b>ncm</b>, <b>quantidade</b> (ou qtd). (opcional: un)</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
@@ -392,7 +402,6 @@ tr.row-best td{
           <thead>
             <tr>
               <th style="width:90px">Código</th>
-              <th style="width:160px">EAN</th>
               <th>Descrição</th>
               <th style="width:70px">Qtd</th>
               <th style="width:90px">NCM</th>
@@ -678,86 +687,59 @@ function escAttr(s){
     }
   }
 
+  
   function parseCSV(text){
-  // CSV com separador ";" (preferido) ou ",".
-  // Suporta aspas duplas e separadores dentro de aspas.
-  const raw = String(text||"").replace(/\r\n/g,"\n").replace(/\r/g,"\n").trim();
-  if(!raw) return [];
-  const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
-  if(lines.length < 2) return [];
+    // Aceita CSV com separador ";" (preferido) ou ",".
+    // Colunas: codigo;ean;produto/descricao;ncm;quantidade/qtd;un (unidade)
+    const lines = String(text||"").replace(//g,"").split("
+").map(l=>l.trim()).filter(Boolean);
+    if(!lines.length) return [];
 
-  const headerLine = lines[0];
-  const sep = headerLine.includes(";") ? ";" : (headerLine.includes("\t") ? "\t" : ",");
+    const head = lines[0];
+    const sep = head.includes(";") ? ";" : ",";
 
-  function splitLine(line){
+    const header = head.split(sep).map(h=>h.trim().toLowerCase());
+    const getIdx = (...names)=> names.map(n=>header.indexOf(n)).find(i=>i>=0);
+
+    const idxCodigo = getIdx("codigo","código","cod");
+    const idxEan    = getIdx("ean","gtin","barcode","codbarras","código de barras","codigo de barras");
+    const idxProd   = getIdx("produto","descricao","descrição","description","item");
+    const idxNcm    = getIdx("ncm");
+    const idxQtd    = getIdx("quantidade","qtd","qtde","quant");
+    const idxUn     = getIdx("un","unidade");
+
     const out=[];
-    let cur="";
-    let inQ=false;
-    for(let i=0;i<line.length;i++){
-      const ch=line[i];
-      if(ch === '"'){
-        // "" dentro de aspas vira "
-        if(inQ && line[i+1] === '"'){ cur+='"'; i++; continue; }
-        inQ = !inQ;
-        continue;
-      }
-      if(!inQ && ch === sep){
-        out.push(cur.trim());
-        cur="";
-        continue;
-      }
-      cur += ch;
+    for(let i=1;i<lines.length;i++){
+      const cols = lines[i].split(sep).map(c=>String(c||"").trim().replace(/^"|"$/g,""));
+      if(cols.length===1 && !cols[0]) continue;
+
+      const codigo = safeStr(cols[idxCodigo]).trim();
+      const ean = safeStr(cols[idxEan]).trim();
+      const descricao = safeStr(cols[idxProd]).trim();
+      const qtd = Number(String(cols[idxQtd]||"").replace(",","."));
+      const ncm = safeStr(cols[idxNcm]).trim();
+      const un = safeStr(cols[idxUn]).trim();
+
+      if(!codigo && !descricao && !ean) continue;
+
+      out.push({
+        codigo: codigo||"",
+        ean: ean||"",
+        descricao: descricao||"",
+        ncm: ncm||"",
+        qtd: (isFinite(qtd)&&qtd>0 ? qtd : 1),
+        un: un||""
+      });
     }
-    out.push(cur.trim());
-    return out.map(v=>{
-      // remove aspas externas
-      if(v.length>=2 && v.startsWith('"') && v.endsWith('"')) v=v.slice(1,-1);
-      return v.trim();
-    });
+    return out;
   }
 
-  const headers = splitLine(headerLine).map(h=>String(h||"").trim().toLowerCase());
-  const idx = (names)=> headers.findIndex(h=> names.includes(h));
-
-  const idxCodigo = idx(["codigo","código","cod","cód"]);
-  const idxEAN    = idx(["ean","gtin","barcode","codbarras","codigo_de_barras","código_de_barras"]);
-  const idxDesc   = idx(["produto","descrição","descricao","item","material","nome"]);
-  const idxNCM    = idx(["ncm"]);
-  const idxQtd    = idx(["quantidade","qtd","qtde","qty"]);
-  const idxUN     = idx(["un","uni","unidade","u.m.","um","u/m"]);
-
-  const rows=[];
-  for(let li=1; li<lines.length; li++){
-    const cols = splitLine(lines[li]);
-    if(!cols.length) continue;
-
-    const codigo = idxCodigo>=0 ? cols[idxCodigo] : cols[0];
-    const ean    = idxEAN>=0 ? cols[idxEAN] : "";
-    const descricao = idxDesc>=0 ? cols[idxDesc] : (cols[1]||"");
-
-    const ncm = idxNCM>=0 ? cols[idxNCM] : "";
-    let qtdRaw = idxQtd>=0 ? cols[idxQtd] : (cols[2]||"1");
-    // aceita decimal com vírgula: "0,121"
-    qtdRaw = String(qtdRaw||"").replace(/\./g,"").replace(",","."); // "1.234,56" -> "1234.56"
-    const qtd = Number(qtdRaw);
-    const un  = idxUN>=0 ? cols[idxUN] : "";
-
-    if(!String(codigo||"").trim() && !String(descricao||"").trim()) continue;
-
-    rows.push({
-      codigo: String(codigo||"").trim(),
-      ean: String(ean||"").trim(),
-      descricao: String(descricao||"").trim(),
-      ncm: String(ncm||"").trim(),
-      qtd: isFinite(qtd) ? qtd : 1,
-      un: String(un||"").trim()
-    });
-  }
-  return rows;
-}
 
   function modelCSV(){
-    const csv = "codigo,produto,ncm,quantidade,un\n2734,RED CA/C SCH 40 6 X 4,73079200,4,\n9999,TUBO ACO CARBONO SCH40,73064000,4,\n";
+    const csv = "codigo;ean;produto;ncm;quantidade;un
+2734;;RED CA/C SCH 40 6 X 4;73079200;4;
+9999;;TUBO ACO CARBONO SCH40;73064000;4;
+";
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
@@ -776,7 +758,7 @@ function escAttr(s){
       const tr=document.createElement("tr");
       tr.innerHTML = `
         <td>${safeStr(it.codigo)}</td>
-        <td class="mono">${safeStr(it.ean||"")}</td>
+        <td>${safeStr(it.ean||"")}</td>
         <td>${safeStr(it.descricao)}</td>
         <td class="price">${safeStr(it.qtd)}</td>
         <td>${safeStr(it.ncm)}</td>
@@ -976,7 +958,6 @@ function storeHomepage(store){
         obra_id: obra,
         items: items.map(x=>({
           codigo: x.codigo,
-          ean: x.ean || null,
           descricao: x.descricao,
           ncm: x.ncm || null,
           qtd: Number(x.qtd)||1,
