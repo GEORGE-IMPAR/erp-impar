@@ -442,6 +442,7 @@ tr.row-best td{
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn ghost small" id="btnCopyJson">Copiar JSON</button>
+          <button class="btn ghost small" id="btnExportCsv">Exportar CSV</button>
           <button class="btn ghost small" id="btnOpenJson">Abrir JSON</button>
           <button class="btn small" id="btnClose">Fechar</button>
         </div>
@@ -1008,7 +1009,43 @@ function storeHomepage(store){
     catch(e){ toast("warn","Não consegui copiar (permissão do navegador)."); }
   });
 
-  document.getElementById("btnOpenJson").addEventListener("click", ()=>{
+  
+  document.getElementById("btnExportCsv").addEventListener("click", ()=>{
+    if(!currentDetail) return;
+    const rows = [];
+    // Cabeçalho
+    rows.push(["codigo","descricao","ncm","un","qtd","best_store","best_title","best_price","best_currency","best_link"]);
+    (currentDetail.results||[]).forEach(r=>{
+      const b = r.best_offer||{};
+      rows.push([
+        r.codigo||"",
+        r.descricao||"",
+        r.ncm||"",
+        r.un||"",
+        (r.qtd ?? ""),
+        b.store||"",
+        b.title||"",
+        (b.price ?? ""),
+        b.currency||"",
+        b.link||""
+      ]);
+    });
+    const csv = rows.map(cols => cols.map(v=>{
+      const s = String(v??"");
+      // aspas duplas para campos com ; ou quebra de linha
+      if(/[;\n\r\"]/g.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    }).join(";")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (currentDetail.quote_id||"cotacao") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+    toast("ok","CSV exportado.");
+  });
+
+document.getElementById("btnOpenJson").addEventListener("click", ()=>{
     if(!currentDetail) return;
     const blob = new Blob([JSON.stringify(currentDetail, null, 2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
