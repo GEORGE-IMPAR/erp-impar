@@ -678,31 +678,52 @@ function escAttr(s){
   }
 
   function parseCSV(text){
-   const lines = String(text||"").replace(/\r/g,"").split("\n").map(l=>l.trim()).filter(Boolean);
-    if(!lines.length) return [];
-    // ERP ÍMPAR: padrão é ';' (Excel BR). Se não tiver, cai no ','
-    const sep = lines[0].includes(";") ? ";" : ",";
-    const header = lines[0].split(sep).map(h=>h.trim().toLowerCase());
-    const getIdx = (...names)=> names.map(n=>header.indexOf(n)).find(i=>i>=0);
+    // CSV padrão: separado por ';' (Excel BR). Se não tiver ';', cai no ','.
+    const raw = String(text||"")
+      .replace(/^\uFEFF/,"") // BOM
+      .replace(/\r/g,"")
+      .trim();
+    if(!raw) return [];
 
-    const idxCodigo = getIdx("codigo","código","cod");
-    const idxEan    = getIdx("ean","ean13","gtin");
-    const idxProd   = getIdx("produto","descricao","descrição","description","item");
+    const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
+    if(lines.length < 2) return [];
+
+    const headerRaw = lines[0];
+    const sep = headerRaw.includes(";") ? ";" : ",";
+
+    const header = headerRaw.split(sep).map(h=>String(h||"").trim().toLowerCase());
+    const names = header.map(h=>h.normalize("NFD").replace(/[\u0300-\u036f]/g,"")); // sem acento
+
+    const getIdx = (...alts) => {
+      const aa = alts.map(a=>String(a).toLowerCase());
+      for(let i=0;i<names.length;i++){
+        const h = names[i];
+        if(aa.includes(h)) return i;
+      }
+      return -1;
+    };
+
+    const idxCodigo = getIdx("codigo","código","cod","id");
+    const idxEan    = getIdx("ean","ean13","gtin","barcode","codigo_de_barras");
+    const idxProd   = getIdx("produto","descricao","descrição","desc","item","material");
     const idxNcm    = getIdx("ncm");
-    const idxQtd    = getIdx("quantidade","qtd","qtde","quant");
-    const idxUn     = getIdx("un","unidade","u.m.","um");
+    const idxQtd    = getIdx("quantidade","qtd","qtde","qte","q");
+    const idxUn     = getIdx("un","unidade","und","u.m.","um");
 
-    const out=[];
+    const out = [];
     for(let i=1;i<lines.length;i++){
-      const cols = lines[i].split(sep).map(c=>String(c||"").trim().replace(/^"|"$/g,""));
-      if(cols.length===1 && !cols[0]) continue;
+      const row = lines[i];
+      if(!row) continue;
+
+      const cols = row.split(sep).map(c=>String(c||"").trim());
 
       const codigo = (idxCodigo>=0 ? safeStr(cols[idxCodigo]).trim() : "");
-      const ean    = (idxEan>=0 ? safeStr(cols[idxEan]).trim() : "");
+      const ean = (idxEan>=0 ? safeStr(cols[idxEan]).trim() : "");
       const descricao = (idxProd>=0 ? safeStr(cols[idxProd]).trim() : "");
       const ncm = (idxNcm>=0 ? safeStr(cols[idxNcm]).trim() : "");
       const un  = (idxUn>=0 ? safeStr(cols[idxUn]).trim() : "");
-      const qtd = Number(String((idxQtd>=0 ? cols[idxQtd] : "")||"").replace(",","."));
+      const qtdRaw = (idxQtd>=0 ? cols[idxQtd] : "");
+      const qtd = Number(String(qtdRaw||"").replace(/\s+/g,"").replace(",","."));
 
       // Obrigatórios: descricao + quantidade (qtd>0). O resto é opcional.
       if(!descricao) continue;
