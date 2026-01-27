@@ -382,13 +382,12 @@ tr.row-best td{
         <table class="table" id="itemsTable">
           <thead>
             <tr>
-            <th style="width:90px">Código</th>
-            <th style="width:160px">EAN</th>
-            <th>Descrição</th>
-            <th style="width:90px">Qtd</th>
-            <th style="width:120px">NCM</th>
-            <th style="width:90px">UN</th>
-    </tr>
+              <th style="width:90px">Código</th>
+              <th>Descrição</th>
+              <th style="width:70px">Qtd</th>
+              <th style="width:90px">NCM</th>
+              <th style="width:70px">UN</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -442,7 +441,6 @@ tr.row-best td{
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn ghost small" id="btnCopyJson">Copiar JSON</button>
-          <button class="btn ghost small" id="btnExportCsv">Exportar CSV</button>
           <button class="btn ghost small" id="btnOpenJson">Abrir JSON</button>
           <button class="btn small" id="btnClose">Fechar</button>
         </div>
@@ -515,29 +513,34 @@ function showOverlay(on, text="Processando..."){
   const API_BASE = "https://api.erpimpar.com.br/pricing";
 
 
-  function getApiKey(){
-    return (
-      localStorage.getItem("impar_x_api_key") ||
-      localStorage.getItem("x_api_key") ||
-      localStorage.getItem("API_KEY") ||
-      ""
-    ).trim();
-  }
-
-  function withKeyInUrl(url){
+  function getApiKey(){ return ""; }
+function withKeyInUrl(url){ return url; }
+async function apiGet(path){
     const k = getApiKey();
-    if(!k) return url;
-    // fallback para servidores que aceitam querystring
-    const sep = url.includes("?") ? "&" : "?";
-    return url + sep + "x_api_key=" + encodeURIComponent(k);
-  }
-
-  async function apiGet(path){
-    const k = getApiKey();
-    const res = await fetch(withKeyInUrl(API_BASE + path), {
+    const res = await fetch((API_BASE + path), {
       method:"GET",
-      headers: k ? { "X-API-KEY": k } : {}
+      headers: {}
+    
+async function logClientError(context, err, extra){
+  try{
+    const payload = {
+      ts: new Date().toISOString(),
+      context: String(context||""),
+      message: err && err.message ? String(err.message) : String(err||""),
+      status: err && err.status ? err.status : undefined,
+      extra: extra||undefined,
+      ua: navigator.userAgent
+    ,
+    market: (document.getElementById("marketSelect") ? document.getElementById("marketSelect").value : "BR")
+  };
+    await fetch(API_BASE + "/log_client.php", {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
     });
+  }catch(e){}
+}
+});
     const txt = await res.text();
     let data;
     try{ data = JSON.parse(txt); }catch(e){ data = txt; }
@@ -553,9 +556,8 @@ function showOverlay(on, text="Processando..."){
 
   async function apiPost(path, body){
     const k = getApiKey();
-    const headers = { "Content-Type":"application/json" };
-    if(k) headers["X-API-KEY"] = k;
-    const res = await fetch(withKeyInUrl(API_BASE + path), {
+    const headers = {"Content-Type":"application/json"};
+    const res = await fetch((API_BASE + path), {
       method:"POST",
       headers,
       body: JSON.stringify(body||{})
@@ -677,7 +679,6 @@ function escAttr(s){
     const header = lines[0].split(sep).map(h=>h.trim().toLowerCase());
     const getIdx = (...names)=> names.map(n=>header.indexOf(n)).find(i=>i>=0);
     const idxCodigo = getIdx("codigo","código","cod");
-  const idxEan    = getIdx("ean","gtin","barcode","codbarras","cod_barras","código de barras","codigo de barras");
     const idxProd   = getIdx("produto","descricao","descrição","description","item");
     const idxNcm    = getIdx("ncm");
     const idxQtd    = getIdx("quantidade","qtd","qtde","quant");
@@ -717,11 +718,10 @@ function escAttr(s){
       const tr=document.createElement("tr");
       tr.innerHTML = `
         <td>${safeStr(it.codigo)}</td>
-        <td>${safeStr(it.ean || "")}</td>
         <td>${safeStr(it.descricao)}</td>
         <td class="price">${safeStr(it.qtd)}</td>
-        <td>${safeStr(it.ncm || "")}</td>
-        <td>${safeStr(it.un || "")}</td>`;
+        <td>${safeStr(it.ncm)}</td>
+        <td>${safeStr(it.un)}</td>`;
       tb.appendChild(tr);
     }
     document.getElementById("kpiItems").textContent = `Itens carregados: ${items.length}`;
@@ -1009,43 +1009,7 @@ function storeHomepage(store){
     catch(e){ toast("warn","Não consegui copiar (permissão do navegador)."); }
   });
 
-  
-  document.getElementById("btnExportCsv").addEventListener("click", ()=>{
-    if(!currentDetail) return;
-    const rows = [];
-    // Cabeçalho
-    rows.push(["codigo","descricao","ncm","un","qtd","best_store","best_title","best_price","best_currency","best_link"]);
-    (currentDetail.results||[]).forEach(r=>{
-      const b = r.best_offer||{};
-      rows.push([
-        r.codigo||"",
-        r.descricao||"",
-        r.ncm||"",
-        r.un||"",
-        (r.qtd ?? ""),
-        b.store||"",
-        b.title||"",
-        (b.price ?? ""),
-        b.currency||"",
-        b.link||""
-      ]);
-    });
-    const csv = rows.map(cols => cols.map(v=>{
-      const s = String(v??"");
-      // aspas duplas para campos com ; ou quebra de linha
-      if(/[;\n\r\"]/g.test(s)) return '"' + s.replace(/"/g,'""') + '"';
-      return s;
-    }).join(";")).join("\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = (currentDetail.quote_id||"cotacao") + ".csv";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
-    toast("ok","CSV exportado.");
-  });
-
-document.getElementById("btnOpenJson").addEventListener("click", ()=>{
+  document.getElementById("btnOpenJson").addEventListener("click", ()=>{
     if(!currentDetail) return;
     const blob = new Blob([JSON.stringify(currentDetail, null, 2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
