@@ -354,16 +354,6 @@ tr.row-best td{
               <option value="sample">Usar exemplo (2 itens)</option>
             </select>
           </div>
-<div class="field">
-  <label class="fieldLabel">Mercado</label>
-  <select id="marketSelect" class="selectPremium" style="min-width:160px">
-    <option value="BR" selected>Brasil</option>
-    <option value="CN">China</option>
-  </select>
-  <div class="hintMini">Selecione o mercado para a cotação.</div>
-</div>
-
-
         </div>
 
         <div class="drop" style="margin-top:12px">
@@ -523,47 +513,63 @@ function showOverlay(on, text="Processando..."){
   const API_BASE = "https://api.erpimpar.com.br/pricing";
 
 
-  function getApiKey(){ return ""; }
+  function getApiKey(){
+    return (
+      localStorage.getItem("impar_x_api_key") ||
+      localStorage.getItem("x_api_key") ||
+      localStorage.getItem("API_KEY") ||
+      ""
+    ).trim();
+  }
 
-
-  function withKeyInUrl(url){ return url; }
-
+  function withKeyInUrl(url){
+    const k = getApiKey();
+    if(!k) return url;
+    // fallback para servidores que aceitam querystring
+    const sep = url.includes("?") ? "&" : "?";
+    return url + sep + "x_api_key=" + encodeURIComponent(k);
+  }
 
   async function apiGet(path){
-  const res = await fetch(API_BASE + path, { method:"GET" });
-  const txt = await res.text();
-  let data;
-  try{ data = JSON.parse(txt); }catch(e){ data = txt; }
-  if(!res.ok){
-    const msg = (data && data.error) ? data.error : (typeof data==="string" ? data : "Erro");
-    const e = new Error(msg);
-    e.status = res.status;
-    e.payload = data;
-    throw e;
+    const k = getApiKey();
+    const res = await fetch(withKeyInUrl(API_BASE + path), {
+      method:"GET",
+      headers: k ? { "X-API-KEY": k } : {}
+    });
+    const txt = await res.text();
+    let data;
+    try{ data = JSON.parse(txt); }catch(e){ data = txt; }
+    if(!res.ok){
+      const err = (data && data.error) ? data.error : (typeof data === "string" ? data : "Erro");
+      const e = new Error(err);
+      e.status = res.status;
+      e.payload = data;
+      throw e;
+    }
+    return data;
   }
-  return data;
-}
-
 
   async function apiPost(path, body){
-  const res = await fetch(API_BASE + path, {
-    method:"POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(body||{})
-  });
-  const txt = await res.text();
-  let data;
-  try{ data = JSON.parse(txt); }catch(e){ data = txt; }
-  if(!res.ok){
-    const msg = (data && data.error) ? data.error : (typeof data==="string" ? data : "Erro");
-    const e = new Error(msg);
-    e.status = res.status;
-    e.payload = data;
-    throw e;
+    const k = getApiKey();
+    const headers = { "Content-Type":"application/json" };
+    if(k) headers["X-API-KEY"] = k;
+    const res = await fetch(withKeyInUrl(API_BASE + path), {
+      method:"POST",
+      headers,
+      body: JSON.stringify(body||{})
+    });
+    const txt = await res.text();
+    let data;
+    try{ data = JSON.parse(txt); }catch(e){ data = txt; }
+    if(!res.ok){
+      const err = (data && data.error) ? data.error : (typeof data === "string" ? data : "Erro");
+      const e = new Error(err);
+      e.status = res.status;
+      e.payload = data;
+      throw e;
+    }
+    return data;
   }
-  return data;
-}
-
 
   async function triggerProcess(quoteId){
     if(!quoteId) return null;
@@ -905,7 +911,6 @@ function storeHomepage(store){
     try{
       const payload = {
         obra_id: obra,
-      market: (document.getElementById("marketSelect") ? document.getElementById("marketSelect").value : "BR"),
         items: items.map(x=>({
           codigo: x.codigo,
           descricao: x.descricao,
@@ -1043,4 +1048,3 @@ function storeHomepage(store){
   </script>
 </body>
 </html>
-
