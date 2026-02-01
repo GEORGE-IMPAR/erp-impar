@@ -1,47 +1,36 @@
-// Sistema Ágape PWA - service worker (v12)
-const CACHE_NAME = "agape-v12";
-const CORE_ASSETS = [
+const CACHE = "agape-v14";
+const ASSETS = [
   "./",
   "./index.html",
-  "./manifest.json",
   "./agape_config.json",
-  "./logo-Clementino-Brito.jpeg",
+  "./manifest.webmanifest",
   "./icon-192.png",
-  "./icon-512.png"
+  "./icon-512.png",
+  "./assets/logo.jpeg",
+  "./assets/agua.jpg",
+  "./assets/carvao.jpg",
+  "./assets/coca15l.jpg",
+  "./assets/coca2l.jpg",
+  "./assets/heineken600.jpg",
+  "./assets/heineken600Zero.jpg",
+  "./assets/original600.jpg",
+  "./assets/pureza2l.jpg"
 ];
 
-self.addEventListener("install", (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).catch(()=>{})
-  );
+self.addEventListener("install", (e)=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));
 });
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+self.addEventListener("activate", (e)=>{
+  e.waitUntil(self.clients.claim());
 });
-
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      const fetchPromise = fetch(req).then((res) => {
-        try{
-          const url = new URL(req.url);
-          if(url.origin === self.location.origin && res.ok){
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(()=>{});
-          }
-        }catch(_){}
-        return res;
-      }).catch(() => cached);
-      return cached || fetchPromise;
-    })
+self.addEventListener("fetch", (e)=>{
+  const req = e.request;
+  if(req.method!=="GET") return;
+  e.respondWith(
+    caches.match(req).then(res=> res || fetch(req).then(net=>{
+      const copy = net.clone();
+      caches.open(CACHE).then(c=>c.put(req, copy)).catch(()=>{});
+      return net;
+    }).catch(()=>res))
   );
 });
