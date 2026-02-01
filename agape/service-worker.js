@@ -1,72 +1,36 @@
-const CACHE_NAME = "agape-cache-v24-1";
-const CORE_ASSETS = [
+const CACHE = "agape-v16";
+const ASSETS = [
   "./",
   "./index.html",
-  "./manifest.json",
   "./agape_config.json",
-  "./assets/logo-Clementino-Brito.jpeg",
-  "./assets/icons/icon-192.png",
-  "./assets/icons/icon-512.png",
-  "./assets/produtos/agua.jpg",
-  "./assets/produtos/carvao.jpg",
-  "./assets/produtos/coca2l.jpg",
-  "./assets/produtos/coca15l.jpg",
-  "./assets/produtos/heineken600.jpg",
-  "./assets/produtos/heineken600Zero.jpg",
-  "./assets/produtos/original600.jpg",
-  "./assets/produtos/pureza2l.jpg",
-  "./assets/produtos/stellasemgluten.jpg"
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./assets/logo.jpeg",
+  "./assets/agua.jpg",
+  "./assets/carvao.jpg",
+  "./assets/coca15l.jpg",
+  "./assets/coca2l.jpg",
+  "./assets/heineken600.jpg",
+  "./assets/heineken600Zero.jpg",
+  "./assets/original600.jpg",
+  "./assets/pureza2l.jpg"
 ];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE_ASSETS);
-    self.skipWaiting();
-  })());
+self.addEventListener("install", (e)=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));
 });
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map(k => (k !== CACHE_NAME) ? caches.delete(k) : Promise.resolve()));
-    await self.clients.claim();
-  })());
+self.addEventListener("activate", (e)=>{
+  e.waitUntil(self.clients.claim());
 });
-
-self.addEventListener("message", (event) => {
-  if (event.data === "CLEAR_CACHES") {
-    event.waitUntil((async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    })());
-  }
-});
-
-// Network-first for JSON config, cache-first for everything else.
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (url.pathname.endsWith("agape_config.json")) {
-    event.respondWith((async () => {
-      try {
-        const res = await fetch(event.request, { cache: "no-store" });
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(event.request, res.clone());
-        return res;
-      } catch (e) {
-        const cached = await caches.match(event.request);
-        return cached || Response.error();
-      }
-    })());
-    return;
-  }
-
-  event.respondWith((async () => {
-    const cached = await caches.match(event.request);
-    if (cached) return cached;
-    const res = await fetch(event.request);
-    const cache = await caches.open(CACHE_NAME);
-    cache.put(event.request, res.clone());
-    return res;
-  })());
+self.addEventListener("fetch", (e)=>{
+  const req = e.request;
+  if(req.method!=="GET") return;
+  e.respondWith(
+    caches.match(req).then(res=> res || fetch(req).then(net=>{
+      const copy = net.clone();
+      caches.open(CACHE).then(c=>c.put(req, copy)).catch(()=>{});
+      return net;
+    }).catch(()=>res))
+  );
 });
