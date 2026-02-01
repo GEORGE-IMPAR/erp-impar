@@ -1,4 +1,4 @@
-const CACHE = "agape-v14";
+const CACHE = "agape-v16";
 const ASSETS = [
   "./",
   "./index.html",
