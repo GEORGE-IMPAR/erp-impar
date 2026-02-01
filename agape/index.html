@@ -998,33 +998,49 @@ function applyRememberedUser(){
   }, 6000);
 
   // login
-  $("#btnEntrar").addEventListener("click", async ()=>{
-    const tel=$("#inpTel").value;
-    const cim=$("#inpCIM").value;
-    if(!tel.trim()){ markInvalid($("#inpTel")); toast("Digite o telefone"); return; }
-    if(!cim.trim()){ markInvalid($("#inpCIM")); toast("Digite o CIM"); return; }
+$("#btnEntrar").addEventListener("click", async () => {
+  const cim = $("#inpCIM").value.trim();
 
-    try{
-      CFG = await loadConfig(); // refresh
-      applyBrand();
-    }catch(_){}
+  // 1) Se já tem telefone salvo, usa ele. Se não, usa o input.
+  const uSaved = getUser();
+  const telWrap = document.getElementById("telWrap");
+  const telFromInput = ($("#inpTel")?.value || "").trim();
 
-setUser({
-  nome: irmao.nome,
-  telefone: String(irmao.telefone).replace(/\D/g,"")
-});
+  const tel = (uSaved?.telefone && telWrap && telWrap.style.display === "none")
+    ? String(uSaved.telefone)
+    : telFromInput;
 
-applyRememberedUser(); // atualiza o texto e oculta telefone na hora
-    
-    if(!sessionIsOpen()){
-      toast("Sessão fechada (tesoureiro precisa abrir)");
-      // if session closed, send to wait screen (optional)
-      showScreen("scr_wait","forward");
-      startWaitPolling();
-      return;
-    }
-    goToConsumo();
+  // validações
+  if (!tel) { toast("Digite o telefone"); markInvalid($("#inpTel")); return; }
+  if (!cim) { toast("Digite o CIM"); markInvalid($("#inpCIM")); return; }
+
+  // 2) Recarrega config e procura o irmão
+  try {
+    CFG = await loadConfig();  // refresh
+    applyBrand();
+  } catch (_) {}
+
+  const irmao = findIrmao(tel, cim);
+  if (!irmao) { toast("CIM ou telefone inválido"); markInvalid($("#inpCIM")); return; }
+
+  // 3) Salva e aplica saudação (Bem-vindo, Nome)
+  setUser({
+    nome: irmao.nome,
+    telefone: String(irmao.telefone || tel).replace(/\D/g, "")
   });
+
+  applyRememberedUser(); // atualiza texto e esconde telefone se tiver salvo
+
+  // 4) sessão aberta?
+  if (!sessionIsOpen()) {
+    toast("Sessão fechada (tesoureiro precisa abrir)");
+    showScreen("scr_wait", "forward");
+    startWaitPolling();
+    return;
+  }
+
+  goToConsumo();
+});
 
   // qty buttons
   document.addEventListener("click",(e)=>{
