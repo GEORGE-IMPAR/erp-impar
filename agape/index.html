@@ -233,6 +233,63 @@
 .screen#scr_splash2.active .brandRow{
   animation: splash2Zoom 2400ms cubic-bezier(.2,.8,.2,1) forwards;
 }
+
+
+/* --- v13 fixes: splash zoom + scrollable products + icons --- */
+:root{ --navy:#071b2f; }
+html,body{ height:100%; }
+body{ background: var(--navy); overscroll-behavior: none; }
+
+.screen{ height:100%; }
+.wrap{ height:100%; display:flex; flex-direction:column; gap:14px; }
+
+#prodList{
+  flex:1;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px; /* keeps scroll thumb off edge */
+}
+
+/* Keep total/button visible while only product list scrolls */
+.stickyFooter{ margin-top:auto; }
+
+/* Product row with icon */
+.prodRow{ display:flex; gap:12px; align-items:center; }
+.prodIcon{
+  width:54px; height:54px; border-radius:16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
+  border:1px solid rgba(255,255,255,.10);
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+  flex:0 0 54px;
+}
+.prodIcon img{ width:100%; height:100%; object-fit:cover; }
+.prodIcon span{ font-weight:800; color:rgba(255,255,255,.85); font-size:18px; }
+.prodLeft{ flex:1; min-width:0; }
+
+/* Splash zoom slow */
+@keyframes zoomInSoft {
+  0%{ transform:translateY(6px) scale(.92); opacity:0; }
+  100%{ transform:translateY(0) scale(1); opacity:1; }
+}
+#scr_splash2.active .brandRow{ animation: zoomInSoft 3s ease-out both; }
+
+/* Make splash backgrounds truly fullscreen */
+#scr_splash1, #scr_splash2, #scr_splash3{
+  background: var(--navy) !important;
+}
+
+/* Gate yellow helper text */
+.gateHint{
+  margin-top:10px;
+  background: rgba(255, 215, 0, .16);
+  border: 1px solid rgba(255, 215, 0, .35);
+  color: rgba(255,255,255,.92);
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.25;
+}
 </style>
 
 <meta name="theme-color" content="#071427">
@@ -490,6 +547,8 @@ function applyBrand(){
   $("#pixChave").textContent = CFG.loja?.pix_chave || "";
   $("#payPix").textContent = CFG.loja?.pix_chave || "";
   $("#consLoja").textContent = CFG.loja?.nome || "Loja";
+  const logoUrl = CFG.loja?.logo_url || "./logo-Clementino-Brito.jpeg";
+  document.querySelectorAll(".lojaLogo").forEach(im=>{ try{ im.src=logoUrl; }catch(_){ } });
   const opened = (CFG.sessao?.status||"").toLowerCase()==="aberta";
   $("#sessaoDot").style.background = opened ? "var(--good)" : "rgba(255,255,255,.30)";
   $("#sessaoTitle").textContent = opened ? "Sessão aberta" : "Sessão fechada";
@@ -530,6 +589,7 @@ function renderProducts(){
     const row=document.createElement("div");
     row.className="prodRow";
     row.innerHTML=`
+      <div class="prodIcon" aria-hidden="true"></div>
       <div class="prodLeft">
         <div class="prodName">${p.nome||"Produto"}</div>
         <div class="prodDesc">${p.desc||""}</div>
@@ -540,8 +600,26 @@ function renderProducts(){
         <div class="qty" id="qty_${p.id}">${q}</div>
         <button class="qtyBtn" data-act="inc" data-id="${p.id}">+</button>
       </div>
-    `;
-    list.appendChild(row);
+`;
+// icon: use p.icon_url when available, else letter
+const ic = row.querySelector(".prodIcon");
+const url = (p.icon_url||p.icone||p.icon||"");
+if(ic){
+  if(url){
+    const img = document.createElement("img");
+    img.alt = "";
+    img.loading = "lazy";
+    img.src = url;
+    ic.innerHTML = "";
+    ic.appendChild(img);
+  }else{
+    const sp=document.createElement("span");
+    sp.textContent = String(p.nome||"").trim().slice(0,1).toUpperCase() || "•";
+    ic.innerHTML="";
+    ic.appendChild(sp);
+  }
+}
+list.appendChild(row);
   }
   updateTotal();
 }
@@ -583,8 +661,9 @@ async function copyText(txt){
 
 function goToConsumo(){
   const u=getUser();
-  $("#consUser").textContent = u?.nome ? `Meu Consumo — Irmão ${u.nome}` : "Meu consumo";
+  $("#consUser").textContent = "Meu Consumo";
   $("#consSessao").textContent = CFG.sessao?.data ? `Sessão: ${CFG.sessao.data}` : "Sessão: —";
+  $("#consIrmao").textContent = u?.nome ? `Irmão ${u.nome}` : "—";
   $("#paySessao").textContent = CFG.sessao?.data ? `Sessão: ${CFG.sessao.data}` : "Sessão: —";
   renderProducts();
   showScreen("scr_consumo","forward");
@@ -656,7 +735,8 @@ async function boot(){
     $("#welcomeTitle").textContent = `Bem-vindo, Irmão ${irmao.nome} 👋`;
 
     if(!sessionIsOpen()){
-      toast("Sessão fechada (tesoureiro precisa abrir)");
+      showScreen("scr_gate","forward");
+      toast("Sessão ainda não liberada");
       return;
     }
     goToConsumo();
