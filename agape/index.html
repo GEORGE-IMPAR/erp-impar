@@ -28,19 +28,36 @@
     body{overflow:hidden}
     /* Safe areas */
     .safe{padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);}
-    .screen{
-      position:fixed; inset:0;
-      display:none;
-      background: radial-gradient(1200px 900px at 50% 0%, var(--bg2), var(--bg1));
-    }
-    .screen.active{display:flex}
-    /* Slide transitions */
-    .enter-left{transform:translateX(100%); opacity:1}
-    .enter-right{transform:translateX(-100%); opacity:1}
-    .exit-left{transform:translateX(-100%); opacity:1}
-    .exit-right{transform:translateX(100%); opacity:1}
-    .screen.active{transition: transform .46s ease, opacity .46s ease; transform:translateX(0); opacity:1}
-    .screen.exit-left,.screen.exit-right,.screen.enter-left,.screen.enter-right{display:flex}
+/* Base */
+.screen{
+  position:absolute;
+  inset:0;
+  display:none;            /* ok esconder assim */
+  opacity:0;
+  transform:translateX(0);
+  transition: transform .46s ease, opacity .46s ease; /* <<< aqui! */
+}
+
+/* Ativo */
+.screen.active{
+  display:flex;
+  opacity:1;
+  transform:translateX(0);
+}
+
+/* Transições (posições de entrada/saída) */
+.enter-left{ transform:translateX(100%); opacity:1; }
+.enter-right{ transform:translateX(-100%); opacity:1; }
+.exit-left{ transform:translateX(-100%); opacity:1; }
+.exit-right{ transform:translateX(100%); opacity:1; }
+
+/* Garantir display durante animação */
+.screen.enter-left,
+.screen.enter-right,
+.screen.exit-left,
+.screen.exit-right{
+  display:flex;
+}
 
     /* Splash 1: blue */
     #scr_splash1{background: var(--bg1); align-items:center; justify-content:center;}
@@ -517,12 +534,6 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
         </div>
 
         <div class="pixBar">
-          <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
-          <div class="pixKey" id="pixChaveCons">—</div>
-        </div>
-
-
-        <div class="pixBar">
           <div class="tL">
             <div class="tMain" id="consUser">Meu Consumo.............................................</div>
           </div>
@@ -672,27 +683,41 @@ function toast(msg){
   t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"), 1700);
 }
+let transitioning = false;
 function showScreen(id, dir="forward"){
-  const from=document.getElementById(currentScreen);
-  const to=document.getElementById(id);
-  if(!from||!to||id===currentScreen) return;
+  const from = document.getElementById(currentScreen);
+  const to   = document.getElementById(id);
+  if(!from || !to || id === currentScreen) return;
 
-  to.classList.remove("exit-left","exit-right","enter-left","enter-right");
+  // limpa classes
+  to.classList.remove("exit-left","exit-right","enter-left","enter-right","active");
   from.classList.remove("exit-left","exit-right","enter-left","enter-right");
 
-  if(dir==="forward") to.classList.add("enter-left"); else to.classList.add("enter-right");
+  // 1) prepara o TO fora da tela e liga display
+  if(dir === "forward") to.classList.add("enter-left");
+  else to.classList.add("enter-right");
+
   to.classList.add("active");
+
+  // força layout (garante que o estado "enter-*" foi aplicado)
   void to.offsetWidth;
+
+  // 2) dispara animação do TO para o centro
   to.classList.remove("enter-left","enter-right");
 
-  if(dir==="forward") from.classList.add("exit-left"); else from.classList.add("exit-right");
+  // 3) agora anima o FROM para fora (com reflow antes pra evitar pulo no mobile)
+  void from.offsetWidth;
+  if(dir === "forward") from.classList.add("exit-left");
+  else from.classList.add("exit-right");
 
-  setTimeout(()=>{
+  // 4) finaliza após a duração do CSS
+    setTimeout(()=>{
     from.classList.remove("active","exit-left","exit-right");
-    currentScreen=id;
+    currentScreen = id;
+    transitioning = false;
   }, 460);
 }
-
+  
 function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}catch(_){return {}} }
 function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
 function clearCart(){ localStorage.removeItem(LS_CART); }
