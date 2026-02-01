@@ -225,7 +225,19 @@
       box-shadow: 0 20px 60px rgba(0,0,0,.55);
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); 
     }
-  </style>
+  
+@keyframes splash2Zoom{
+  from{ transform: translateY(10px) scale(.92); opacity: 0; filter: blur(4px); }
+  to{ transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
+}
+.screen#scr_splash2.active .brandRow{
+  animation: splash2Zoom 2400ms cubic-bezier(.2,.8,.2,1) forwards;
+}
+</style>
+
+<meta name="theme-color" content="#071427">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
   <div class="app">
@@ -234,7 +246,7 @@
       <section class="screen active solid" id="scr_splash1"></section>
 
       <section class="screen solid" id="scr_splash2">
-        <div class="brandRow zoomIn">
+        <div class="brandRow">
           <div class="logo"><img id="brandLogo" alt="Logo" src="logo-Clementino-Brito.jpeg"></div>
           <div class="brandTitle">Sistema Ágape</div>
         </div>
@@ -248,7 +260,57 @@
         </div>
       </section>
 
-      <section class="screen" id="scr_login">
+      
+<section class="screen" id="scr_gate">
+  <div class="topBar">
+    <button id="tapLogoGate" class="topLogoBtn" aria-label="Logo (admin)">
+      <img id="topLogoImgGate" alt="Logo" src="logo-Clementino-Brito.jpeg">
+    </button>
+    <div class="brandText">
+      <div class="brandName" id="gateLojaNome">Loja</div>
+      <div class="brandSub" id="gateLojaSub">App Ágape • Consumo & Pagamento</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="rowBetween">
+      <div class="pill">
+        <span class="dot" id="gateSessaoDot"></span>
+        <div>
+          <div class="pillTitle" id="gateSessaoTitle">Sessão fechada</div>
+          <div class="pillSub" id="gateSessaoDate">Sessão: —</div>
+        </div>
+      </div>
+      <div class="pill mini">
+        <div class="miniLabel">Pix:</div>
+        <div class="miniValue" id="gatePix">—</div>
+      </div>
+    </div>
+
+    <div class="bigTitle">Sessão ainda não liberada 🔒</div>
+    <div class="muted" id="gateMsg">
+      A sessão ainda não foi aberta pelo responsável, mas não se preocupe.<br>
+      Quando liberar a sessão, automaticamente aparecerá a tela de login.
+    </div>
+
+    <div class="infoBox">
+      <div class="infoLabel">Última verificação</div>
+      <div class="infoValue" id="gateLastCheck">—</div>
+    </div>
+
+    <div class="infoBox">
+      <div class="infoLabel">Status</div>
+      <div class="infoValue" id="gateStatus">Fechada</div>
+    </div>
+
+    <div class="hint">
+      Modo tesoureiro: toque <b>5x</b> no logo para abrir Admin (sessão, caixa, produtos, Pix).
+    </div>
+  </div>
+</section>
+
+
+<section class="screen" id="scr_login">
         <div class="wrap">
           <div class="topBar">
             <button id="tapLogo" class="topLogoBtn" aria-label="Logo (admin)">
@@ -432,6 +494,26 @@ function applyBrand(){
   $("#sessaoDot").style.background = opened ? "var(--good)" : "rgba(255,255,255,.30)";
   $("#sessaoTitle").textContent = opened ? "Sessão aberta" : "Sessão fechada";
   $("#sessaoDate").textContent = CFG.sessao?.data ? ("Sessão: "+CFG.sessao.data) : (opened ? "Sessão liberada" : "Aguardando liberação…");
+
+  // gate (sessão fechada)
+  const gateNome = document.getElementById("gateLojaNome");
+  if(gateNome){
+    gateNome.textContent = CFG.loja?.nome || "Loja";
+    const gateSub = document.getElementById("gateLojaSub");
+    if(gateSub) gateSub.textContent = CFG.loja?.subtitulo || "";
+    const gatePix = document.getElementById("gatePix");
+    if(gatePix) gatePix.textContent = CFG.loja?.pix_chave || "";
+    const gateDot = document.getElementById("gateSessaoDot");
+    if(gateDot) gateDot.style.background = opened ? "var(--good)" : "rgba(255,255,255,.30)";
+    const gateTitle = document.getElementById("gateSessaoTitle");
+    if(gateTitle) gateTitle.textContent = opened ? "Sessão aberta" : "Sessão fechada";
+    const gateDate = document.getElementById("gateSessaoDate");
+    if(gateDate) gateDate.textContent = CFG.sessao?.data ? ("Sessão: "+CFG.sessao.data) : (opened ? "Sessão liberada" : "Aguardando liberação…");
+    const gateStatus = document.getElementById("gateStatus");
+    if(gateStatus) gateStatus.textContent = opened ? "Aberta" : "Fechada";
+    const topGate = document.getElementById("topLogoImgGate");
+    if(topGate) topGate.src = logo;
+  }
 }
 function sessionIsOpen(){ return (CFG.sessao?.status||"").toLowerCase()==="aberta"; }
 
@@ -516,13 +598,46 @@ async function boot(){
   CFG = await loadConfig();
   applyBrand();
 
-  const t1 = CFG.ui?.splash?.t1_ms ?? 3000;
-  const t2 = CFG.ui?.splash?.t2_ms ?? 3000;
-  const t3 = CFG.ui?.splash?.t3_ms ?? 3000;
+  const t1 = CFG.ui?.splash?.t1_ms ?? 3000; // azul marinho puro
+  const t2 = CFG.ui?.splash?.t2_ms ?? 3000; // logo + "Sistema Ágape" (zoom lento)
+  const t3 = CFG.ui?.splash?.t3_ms ?? 3000; // carregando
 
-  setTimeout(()=>showScreen("scr_splash2","forward"), t1);
-  setTimeout(()=>showScreen("scr_splash3","forward"), t1+t2);
-  setTimeout(()=>showScreen("scr_login","forward"), t1+t2+t3);
+  const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
+
+  // sequência splash 3+3+3 (igual gabarito)
+  await sleep(t1);
+  showScreen("scr_splash2","forward");
+
+  await sleep(t2);
+  showScreen("scr_splash3","forward");
+
+  await sleep(t3);
+
+  // após splash: decide pra onde vai
+  CFG = await loadConfig();
+  applyBrand();
+
+  if(sessionIsOpen()){
+    showScreen("scr_login","forward");
+  }else{
+    const last = document.getElementById("gateLastCheck");
+    if(last) last.textContent = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    showScreen("scr_gate","forward");
+
+    // fica checando o JSON até abrir (transita sozinho para login)
+    setInterval(async ()=>{
+      try{
+        CFG = await loadConfig();
+        applyBrand();
+        const last = document.getElementById("gateLastCheck");
+        if(last) last.textContent = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+        if(sessionIsOpen() && currentScreen==="scr_gate"){
+          showScreen("scr_login","forward");
+        }
+      }catch(_){}
+    }, 5000);
+  }
+
 
   // login
   $("#btnEntrar").addEventListener("click", async ()=>{
