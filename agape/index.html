@@ -552,14 +552,58 @@
   </section>
 
 <script>
-const CONFIG_URL = "./agape_config.json";
+const CONFIG_URL = "./agape_config.json?v=23";
 const LS_CART  = "agape_cart_v14";
 const LS_USER  = "agape_user_v14";
 const $ = (s)=>document.querySelector(s);
 function setText(sel,val){const el=$(sel); if(el) el.textContent=val;}
 const fmtBRL = (v)=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 
+function animateTotal(to){
+  const el1 = $("#totalValue");
+  const el2 = $("#payTotal");
+  if(!el1 || !el2){ lastTotal = to; return; }
+
+  const from = Math.round(lastTotal);
+  const target = Math.round(to);
+
+  if(from === target){
+    el1.textContent = fmtBRL(to);
+    el2.textContent = fmtBRL(to);
+    lastTotal = to;
+    return;
+  }
+  const dir = target > from ? 1 : -1;
+  let cur = from;
+  const stepMs = 18;
+  const timer = setInterval(()=>{
+    cur += dir;
+    el1.textContent = fmtBRL(cur);
+    el2.textContent = fmtBRL(cur);
+    if(cur === target){
+      clearInterval(timer);
+      el1.textContent = fmtBRL(to);
+      el2.textContent = fmtBRL(to);
+      lastTotal = to;
+    }
+  }, stepMs);
+}
+
+
+
 let CFG=null;
+let lastTotal = 0; // for total animation
+
+function normAsset(u){
+  u=String(u||"").trim();
+  if(!u) return "";
+  if(/^https?:\/\//i.test(u)) return u;
+  if(u.startsWith("./")) u=u.slice(2);
+  if(u.startsWith("assets/")) return "./"+u;
+  if(u.startsWith("/")) return u;
+  return "./assets/"+u;
+}
+
 let currentScreen="scr_splash1";
 let waitTimer=null;
 let adminTapCount=0;
@@ -619,8 +663,8 @@ function applyBrand(){
   setText("#consLoja", lojaNome);
 
   // wait screen (sessão fechada)
-  $("#lojaNomeWait") && (setText("lojaNomeWait", lojaNome));
-  $("#lojaSubWait")  && (setText("lojaSubWait", lojaSub));
+  $("#lojaNomeWait") && (setText("#lojaNomeWait", lojaNome));
+  $("#lojaSubWait")  && (setText("#lojaSubWait", lojaSub));
   const elPixWait = $("#pixChaveWait");
   if (elPixWait) elPixWait.textContent = pix || "—";
 
@@ -630,13 +674,13 @@ function applyBrand(){
   const dateTxt  = CFG.sessao?.data ? ("Sessão: "+CFG.sessao.data) : (opened ? "Sessão liberada" : "Sessão: —");
 
   $("#sessaoDot").style.background = dotColor;
-  setText("sessaoTitle", titleTxt);
-  setText("sessaoDate", dateTxt);
+  setText("#sessaoTitle", titleTxt);
+  setText("#sessaoDate", dateTxt);
 
   $("#sessaoDotWait") && ($("#sessaoDotWait").style.background = dotColor);
-  $("#sessaoTitleWait") && (setText("sessaoTitleWait", titleTxt));
-  $("#sessaoDateWait")  && (setText("sessaoDateWait", dateTxt));
-  $("#sessaoStatusWait") && (setText("sessaoStatusWait", opened ? "Aberta" : "Fechada"));
+  $("#sessaoTitleWait") && (setText("#sessaoTitleWait", titleTxt));
+  $("#sessaoDateWait")  && (setText("#sessaoDateWait", dateTxt));
+  $("#sessaoStatusWait") && (setText("#sessaoStatusWait", opened ? "Aberta" : "Fechada"));
 
   // logo
   const logoUrl = (CFG.loja && CFG.loja.logo_url) ? CFG.loja.logo_url : "./assets/logo-Clementino-Brito.jpeg";
@@ -679,13 +723,12 @@ function renderProducts(){
 
 function updateTotal(){
   const cart=getCart();
-  const produtos=Array.isArray(CFG?.produtos)?CFG.produtos:[];
+  const produtos=Array.isArray(CFG.produtos)?CFG.produtos:[];
   let total=0;
   for(const p of produtos){
     total += Number(cart[p.id]||0)*Number(p.preco||0);
   }
-  setText("totalValue", fmtBRL(total));
-  setText("payTotal", fmtBRL(total));
+  animateTotal(total);
   return total;
 }
 
@@ -721,6 +764,8 @@ function goToConsumo(){
   const u=getUser();
   setText("consUser", u?.nome ? `Meu Consumo — Irmão ${u.nome}` : "Meu Consumo");
   renderProducts();
+  lastTotal = 0;
+  updateTotal();
   showScreen("scr_consumo","forward");
 }
 
