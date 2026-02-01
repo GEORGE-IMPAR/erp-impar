@@ -486,16 +486,23 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
         <h2 id="welcomeTitle">Bem-vindo 👋</h2>
         <p>Digite seu <strong>CIM</strong> para entrar. Botões grandes e tudo bem simples.</p>
 
-        <div id="telWrap">
-            <label>Telefone</label>
-            <input id="inpTel" inputmode="tel" placeholder="Ex: 48999990000" />
-        </div>
-        
-        <label>CIM (senha)</label>
-        <input id="inpCIM" inputmode="numeric" placeholder="Digite seu CIM" />
+<!-- TELEFONE (fica escondido quando lembrar) -->
+<div id="telWrap" style="display:none;">
+  <label for="inpTel">Telefone</label>
+  <input id="inpTel" type="tel" inputmode="numeric" placeholder="Ex: 48999990000" />
+</div>
 
-        <button class="btn" id="btnEntrar">Entrar</button>
+<!-- BOTÃO (aparece quando NÃO lembrar) -->
+<button id="btnDigitarTelefone" type="button" style="display:none;">
+  Digitar o telefone
+</button>
 
+<!-- CIM -->
+<label for="inpCIM">CIM (senha)</label>
+<input id="inpCIM" type="password" placeholder="Digite seu CIM" />
+
+<button id="btnEntrar" type="button">Entrar</button>
+  
         <div class="subHint">Admin: toque 5x no logo.</div>
       </div>
     </div>
@@ -702,36 +709,49 @@ function getUser(){
 }
 function setUser(u){
   localStorage.setItem(LS_USER, JSON.stringify(u));
-}function applyRememberedUser(){
+}
+
+function setUser(u){
+  localStorage.setItem(LS_USER, JSON.stringify(u));
+}
+function applyRememberedUser(){
+function applyRememberedUser(){
   const u = getUser();
+  const telWrap = document.getElementById("telWrap");
+  const telInp  = document.getElementById("inpTel");
+  const btnTel  = document.getElementById("btnDigitarTelefone");
+  const welcome = document.getElementById("welcomeTitle");
 
-  const telWrap = document.getElementById("telWrap"); // se existir
-  const telInp  = document.getElementById("inpTel");  // se existir
-  const welcome = document.getElementById("welcomeTitle"); // se existir
+  const hasTel = !!(u && u.telefone && String(u.telefone).replace(/\D/g,"").length >= 10);
+  const hasName = !!(u && u.nome && String(u.nome).trim());
 
-  const hasPhone = !!(u && u.telefone && String(u.telefone).trim());
-
-  // Se já tem telefone salvo: esconder telefone e ajustar saudação
-  if (hasPhone){
-    if (telWrap) telWrap.style.display = "none";
-    if (telInp) {
-      telInp.value = String(u.telefone);
-      telInp.disabled = true;
-    }
-    if (welcome && u.nome) welcome.textContent = `Bem-vindo, ${u.nome} 👋`;
-  } else {
-    // Se NÃO tem telefone salvo: mostrar telefone normal
-    if (telWrap) telWrap.style.display = "";
-    if (telInp) {
-      telInp.disabled = false;
-      // não força valor
-    }
+  // Ajusta o texto "Bem-vindo"
+  if(welcome){
+    if(hasName) welcome.textContent = `Bem-vindo, ${u.nome} 👋`;
+    else welcome.textContent = `Bem-vindo 👋`;
   }
 
-  // Se você tinha algum botão “Digite o telefone”, esconda quando já tiver
-  const btnTel = document.getElementById("btnDigitarTelefone");
-  if (btnTel) btnTel.style.display = hasPhone ? "none" : "block";
-}
+  if(hasTel){
+    // Já lembro o telefone: NÃO pede telefone
+    if(telWrap) telWrap.style.display = "none";
+    if(btnTel)  btnTel.style.display = "none";
+    if(telInp)  telInp.value = String(u.telefone);
+  } else {
+    // Não lembro: mostra o botão "Digitar telefone"
+    if(telWrap) telWrap.style.display = "none";
+    if(btnTel)  btnTel.style.display = "block";
+    if(telInp)  telInp.value = "";
+  }
+
+  // Botão para revelar o telefone
+  if(btnTel){
+    btnTel.onclick = () => {
+      if(telWrap) telWrap.style.display = "block";
+      btnTel.style.display = "none";
+      if(telInp) telInp.focus();
+    };
+  }
+} 
   
 function clearUser(){ localStorage.removeItem(LS_USER); }
 
@@ -969,7 +989,8 @@ async function boot(){
     // fallback minimal
     CFG = {loja:{nome:"Loja",subtitulo:"",pix_chave:"",logo_url:"assets/logo.jpeg"},sessao:{status:"fechada",data:""},produtos:[],irmaos:[]};
   }
-
+applyRememberedUser();
+  
 function applyRememberedUser(){
   const u = getUser(); // já existe no seu código
   const hasPhone = u?.telefone && String(u.telefone).length >= 10;
@@ -1025,12 +1046,47 @@ $("#btnEntrar").addEventListener("click", async ()=>{
   const cim = cimInp ? String(cimInp.value||"").trim() : "";
 
   // ✅ Agora a validação é correta:
-  if(!tel){
-    // só acontece se NÃO tinha salvo e não digitou
-    if(telInp) telInp.classList.add("shake");
-    toast("Digite o telefone");
+document.getElementById("btnEntrar").addEventListener("click", async ()=>{
+  const u = getUser();
+  const telInp = document.getElementById("inpTel");
+  const cimInp = document.getElementById("inpCIM");
+
+  const cim = (cimInp?.value || "").trim();
+  if(!cim){
+    // markInvalid(cimInp); toast("Digite o CIM");
     return;
   }
+
+  // se já tem telefone salvo, usa ele; senão pega do input
+  const telSaved = (u?.telefone || "");
+  const telTyped = (telInp?.value || "");
+  const tel = String(telSaved || telTyped).replace(/\D/g,"");
+
+  if(tel.length < 10){
+    // Aqui NÃO trava: apenas orienta a digitar telefone
+    // toast("Toque em 'Digitar telefone' e informe seu número");
+    return;
+  }
+
+  // Recarrega config se você faz isso
+  // CFG = await loadConfig(); applyBrand();
+
+  // agora acha o irmão pelo tel + cim
+  const irmao = findIrmao(tel, cim);
+  if(!irmao){
+    // toast("CIM ou telefone inválido");
+    return;
+  }
+
+  // salva o usuário (nome + telefone)
+  setUser({ nome: irmao.nome, telefone: tel });
+
+  // atualiza a UI para esconder o telefone e mostrar o nome
+  applyRememberedUser();
+
+  // segue seu fluxo: sessão aberta vai consumo; sessão fechada vai tela wait etc.
+  // if(!sessionIsOpen()) { ... } else { goToConsumo(); }
+});
   if(!cim){
     if(cimInp) cimInp.classList.add("shake");
     toast("Digite o CIM");
