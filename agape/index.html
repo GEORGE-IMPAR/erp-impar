@@ -696,28 +696,41 @@ function showScreen(id, dir="forward"){
 function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}catch(_){return {}} }
 function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
 function clearCart(){ localStorage.removeItem(LS_CART); }
-function getUser(){ try{return JSON.parse(localStorage.getItem(LS_USER)||"null")}catch(_){return null} }
-function setUser(u){ localStorage.setItem(LS_USER, JSON.stringify(u)); }
-function applyRememberedUser(){
-  const u = getUser(); // já existe no seu código
-  const telWrap = document.getElementById("telWrap");
-  const telInp  = document.getElementById("inpTel");
-  const title   = document.getElementById("welcomeTitle"); // já existe no seu HTML
+function getUser(){
+  try { return JSON.parse(localStorage.getItem(LS_USER) || "null"); }
+  catch(e){ return null; }
+}
+function setUser(u){
+  localStorage.setItem(LS_USER, JSON.stringify(u));
+}function applyRememberedUser(){
+  const u = getUser();
 
-  const hasPhone = u?.telefone && String(u.telefone).length >= 10;
+  const telWrap = document.getElementById("telWrap"); // se existir
+  const telInp  = document.getElementById("inpTel");  // se existir
+  const welcome = document.getElementById("welcomeTitle"); // se existir
 
-  if(title){
-    title.textContent = u?.nome
-      ? `Bem-vindo, ${u.nome} 👋`
-      : "Bem-vindo 👋";
-  }
+  const hasPhone = !!(u && u.telefone && String(u.telefone).trim());
 
-  if(hasPhone){
-    if(telWrap) telWrap.style.display = "none";
-    if(telInp) telInp.value = u.telefone; // garante que o login continua funcionando
+  // Se já tem telefone salvo: esconder telefone e ajustar saudação
+  if (hasPhone){
+    if (telWrap) telWrap.style.display = "none";
+    if (telInp) {
+      telInp.value = String(u.telefone);
+      telInp.disabled = true;
+    }
+    if (welcome && u.nome) welcome.textContent = `Bem-vindo, ${u.nome} 👋`;
   } else {
-    if(telWrap) telWrap.style.display = "";
+    // Se NÃO tem telefone salvo: mostrar telefone normal
+    if (telWrap) telWrap.style.display = "";
+    if (telInp) {
+      telInp.disabled = false;
+      // não força valor
+    }
   }
+
+  // Se você tinha algum botão “Digite o telefone”, esconda quando já tiver
+  const btnTel = document.getElementById("btnDigitarTelefone");
+  if (btnTel) btnTel.style.display = hasPhone ? "none" : "block";
 }
   
 function clearUser(){ localStorage.removeItem(LS_USER); }
@@ -997,44 +1010,61 @@ function applyRememberedUser(){
   }, 6000);
 
   // login
-$("#btnEntrar").addEventListener("click", async () => {
-  const cim = $("#inpCIM").value.trim();
+$("#btnEntrar").addEventListener("click", async ()=>{
+  const u = getUser();
 
-  // 1) Se já tem telefone salvo, usa ele. Se não, usa o input.
-  const uSaved = getUser();
-  const telWrap = document.getElementById("telWrap");
-  const telFromInput = ($("#inpTel")?.value || "").trim();
+  // 1) Pega telefone salvo (se existir)
+  const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
 
-  const tel = (uSaved?.telefone && telWrap && telWrap.style.display === "none")
-    ? String(uSaved.telefone)
-    : telFromInput;
+  // 2) Se não tem salvo, pega do input (se existir)
+  const telInp = $("#inpTel");
+  const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
 
-  // validações
-  if (!tel) { toast("Digite o telefone"); markInvalid($("#inpTel")); return; }
-  if (!cim) { toast("Digite o CIM"); markInvalid($("#inpCIM")); return; }
+  // 3) CIM sempre é obrigatório
+  const cimInp = $("#inpCIM");
+  const cim = cimInp ? String(cimInp.value||"").trim() : "";
 
-  // 2) Recarrega config e procura o irmão
-  try {
-    CFG = await loadConfig();  // refresh
+  // ✅ Agora a validação é correta:
+  if(!tel){
+    // só acontece se NÃO tinha salvo e não digitou
+    if(telInp) telInp.classList.add("shake");
+    toast("Digite o telefone");
+    return;
+  }
+  if(!cim){
+    if(cimInp) cimInp.classList.add("shake");
+    toast("Digite o CIM");
+    return;
+  }
+
+  // Recarrega config para pegar sessão atual
+  try{
+    CFG = await loadConfig();
     applyBrand();
-  } catch (_) {}
+  }catch(_){}
 
+  // Procura irmão no JSON
   const irmao = findIrmao(tel, cim);
-  if (!irmao) { toast("CIM ou telefone inválido"); markInvalid($("#inpCIM")); return; }
+  if(!irmao){
+    toast("CIM inválido");
+    if(cimInp) cimInp.classList.add("shake");
+    return;
+  }
 
-  // 3) Salva e aplica saudação (Bem-vindo, Nome)
+  // Salva SEMPRE o telefone no localStorage a partir daqui
   setUser({
     nome: irmao.nome,
-    telefone: String(irmao.telefone || tel).replace(/\D/g, "")
+    telefone: String(irmao.telefone).replace(/\D/g,"")
   });
 
-  applyRememberedUser(); // atualiza texto e esconde telefone se tiver salvo
+  // Reaplica UX: esconde tel, muda “Bem-vindo…”
+  applyRememberedUser();
 
-  // 4) sessão aberta?
-  if (!sessionIsOpen()) {
+  // Sessão fechada? vai para tela de espera
+  if(!sessionIsOpen()){
     toast("Sessão fechada (tesoureiro precisa abrir)");
-    showScreen("scr_wait", "forward");
-    startWaitPolling();
+    showScreen("scr_wait","forward");
+    startWaitPolling?.(); // se existir no seu código
     return;
   }
 
