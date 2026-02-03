@@ -1,0 +1,1369 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#071a2b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./favicon.ico">
+  <title>Sistema Ágape</title>
+  <style>
+    :root{
+  --bad: #ff4d4d;
+      --bg1:#071a2b;
+      --bg2:#0c3a56;
+      --glass: rgba(255,255,255,.08);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.60);
+      --good:#33d07a;
+      --blue:#2d8cff;
+      --yellow: rgba(255,215,0,.20);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: var(--bg1); color:var(--text);}
+    body{overflow:hidden}
+    /* Safe areas */
+    .safe{padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);}
+    .screen{
+      position:fixed; inset:0;
+      display:none;
+      background: radial-gradient(1200px 900px at 50% 0%, var(--bg2), var(--bg1));
+    }
+    .screen.active{display:flex}
+    /* Slide transitions */
+    .enter-left{transform:translateX(100%); opacity:1}
+    .enter-right{transform:translateX(-100%); opacity:1}
+    .exit-left{transform:translateX(-100%); opacity:1}
+    .exit-right{transform:translateX(100%); opacity:1}
+    .screen.active{transition: transform .46s ease, opacity .46s ease; transform:translateX(0); opacity:1}
+    .screen.exit-left,.screen.exit-right,.screen.enter-left,.screen.enter-right{display:flex}
+
+    /* Splash 1: blue */
+    #scr_splash1{background: var(--bg1); align-items:center; justify-content:center;}
+    /* Splash 2: logo zoom */
+    #scr_splash2{background: var(--bg1); align-items:center; justify-content:center;}
+    .splashCenter{display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; padding:24px;}
+    .logoWrap{
+      width:92px; height:92px; border-radius:22px;
+      background: rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      overflow:hidden;
+      box-shadow: 0 18px 40px rgba(0,0,0,.35);
+      transform: scale(.78);
+      opacity:0;
+      animation: logoZoom 3.0s ease forwards;
+    }
+    .logoWrap img{width:100%; height:100%; object-fit:cover; display:block}
+    .brandText{
+      font-weight:800; letter-spacing:.3px;
+      font-size: 34px;
+      transform: scale(.96);
+      opacity:0;
+      animation: textZoom 3.0s ease forwards;
+      animation-delay: .05s;
+    }
+    @keyframes logoZoom{
+      0%{transform:scale(.78); opacity:0}
+      30%{opacity:1}
+      100%{transform:scale(1.00); opacity:1}
+    }
+    @keyframes textZoom{
+      0%{transform:scale(.96); opacity:0}
+      35%{opacity:1}
+      100%{transform:scale(1.00); opacity:1}
+    }
+
+    /* Card layout */
+    .wrap{width:min(420px, 100%); margin:0 auto; padding:16px;}
+    .topBrand{
+      display:flex; gap:12px; align-items:center;
+      padding:14px 16px;
+      border-radius:18px;
+      background: var(--glass);
+      border:1px solid var(--stroke);
+      box-shadow: 0 20px 40px rgba(0,0,0,.25);
+    }
+    .topBrand .bLogo{
+      width:44px;height:44px;border-radius:12px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.15);
+      flex:0 0 auto;
+      background: rgba(255,255,255,.10);
+    }
+    .topBrand .bLogo img{width:100%; height:100%; object-fit:cover; display:block}
+    .topBrand .bTxt{line-height:1.15}
+    .topBrand .bTxt .t1{font-weight:800; font-size:18px}
+    .topBrand .bTxt .t2{font-size:13px; color:var(--muted); margin-top:2px}
+
+    .pillRow{
+      display:flex; gap:10px; margin-top:14px;
+    }
+    .pill{
+      flex:1;
+      padding:14px 14px;
+      border-radius:18px;
+      background: var(--glass);
+      border:1px solid var(--stroke);
+    }
+    .pill strong{display:block; font-size:16px}
+    .dot{
+      width:12px;height:12px;border-radius:99px; display:inline-block; margin-right:10px; vertical-align:middle;
+      background: rgba(255,255,255,.22);
+    }
+
+    /* Wait screen */
+    #scr_wait{align-items:flex-start; justify-content:center;}
+    .waitBox{margin-top:14px}
+    .warn{
+      margin-top:12px;
+      padding:12px 12px;
+      border-radius:14px;
+      background: var(--yellow);
+      border:1px solid rgba(255,215,0,.25);
+      color: rgba(255,255,255,.90);
+      font-size:13px;
+      line-height:1.35;
+    }
+
+    /* Login */
+    #scr_login{align-items:flex-start; justify-content:center;}
+    .card{
+      margin-top:14px;
+      padding:16px;
+      border-radius:22px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 24px 55px rgba(0,0,0,.32);
+    }
+    .card h2{margin:0 0 6px 0; font-size:34px; letter-spacing:.2px}
+    .card p{margin:0 0 14px 0; color:var(--muted)}
+    label{display:block; font-weight:700; margin:10px 0 6px 0; font-size:15px}
+    input{
+      width:100%;
+      padding:14px 14px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      outline:none;
+      font-size:16px;
+    }
+    input:focus{border-color: rgba(45,140,255,.55); box-shadow: 0 0 0 3px rgba(45,140,255,.18)}
+    .btn{
+      width:100%;
+      margin-top:14px;
+      padding:16px 14px;
+      border-radius:18px;
+      border:none;
+      background: linear-gradient(90deg, #1bb3ff, #3b6cff);
+      color:#001018;
+      font-weight:900;
+      font-size:20px;
+    }
+    .subHint{margin-top:10px; color: rgba(255,255,255,.65)}
+    .shake{animation: shake .35s ease}
+    @keyframes shake{
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-7px)}
+      40%{transform:translateX(7px)}
+      60%{transform:translateX(-5px)}
+      80%{transform:translateX(5px)}
+    }
+
+    /* Consumo: fixed header/footer, scroll only products */
+    #scr_consumo{align-items:stretch; justify-content:center;}
+    .page{display:flex; flex-direction:column; height:100%; width:min(440px, 100%); margin:0 auto;}
+    .pagePad{padding:16px}
+    .consHeader{padding:16px; padding-bottom:10px}
+    .consHeader .topBrand{margin:0 16px}
+    .consHeader .pillRow{margin:14px 16px 0 16px}
+    .consTitleBar{
+      margin:14px 16px 0 16px;
+      padding:14px 14px;
+      border-radius:20px;
+      background: rgba(255,255,255,.07);
+      border:1px solid rgba(255,255,255,.12);
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    }
+    .consTitleBar .tL{line-height:1.1}
+    .consTitleBar .tL .tMain{font-weight:900; font-size:22px}
+    .consTitleBar .tL .tSub{font-size:12px; color:var(--muted); margin-top:4px}
+    .miniBtn{
+      border:1px solid red;
+      background: rgba(255,0,0,0.5);
+      color: var(--text);
+      padding:10px 14px;
+      border-radius:14px;
+      font-weight:800;
+    }
+
+    .prodScroll{
+      flex:1;
+      overflow:auto;
+      padding: 12px 16px 10px 16px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .prodRow{
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:14px 14px;
+      border-radius:18px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
+      margin-bottom:12px;
+    }
+    .pIcon{
+      width:50px;height:50px;border-radius:18px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.08);
+      flex:0 0 auto;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .pIcon img{background:#fff;width:100%; height:100%; object-fit:contain; display:block}
+    .pMid{flex:1; min-width:0}
+    .pName{font-weight:900}
+    .pDesc{font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .pPrice{margin-top:6px; font-weight:900}
+    .qtyWrap{display:flex; align-items:center; gap:10px; flex:0 0 auto;}
+    .qtyBtn{
+      width:40px;height:40px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-size:22px;
+      line-height:1;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900;
+    }
+    .qty{min-width:20px; text-align:center; font-weight:900}
+
+    .consFooter{
+      padding: 12px 16px 16px 16px;
+      background: linear-gradient(180deg, rgba(7,26,43,0) 0%, rgba(7,26,43,.65) 30%, rgba(7,26,43,.92) 100%);
+    }
+    .totalBox{
+      padding:14px 14px;
+      border-radius:18px;
+      background: rgba(0,0,0,.20);
+      border:1px solid rgba(255,255,255,.10);
+      margin-bottom:12px;
+    }
+    .totalBox .tLbl{font-size:12px; color:var(--muted)}
+    .totalBox .tVal{font-size:28px; font-weight:1000; margin-top:6px}
+    .btn2{
+      width:100%;
+      padding:14px 12px;
+      border:none;
+      border-radius:18px;
+      background: linear-gradient(90deg, #19baff, #3a66ff);
+      color:#001018;
+      font-weight:1000;
+      font-size:18px;
+    }
+
+    /* Pagamento */
+    #scr_pagamento{align-items:flex-start; justify-content:center;}
+    .payBtns{display:flex; flex-direction:column; gap:12px; margin-top:12px}
+    .payBtn{
+      padding:16px 14px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:900;
+      font-size:18px;
+      text-align:center;
+    }
+    .payBtn.primary{background: rgba(51,208,122,.18); border-color: rgba(51,208,122,.35)}
+    .payBtn.warn{background: rgba(255,215,0,.14); border-color: rgba(255,215,0,.25)}
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background: rgba(0,0,0,.75);
+      color:white; padding:10px 14px;
+      border-radius:14px;
+      opacity:0; pointer-events:none;
+      transition: opacity .25s ease;
+      font-weight:800;
+      z-index:99;
+    }
+    .toast.show{opacity:1}
+
+    /* desktop center */
+    @media (min-width:900px){
+      body{display:flex; align-items:center; justify-content:center; background:#081b2c;}
+      .screen{position:relative; width:420px; height:860px; border-radius:26px; overflow:hidden; box-shadow: 0 30px 80px rgba(0,0,0,.55);}
+    }
+  
+
+/* v15 fixes */
+.panel{flex:1;display:flex;flex-direction:column;min-height:0;}
+.prodScroll{flex:1;min-height:0;-webkit-overflow-scrolling:touch;}
+
+.pIconImg{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25));}
+
+/* splash2 zoom (3s) */
+#scr_splash2 .logoWrap{opacity:0;transform:scale(.82);filter:drop-shadow(0 10px 24px rgba(0,0,0,.35));}
+#scr_splash2 .brandText{opacity:0;transform:scale(.98);margin-top:14px}
+@keyframes zoomLogo{0%{opacity:0;transform:scale(.82)}100%{opacity:1;transform:scale(1)}}
+@keyframes fadeUp{0%{opacity:0;transform:translateY(6px) scale(.98)}100%{opacity:1;transform:translateY(0) scale(1)}}
+#scr_splash2.active .logoWrap{animation:zoomLogo 3s ease-out forwards;}
+#scr_splash2.active .brandText{animation:fadeUp 3s ease-out forwards;animation-delay:.2s;}
+
+
+/* layout fixes: allow only product list to scroll */
+.screen.active{display:flex; flex-direction:column;}
+.content{flex:1; width:100%; max-width:420px; margin:0 auto; padding:16px; box-sizing:border-box; display:flex; flex-direction:column; gap:14px;}
+/* product list should scroll inside panel */
+#scr_consumo .panel{display:flex; flex-direction:column; min-height:0;}
+#scr_consumo .prodScroll{flex:1; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch;}
+/* product row with icon */
+.prodIcon{width:44px; height:44px; border-radius:14px; overflow:hidden; flex:0 0 44px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1px rgba(255,255,255,.10);}
+.prodIcon img{width:100%; height:100%; object-fit:cover; display:block;}
+.prodLeft{display:flex; gap:10px; align-items:center;}
+.prodMeta{display:flex; flex-direction:column; gap:1px; min-width:0;}
+.prodName{font-weight:800;}
+/* session dot colors */
+:root{ --bad:#ff3b30; }
+/* splash2 zoom animation */
+#scr_splash2 .splashLogoWrap{opacity:0; transform:scale(.92);}
+#scr_splash2.active .splashLogoWrap{animation:splashZoom 2.6s ease-out forwards;}
+@keyframes splashZoom{to{opacity:1; transform:scale(1);}}
+
+
+
+.topCard{display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:18px; background:rgba(255,255,255,.06); box-shadow:0 10px 30px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.08);}
+.topLogo{width:44px; height:44px; border-radius:14px; object-fit:cover; box-shadow:0 6px 18px rgba(0,0,0,.35);}
+.topTitle{font-weight:800; font-size:16px; line-height:1.05;}
+.topSub{opacity:.78; font-size:12px; margin-top:2px;}
+.pillRow{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.pill{padding:12px 14px; border-radius:18px; background:rgba(255,255,255,.06); box-shadow:0 10px 30px rgba(0,0,0,.22), inset 0 0 0 1px rgba(255,255,255,.07);}
+.pillLeft{display:flex; align-items:center; gap:10px;}
+.dot{width:10px; height:10px; border-radius:99px; background:rgba(255,255,255,.30); box-shadow:0 0 0 3px rgba(255,255,255,.06);}
+.pillTitle{font-weight:800; font-size:13px;}
+.pillSub{opacity:.75; font-size:12px; margin-top:2px;}
+.pillRight{display:flex; flex-direction:column; gap:4px; align-items:flex-end; text-align:right;}
+.pillMini{opacity:.70; font-size:12px;}
+.pillValue{font-weight:800; font-size:12px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.panel.big{padding:16px;}
+.h2{margin:2px 0 8px; font-size:18px;}
+.miniGrid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0 12px;}
+.miniCard{padding:12px; border-radius:14px; background:rgba(0,0,0,.20); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
+.miniLabel{opacity:.70; font-size:12px;}
+.miniValue{font-weight:900; font-size:16px; margin-top:4px;}
+.primary.wide{width:100%;}
+.hintBox{margin-top:12px; padding:12px 12px; border-radius:14px; background:rgba(0,0,0,.18); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);}
+.hintTitle{font-weight:800; font-size:12px; opacity:.9;}
+.hintText{font-size:12px; opacity:.75; margin-top:4px; line-height:1.35;}
+
+/* v24 wait/login polish */
+html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
+.screen{background:transparent;}
+.topBrand{display:flex; align-items:center; gap:12px; padding:14px 14px; border-radius:18px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); box-shadow:0 12px 40px rgba(0,0,0,.25);}
+.bLogo{width:46px;height:46px;border-radius:12px;background:rgba(255,255,255,.10); overflow:hidden; display:flex; align-items:center; justify-content:center;}
+.bLogo img{width:100%;height:100%;object-fit:cover;display:block;}
+.bTitle{font-weight:800; font-size:18px; line-height:1.1;}
+.bSub{font-size:12px; opacity:.85; margin-top:2px;}
+
+.sessionBar{margin-top:14px; display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:14px;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10);}
+.dotBig{width:16px;height:16px;border-radius:50%; background:var(--bad); box-shadow:0 0 0 4px rgba(255,0,0,.10);}
+.sessionLine{font-weight:800; font-size:15px; letter-spacing:.2px;}
+
+.pixBar{margin-top:10px; display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px;
+  background:rgba(10,200,160,.16); border:1px solid rgba(100,255,230,.25);}
+.pixBadge{width:64px; height:36px; border-radius:10px; background:rgba(255,255,255,.12);
+  display:flex; align-items:center; justify-content:center; font-weight:900; letter-spacing:.5px; text-transform:lowercase;}
+
+.pixBadge img{width:70px;height:26px;object-fit:contain;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+.pixKey{font-weight:900; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+.infoCard{margin-top:12px; padding:14px; border-radius:16px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.10);}
+.infoTitle{font-weight:900; font-size:18px;}
+.infoText{margin-top:6px; font-size:13px; opacity:.90; line-height:1.35;}
+.miniGrid{margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.mini{padding:12px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);}
+.miniLabel{font-size:12px; opacity:.75;}
+.miniValue{margin-top:4px; font-weight:900; font-size:16px;}
+
+.hint{margin-top:12px; padding:12px 14px; border-radius:14px;
+  background:linear-gradient(90deg, rgba(60,170,120,.35), rgba(80,210,160,.22));
+  border:1px solid rgba(150,255,210,.25);}
+.hintTitle{font-weight:900; font-size:14px;}
+.hintText{font-size:13px; opacity:.95; margin-top:4px;}
+
+
+/* ===== Pagamento v25 (top) ===== */
+.payCard{
+  margin-top:12px;
+  padding:16px;
+  border-radius:22px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow: 0 24px 55px rgba(0,0,0,.32);
+}
+.payMsg{line-height:1.2}
+.payHello{font-weight:1000; font-size:28px; margin-bottom:6px}
+.payTotal{font-weight:800; opacity:.95}
+.payItems{margin:12px 0 14px; padding:12px; border-radius:16px;
+  background: rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10);}
+.payItemRow{display:flex; align-items:center; gap:10px; padding:8px 0;}
+.payItemLeft{font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.payItemDots{flex:1; border-bottom: 2px dotted rgba(255,255,255,.25); height:0; opacity:.9}
+.payItemRight{font-weight:1000; white-space:nowrap;}
+.payQ{font-weight:1000; font-size:22px; margin:4px 0 12px}
+.payIconRow{display:flex; gap:14px; justify-content:center; margin:10px 0 14px}
+.payIconBtn{
+  width:74px; height:54px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+  box-shadow: 0 16px 35px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.06);
+  transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+  cursor:pointer;
+}
+.payIconBtn:hover{transform: translateY(-1px) scale(1.03); filter:brightness(1.05)}
+.payIconBtn:active{transform: translateY(0) scale(.98)}
+.payIconBtn::after{
+  content: attr(data-tip);
+  position:absolute;
+  left:50%; top:-10px;
+  transform: translate(-50%,-100%);
+  padding:6px 10px;
+  border-radius:999px;
+  background: rgba(0,0,0,.72);
+  border:1px solid rgba(255,255,255,.12);
+  color:#fff;
+  font-weight:900;
+  font-size:12px;
+  opacity:0;
+  pointer-events:none;
+  transition: opacity .15s ease, transform .15s ease;
+  white-space:nowrap;
+}
+.payIconBtn:hover::after{opacity:1; transform: translate(-50%,-115%)}
+.payIconImg{width:62px; height:30px; object-fit:contain; display:block; filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+.paySvg{font-size:26px; line-height:1}
+.payBack{margin-top:8px}
+.payHint{margin-top:10px; opacity:.70; font-size:12px}
+
+/* Modal */
+.modal{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:999;}
+.modal.hidden{display:none;}
+.modal::before{content:""; position:absolute; inset:0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);}
+.modalCard{
+  position:relative;
+  width:min(420px, calc(100% - 36px));
+  border-radius:20px;
+  padding:16px;
+  background: rgba(10,20,32,.92);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55);
+}
+.modalTop{display:flex; align-items:center; justify-content:space-between; gap:10px}
+.modalTitle{font-weight:1000; font-size:20px}
+.modalX{border:none; background: rgba(255,255,255,.06); color:var(--text); border-radius:12px; padding:8px 10px; font-weight:1000}
+.modalText{margin-top:8px; opacity:.85; font-size:13px; line-height:1.35}
+.pixValueRow{display:flex; align-items:center; justify-content:space-between; margin-top:14px;
+  padding:12px; border-radius:16px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);}
+.pixValueLbl{opacity:.80; font-weight:900}
+.pixValue{font-weight:1000; font-size:18px}
+.pixKeyRow{display:flex; align-items:center; gap:10px; margin-top:12px;
+  padding:12px; border-radius:16px; background: rgba(10,200,160,.12); border:1px solid rgba(100,255,230,.25);}
+.pixKeyText{flex:1; font-weight:1000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.pixCopyBtn{
+  width:44px; height:44px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color:var(--text);
+  font-size:20px;
+  cursor:pointer;
+}
+.modalOk{margin-top:14px}
+.modalCancel{
+  width:100%;
+  margin-top:10px;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  font-weight:900;
+}
+
+/* Success overlay */
+.paySuccess{position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
+  background: rgba(255, 226, 40, .92); /* amarelo */
+}
+.paySuccess.hidden{display:none;}
+.paySuccessBox{
+  background: rgba(255,255,255,.75);
+  border-radius:18px;
+  padding:16px 18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  box-shadow: 0 22px 70px rgba(0,0,0,.35);
+}
+.paySuccessGif{width:140px; height:140px; object-fit:contain; display:block}
+.payOkText{font-weight:1000; color:#083018}
+</style>
+</head>
+<body>
+  <div id="toast" class="toast"></div>
+
+  <!-- Splash 1 -->
+  <section id="scr_splash1" class="screen active safe"></section>
+
+  <!-- Splash 2 -->
+  <section id="scr_splash2" class="screen safe">
+    <div class="splashCenter">
+      <div class="logoWrap"><img id="splashLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+    </div>
+      <div class="brandText">Sistema Ágape</div>
+    </div>
+  </section>
+
+  <!-- Wait (session closed) -->
+  <section id="scr_wait" class="screen safe">
+  <div class="wrap">
+<div class="card waitCard">
+      <div class="topBrand">
+        <div class="bLogo">
+          <img id="brandLogoWait" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+        </div>
+        <div class="bTxt">
+          <div class="bTitle" id="lojaNomeWait">Loja</div>
+          <div class="bSub" id="lojaSubWait">App Ágape • Consumo & Pagamento</div>
+        </div>
+      </div>
+
+      <div class="sessionBar">
+        <div class="dotBig" id="sessaoDotWait"></div>
+        <div class="sessionLine" id="sessaoLineWait">Sessão fechada — —</div>
+      </div>
+
+      <div class="pixBar">
+        <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
+        <div class="pixKey" id="pixChaveWait">—</div>
+      </div>
+
+      <div class="infoCard">
+        <div class="infoTitle">Sessão ainda não liberada 🔒</div>
+        <div class="infoText">A sessão ainda não foi aberta pelo responsável, mas não se preocupe. Quando liberar a sessão, automaticamente aparecerá a tela de login.</div>
+        <div class="miniGrid">
+          <div class="mini">
+            <div class="miniLabel">Última verificação</div>
+            <div class="miniValue" id="lastCheck">—</div>
+          </div>
+          <div class="mini">
+            <div class="miniLabel">Sessão</div>
+            <div class="miniValue" id="sessaoStatus">Fechada</div>
+          </div>
+        </div>
+      </div>
+
+      
+
+      <div class="hint">
+        <div class="hintTitle">Modo tesoureiro</div>
+        <div class="hintText">toque 5x no logo para abrir Admin (sessão, caixa, produtos, Pix).</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+  <!-- Login -->
+  <section id="scr_login" class="screen safe">
+    <div class="wrap">
+      <div class="topBrand" id="brandBar">
+        <div class="bLogo"><img id="brandLogo" alt="logo"/></div>
+        <div class="bTxt">
+          <div class="t1" id="lojaNome">Loja</div>
+          <div class="t2" id="lojaSub"></div>
+        </div>
+      </div>
+
+      <div class="sessionBar" id="sessionBarLogin">
+        <span class="dot" id="sessaoDotLogin"></span>
+        <div class="sessionLine" id="sessaoLineLogin">Sessão —</div>
+      </div>
+      
+      <div class="pixBar">
+        <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
+        <div class="pixKey" id="pixChave">—</div>
+      </div>
+
+
+      <div class="card">
+        <h2 id="welcomeTitle">Bem-vindo 👋</h2>
+        <p>Digite seu <strong>CIM</strong> para entrar. Botões grandes e tudo bem simples.</p>
+
+        <div id="telWrap">
+            <label>Telefone</label>
+            <input id="inpTel" inputmode="tel" placeholder="Ex: 48999990000" />
+        </div>
+        
+        <label>CIM (senha)</label>
+        <input id="inpCIM" inputmode="numeric" placeholder="Digite seu CIM" />
+
+        <button class="btn" id="btnEntrar">Entrar</button>
+
+        <div class="subHint">Admin: toque 5x no logo.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Consumo -->
+  <section id="scr_consumo" class="screen safe">
+      <div class="sessionBar" id="sessionBarCons">
+          <div class="bLogo"><img id="brandLogoCons" src="./assets/logo-Clementino-Brito.jpeg" alt="logo"/></div>
+          <div class="bTxt">
+            <div class="t1" id="consLoja">Loja</div>
+            <div class="t2" id="consSub"></div>
+          </div>
+     </div>
+  
+       <div class="sessionBar" id="sessionBarCons">
+          <span class="dot" id="sessaoDotCons"></span>
+          <div class="sessionLine" id="sessaoLineCons">Sessão —</div>
+        </div>
+
+        <div class="pixBar">
+          <div class="tL">
+            <div class="tMain" id="consUser">Meu Consumo.............................................</div>
+          </div>
+          <button class="miniBtn" id="btnSair">Sair</button>
+        </div>
+      </div>
+
+      <div class="prodScroll" id="prodScroll">
+        <div id="prodList"></div>
+      </div>
+
+      <div class="consFooter">
+        <div class="totalBox">
+          <div class="tLbl">Total</div>
+          <div class="tVal" id="totalValue">R$ 0,00</div>
+        </div>
+        <button class="btn2" id="btnFechar">Fechar e pagar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pagamento -->
+  <section id="scr_pagamento" class="screen safe">
+    <div class="wrap">
+      <div class="topBrand" id="payBrandBar">
+        <div class="bLogo"><img id="payLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="payLoja">Loja</div>
+          <div class="bSub">App Ágape • Consumo & Pagamento</div>
+        </div>
+      </div>
+
+      <div class="sessionBar paySessionBar">
+        <div class="dot" id="paySessaoDot"></div>
+        <div class="sessionLine" id="paySessaoLine">Sessão —</div>
+      </div>
+
+      <div class="payCard">
+        <div class="payMsg">
+          <div class="payHello" id="payHello">Oi meu irmão,</div>
+          <div class="payTotal">sua conta totalizou <span id="payTotal">R$ 0,00</span>:</div>
+        </div>
+
+        <div id="payItems" class="payItems"></div>
+
+        <div class="payQ">Como deseja pagar?</div>
+
+        <div class="payIconRow" aria-label="Formas de pagamento">
+          <button class="payIconBtn" id="btnPix" type="button" data-tip="Pix">
+            <img src="./assets/logo-pix.jpg" alt="Pix" class="payIconImg"/>
+          </button>
+
+          <button class="payIconBtn" id="btnDinheiro" type="button" data-tip="Dinheiro">
+            <span class="paySvg" aria-hidden="true">💵</span>
+          </button>
+
+          <button class="payIconBtn" id="btnProxima" type="button" data-tip="Próxima sessão">
+            <span class="paySvg" aria-hidden="true">📅</span>
+          </button>
+        </div>
+
+        <button class="btn2 payBack" id="btnVoltarConsumo" type="button">Voltar para comanda</button>
+        <div class="payHint">Ao pagar, registramos e voltamos para o login.</div>
+      </div>
+    </div>
+
+    <!-- Modal Pix -->
+    <div id="pixMod
+al" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pixTitle">
+      <div class="modalCard">
+        <div class="modalTop">
+          <div class="modalTitle" id="pixTitle">Pix</div>
+          <button class="modalX" id="btnPixCancel" type="button" aria-label="Fechar">✕</button>
+        </div>
+
+        <div class="modalText">Copie a chave e faça a transferência do valor exato.</div>
+
+        <div class="pixValueRow">
+          <div class="pixValueLbl">Valor</div>
+          <div class="pixValue" id="pixValor">R$ 0,00</div>
+        </div>
+
+        <div class="pixKeyRow">
+          <div class="pixKeyText" id="pixChave">—</div>
+          <button class="pixCopyBtn" id="btnCopyPix" type="button" title="Copiar">📋</button>
+        </div>
+
+        <button class="btn2 modalOk" id="btnPixOk" type="button">OK, transferi</button>
+        <button class="modalCancel" id="btnPixCancel2" type="button">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Sucesso -->
+    <div id="paySuccess" class="paySuccess hidden" aria-hidden="true">
+      <div class="paySuccessBox">
+        <img src="./assets/check.gif" alt="Pago" class="paySuccessGif">
+        <div class="payOkText">Pagamento registrado</div>
+      </div>
+    </div>
+
+  </section>
+
+<script>
+const CONFIG_URL = "./agape_config.json?v=23";
+const LS_CART  = "agape_cart_v14";
+const LS_USER  = "agape_user_v14";
+const $ = (s)=>document.querySelector(s);
+function setText(sel,val){const el=$(sel); if(el) el.textContent=val;}
+const fmtBRL = (v)=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+
+const PROD_ICON_BY_ID = {
+  agua: "agua.jpg",
+  carvao: "carvao.jpg",
+  coca15l: "coca15l.jpg",
+  coca2l: "coca2l.jpg",
+  heineken600: "heineken600.jpg",
+  heineken600Zero: "heineken600Zero.jpg",
+  original600: "original600.jpg",
+  pureza2l: "pureza2l.jpg",
+  stellasemgluten: "stellasemgluten.jpg",
+};
+
+function getProdIcon(p){
+  const raw = (p && (p.icon || p.icone || p.imagem || p.img)) || "";
+  if(raw){
+    if(/^https?:\/\//i.test(raw)) return raw;
+    if(raw.startsWith("./") || raw.startsWith("/")) return raw;
+    return `./assets/${raw}`;
+  }
+  const id = (p && p.id) ? String(p.id) : "";
+  if(id && PROD_ICON_BY_ID[id]) return `./assets/${PROD_ICON_BY_ID[id]}`;
+  if(id) return `./assets/${id}.jpg`;
+  return "./assets/icon-192.png";
+}
+
+
+function animateTotal(to){
+  const el1 = $("#totalValue");
+  const el2 = $("#payTotal");
+  if(!el1 || !el2){ lastTotal = to; return; }
+
+  const from = Math.round(lastTotal);
+  const target = Math.round(to);
+
+  if(from === target){
+    el1.textContent = fmtBRL(to);
+    el2.textContent = fmtBRL(to);
+    lastTotal = to;
+    return;
+  }
+  const dir = target > from ? 1 : -1;
+  let cur = from;
+  const stepMs = 18;
+  const timer = setInterval(()=>{
+    cur += dir;
+    el1.textContent = fmtBRL(cur);
+    el2.textContent = fmtBRL(cur);
+    if(cur === target){
+      clearInterval(timer);
+      el1.textContent = fmtBRL(to);
+      el2.textContent = fmtBRL(to);
+      lastTotal = to;
+    }
+  }, stepMs);
+}
+
+
+
+let CFG=null;
+let lastTotal = 0; // for total animation
+
+function normAsset(u){
+  u=String(u||"").trim();
+  if(!u) return "";
+  if(/^https?:\/\//i.test(u)) return u;
+  if(u.startsWith("./")) u=u.slice(2);
+  if(u.startsWith("assets/")) return "./"+u;
+  if(u.startsWith("/")) return u;
+  return "./assets/"+u;
+}
+
+let currentScreen="scr_splash1";
+let waitTimer=null;
+let adminTapCount=0;
+let adminTapTimer=null;
+
+function toast(msg){
+  const t=$("#toast");
+  t.textContent=msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1700);
+}
+function showScreen(id, dir="forward"){
+  const from=document.getElementById(currentScreen);
+  const to=document.getElementById(id);
+  if(!from||!to||id===currentScreen) return;
+
+  to.classList.remove("exit-left","exit-right","enter-left","enter-right");
+  from.classList.remove("exit-left","exit-right","enter-left","enter-right");
+
+  if(dir==="forward") to.classList.add("enter-left"); else to.classList.add("enter-right");
+  to.classList.add("active");
+  void to.offsetWidth;
+  to.classList.remove("enter-left","enter-right");
+
+  if(dir==="forward") from.classList.add("exit-left"); else from.classList.add("exit-right");
+
+  setTimeout(()=>{
+    from.classList.remove("active","exit-left","exit-right");
+    currentScreen=id;
+  }, 460);
+}
+
+function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}catch(_){return {}} }
+function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
+function clearCart(){ localStorage.removeItem(LS_CART); }
+function getUser(){
+  try { return JSON.parse(localStorage.getItem(LS_USER) || "null"); }
+  catch(e){ return null; }
+}
+function setUser(u){
+  localStorage.setItem(LS_USER, JSON.stringify(u));
+}function applyRememberedUser(){
+  const u = getUser();
+
+  const telWrap = document.getElementById("telWrap"); // se existir
+  const telInp  = document.getElementById("inpTel");  // se existir
+  const welcome = document.getElementById("welcomeTitle"); // se existir
+
+  const hasPhone = !!(u && u.telefone && String(u.telefone).trim());
+
+  // Se já tem telefone salvo: esconder telefone e ajustar saudação
+  if (hasPhone){
+    if (telWrap) telWrap.style.display = "none";
+    if (telInp) {
+      telInp.value = String(u.telefone);
+      telInp.disabled = true;
+    }
+    if (welcome && u.nome) welcome.textContent = `Bem-vindo, ${u.nome} 👋`;
+  } else {
+    // Se NÃO tem telefone salvo: mostrar telefone normal
+    if (telWrap) telWrap.style.display = "";
+    if (telInp) {
+      telInp.disabled = false;
+      // não força valor
+    }
+  }
+
+  // Se você tinha algum botão “Digite o telefone”, esconda quando já tiver
+  const btnTel = document.getElementById("btnDigitarTelefone");
+  if (btnTel) btnTel.style.display = hasPhone ? "none" : "block";
+}
+  
+function clearUser(){ localStorage.removeItem(LS_USER); }
+
+async function loadConfig(){
+  const r=await fetch(CONFIG_URL,{cache:"no-store"});
+  if(!r.ok) throw new Error("config");
+  return await r.json();
+}
+
+function sessionIsOpen(){ return (CFG?.sessao?.status||"").toLowerCase()==="aberta"; }
+
+
+function applyBrand(){
+
+  const setText = (id, val) => { const el=document.getElementById(id); if(el) el.textContent = val; };
+  const setSrc  = (id, src) => { const el=document.getElementById(id); if(el && src) el.src = src; };
+
+  // logo (sempre do /assets)
+  const logoUrl = (CFG?.ui?.logo_url) ? CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+  ["brandLogo","brandLogoWait"].forEach(id=>setSrc(id, logoUrl));
+
+  // textos da loja
+  setText("lojaNome", CFG?.loja?.nome || "Loja");
+  setText("lojaSub",  CFG?.loja?.subtitulo || "");
+  setText("lojaNomeWait", CFG?.loja?.nome || "Loja");
+  setText("lojaSubWait",  CFG?.loja?.subtitulo || "");
+  setText("consLoja", CFG?.loja?.nome || "Loja");
+  setText("consSub",  CFG?.loja?.subtitulo || "");
+
+  // pix
+  const pix = (CFG?.loja?.pix_chave || "").trim();
+  setText("pixChave", pix || "—");
+  setText("pixChaveWait", pix || "—");
+  setText("pixChaveCons", pix || "—");
+  setText("payPix", pix || "—");
+
+  const opened = (CFG?.sessao?.status || "").toLowerCase() === "aberta";
+
+  // data da sessão (do JSON) + hora atual (do aparelho) para compor a linha
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,"0");
+  const mm = String(now.getMinutes()).padStart(2,"0");
+  const ss = String(now.getSeconds()).padStart(2,"0");
+  const nowStr = `${hh}:${mm}:${ss}`;
+  const d = (CFG?.sessao?.data || "").trim();
+  const sessaoStr = d ? `${d} — ${nowStr}` : `— — ${nowStr}`;
+
+  // bolinhas (login/consumo/wait)
+  const dotColor = opened ? "var(--good)" : "var(--bad)";
+  ["sessaoDotLogin","sessaoDotCons","sessaoDotWait"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.background = dotColor;
+  });
+
+  // títulos
+  const sessaoLabel = opened ? "Sessão aberta" : "Sessão fechada";
+  const sessaoLine = `${sessaoLabel} — ${sessaoStr}`;
+  setText("sessaoLineLogin", sessaoLine);
+  setText("sessaoLineCons", sessaoLine);
+
+  // compat (ids antigos, caso existam)
+  setText("sessaoTitle", sessaoLabel);
+  setText("sessaoTitleWait", sessaoLabel);
+  setText("sessaoTitleCons", sessaoLabel);
+
+  // barra bonita da tela de espera  // barra bonita da tela de espera (fechada)
+  setText("sessaoLineWait", `${opened ? "Sessão aberta" : "Sessão fechada"} — ${sessaoStr}`);
+  setText("sessaoStatus", opened ? "Aberta" : "Fechada");
+
+  // última verificação
+  setText("lastCheck", now.toLocaleString("pt-BR"));
+
+  // sombras das bolinhas
+  const dot = document.getElementById("sessaoDotLogin");
+  if(dot) dot.style.boxShadow = opened ? "0 0 0 4px rgba(0,255,140,.10)" : "0 0 0 4px rgba(255,0,0,.10)";
+  const dotW = document.getElementById("sessaoDotWait");
+  if(dotW) dotW.style.boxShadow = opened ? "0 0 0 4px rgba(0,255,140,.10)" : "0 0 0 4px rgba(255,0,0,.10)";
+
+
+  // pagamento
+  setText("payLoja", CFG?.loja?.nome || CFG?.loja?.titulo || "Loja");
+  const payLogo = document.getElementById("payLogo");
+  if(payLogo) payLogo.src = CFG?.loja?.logo || "./assets/logo-Clementino-Brito.jpeg";
+
+  // sessao bar pagamento
+  const open = sessionIsOpen();
+  const dotP = document.getElementById("paySessaoDot");
+  const lineP = document.getElementById("paySessaoLine");
+  if(dotP) dotP.style.background = open ? "var(--good)" : "var(--bad)";
+  if(lineP){
+    const t = (CFG && CFG.sessao && CFG.sessao.aberta_em) ? CFG.sessao.aberta_em : "—";
+    lineP.textContent = (open ? "Sessão aberta — " : "Sessão fechada — ") + t;
+  }
+
+}
+
+
+function renderProducts(){
+  const list=$("#prodList"); list.innerHTML="";
+  const produtos=Array.isArray(CFG?.produtos)?CFG.produtos:[];
+  const cart=getCart();
+  if(produtos.length===0){
+    list.innerHTML='<div style="color:rgba(255,255,255,.65)">Sem produtos no JSON.</div>';
+    return;
+  }
+  for(const p of produtos){
+    const q=Number(cart[p.id]||0);
+    const row=document.createElement("div");
+    row.className="prodRow";
+    row.innerHTML=`
+      <div class="pIcon"><img class="pIconImg" src="${p.icon||'assets/logo.jpeg'}" alt=""></div>
+      <div class="pMid">
+        <div class="pName">${p.nome||"Produto"}</div>
+        <div class="pDesc">${p.desc||""}</div>
+        <div class="pPrice">${fmtBRL(Number(p.preco||0))}</div>
+      </div>
+      <div class="qtyWrap">
+        <button class="qtyBtn" data-act="dec" data-id="${p.id}">−</button>
+        <div class="qty" id="qty_${p.id}">${q}</div>
+        <button class="qtyBtn" data-act="inc" data-id="${p.id}">+</button>
+      </div>
+    `;
+    list.appendChild(row);
+  }
+  updateTotal();
+}
+
+function updateTotal(){
+  const cart=getCart();
+  const produtos=Array.isArray(CFG.produtos)?CFG.produtos:[];
+  let total=0;
+  for(const p of produtos){
+    total += Number(cart[p.id]||0)*Number(p.preco||0);
+  }
+  animateTotal(total);
+  return total;
+}
+
+function findIrmao(tel,cim){
+  tel=String(tel||"").replace(/\D/g,"");
+  cim=String(cim||"").trim();
+  return (Array.isArray(CFG?.irmaos)?CFG.irmaos:[]).find(i =>
+    String(i.telefone||"").replace(/\D/g,"")===tel &&
+    String(i.cim||"").trim()===cim
+  );
+}
+function markInvalid(el){ el.classList.add("shake"); setTimeout(()=>el.classList.remove("shake"), 500); }
+
+async function copyText(txt){
+  try{ await navigator.clipboard.writeText(txt); toast("Copiado ✅"); }
+  catch(_){
+    const ta=document.createElement("textarea");
+    ta.value=txt; ta.style.position="fixed"; ta.style.left="-9999px";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ document.execCommand("copy"); toast("Copiado ✅"); } catch(__){ toast("Não foi possível copiar"); }
+    document.body.removeChild(ta);
+  }
+}
+
+function nowHHMM(){
+  const d=new Date();
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+function nowDT(){ return new Date().toLocaleString("pt-BR"); }
+
+
+function goToConsumo(){
+  const u=getUser();
+  setText("consUser", u?.nome ? `Meu Consumo — Irmão ${u.nome}` : "Meu Consumo");
+  renderProducts();
+  lastTotal = 0;
+  updateTotal();
+  showScreen("scr_consumo","forward");
+}
+
+function setupAdminTap(){
+  const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
+  for(const el of logos){
+    el.addEventListener("click", ()=>{
+      adminTapCount++;
+      clearTimeout(adminTapTimer);
+      adminTapTimer=setTimeout(()=>adminTapCount=0, 1200);
+      if(adminTapCount>=5){
+        adminTapCount=0;
+        toast("Admin (em breve) ✅");
+      }
+    });
+  }
+}
+
+function startWaitPolling(){
+  stopWaitPolling();
+  // check immediately and then every 3s
+  const tick = async ()=>{
+    try{
+      setText('lastCheck', nowDT());
+      if(navigator.serviceWorker && navigator.serviceWorker.controller){
+        navigator.serviceWorker.controller.postMessage({type:'CLEAR_CACHE'});
+      }
+      CFG = await loadConfig();
+      applyBrand();
+      
+  // atualizar (tela sessão fechada)
+  const refreshBtn = document.getElementById('btnRefresh');
+  if(refreshBtn){
+    refreshBtn.addEventListener('click', async ()=>{
+      setText('lastCheck', nowDT());
+      if(navigator.serviceWorker && navigator.serviceWorker.controller){
+        navigator.serviceWorker.controller.postMessage({type:'CLEAR_CACHE'});
+      }
+      CFG = await loadConfig();
+      applyBrand();
+      if((CFG?.sessao?.status||'').toLowerCase()==='aberta'){
+        showScreen('scr_login','forward');
+      }
+    });
+  }
+
+  // polling automático: a cada 15s verifica se sessão abriu
+  setInterval(async ()=>{
+    if(currentScreen!=='scr_wait') return;
+    CFG = await loadConfig();
+    applyBrand();
+    if((CFG?.sessao?.status||'').toLowerCase()==='aberta'){
+      showScreen('scr_login','forward');
+    }
+  }, 15000);
+setText("lastCheck", nowDT());
+      if(sessionIsOpen()){
+        stopWaitPolling();
+        showScreen("scr_login","forward");
+      }
+    }catch(_){}
+  };
+  tick();
+  waitTimer=setInterval(tick, 3000);
+}
+function stopWaitPolling(){
+  if(waitTimer){ clearInterval(waitTimer); waitTimer=null; }
+}
+
+async function boot(){
+  // SW
+  if("serviceWorker" in navigator){
+    try{ await navigator.serviceWorker.register("./service-worker.js"); }catch(_){}
+  }
+
+  try{
+    CFG = await loadConfig();
+  }catch(e){
+    // fallback minimal
+    CFG = {loja:{nome:"Loja",subtitulo:"",pix_chave:"",logo_url:"assets/logo.jpeg"},sessao:{status:"fechada",data:""},produtos:[],irmaos:[]};
+  }
+
+function applyRememberedUser(){
+  const u = getUser(); // já existe no seu código
+  const hasPhone = u?.telefone && String(u.telefone).length >= 10;
+
+  const telWrap = document.getElementById("telWrap"); // você precisa ter um container no HTML
+  const telInp  = document.getElementById("inpTel");
+
+  const title = document.getElementById("welcomeTitle");
+  if(title){
+    title.textContent = hasPhone
+      ? `Bem-vindo, ${u.nome || "George Peterson Ramos"} 👋`
+      : "Bem-vindo 👋";
+  }
+
+  if(hasPhone){
+    // esconde telefone e deixa só CIM
+    if(telWrap) telWrap.style.display = "none";
+    if(telInp) telInp.value = u.telefone;
+  }else{
+    if(telWrap) telWrap.style.display = "";
+  }
+}
+  
+  applyBrand();
+  applyRememberedUser();
+  setupAdminTap();
+
+  // Splash timing: 3s blue, then 3s logo, then go wait/login
+  setTimeout(()=>showScreen("scr_splash2","forward"), 3000);
+  setTimeout(()=>{
+    // decide next screen based on session
+    if(sessionIsOpen()){
+      showScreen("scr_login","forward");
+    }else{
+      showScreen("scr_wait","forward");
+      startWaitPolling();
+    }
+  }, 6000);
+
+  // login
+$("#btnEntrar").addEventListener("click", async ()=>{
+  const u = getUser();
+
+  // 1) Pega telefone salvo (se existir)
+  const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
+
+  // 2) Se não tem salvo, pega do input (se existir)
+  const telInp = $("#inpTel");
+  const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
+
+  // 3) CIM sempre é obrigatório
+  const cimInp = $("#inpCIM");
+  const cim = cimInp ? String(cimInp.value||"").trim() : "";
+
+  // ✅ Agora a validação é correta:
+  if(!tel){
+    // só acontece se NÃO tinha salvo e não digitou
+    if(telInp) telInp.classList.add("shake");
+    toast("Digite o telefone");
+    return;
+  }
+  if(!cim){
+    if(cimInp) cimInp.classList.add("shake");
+    toast("Digite o CIM");
+    return;
+  }
+
+  // Recarrega config para pegar sessão atual
+  try{
+    CFG = await loadConfig();
+    applyBrand();
+  }catch(_){}
+
+  // Procura irmão no JSON
+  const irmao = findIrmao(tel, cim);
+  if(!irmao){
+    toast("CIM inválido");
+    if(cimInp) cimInp.classList.add("shake");
+    return;
+  }
+
+  // Salva SEMPRE o telefone no localStorage a partir daqui
+  setUser({
+    nome: irmao.nome,
+    telefone: String(irmao.telefone).replace(/\D/g,"")
+  });
+
+  // Reaplica UX: esconde tel, muda “Bem-vindo…”
+  applyRememberedUser();
+
+  // Sessão fechada? vai para tela de espera
+  if(!sessionIsOpen()){
+    toast("Sessão fechada (tesoureiro precisa abrir)");
+    showScreen("scr_wait","forward");
+    startWaitPolling?.(); // se existir no seu código
+    return;
+  }
+
+  goToConsumo();
+});
+
+  // qty buttons
+  document.addEventListener("click",(e)=>{
+    const btn=e.target.closest(".qtyBtn");
+    if(!btn) return;
+    const id=btn.getAttribute("data-id");
+    const act=btn.getAttribute("data-act");
+    const cart=getCart();
+    const cur=Number(cart[id]||0);
+    cart[id]= act==="inc" ? cur+1 : Math.max(0, cur-1);
+    setCart(cart);
+    const el=document.getElementById("qty_"+id); if(el) el.textContent=String(cart[id]);
+    updateTotal();
+  });
+
+  $("#btnFechar").addEventListener("click", ()=>{
+    const total = updateTotal();
+    if(total<=0){ toast("Selecione ao menos 1 item"); return; }
+    // prepara tela de pagamento (não dispara nada sozinho)
+    buildPayScreen();
+    closePixModal();
+    hidePaySuccess();
+    showScreen("scr_pagamento","forward");
+  });
+
+  $("#btnVoltarConsumo").addEventListener("click", ()=>{
+    closePixModal();
+    hidePaySuccess();
+    showScreen("scr_consumo","back");
+  });
+
+  $("#btnSair").addEventListener("click", ()=>{
+    closePixModal();
+    hidePaySuccess();
+    clearCart();
+    $("#inpCIM").value="";
+    // se existir input telefone no HTML, limpa (mas o telefone salvo continua no localStorage)
+    const t = $("#inpTel"); if(t) t.value="";
+    showScreen("scr_login","back");
+    toast("Saiu");
+  });
+
+  // ===== Pagamento v25 flow =====
+  const PAY_SUCCESS_MS = 2200; // tempo para o GIF completar um ciclo (ajuste se quiser)
+
+  function escapeHtml(s){
+    return String(s||"")
+      .replacetnAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  function cartEntries(cart){
+    if(!cart) return [];
+    // objeto {id: qtd}
+    if(!Array.isArray(cart) && typeof cart==="object"){
+      return Object.entries(cart).map(([id,q])=>({id:String(id), qtd:Number(q||0)}));
+    }
+    // array [{id,qtd}] (fallback)
+    if(Array.isArray(cart)){
+      return cart.map(it=>({id:String(it.id), qtd:Number(it.qtd||it.qtd||0)}));
+    }
+    return [];
+  }
+
+  function buildPayScreen(){
+    applyBrand();
+
+    const u = getUser() || {};
+    const nome = (u.nome||"").trim();
+    setText("payHello", nome ? `Oi meu irmão, ${nome}!` : "Oi meu irmão!");
+
+    const total = updateTotal();
+    setText("payTotal", fmtBRL(total));
+
+    // lista itens para conferência
+    const cart = getCart();
+    const entries = cartEntries(cart).filter(x=>x.qtd>0);
+
+    const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
+    const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
+
+    const lines = entries.map(e=>{
+      const p = byId[e.id] || {};
+      const nomeP = p.nome || `Item ${e.id}`;
+      const preco = Number(p.preco||0);
+      const sub = e.qtd * preco;
+      return {q:e.qtd, nome:nomeP, sub};
+    });
+
+    const box = document.getElementById("payItems");
+    if(box){
+      if(lines.length===0){
+        box.innerHTML = `<div style="opacity:.75;font-weight:900">Nenhum item selecionado.</div>`;
+      }else{
+        box.innerHTML = lines.map(l=>{
+          const left = `${l.q} ${l.nome}`;
+          const right = fmtBRL(l.sub);
+          return `<div class="payItemRow"><div class="payItemLeft">${escapeHtml(left)}</div><div class="payItemDots"></div><div class="payItemRight">${escapeHtml(right)}</div></div>`;
+        }).join("");
+      }
+    }
+  }
+
+  function openPixModal(){
+    const chave = String(CFG?.loja?.pix_chave || CFG?.pix?.chave || "");
+    if(!chave){ toast("Chave Pix não configurada"); return; }
+
+    const total = updateTotal();
+    setText("pixChave", chave);
+    setText("pixValor", fmtBRL(total));
+
+    const modal = document.getElementById("pixModal");
+    if(modal){
+      modal.classList.remove("hidden");
+    }
+  }
+
+boot();
+</script>
+</body>
+</html>
