@@ -449,7 +449,20 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
   from { opacity: 0 }
   to   { opacity: 1 }
 }
-    
+
+.methodBtn {
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.methodBtn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(0,0,0,.35);
+}
+
+.methodBtn:active {
+  transform: scale(.96);
+}
+
 </style>
 </head>
 <body>
@@ -615,7 +628,7 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
           <div class="payHello" id="payHello">Oi meu irmão!!!</div>
           <div class="payTotal">sua conta totalizou <span id="payTotal">R$ 0,00</span>:</div>
         </div>
-
+         
         <div class="payLines" id="payLines"></div>
 
         <div class="payQuestion">Como deseja pagar?</div>
@@ -672,6 +685,7 @@ function getProdIcon(p){
 
 
 function animateTotal(to){
+  renderPayLines();
   const el1 = $("#totalValue");
   const el2 = $("#payTotal");
   if(!el1 || !el2){ lastTotal = to; return; }
@@ -1159,6 +1173,7 @@ $("#btnEntrar").addEventListener("click", async ()=>{
     if(total<=0){ toast("Selecione ao menos 1 item"); return; }
     const u=getUser();
     setText("payUser", u?.nome ? `Irmão ${u.nome}` : "—");
+    applyBrand(); // 👈 garante sessão atualizada
     showScreen("scr_pagamento","forward");
   });
 $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
@@ -1168,6 +1183,32 @@ $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
     showScreen("scr_login","back");
     toast("Saiu");
   });
+
+  function renderPayLines(){
+  const wrap = document.getElementById("payLines");
+   
+  if(!wrap) return;
+
+  wrap.innerHTML = "";
+  const cart = getCart();
+  const produtos = CFG.produtos || [];
+
+  produtos.forEach(p=>{
+    const q = Number(cart[p.id] || 0);
+    if(q <= 0) return;
+
+    const v = q * Number(p.preco || 0);
+
+    wrap.innerHTML += `
+      <div class="payLine">
+        <div class="name">${q} ${p.nome}</div>
+        <div class="dots"></div>
+        <div class="val">${fmtBRL(v)}</div>
+      </div>
+    `;
+  });
+}
+
   
   $("#btnPix").addEventListener("click", ()=>{
     const chave=String(CFG?.loja?.pix_chave||"");
@@ -1195,19 +1236,33 @@ $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
   const box = document.getElementById("paySuccess");
   if (!box) return;
 
+  // trava interações
+  document.body.style.pointerEvents = "none";
+
+  // limpa UI antes
+  clearCart();
+  lastTotal = 0;
+  updateTotal();
+
+  // mostra overlay
   box.classList.remove("hidden");
 
-  // som da moeda
+  // som
   const audio = new Audio("./assets/coin.mp3");
   audio.volume = 0.8;
-  audio.play().catch(() => {});
+  audio.play().catch(()=>{});
 
-  // após 2.5s volta para login
+  // tempo para 1 ciclo do gif
   setTimeout(() => {
     box.classList.add("hidden");
+
+    document.body.style.pointerEvents = "";
+
+    // volta SEM lixo de estado
     showScreen("scr_login", "back");
-  }, 2500);
- }
+  }, 3000);
+}
+
 }
 boot();
 </script>
