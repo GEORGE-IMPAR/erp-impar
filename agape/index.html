@@ -598,7 +598,6 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
     </div>
   </div>
 </section>
-
 <script>
 const CONFIG_URL = "./agape_config.json?v=23";
 const LS_CART  = "agape_cart_v14";
@@ -633,10 +632,9 @@ function getProdIcon(p){
 }
 
 
-
 function animateTotal(to){
-  const el1 = $("totalValue");
-  const el2 = $("payTotal");
+  const el1 = $("#totalValue");
+  const el2 = $("#payTotal");
   if(!el1 || !el2){ lastTotal = to; return; }
 
   const from = Math.round(lastTotal);
@@ -867,7 +865,7 @@ function renderProducts(){
       <div class="qtyWrap">
         <button class="qtyBtn" data-act="dec" data-id="${p.id}">−</button>
         <div class="qty" id="qty_${p.id}">${q}</div>
-        <button class="qtyBtn" data-act="inc" dfata-id="${p.id}">+</button>
+        <button class="qtyBtn" data-act="inc" data-id="${p.id}">+</button>
       </div>
     `;
     list.appendChild(row);
@@ -924,7 +922,7 @@ function goToConsumo(){
 }
 
 function setupAdminTap(){
-  const logos = [$("brandLogo"), $("brandLogoWait")].filter(Boolean);
+  const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
   for(const el of logos){
     el.addEventListener("click", ()=>{
       adminTapCount++;
@@ -1042,32 +1040,66 @@ function applyRememberedUser(){
   }, 6000);
 
   // login
-  $("#btnEntrar").addEventListener("click", async ()=>{
-    const tel=$("#inpTel").value;
-    const cim=$("#inpCIM").value;
-    if(!tel.trim()){ markInvalid($("#inpTel")); toast("Digite o telefone"); return; }
-    if(!cim.trim()){ markInvalid($("#inpCIM")); toast("Digite o CIM"); return; }
+$("#btnEntrar").addEventListener("click", async ()=>{
+  const u = getUser();
 
-    try{
-      CFG = await loadConfig(); // refresh
-      applyBrand();
-    }catch(_){}
+  // 1) Pega telefone salvo (se existir)
+  const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
 
-    const irmao=findIrmao(tel,cim);
-    if(!irmao){ markInvalid($("#inpCIM")); toast("CIM ou telefone inválido"); return; }
+  // 2) Se não tem salvo, pega do input (se existir)
+  const telInp = $("#inpTel");
+  const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
 
-    setUser({nome:irmao.nome, telefone:String(irmao.telefone||"").replace(/\D/g,"")});
-    setText("welcomeTitle", `Bem-vindo, Irmão ${irmao.nome} 👋`);
+  // 3) CIM sempre é obrigatório
+  const cimInp = $("#inpCIM");
+  const cim = cimInp ? String(cimInp.value||"").trim() : "";
 
-    if(!sessionIsOpen()){
-      toast("Sessão fechada (tesoureiro precisa abrir)");
-      // if session closed, send to wait screen (optional)
-      showScreen("scr_wait","forward");
-      startWaitPolling();
-      return;
-    }
-    goToConsumo();
+  // ✅ Agora a validação é correta:
+  if(!tel){
+    // só acontece se NÃO tinha salvo e não digitou
+    if(telInp) telInp.classList.add("shake");
+    toast("Digite o telefone");
+    return;
+  }
+  if(!cim){
+    if(cimInp) cimInp.classList.add("shake");
+    toast("Digite o CIM");
+    return;
+  }
+
+  // Recarrega config para pegar sessão atual
+  try{
+    CFG = await loadConfig();
+    applyBrand();
+  }catch(_){}
+
+  // Procura irmão no JSON
+  const irmao = findIrmao(tel, cim);
+  if(!irmao){
+    toast("CIM inválido");
+    if(cimInp) cimInp.classList.add("shake");
+    return;
+  }
+
+  // Salva SEMPRE o telefone no localStorage a partir daqui
+  setUser({
+    nome: irmao.nome,
+    telefone: String(irmao.telefone).replace(/\D/g,"")
   });
+
+  // Reaplica UX: esconde tel, muda “Bem-vindo…”
+  applyRememberedUser();
+
+  // Sessão fechada? vai para tela de espera
+  if(!sessionIsOpen()){
+    toast("Sessão fechada (tesoureiro precisa abrir)");
+    showScreen("scr_wait","forward");
+    startWaitPolling?.(); // se existir no seu código
+    return;
+  }
+
+  goToConsumo();
+});
 
   // qty buttons
   document.addEventListener("click",(e)=>{
@@ -1090,63 +1122,29 @@ function applyRememberedUser(){
     setText("payUser", u?.nome ? `Irmão ${u.nome}` : "—");
     showScreen("scr_pagamento","forward");
   });
+  $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
   $("#btnSair").addEventListener("click", ()=>{
-    clearCart();
+    clearCart(); 
     $("#inpCIM").value=""; $("#inpTel").value="";
     showScreen("scr_login","back");
     toast("Saiu");
   });
+  $("#btnPix").addEventListener("click", ()=>{
+    const chave=String(CFG?.loja?.pix_chave||"");
+    if(!chave){ toast("Chave Pix não configurada"); return; }
+    copyText(chave);
+  });
+
   function paid(msg){
     toast(msg);
     clearCart();
     updateTotal();
     showScreen("scr_consumo","back");
   }
+  $("#btnDinheiro").addEventListener("click", ()=>paid("Registrado: dinheiro ✅"));
+  $("#btnProxima").addEventListener("click", ()=>paid("Registrado: próxima sessão ✅"));
 }
 boot();
-const pixLine = document.getElementById("pixLine");
-const pixKeyValue = document.getElementById("pixKeyValue");
-const paySuccess = document.getElementById("paySuccess");
-
-// PIX
-document.getElementById("optPix").onclick = ()=>{
-  pixKeyValue.textContent = CFG.loja.pix_chave;
-  pixLine.classList.remove("hidden");
-};
-
-// COPIAR PIX
-document.getElementById("btnCopyPix").onclick = ()=>{
-  navigator.clipboard.writeText(CFG.loja.pix_chave);
-  finalizarPagamento();
-};
-
-// DINHEIRO
-document.getElementById("optCash").onclick = ()=>{
-  finalizarPagamento();
-};
-
-// PRÓXIMA SESSÃO
-document.getElementById("optLater").onclick = ()=>{
-  finalizarPagamento();
-};
-
-function finalizarPagamento(){
-  // som de moeda
-  const audio = new Audio("./assets/coin.mp3");
-  audio.play().catch(()=>{});
-
-  // limpar carrinho
-  clearCart();
-
-  // tela verde
-  paySuccess.classList.remove("hidden");
-
-  setTimeout(()=>{
-    paySuccess.classList.add("hidden");
-    showScreen("scr_login","back");
-  }, 2600);
-}
-
 </script>
 </body>
 </html>
