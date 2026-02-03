@@ -1127,66 +1127,32 @@ function applyRememberedUser(){
   }, 6000);
 
   // login
-$("btnEntrar").addEventListener("click", async ()=>{
-  const u = getUser();
+  $("#btnEntrar").addEventListener("click", async ()=>{
+    const tel=$("#inpTel").value;
+    const cim=$("#inpCIM").value;
+    if(!tel.trim()){ markInvalid($("#inpTel")); toast("Digite o telefone"); return; }
+    if(!cim.trim()){ markInvalid($("#inpCIM")); toast("Digite o CIM"); return; }
 
-  // 1) Pega telefone salvo (se existir)
-  const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
+    try{
+      CFG = await loadConfig(); // refresh
+      applyBrand();
+    }catch(_){}
 
-  // 2) Se não tem salvo, pega do input (se existir)
-  const telInp = $("inpTel");
-  const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
+    const irmao=findIrmao(tel,cim);
+    if(!irmao){ markInvalid($("#inpCIM")); toast("CIM ou telefone inválido"); return; }
 
-  // 3) CIM sempre é obrigatório
-  const cimInp = $("inpCIM");
-  const cim = cimInp ? String(cimInp.value||"").trim() : "";
+    setUser({nome:irmao.nome, telefone:String(irmao.telefone||"").replace(/\D/g,"")});
+    setText("welcomeTitle", `Bem-vindo, Irmão ${irmao.nome} 👋`);
 
-  // ✅ Agora a validação é correta:
-  if(!tel){
-    // só acontece se NÃO tinha salvo e não digitou
-    if(telInp) telInp.classList.add("shake");
-    toast("Digite o telefone");
-    return;
-  }
-  if(!cim){
-    if(cimInp) cimInp.classList.add("shake");
-    toast("Digite o CIM");
-    return;
-  }
-
-  // Recarrega config para pegar sessão atual
-  try{
-    CFG = await loadConfig();
-    applyBrand();
-  }catch(_){}
-
-  // Procura irmão no JSON
-  const irmao = findIrmao(tel, cim);
-  if(!irmao){
-    toast("CIM inválido");
-    if(cimInp) cimInp.classList.add("shake");
-    return;
-  }
-
-  // Salva SEMPRE o telefone no localStorage a partir daqui
-  setUser({
-    nome: irmao.nome,
-    telefone: String(irmao.telefone).replace(/\D/g,"")
+    if(!sessionIsOpen()){
+      toast("Sessão fechada (tesoureiro precisa abrir)");
+      // if session closed, send to wait screen (optional)
+      showScreen("scr_wait","forward");
+      startWaitPolling();
+      return;
+    }
+    goToConsumo();
   });
-
-  // Reaplica UX: esconde tel, muda “Bem-vindo…”
-  applyRememberedUser();
-
-  // Sessão fechada? vai para tela de espera
-  if(!sessionIsOpen()){
-    toast("Sessão fechada (tesoureiro precisa abrir)");
-    showScreen("scr_wait","forward");
-    startWaitPolling?.(); // se existir no seu código
-    return;
-  }
-
-  goToConsumo();
-});
 
   // qty buttons
   document.addEventListener("click",(e)=>{
@@ -1202,21 +1168,21 @@ $("btnEntrar").addEventListener("click", async ()=>{
     updateTotal();
   });
 
-  $("btnFechar").addEventListener("click", ()=>{
+  $("#btnFechar").addEventListener("click", ()=>{
     const total=updateTotal();
     if(total<=0){ toast("Selecione ao menos 1 item"); return; }
     const u=getUser();
     setText("payUser", u?.nome ? `Irmão ${u.nome}` : "—");
     showScreen("scr_pagamento","forward");
   });
-  $("btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
-  $("btnSair").addEventListener("click", ()=>{
-    clearCart(); 
-    $("inpCIM").value=""; $("inpTel").value="";
+  $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
+  $("#btnSair").addEventListener("click", ()=>{
+    clearCart(); clearUser();
+    $("#inpCIM").value=""; $("#inpTel").value="";
     showScreen("scr_login","back");
     toast("Saiu");
   });
-  $("btnPix").addEventListener("click", ()=>{
+  $("#btnPix").addEventListener("click", ()=>{
     const chave=String(CFG?.loja?.pix_chave||"");
     if(!chave){ toast("Chave Pix não configurada"); return; }
     copyText(chave);
@@ -1228,8 +1194,8 @@ $("btnEntrar").addEventListener("click", async ()=>{
     updateTotal();
     showScreen("scr_consumo","back");
   }
-  $("btnDinheiro").addEventListener("click", ()=>paid("Registrado: dinheiro ✅"));
-  $("btnProxima").addEventListener("click", ()=>paid("Registrado: próxima sessão ✅"));
+  $("#btnDinheiro").addEventListener("click", ()=>paid("Registrado: dinheiro ✅"));
+  $("#btnProxima").addEventListener("click", ()=>paid("Registrado: próxima sessão ✅"));
 }
 boot();
 const pixLine = document.getElementById("pixLine");
