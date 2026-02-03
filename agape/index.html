@@ -669,12 +669,6 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
         </div>
 
         <div class="pixBar">
-          <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
-          <div class="pixKey" id="pixChaveCons">—</div>
-        </div>
-
-
-        <div class="pixBar">
           <div class="tL">
             <div class="tMain" id="consUser">Meu Consumo.............................................</div>
           </div>
@@ -925,8 +919,6 @@ function setUser(u){
   if (btnTel) btnTel.style.display = hasPhone ? "none" : "block";
 }
   
-function clearUser(){ localStorage.removeItem(LS_USER); }
-
 async function loadConfig(){
   const r=await fetch(CONFIG_URL,{cache:"no-store"});
   if(!r.ok) throw new Error("config");
@@ -1299,46 +1291,74 @@ $("#btnEntrar").addEventListener("click", async ()=>{
 
   // ===== Pagamento (v25) helpers =====
   function buildPayScreen(){
-    const u = getUser() || {};
-    const nome = (u.nome||"—");
-    setText("payHello", `Oi meu irmão, ${nome},`);
-    const total = updateTotal();
-    setText("payTotal", fmtBRL(total));
+  const u = getUser();
+  const nome = (u && u.nome) ? u.nome : "irmão";
 
-    // lista itens para conferência
-    const cartRaw = getCart();
-    const cartArr = Array.isArray(cartRaw)
-      ? cartRaw
-      : Object.entries(cartRaw || {}).map(([id, qtd]) => ({ id, qtd }));
-    const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
-    const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
-    const lines = [];
-    for(const it of cartArr){
-      const q = Number(it.qtd||0);
-      if(q<=0) continue;
-      const p = byId[String(it.id)] || {};
-      const nomeP = p.nome || `Item ${it.id}`;
-      const preco = Number(p.preco||0);
-      const sub = q*preco;
-      lines.push({q, nome:nomeP, sub});
-    }
-    const box = document.getElementById("payItems");
-    if(box){
-      if(lines.length===0){
-        box.innerHTML = '<div style="opacity:.75;font-weight:800">Nenhum item selecionado.</div>';
-      }else{
-        box.innerHTML = lines.map(l=>{
-          const left = `${l.q} ${l.nome}`;
-          const right = fmtBRL(l.sub);
-          return `<div class="payItem"><div class="left">${escapeHtml(left)}</div><div class="dots"></div><div class="right">${right}</div></div>`;
-        }).join("");
-      }
-    }
+  // garante total (com animação no #payTotal)
+  const total = updateTotal();
 
-    // garante modais fechados
-    hidePixModal();
-    hidePaySuccess();
+  // status da sessão (verde/vermelho + data/hora)
+  const opened = sessionIsOpen();
+  const sessTxt = CFG?.sessao?.data
+    ? `Sessão ${opened ? "aberta" : "fechada"} — ${CFG.sessao.data}`
+    : `Sessão ${opened ? "aberta" : "fechada"}`;
+
+  const dot = document.getElementById("paySessaoDot");
+  const line = document.getElementById("paySessaoLine");
+  if(dot) dot.style.background = opened ? "var(--good)" : "var(--bad)";
+  if(line) line.textContent = sessTxt;
+
+  const hello = document.getElementById("payHello");
+  if(hello) hello.textContent = `Oi meu irmão, ${nome},`;
+
+  // linhas (itens) em verde com pontilhado
+  const lines = document.getElementById("payItems");
+  if(!lines) return;
+  lines.innerHTML = "";
+
+  const cart = getCart();
+  const produtos = Array.isArray(CFG?.produtos) ? CFG.produtos : [];
+  const byId = {};
+  for(const p of produtos){ byId[p.id] = p; }
+
+  let hasAny = false;
+  for(const [id,q] of Object.entries(cart||{})){
+    const qty = Number(q||0);
+    if(qty<=0) continue;
+    const p = byId[id];
+    if(!p) continue;
+    hasAny = true;
+
+    const sub = qty * Number(p.preco||0);
+
+    const row = document.createElement("div");
+    row.className = "payLine";
+
+    const n = document.createElement("div");
+    n.className = "name";
+    n.textContent = `${qty} ${p.nome || "Item"}`;
+
+    const d = document.createElement("div");
+    d.className = "dots";
+
+    const v = document.createElement("div");
+    v.className = "val";
+    v.textContent = fmtBRL(sub);
+
+    row.appendChild(n);
+    row.appendChild(d);
+    row.appendChild(v);
+    lines.appendChild(row);
   }
+
+  if(!hasAny){
+    const empty = document.createElement("div");
+    empty.style.padding = "10px";
+    empty.style.opacity = ".8";
+    empty.textContent = "Nenhum item na comanda.";
+    lines.appendChild(empty);
+  }
+}
 
   function openPixModal(){
     const total = updateTotal();
