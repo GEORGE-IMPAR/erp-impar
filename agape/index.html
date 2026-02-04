@@ -1211,6 +1211,53 @@ function applyRememberedUser(){
     }
   }, 6000);
 
+  function crc16(payload){
+  // CRC16-CCITT (False)
+  let crc = 0xFFFF;
+  for (let i = 0; i < payload.length; i++){
+    crc ^= payload.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++){
+      if ((crc & 0x8000) !== 0) crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+      else crc = (crc << 1) & 0xFFFF;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+function emv(id, value){
+  const v = String(value ?? "");
+  return String(id).padStart(2,"0") + String(v.length).padStart(2,"0") + v;
+}
+
+function sanitizePixText(s, max){
+  return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9 .-]/g,"").trim().slice(0, max);
+}
+
+function buildPixCopiaECola({chave, nome, cidade, valor, txid="***"}){
+  // Merchant Account Information (GUI + Key + Description)
+  const gui = emv("00", "br.gov.bcb.pix");
+  const key = emv("01", chave);
+  const desc = ""; // opcional: emv("02", "AGAPE")
+  const mai = emv("26", gui + key + desc);
+
+  const mcc = emv("52", "0000");
+  const currency = emv("53", "986");
+  const amount = emv("54", Number(valor).toFixed(2)); // 10.00
+  const country = emv("58", "BR");
+  const mname = emv("59", sanitizePixText(nome, 25));
+  const mcity = emv("60", sanitizePixText(cidade, 15));
+  const addData = emv("62", emv("05", String(txid).slice(0, 25)));
+
+  let payload = emv("00","01") + emv("01","12") + mai + mcc + currency + amount + country + mname + mcity + addData;
+
+  // CRC16: ID 63 length 04 + CRC
+  payload += "6304";
+  payload += crc16(payload);
+
+  return payload;
+}
+
+
   // login
 $("#btnEntrar").addEventListener("click", async ()=>{
   const u = getUser();
@@ -1472,24 +1519,31 @@ function closePixModal(){
 }
 
   // clique em formas
-  $("#btnPix").addEventListener("click", async ()=>{
-  // 1) pega a chave pix de qualquer lugar possível do CFG (sem refatorar)
- const chave =
-  (CFG && CFG.loja && (CFG.loja.pix_chave || CFG.loja.pix || CFG.loja.chave_pix)) ||
-  (CFG && CFG.pix && (CFG.pix.chave || CFG.pix.key)) ||
-  "";
+$("#btnPix").addEventListener("click", async ()=>{
+  const total = updateTotal();
 
-// 2) seta no elemento (tenta vários ids possíveis)
-const elKey = document.getElementById("pixChaveModal");
-if (elKey) elKey.textContent = chave || "—";
+  const chaveRecebedor = (CFG?.loja?.pix_chave || "");
+  const nomeRecebedor  = (CFG?.loja?.pix_nome || CFG?.loja?.nome || "RECEBEDOR");
+  const cidade         = (CFG?.loja?.pix_cidade || "BRASIL");
 
-// 3) opcional: se a chave estiver vazia, pelo menos avisa
-if (!chave) {
-  console.warn("Chave Pix não encontrada no CFG. Verifique agape_config.json");
-}
-
-    openPixModal();
+  const copiaECola = buildPixCopiaECola({
+    chave: chaveRecebedor,
+    nome: nomeRecebedor,
+    cidade: cidade,
+    valor: total,
+    txid: "AGAPE"
   });
+
+  // valor no modal
+  const elV = document.getElementById("pixValor");
+  if(elV) elV.textContent = fmtBRL(total);
+
+  // chave no modal (AGORA É O CÓDIGO LONGO)
+  const elKey = document.getElementById("pixChaveModal");
+  if(elKey) elKey.textContent = copiaECola;
+
+  openPixModal();
+});
 
   $("#btnDinheiro").addEventListener("click", ()=>{
     if(!payReady) return;
@@ -1502,12 +1556,12 @@ if (!chave) {
   });
 
   // modal pix
-  $("#btnCopyPix")?.addEventListener("click", ()=>{
-    const chave = $("#pixChaveModal")?.textContent || "";
-    if(!chave){ toast("Chave Pix vazia"); return; }
-    copyText(chave);
-    toast("Chave Pix copiada ✅");
-  });
+$("#btnCopyPix")?.addEventListener("click", ()=>{
+  const chave = $("#pixChaveModal")?.textContent || "";
+  if(!chave){ toast("Código Pix vazio"); return; }
+  copyText(chave);
+  toast("Pix Copia e Cola copiado ✅");
+});
 
   const closeBtns = ["btnPixCancel","btnPixCancel2"];
   closeBtns.forEach(id=>{
