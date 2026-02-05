@@ -1470,73 +1470,159 @@ function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
   return payloadNoCrc + crc16(payloadNoCrc);
 }
 
+  $("#payTotal").textContent = fmtBRL(total);
+
+  const u=getUser();
+  $("#payUser").textContent = u?.nome ? `Irmão ${u.nome}` : "—";
+
+  // garantir overlay/modal fechados
+  closePixModal();
+  hidePaySuccess();
+}
+
 function openPixModal(){
   // NÃO sobrescrever pixChaveModal aqui. Só abrir.
   const modal = document.getElementById("pixModal");
   if(modal) modal.classList.remove("hidden");
 }
-
 function closePixModal(){
-    const modal = document.getElementById("pixModal");
-    if(modal) modal.classList.add("hidden");
-  }
+  const modal = document.getElementById("pixModal");
+  if(modal) modal.classList.add("hidden");
+}
 
-  function playCoin(){
-    try{
-      const a = new Audio("./assets/coin.mp3");
-      a.volume = 0.9;
-      a.play().catch(()=>{});
-    }catch(e){}
-  }
+function showPaySuccess(){
+  // force theme color / full yellow
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.setAttribute("content", "#f0d51a");
+  document.documentElement.style.background = "#f0d51a";
+  document.body.style.background = "#f0d51a";
 
-  function showPaySuccess(){
-  const ps = $("#paySuccess");
-  if(ps) ps.classList.remove("hidden");
+  const el = document.getElementById("paySuccess");
+  if(el) el.classList.remove("hidden");
+}
+function hidePaySuccess(){
+  const el = document.getElementById("paySuccess");
+  if(el) el.classList.add("hidden");
 
-  // reinicia GIF sempre que abrir
-  const gif = $("#payGif");
-  if(gif){
-    const src = gif.getAttribute("src") || "./assets/check.gif";
-    gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
-  }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.setAttribute("content", "#071a2b");
+  document.documentElement.style.background = "";
+  document.body.style.background = "";
+}
 
-  // som (se existir)
+function playCoin(){
   try{
     const a = new Audio("./assets/coin.mp3");
+    a.volume = 0.9;
     a.play().catch(()=>{});
-  }catch(e){}
+  }catch(_){}
 }
-  function hidePaySuccess(){
-    const el = document.getElementById("paySuccess");
-    if(el) el.classList.add("hidden");
-  }
 
-  function finalizePayment(msg){
-  toast(msg);
+function finalizePayment(label){
+  if(!payReady) return;
 
-  // 1) limpa comanda / carrinho
-  try{ clearCart(); }catch(e){}
-  try{ updateTotal(); }catch(e){}
-
-  // 2) fecha modal PIX se estiver aberto
-  const pm = $("#pixModal");
-  if(pm) pm.classList.add("hidden");
-
-  // 3) efeito + som
+  closePixModal();
   showPaySuccess();
   playCoin();
-    
-  // 4) aguarda 1 ciclo do GIF e volta para login (mais seguro)
-  const WAIT_MS = 2200;
+
+  // zera carrinho
+  clearCart();
+  updateTotal(false);
+
+  // espera um ciclo do gif e volta
   setTimeout(()=>{
-    const ps = $("#paySuccess");
-    if(ps) ps.classList.add("hidden");
+    hidePaySuccess();
+    clearUser();
+    $("#inpCIM").value="";
     showScreen("scr_login","back");
-  }, WAIT_MS);
+    toast(label + " ✅");
+  }, 2200);
 }
 
-  // clique em formas
-  // === PATCH PIX: gera Copia-e-Cola (000201...) e seta no MODAL ===
+async function boot(){
+  if("serviceWorker" in navigator){
+    try{ await navigator.serviceWorker.register("./service-worker.js"); }catch(_){}
+  }
+
+  CFG = await loadConfig();
+  applyBrand();
+
+  // Splash: 0 (imperceptível) -> 1 rápido -> 2 zoom -> wait/login
+  setTimeout(()=>showScreen("scr_splash1","forward"), 120);
+  setTimeout(()=>showScreen("scr_splash2","forward"), 220);
+  const tSplash2 = 3000;
+
+  setTimeout(async ()=>{
+    CFG = await loadConfig();
+    applyBrand();
+    if(sessionIsOpen()){
+      showScreen("scr_login","forward");
+    }else{
+      showScreen("scr_wait","forward");
+    }
+  }, 220 + tSplash2 + 250);
+
+  // exit app
+  $("#btnExitApp")?.addEventListener("click", ()=>{
+    // alguns PWA não permitem fechar. fallback: abre blank
+    try{ window.close(); }catch(_){}
+    setTimeout(()=>{ location.href="about:blank"; }, 150);
+  });
+
+  // login
+  $("#btnEntrar").addEventListener("click", async ()=>{
+    const cim=$("#inpCIM").value;
+    if(!cim.trim()){ markInvalid($("#inpCIM")); toast("Digite o CIM"); return; }
+
+    CFG = await loadConfig();
+    applyBrand();
+
+    const irmao=findIrmaoByCIM(cim);
+    if(!irmao){ markInvalid($("#inpCIM")); toast("CIM inválido"); return; }
+
+    setUser({nome:irmao.nome});
+    if(!sessionIsOpen()){
+      toast("Sessão fechada (tesoureiro precisa abrir)");
+      showScreen("scr_wait","forward");
+      return;
+    }
+    goToConsumo();
+  });
+
+  // qty +/-
+  document.addEventListener("click",(e)=>{
+    const btn=e.target.closest(".qtyBtn");
+    if(!btn) return;
+    const id=btn.getAttribute("data-id");
+    const act=btn.getAttribute("data-act");
+    const cart=getCart();
+    const cur=Number(cart[id]||0);
+    cart[id]= act==="inc" ? cur+1 : Math.max(0, cur-1);
+    setCart(cart);
+    const el=document.getElementById("qty_"+id); if(el) el.textContent=String(cart[id]);
+    updateTotal(true);
+  });
+
+  // fechar e pagar
+  $("#btnFechar").addEventListener("click", ()=>{
+    const total=updateTotal(false);
+    if(total<=0){ toast("Selecione ao menos 1 item"); return; }
+    buildPayScreen();
+    showScreen("scr_pagamento","forward");
+  });
+
+  $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
+
+  $("#btnSair").addEventListener("click", ()=>{
+    clearCart();
+    // mantém usuário? aqui sai completo
+    clearUser();
+    $("#inpCIM").value="";
+    showScreen("scr_login","back");
+    toast("Saiu");
+  });
+
+  // pagamentos
   $("#btnPix").addEventListener("click", ()=>{
     if(!payReady) return;
     const total = (LAST_PAY_TOTAL && LAST_PAY_TOTAL>0) ? LAST_PAY_TOTAL : updateTotal(false);
@@ -1556,31 +1642,18 @@ function closePixModal(){
 
     openPixModal();
   });
- 
 
-  $("#btnDinheiro").addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("Registrado: dinheiro");
+  $("#btnDinheiro").addEventListener("click", ()=>{ if(!payReady) return; finalizePayment("Registrado: dinheiro"); });
+  $("#btnProxima").addEventListener("click", ()=>{ if(!payReady) return; finalizePayment("Registrado: próxima sessão"); });
+
+  // modal pix
+  $("#btnCopyPix")?.addEventListener("click", ()=>{
+    const chave = (document.getElementById("pixChaveModal")?.textContent || "").trim();
+    if(!chave || chave==="—"){ toast("Código Pix vazio"); return; }
+    copyText(chave);
+    toast("Pix Copia e Cola copiado ✅");
   });
 
-  $("#btnProxima").addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("Registrado: próxima sessão");
-  });
-
-// === PATCH copiar: copia o 000201... do modal ===
-document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
-  const el =
-    document.getElementById("pixChaveModal") ||
-    document.getElementById("pixChave");
-
-  const payload = el ? (el.textContent || "").trim() : "";
-  if(!payload){ toast("Código Pix vazio"); return; }
-
-  copyText(payload);
-  toast("Pix Copia e Cola copiado ✅");
-});
-  
   const closeBtns = ["btnPixCancel","btnPixCancel2"];
   closeBtns.forEach(id=>{
     const b = document.getElementById(id);
@@ -1588,9 +1661,8 @@ document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
   });
 
   $("#btnPixOk")?.addEventListener("click", ()=>{ if(!payReady) return; finalizePayment("Registrado: pix"); });
-
-}  
- boot();
+}
+boot();
 </script>
 </body>
 </html>
