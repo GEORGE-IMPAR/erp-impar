@@ -8,7 +8,7 @@ const CORE_ASSETS = [
   "./service-worker.js",
   "./favicon.ico",
   "./assets/icon-192.gif",
-  "./assets/icon-512.gif",
+  "./assets/icon-512.png",
   "./assets/logo-Clementino-Brito.jpeg",
   "./assets/logo-pix.jpg",
 
