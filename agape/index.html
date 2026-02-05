@@ -969,6 +969,28 @@ const PROD_ICON_BY_ID = {
   stellasemgluten: "stellasemgluten.jpg",
 };
 
+const LS_CASH = "agape_cash_v1";
+
+function getCashFromCFG(){
+  const n = Number(CFG?.sessao?.caixa_inicial);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getCash(){
+  const n = Number(localStorage.getItem(LS_CASH));
+  return Number.isFinite(n) ? n : getCashFromCFG();
+}
+
+function setCash(n){
+  localStorage.setItem(LS_CASH, String(Number(n) || 0));
+}
+
+function renderCash(){
+  const el = document.getElementById("cashValue");
+  if(el) el.textContent = fmtBRL(getCash());
+}
+
+  
 function getProdIcon(p){
   const raw = (p && (p.icon || p.icone || p.imagem || p.img)) || "";
   if(raw){
@@ -1275,6 +1297,7 @@ function goToConsumo(){
   renderProducts();
   lastTotal = 0;
   updateTotal();
+  renderCash();
   showScreen("scr_consumo","forward");
 }
 
@@ -1688,41 +1711,45 @@ function closePixModal(){
     if(el) el.classList.add("hidden");
   }
 
-  function finalizePayment(msg){
+function finalizePayment(tipo, msg){
+  const total = updateTotal(); // total confirmado
+
+  // Atualiza caixa SOMENTE quando confirmar pagamento real
+  if(tipo === "dinheiro" || tipo === "pix"){
+    const novo = getCash() + Number(total || 0);
+    setCash(novo);
+    renderCash();
+  }
+
   toast(msg);
 
-  // 1) limpa comanda / carrinho
-  try{ clearCart(); }catch(e){}
-  try{ updateTotal(); }catch(e){}
+  clearCart();
+  updateTotal();
 
-  // 2) fecha modal PIX se estiver aberto
   const pm = $("#pixModal");
   if(pm) pm.classList.add("hidden");
 
-  // 3) efeito + som
   showPaySuccess();
 
-  // 4) aguarda 1 ciclo do GIF e volta para login (mais seguro)
-  const WAIT_MS = 2200;
   setTimeout(()=>{
     const ps = $("#paySuccess");
     if(ps) ps.classList.add("hidden");
     showScreen("scr_login","back");
-  }, WAIT_MS);
+  }, 2200);
 }
 
   // clique em formas
   $("#btnPix").addEventListener("click", async ()=>{ if(!payReady) return; if(!CFG){ try{ CFG = await loadConfig(); }catch(e){} } openPixModal(); });
 
-  $("#btnDinheiro").addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("Registrado: dinheiro");
-  });
+$("#btnDinheiro").addEventListener("click", ()=>{
+  if(!payReady) return;
+  finalizePayment("dinheiro", "Registrado: dinheiro");
+});
 
-  $("#btnProxima").addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("Registrado: próxima sessão");
-  });
+$("#btnProxima").addEventListener("click", ()=>{
+  if(!payReady) return;
+  finalizePayment("proxima", "Registrado: próxima sessão");
+});
 
   // modal pix
   document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
@@ -1735,7 +1762,7 @@ function closePixModal(){
 
   copyText(payload);
   toast("Pix Copia e Cola copiado ✅");
-});
+  });
 
 
   const closeBtns = ["btnPixCancel","btnPixCancel2"];
@@ -1744,7 +1771,10 @@ function closePixModal(){
     if(b) b.addEventListener("click", closePixModal);
   });
 
-  $("#btnPixOk")?.addEventListener("click", ()=>{ if(!payReady) return; finalizePayment("Registrado: pix"); });
+  $("#btnPixOk")?.addEventListener("click", ()=>{
+  if(!payReady) return;
+  finalizePayment("pix", "Registrado: pix");
+  });
 
    function sairDoAplicativo(){
   // 0) limpa sessão do Ágape (mantém seguro, não use clear() no domínio todo)
