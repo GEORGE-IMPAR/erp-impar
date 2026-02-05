@@ -7,7 +7,7 @@ const CORE_ASSETS = [
   "./manifest.webmanifest",
   "./service-worker.js",
   "./favicon.ico",
-  "./assets/icon-192.gif",
+  "./assets/icon-192.png",
   "./assets/icon-512.gif",
   "./assets/logo-Clementino-Brito.jpeg",
   "./assets/logo-pix.jpg",
