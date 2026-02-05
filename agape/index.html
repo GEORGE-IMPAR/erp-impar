@@ -1481,11 +1481,38 @@ function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
 }
 
 function openPixModal(){
-  // NÃO sobrescrever pixChaveModal aqui. Só abrir.
+  const total = updateTotal();
+
+  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
+  if(!key){ toast("Chave Pix não configurada"); return; }
+
+  // valor no modal
+  const elValor = document.getElementById("pixValor");
+  if(elValor) elValor.textContent = fmtBRL(total);
+
+  // gera o PIX Copia e Cola (payload)
+  const payload = buildPixPayload({
+    key,
+    amount: total,
+    merchantName: (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "AGAPE",
+    merchantCity: (CFG && CFG.loja && CFG.loja.cidade) ? CFG.loja.cidade : "BRASIL",
+    txid: "AGAPE"
+  });
+
+  // joga no campo do código (tenta os ids possíveis)
+  const elCode =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave") ||
+    document.getElementById("pixKeyText") ||
+    null;
+
+  if(elCode) elCode.textContent = payload;
+
   const modal = document.getElementById("pixModal");
   if(modal) modal.classList.remove("hidden");
 }
-function closePixModal(){
+
+  function closePixModal(){
   const modal = document.getElementById("pixModal");
   if(modal) modal.classList.add("hidden");
 }
@@ -1548,7 +1575,6 @@ async function boot(){
   applyBrand();
 
   // Splash: 0 (imperceptível) -> 1 rápido -> 2 zoom -> wait/login
-  setTimeout(()=>showScreen("scr_splash1","forward"), 120);
   setTimeout(()=>showScreen("scr_splash2","forward"), 220);
   const tSplash2 = 3000;
 
@@ -1613,16 +1639,8 @@ async function boot(){
 
   $("#btnVoltar").addEventListener("click", ()=>showScreen("scr_consumo","back"));
 
-  $("#btnSair").addEventListener("click", ()=>{
-    clearCart();
-    // mantém usuário? aqui sai completo
-    clearUser();
-    $("#inpCIM").value="";
-    showScreen("scr_login","back");
-    toast("Saiu");
-  });
-
-  // pagamentos
+    // pagamentos
+  
   $("#btnPix").addEventListener("click", ()=>{
     if(!payReady) return;
     const total = (LAST_PAY_TOTAL && LAST_PAY_TOTAL>0) ? LAST_PAY_TOTAL : updateTotal(false);
@@ -1647,13 +1665,17 @@ async function boot(){
   $("#btnProxima").addEventListener("click", ()=>{ if(!payReady) return; finalizePayment("Registrado: próxima sessão"); });
 
   // modal pix
-  $("#btnCopyPix")?.addEventListener("click", ()=>{
-    const chave = (document.getElementById("pixChaveModal")?.textContent || "").trim();
-    if(!chave || chave==="—"){ toast("Código Pix vazio"); return; }
-    copyText(chave);
-    toast("Pix Copia e Cola copiado ✅");
-  });
+  document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
+  const el =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave");
 
+  const payload = el ? (el.textContent || "").trim() : "";
+  if(!payload){ toast("Código Pix vazio"); return; }
+
+  copyText(payload);
+  toast("Pix Copia e Cola copiado ✅");
+});
   const closeBtns = ["btnPixCancel","btnPixCancel2"];
   closeBtns.forEach(id=>{
     const b = document.getElementById(id);
