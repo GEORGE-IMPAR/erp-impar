@@ -45,7 +45,9 @@
     /* Splash 1: blue */
     /*#scr_splash1{background: var(--bg1); align-items:center; justify-content:center;}*/
     /* Splash 2: logo zoom */
-    #scr_splash2{background: var(--bg1); align-items:center; justify-content:center;}
+    #scr_splash2 {
+    background: #061a2b !important;
+    }
     .splashCenter{display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; padding:24px;}
     .logoWrap{
       width:92px; height:92px; border-radius:22px;
@@ -498,8 +500,11 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
 }
 
 /* Success overlay */
-.paySuccess{position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
-  background: rgba(255, 226, 40, .92); /* amarelo */
+.paySuccess{
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  width:100vw; height:100vh;
+  background: rgba(230,204,24,.96);
 }
 .paySuccess.hidden{display:none;}
 .paySuccessBox{
@@ -521,6 +526,58 @@ html,body{background:linear-gradient(180deg,var(--bg1) 0%, var(--bg2) 80%);}
 .paySuccessInner{display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center;}
 #payGif{width:160px; height:160px; object-fit:contain; filter:drop-shadow(0 12px 26px rgba(0,0,0,.25));}
 .payOkText{font-weight:1000; font-size:22px; color:#053018; text-shadow:0 1px 0 rgba(255,255,255,.35);}
+
+/* === PATCH 7 ITENS (CSS) === */
+
+/* 5) azul fullscreen sem “faixa branca” no PWA (safe-area) */
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #061a2b !important; /* azul marinho */
+}
+.screen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  background: #061a2b !important; /* azul marinho */;
+}
+
+/* 2) transições laterais (se perderam, reforce aqui) */
+.enter-left  { transform: translateX(100%); opacity: 1; }
+.enter-right { transform: translateX(-100%); opacity: 1; }
+.exit-left   { transform: translateX(-100%); opacity: 1; }
+.exit-right  { transform: translateX(100%);  opacity: 1; }
+.screen { transition: transform .46s ease, opacity .46s ease; }
+.screen.enter-left,
+.screen.enter-right,
+.screen.exit-left,
+.screen.exit-right { display: flex; }
+
+/* 6) tela amarela FULL no OK (overlay) */
+#paySuccess {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  z-index: 999999 !important;
+  background: #f0d51a !important; /* amarelo */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#paySuccess.hidden { display: none !important; }
+
+/* remove qualquer “card bege”/caixa interna se existir */
+#paySuccess .paySuccessInner,
+#paySuccess .paySuccessCard,
+#paySuccess .paySuccessBox {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+html, body { height:100%; background: #041c2c; }
+body { margin:0; overscroll-behavior: none; }
 </style>
 </head>
 <body>
@@ -1362,14 +1419,88 @@ $("#btnEntrar").addEventListener("click", async ()=>{
       }
     }
   }
+// ===== PIX COPIA E COLA (EMV / BR Code) =====
+function emv(id, value){
+  const v = String(value);
+  const len = String(v.length).padStart(2,"0");
+  return `${id}${len}${v}`;
+}
 
-  function openPixModal(){
+function crc16(payload){
+  let crc = 0xFFFF;
+  for(let i=0;i<payload.length;i++){
+    crc ^= (payload.charCodeAt(i) << 8);
+    for(let j=0;j<8;j++){
+      crc = (crc & 0x8000) ? (((crc << 1) ^ 0x1021) & 0xFFFF) : ((crc << 1) & 0xFFFF);
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4,"0");
+}
+
+/**
+ * Gera o PIX Copia e Cola (payload do QRCode) a partir da chave Pix + valor.
+ * key: email/cpf/cnpj/telefone/chave aleatória (CFG.loja.pix_chave)
+ */
+function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
+  const k = String(key||"").trim();
+  const a = Number(amount||0).toFixed(2);
+
+  // defaults seguros (ajuste se quiser)
+  const mName = String(merchantName || "AGAPE").slice(0,25);
+  const mCity = String(merchantCity || "BRASIL").slice(0,15);
+  const tId   = String(txid || "AGAPE").slice(0,25);
+
+  // Merchant Account Information (26)
+  const gui = emv("00","BR.GOV.BCB.PIX");
+  const chave = emv("01", k);
+  const mai = emv("26", gui + chave);
+
+  // Payload sem CRC
+  const payloadNoCrc =
+    emv("00","01") +          // Payload Format Indicator
+    emv("01","12") +          // Point of Initiation Method (dinâmico)
+    mai +
+    emv("52","0000") +        // Merchant Category Code
+    emv("53","986") +         // BRL
+    emv("54", a) +            // Amount
+    emv("58","BR") +
+    emv("59", mName) +
+    emv("60", mCity) +
+    emv("62", emv("05", tId)) +
+    "6304";                   // CRC placeholder
+
+  return payloadNoCrc + crc16(payloadNoCrc);
+}
+
+function openPixModal(){
   const total = updateTotal();
-  const chave = String((CFG&&CFG.loja&&CFG.loja.pix_chave) || (CFG&&CFG.pix&&CFG.pixValor) || "");
-  if(!chave){ toast("Chave Pix não configurada"); return; }
-  setText("pixValor", fmtBRL(pixValor));
-  setText("pixValor", chave);
-  const modal = $("#pixModal");
+
+  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
+  if(!key){ toast("Chave Pix não configurada"); return; }
+
+  // valor no modal
+  const elValor = document.getElementById("pixValor");
+  if(elValor) elValor.textContent = fmtBRL(total);
+
+  // gera o PIX Copia e Cola (payload)
+  const payload = buildPixPayload({
+    key,
+    amount: total,
+    merchantName: (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "AGAPE",
+    merchantCity: (CFG && CFG.loja && CFG.loja.cidade) ? CFG.loja.cidade : "BRASIL",
+    txid: "AGAPE"
+  });
+
+  // joga no campo do código (tenta os ids possíveis)
+  const elCode =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave") ||
+    document.getElementById("pixKeyText") ||
+    null;
+
+  if(elCode) elCode.textContent = payload;
+
+  const modal = document.getElementById("pixModal");
   if(modal) modal.classList.remove("hidden");
 }
 
@@ -1381,7 +1512,7 @@ function closePixModal(){
   function playCoin(){
     try{
       const a = new Audio("./assets/coin.mp3");
-      a.volume = 0.65;
+      a.volume = 0.9;
       a.play().catch(()=>{});
     }catch(e){}
   }
@@ -1421,7 +1552,8 @@ function closePixModal(){
 
   // 3) efeito + som
   showPaySuccess();
-
+  playCoin();
+    
   // 4) aguarda 1 ciclo do GIF e volta para login (mais seguro)
   const WAIT_MS = 2200;
   setTimeout(()=>{
@@ -1432,7 +1564,34 @@ function closePixModal(){
 }
 
   // clique em formas
-  $("#btnPix").addEventListener("click", async ()=>{ if(!payReady) return; if(!CFG){ try{ CFG = await loadConfig(); }catch(e){} } openPixModal(); });
+  // === PATCH PIX: gera Copia-e-Cola (000201...) e seta no MODAL ===
+$("#btnPix").addEventListener("click", ()=>{
+  if(typeof payReady !== "undefined" && !payReady) return;
+
+  // total do carrinho (use sua função se já existir)
+  const total = (typeof updateTotal === "function") ? updateTotal(false) : 0;
+
+  // chave recebedor (do JSON) — usada para gerar o BR Code
+  const recebedor = (CFG?.loja?.pix_chave || "").trim();
+  if(!recebedor){ toast("Chave Pix não configurada"); return; }
+
+  // preenche VALOR no modal
+  const elValor = document.getElementById("pixValor");
+  if(elValor) elValor.textContent = fmtBRL(total);
+
+  // gera payload copia-e-cola (000201...)
+  const payload = (typeof buildPixCopiaECola === "function")
+    ? buildPixCopiaECola(recebedor, total, (CFG?.loja?.nome || "AGAPE"))
+    : recebedor; // fallback (mas ideal é ter buildPixCopiaECola)
+
+  // ***AQUI É O PONTO CRÍTICO: SETAR NO pixChaveModal***
+  const elKeyModal = document.getElementById("pixChaveModal");
+  if(elKeyModal) elKeyModal.textContent = payload || "—";
+
+  // abre modal (NÃO pode sobrescrever depois)
+  openPixModal();
+});
+
 
   $("#btnDinheiro").addEventListener("click", ()=>{
     if(!payReady) return;
@@ -1444,14 +1603,19 @@ function closePixModal(){
     finalizePayment("Registrado: próxima sessão");
   });
 
-  // modal pix
-  $("#btnCopyPix")?.addEventListener("click", ()=>{
-    const chave = $("#pixChave")?.textContent || "";
-    if(!chave){ toast("Chave Pix vazia"); return; }
-    copyText(chave);
-    toast("Chave Pix copiada ✅");
-  });
+// === PATCH copiar: copia o 000201... do modal ===
+document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
+  const el =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave");
 
+  const payload = el ? (el.textContent || "").trim() : "";
+  if(!payload){ toast("Código Pix vazio"); return; }
+
+  copyText(payload);
+  toast("Pix Copia e Cola copiado ✅");
+});
+  
   const closeBtns = ["btnPixCancel","btnPixCancel2"];
   closeBtns.forEach(id=>{
     const b = document.getElementById(id);
