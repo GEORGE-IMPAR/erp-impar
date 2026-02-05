@@ -1060,6 +1060,7 @@ function normAsset(u){
 let currentScreen="scr_splash2";
 let payReady = true;
 let waitTimer=null;
+let waitOpenTimer = null;  
 let adminTapCount=0;
 let adminTapTimer=null;
 
@@ -1318,53 +1319,45 @@ function setupAdminTap(){
 
 function startWaitPolling(){
   stopWaitPolling();
-  // check immediately and then every 3s
+
   const tick = async ()=>{
     try{
       setText('lastCheck', nowDT());
-      if(navigator.serviceWorker && navigator.serviceWorker.controller){
-        navigator.serviceWorker.controller.postMessage({type:'CLEAR_CACHE'});
-      }
-      CFG = await loadConfig();
-      applyBrand();
-      
-  // atualizar (tela sessão fechada)
-  const refreshBtn = document.getElementById('btnRefresh');
-  if(refreshBtn){
-    refreshBtn.addEventListener('click', async ()=>{
-      setText('lastCheck', nowDT());
-      if(navigator.serviceWorker && navigator.serviceWorker.controller){
-        navigator.serviceWorker.controller.postMessage({type:'CLEAR_CACHE'});
-      }
-      CFG = await loadConfig();
-      applyBrand();
-      if((CFG?.sessao?.status||'').toLowerCase()==='aberta'){
-        showScreen('scr_login','forward');
-      }
-    });
-  }
 
-  // polling automático: a cada 15s verifica se sessão abriu
-  setInterval(async ()=>{
-    if(currentScreen!=='scr_wait') return;
-    CFG = await loadConfig();
-    applyBrand();
-    if((CFG?.sessao?.status||'').toLowerCase()==='aberta'){
-      showScreen('scr_login','forward');
-    }
-  }, 1500);
-setText("lastCheck", nowDT());
+      if(navigator.serviceWorker && navigator.serviceWorker.controller){
+        navigator.serviceWorker.controller.postMessage({type:'CLEAR_CACHE'});
+      }
+
+      CFG = await loadConfig();
+      applyBrand();
+
       if(sessionIsOpen()){
         stopWaitPolling();
         showScreen("scr_login","forward");
       }
     }catch(_){}
   };
+
   tick();
-  waitTimer=setInterval(tick, 3000);
+  waitTimer = setInterval(tick, 3000);
+
+  // ✅ check “sessão aberta” SOMENTE UMA VEZ (não cria loop)
+  waitOpenTimer = setInterval(async ()=>{
+    if(currentScreen !== 'scr_wait') return;
+    try{
+      CFG = await loadConfig();
+      applyBrand();
+      if((CFG?.sessao?.status||'').toLowerCase()==='aberta'){
+        stopWaitPolling();
+        showScreen('scr_login','forward');
+      }
+    }catch(_){}
+  }, 15000); // ✅ 15s (como seu comentário)
 }
+
 function stopWaitPolling(){
   if(waitTimer){ clearInterval(waitTimer); waitTimer=null; }
+  if(waitOpenTimer){ clearInterval(waitOpenTimer); waitOpenTimer=null; }
 }
 
 async function boot(){
@@ -1417,7 +1410,7 @@ function applyRememberedUser(){
       showScreen("scr_wait","forward");
       startWaitPolling();
     }
-  }, 3000);
+  }, 6000);
 
   // login
 $("#btnEntrar").addEventListener("click", async ()=>{
