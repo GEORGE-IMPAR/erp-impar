@@ -45,9 +45,7 @@
     /* Splash 1: blue */
     /*#scr_splash1{background: var(--bg1); align-items:center; justify-content:center;}*/
     /* Splash 2: logo zoom */
-    #scr_splash2 {
-    background: #061a2b !important;
-    }
+     #scr_splash2{align-items:center; justify-content:center; background:#061a2b !important;}
     .splashCenter{display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; padding:24px;}
     .logoWrap{
       width:92px; height:92px; border-radius:22px;
@@ -1473,23 +1471,10 @@ function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
 }
 
 function openPixModal(){
-  const total = updateTotal();
-
-  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
-  if(!key){ toast("Chave Pix não configurada"); return; }
-
-  // valor no modal
-  const elValor = document.getElementById("pixValor");
-  if(elValor) elValor.textContent = fmtBRL(total);
-
-  // gera o PIX Copia e Cola (payload)
-  const payload = buildPixPayload({
-    key,
-    amount: total,
-    merchantName: (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "AGAPE",
-    merchantCity: (CFG && CFG.loja && CFG.loja.cidade) ? CFG.loja.cidade : "BRASIL",
-    txid: "AGAPE"
-  });
+  // NÃO sobrescrever pixChaveModal aqui. Só abrir.
+  const modal = document.getElementById("pixModal");
+  if(modal) modal.classList.remove("hidden");
+}
 
   // joga no campo do código (tenta os ids possíveis)
   const elCode =
@@ -1565,8 +1550,25 @@ function closePixModal(){
 
   // clique em formas
   // === PATCH PIX: gera Copia-e-Cola (000201...) e seta no MODAL ===
-$("#btnPix").addEventListener("click", ()=>{
-  if(typeof payReady !== "undefined" && !payReady) return;
+  $("#btnPix").addEventListener("click", ()=>{
+    if(!payReady) return;
+    const total = (LAST_PAY_TOTAL && LAST_PAY_TOTAL>0) ? LAST_PAY_TOTAL : updateTotal(false);
+    const key = (CFG?.loja?.pix_chave || "").trim();
+    if(!key){ toast("Chave Pix não configurada"); return; }
+
+    const payload = buildPixCopiaECola(
+      key,
+      total,
+      CFG?.loja?.nome || "AGAPE",
+      (CFG?.loja?.pix_cidade || "BRASIL"),
+      "AGAPE"
+    );
+
+    document.getElementById("pixValor").textContent = fmtBRL(total);
+    document.getElementById("pixChaveModal").textContent = payload || "—";
+
+    openPixModal();
+  });
 
   // total do carrinho (use sua função se já existir)
   const total = (typeof updateTotal === "function") ? updateTotal(false) : 0;
