@@ -3,6 +3,8 @@ const CACHE_NAME = "agape-v24";
 const CORE_ASSETS = [
   "./",
   "./index.html",
+  "./assets/maconaria.png",
+  "./assets/maconaria.gif",
   "./agape_config.json",
   "./manifest.webmanifest",
   "./service-worker.js",
