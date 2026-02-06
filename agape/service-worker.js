@@ -1,5 +1,5 @@
 /* Ágape PWA Service Worker - v24 */
-const CACHE_NAME = "agape-v24";
+const CACHE_NAME = "agape-v25";
 const CORE_ASSETS = [
   "./",
   "./index.html",
