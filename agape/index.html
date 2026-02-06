@@ -956,7 +956,8 @@ const LS_USER  = "agape_user_v14";
 const $ = (s)=>document.querySelector(s);
 function setText(sel,val){const el=$(sel); if(el) el.textContent=val;}
 const fmtBRL = (v)=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-
+const LS_CASH = "agape_cash_v1";
+const LS_CASH_DATE = "agape_cash_date_v1";
 const PROD_ICON_BY_ID = {
   agua: "agua.jpg",
   carvao: "carvao.jpg",
@@ -1303,6 +1304,37 @@ function goToConsumo(){
   showScreen("scr_consumo","forward");
 }
 
+function getCashFromCFG(){
+  const n = Number(CFG?.sessao?.caixa_inicial);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getCash(){
+  const n = Number(localStorage.getItem(LS_CASH));
+  return Number.isFinite(n) ? n : getCashFromCFG();
+}
+
+function setCash(n){
+  localStorage.setItem(LS_CASH, String(Number(n) || 0));
+}
+
+function initCashFromConfig(){
+  const sessionDate = String(CFG?.sessao?.data || "").trim(); // ex: "01/02/2026"
+  const savedDate = localStorage.getItem(LS_CASH_DATE);
+
+  // se não existe caixa salvo OU mudou a data da sessão -> reinicia pelo JSON
+  if(localStorage.getItem(LS_CASH) === null || (sessionDate && savedDate !== sessionDate)){
+    setCash(getCashFromCFG());
+    localStorage.setItem(LS_CASH_DATE, sessionDate);
+  }
+}
+
+function renderCash(){
+  const el = document.getElementById("cashValue");
+  if(el) el.textContent = fmtBRL(getCash());
+}
+  
+  
 function setupAdminTap(){
   const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
   for(const el of logos){
@@ -1332,6 +1364,7 @@ function startWaitPolling(){
       }
 
       CFG = await loadConfig();
+      initCashFromConfig();
       applyBrand();
 
       if(sessionIsOpen()){
