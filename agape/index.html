@@ -1037,6 +1037,10 @@ body { margin:0; overscroll-behavior: none; }
 #scr_presenca .wrap::after{
   pointer-events: none !important;
 }
+#scr_presenca .payBtn{
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 
 </style>
 </head>
@@ -1405,6 +1409,31 @@ function setPresencaAns(ans){ // ans: "sessao_agape" | "somente_sessao" | "somen
   const map = getPresencaMap();
   map[key] = ans;                 // 1 resposta por sessão neste aparelho
   localStorage.setItem(LS_PRESENCA_ANS, JSON.stringify(map));
+}
+function setupPresenceHandlers(){
+  const b1 = document.getElementById("btnRespSessaoAgape");
+  const b2 = document.getElementById("btnRespSessao");
+  const b3 = document.getElementById("btnRespAgape");
+
+  const bind = (btn, val)=>{
+    if(!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+
+    const handler = (e)=>{
+      e?.preventDefault?.();
+      setPresencaAns(val);
+      refreshPresenceUI();
+      updateEnvelopeUI();
+    };
+
+    btn.addEventListener("click", handler);
+    // “tapa” para mobile (alguns aparelhos não disparam click direito)
+    btn.addEventListener("touchend", (e)=>{ e.preventDefault(); handler(e); }, {passive:false});
+  };
+
+  bind(b1, "sessao_agape");
+  bind(b2, "somente_sessao");
+  bind(b3, "somente_agape");
 }
 
 function getPresencaAns(){
@@ -2122,10 +2151,12 @@ function applyRememberedUser(){
    if(!CFG){
     CFG = await loadConfig();
   }
+  
   applyBrand();
   applyRememberedUser();
   setupAdminTap();
-
+  setupPresenceHandlers();
+  
   // login
 $("#btnEntrar").addEventListener("click", async ()=>{
   const u = getUser();
