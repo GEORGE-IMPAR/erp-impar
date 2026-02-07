@@ -775,6 +775,71 @@ body { margin:0; overscroll-behavior: none; }
 }
 .hidden{display:none !important;}
 
+/* Envelope na WAIT */
+.sessionBarRow{display:flex; align-items:center; gap:10px;}
+.sessionBarRow .sessionLine{flex:1; min-width:0;}
+
+.msgBtn{
+  position:relative;
+  width:44px; height:44px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+  flex:0 0 auto;
+}
+.msgIcon{width:24px; height:24px; object-fit:contain; opacity:.95; filter:drop-shadow(0 2px 6px rgba(0,0,0,.35));}
+
+.msgBadge{
+  position:absolute;
+  top:-6px; right:-6px;
+  width:18px; height:18px;
+  border-radius:999px;
+  background:#ff3b30;
+  border:2px solid rgba(6,26,43,1);
+  color:#fff;
+  font-weight:1000;
+  font-size:12px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 10px 24px rgba(0,0,0,.35);
+}
+.msgBadge.hidden{display:none;}
+
+/* Ênfase “não lido” (pulsar) */
+@keyframes pulseBadge{
+  0%{transform:scale(1); filter:brightness(1);}
+  50%{transform:scale(1.12); filter:brightness(1.2);}
+  100%{transform:scale(1); filter:brightness(1);}
+}
+.msgBadge.pulse{animation:pulseBadge 1.1s ease-in-out infinite;}
+
+/* Presença */
+.presMsg{margin-top:12px;}
+.presBtns{margin-top:12px;}
+.presHint{
+  margin-top:12px;
+  padding:12px 14px;
+  border-radius:14px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+  font-weight:900;
+}
+.btnExit{
+  width:100%;
+  padding:14px;
+  border-radius:12px;
+  border:none;
+  font-weight:700;
+  font-size:15px;
+  cursor:pointer;
+}
+
+.btnExit.danger{
+  background:#e53935;
+  color:#fff;
+}
+
 </style>
 </head>
 <body>
@@ -811,20 +876,21 @@ body { margin:0; overscroll-behavior: none; }
         </div>
       </div>
 
-      <div class="sessionBar">
-        <div class="dotBig" id="sessaoDotWait"></div>
-        <div class="sessionLine" id="sessaoLineWait">Sessão fechada — —</div>
-      </div>
+<div class="sessionBar sessionBarRow">
+  <div class="dotBig" id="sessaoDotWait"></div>
+  <div class="sessionLine" id="sessaoLineWait">Sessão fechada — —</div>
+
+  <button class="msgBtn" id="btnEnvelope" type="button" aria-label="Mensagem do Venerável">
+    <img src="./assets/envelope.png" alt="" class="msgIcon">
+    <span class="msgBadge hidden" id="msgBadge">!</span>
+  </button>
+</div>
 
       <div class="pixBar">
         <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
         <div class="pixKey" id="pixChaveWait">—</div>
       </div>
 
-      <button id="btnInbox" class="payIconBtn inboxBtnWait" type="button" data-tip="Lista de presença">
-         <img src="./assets/icon-envelope.png" alt="Presença" class="payIconImg">
-         <span id="inboxBadge" class="inboxBadge hidden">1</span>
-      </button>
 
   
       <div class="infoCard">
@@ -852,6 +918,46 @@ body { margin:0; overscroll-behavior: none; }
   </div>
 </section>
 
+ <section id="scr_presenca" class="screen safe">
+  <div class="wrap">
+    <div class="card">
+      <div class="topBrand">
+        <div class="bLogo">
+          <img id="brandLogoPres" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+        </div>
+        <div class="bTxt">
+          <div class="bTitle" id="lojaNomePres">Loja</div>
+          <div class="bSub">Presença • Sessão & Ágape</div>
+        </div>
+      </div>
+
+      <div class="infoCard presMsg">
+        <div class="infoTitle">Chamado do Venerável</div>
+        <div class="infoText" id="presTexto">
+          Carregando...
+        </div>
+      </div>
+
+      <div class="payBtns presBtns">
+        <button class="payBtn primary" id="btnRespSessaoAgape" type="button">Sessão e Ágape</button>
+        <button class="payBtn" id="btnRespSessao" type="button">Somente sessão</button>
+        <button class="payBtn" id="btnRespAgape" type="button">Somente ágape</button>
+      </div>
+
+      <div class="hint presHint" id="presStatusLine">Você ainda não respondeu.</div>
+
+      <button class="btn2" id="btnFecharPresenca" type="button" style="margin-top:12px">Fechar</button>
+
+      <button class="btnExit danger" id="btnSairPresenca">
+          Sair do aplicativo
+      </button>
+
+      
+    </div>
+  </div>
+</section>
+ 
+  
   <!-- Login -->
   <section id="scr_login" class="screen safe">
     <div class="wrap">
@@ -1027,6 +1133,9 @@ const LS_CASH = "agape_cash_v1";
 const LS_CASH_DATE = "agape_cash_date_v1";
 const GIF_TIME   = 5000; // tempo do splash maçônico
 const ZOOM_TIME  = 5000; // tempo do zoom do Ágape
+const LS_PRES_READ = "agape_pres_read_v1";
+const LS_PRES_ANS  = "agape_pres_ans_v1";
+  
 const PROD_ICON_BY_ID = {
   agua: "agua.jpg",
   carvao: "carvao.jpg",
@@ -1221,7 +1330,90 @@ async function loadConfig(){
 
 function sessionIsOpen(){ return (CFG?.sessao?.status||"").toLowerCase()==="aberta"; }
 
+function presKey(){
+  const d = String(CFG?.sessao?.data || "").trim() || "semdata";
+  return d;
+}
 
+function hasReadPresenca(){
+  try{
+    const k = presKey();
+    const obj = JSON.parse(localStorage.getItem(LS_PRES_READ) || "{}");
+    return !!obj[k];
+  }catch(_){ return false; }
+}
+
+function setReadPresenca(){
+  try{
+    const k = presKey();
+    const obj = JSON.parse(localStorage.getItem(LS_PRES_READ) || "{}");
+    obj[k] = Date.now();
+    localStorage.setItem(LS_PRES_READ, JSON.stringify(obj));
+  }catch(_){}
+}
+
+function getPresencaAns(){
+  try{
+    const k = presKey();
+    const obj = JSON.parse(localStorage.getItem(LS_PRES_ANS) || "{}");
+    return obj[k] || "";
+  }catch(_){ return ""; }
+}
+
+function setPresencaAns(ans){
+  try{
+    const k = presKey();
+    const obj = JSON.parse(localStorage.getItem(LS_PRES_ANS) || "{}");
+    obj[k] = ans;
+    localStorage.setItem(LS_PRES_ANS, JSON.stringify(obj));
+  }catch(_){}
+}
+
+function updateEnvelopeUI(){
+  const badge = document.getElementById("msgBadge");
+  if(!badge) return;
+
+  const ans = getPresencaAns();
+  const read = hasReadPresenca();
+
+  // Mostra badge se ainda não leu OU não respondeu
+  const show = (!read) || (!ans);
+  badge.classList.toggle("hidden", !show);
+
+  // pulsa forte se não leu ainda
+  badge.classList.toggle("pulse", !read);
+  badge.textContent = !ans ? "!" : "•";
+}
+
+function openPresenca(){
+  const texto = String(CFG?.sessao?.chamado || "").trim() ||
+    "Mensagem não configurada no JSON (CFG.sessao.chamado).";
+
+  const elTxt = document.getElementById("presTexto");
+  if(elTxt) elTxt.textContent = texto;
+
+  // marca como lido ao abrir
+  setReadPresenca();
+
+  // status line
+  const ans = getPresencaAns();
+  const line = document.getElementById("presStatusLine");
+  if(line){
+    line.textContent = ans
+      ? `Você respondeu: ${ans}.`
+      : "Você ainda não respondeu.";
+  }
+
+  updateEnvelopeUI();
+  showScreen("scr_presenca", "forward");
+}
+
+function closePresenca(){
+  updateEnvelopeUI();
+  showScreen("scr_wait", "back");
+}
+
+  
 function applyBrand(){
 
   const setText = (id, val) => { const el=document.getElementById(id); if(el) el.textContent = val; };
@@ -1231,6 +1423,18 @@ function applyBrand(){
   const logoUrl = (CFG?.ui?.logo_url) ? CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
   ["brandLogo","brandLogoWait"].forEach(id=>setSrc(id, logoUrl));
 
+  // Presença: reaproveita logo e nome
+const logoUrl = (CFG?.ui?.logo_url) ? CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+const presLogo = document.getElementById("brandLogoPres");
+if(presLogo) presLogo.src = logoUrl;
+
+const presNome = document.getElementById("lojaNomePres");
+if(presNome) presNome.textContent = CFG?.loja?.nome || "Loja";
+
+// Envelope badge
+updateEnvelopeUI();
+
+  
   // textos da loja
   setText("lojaNome", CFG?.loja?.nome || "Loja");
   setText("lojaSub",  CFG?.loja?.subtitulo || "");
@@ -1302,6 +1506,39 @@ function applyBrand(){
   
 }
 
+// Envelope (abre presença)
+document.getElementById("btnEnvelope")?.addEventListener("click", ()=>{
+  openPresenca();
+});
+
+// Fechar presença
+document.getElementById("btnFecharPresenca")?.addEventListener("click", closePresenca);
+
+// Respostas
+document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=>{
+  setPresencaAns("Sessão e Ágape");
+  toast("Presença registrada ✅");
+  const line = document.getElementById("presStatusLine");
+  if(line) line.textContent = "Você respondeu: Sessão e Ágape.";
+  updateEnvelopeUI();
+});
+
+document.getElementById("btnRespSessao")?.addEventListener("click", ()=>{
+  setPresencaAns("Somente sessão");
+  toast("Presença registrada ✅");
+  const line = document.getElementById("presStatusLine");
+  if(line) line.textContent = "Você respondeu: Somente sessão.";
+  updateEnvelopeUI();
+});
+
+document.getElementById("btnRespAgape")?.addEventListener("click", ()=>{
+  setPresencaAns("Somente ágape");
+  toast("Presença registrada ✅");
+  const line = document.getElementById("presStatusLine");
+  if(line) line.textContent = "Você respondeu: Somente ágape.";
+  updateEnvelopeUI();
+});
+  
 
 function renderProducts(){
   const list=$("#prodList"); list.innerHTML="";
@@ -1636,6 +1873,12 @@ $("#btnEntrar").addEventListener("click", async ()=>{
     showScreen("scr_pagamento","forward");
   });
 
+  document.getElementById("btnSairPresenca")?.addEventListener("click", ()=>{
+  if(confirm("Deseja sair do aplicativo?")){
+    sairDoAplicativo();
+  }
+});
+
   $("#btnVoltarConsumo").addEventListener("click", ()=>{
     closePixModal();
     hidePaySuccess();
@@ -1653,8 +1896,8 @@ $("#btnEntrar").addEventListener("click", async ()=>{
     toast("Saiu");
   });
 
-  document.getElementById("btnInbox")?.addEventListener("click", ()=>{
-  window.location.href = "./presenca.html";
+  document.getElementById("btnEnvelope")?.addEventListener("click", ()=>{
+  showScreen("scr_presenca","forward");
 });
 
   // ===== Pagamento v25 flow =====
