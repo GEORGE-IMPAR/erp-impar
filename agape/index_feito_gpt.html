@@ -155,14 +155,14 @@
     }
 
     .miniBtn{
-      border:1px solid rgba(255,255,255,.14);
-      background: rgba(255,255,255,.06);
+      border:1px solid red;
+      background: rgba(255,0,0,0.5);
       color: var(--text);
       padding:10px 14px;
       border-radius:14px;
       font-weight:800;
-      cursor:pointer;
     }
+
 
     /* Pix bar */
     .pixBar{
@@ -398,6 +398,46 @@
       body{display:flex; align-items:center; justify-content:center; background:#081b2c;}
       .screen{position:relative; width:420px; height:860px; border-radius:26px; overflow:hidden; box-shadow: 0 30px 80px rgba(0,0,0,.55);}
     }
+    .payIconBtn:hover::after{opacity:1; transform: translate(-50%,-115%)}
+    .payIconImg{width:62px; height:30px; object-fit:contain; display:block; filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+    .paySvg{font-size:26px; line-height:1}
+    .payBack{margin-top:8px}
+    .payHint{margin-top:10px; opacity:.70; font-size:12px}
+/* FIX: não quebrar linha dentro do #payItems (trunca descrição e mantém preço na mesma linha) */
+#payItems{
+  max-height: calc(5 * 36px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 5px;
+}
+
+#payItems .payItemRow{
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  min-height: 36px;
+  flex-wrap: nowrap !important;     /* nunca quebra */
+}
+
+#payItems .payItemLeft{
+  flex: 1 1 auto !important;
+  min-width: 0 !important;          /* ESSENCIAL pro "..." funcionar no flex */
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#payItems .payItemDots{
+  flex: 1 1 auto !important;        /* pontilhado ocupa o meio */
+  min-width: 16px;
+}
+
+#payItems .payItemRight{
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
   </style>
 </head>
 
@@ -641,9 +681,19 @@
         <div style="font-weight:1000;font-size:22px;margin:14px 0 12px">Como deseja pagar?</div>
 
         <div style="display:flex; gap:14px; justify-content:center; margin:10px 0 14px">
-          <button class="miniBtn" id="btnPix" type="button">Pix</button>
-          <button class="miniBtn" id="btnDinheiro" type="button">Dinheiro</button>
-          <button class="miniBtn" id="btnProxima" type="button">Próxima sessão</button>
+        <div class="payIconRow" aria-label="Formas de pagamento">
+          <button class="payIconBtn" id="btnPix" type="button" data-tip="Pix">
+            <img src="./assets/logo-pix.jpg" alt="Pix" class="payIconImg"/>
+          </button>
+
+          <button class="payIconBtn" id="btnDinheiro" type="button" data-tip="Dinheiro">
+            <span class="paySvg" aria-hidden="true">💵</span>
+          </button>
+
+          <button class="payIconBtn" id="btnProxima" type="button" data-tip="Próxima sessão">
+            <span class="paySvg" aria-hidden="true">📅</span>
+          </button>
+        </div>
         </div>
 
         <button class="btn2" id="btnVoltarConsumo" type="button">Voltar para comanda</button>
@@ -694,8 +744,8 @@ const LS_CART  = "agape_cart_v14";
 const LS_USER  = "agape_user_v14";
 const LS_CASH = "agape_cash_v1";
 const LS_CASH_DATE = "agape_cash_date_v1";
-const GIF_TIME   = 5000;
-const ZOOM_TIME  = 5000;
+const GIF_TIME   = 6000;
+const ZOOM_TIME  = 6000;
 
 const $ = (s)=>document.querySelector(s);
 
@@ -1214,24 +1264,19 @@ function buildPayScreen(){
   const prods = Array.isArray(CFG?.produtos) ? CFG.produtos : [];
   const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
 
-  const box = document.getElementById("payItems");
-  if(box){
-    if(entries.length===0){
-      box.innerHTML = `<div style="opacity:.75;font-weight:900">Nenhum item selecionado.</div>`;
-    }else{
-      box.innerHTML = entries.map(e=>{
-        const p = byId[e.id] || {};
-        const nomeP = p.nome || `Item ${e.id}`;
-        const preco = Number(p.preco||0);
-        const sub = e.qtd * preco;
-        return `<div style="display:flex;gap:10px;align-items:center;padding:8px 0;min-height:36px;">
-          <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:900;">${e.qtd} ${nomeP}</div>
-          <div style="flex:0 0 auto;font-weight:1000;white-space:nowrap;">${fmtBRL(sub)}</div>
-        </div>`;
-      }).join("");
+    const box = document.getElementById("payItems");
+    if(box){
+      if(lines.length===0){
+        box.innerHTML = `<div style="opacity:.75;font-weight:900">Nenhum item selecionado.</div>`;
+      }else{
+        box.innerHTML = lines.map(l=>{
+          const left = `${l.q} ${l.nome}`;
+          const right = fmtBRL(l.sub);
+          return `<div class="payItemRow"><div class="payItemLeft">${escapeHtml(left)}</div><div class="payItemDots"></div><div class="payItemRight">${escapeHtml(right)}</div></div>`;
+        }).join("");
+      }
     }
   }
-}
 
 function openPixModal(){
   const total = updateTotal();
@@ -1271,6 +1316,13 @@ function showPaySuccess(){
     const src = gif.getAttribute("src") || "./assets/check.gif";
     gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
   }
+    // som (se existir)
+.gif  try{
+      const a = new Audio("./assets/coin.mp3");
+      a.play().catch(()=>{});
+  }catch(e){}
+}
+
 }
 function hidePaySuccess(){
   const ps = document.getElementById("paySuccess");
@@ -1303,7 +1355,7 @@ function sairDoAplicativo(){
   try{ localStorage.removeItem(LS_USER); }catch(_){}
   try{ localStorage.removeItem(LS_CART); }catch(_){}
   try{ sessionStorage.clear(); }catch(_){}
-  try{ window.close(); }catch(_){}
+  ///try{ window.close(); }catch(_){}
   setTimeout(()=>{
     try{ window.location.href = "about:blank"; }catch(_){}
     try{ window.close(); }catch(_){}
@@ -1326,7 +1378,7 @@ async function boot(){
   setTimeout(()=>{
     const img = document.getElementById("splashSymbol");
     if(img) img.src = "./assets/maconaria.gif";
-  }, 120);
+  }, 1200);
 
   setTimeout(()=>{ showScreen("scr_splash2","forward"); }, GIF_TIME);
 
@@ -1470,3 +1522,4 @@ boot();
 </script>
 </body>
 </html>
+
