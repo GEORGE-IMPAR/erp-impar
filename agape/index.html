@@ -1270,26 +1270,28 @@ function startWaitPolling(){
 /* ==========================
    PAY FLOW (simplificado)
 ========================== */
-function buildPayScreen(){
-  payReady=false;
-  setTimeout(()=>{ payReady=true; }, 350);
+  function buildPayScreen(){
+  payReady = false;
+  setTimeout(()=>{ payReady = true; }, 350);
 
-  applyBrand();
+    applyBrand();
 
-  const u = getUser() || {};
-  const nome = (u.nome||"").trim();
-  setText("payHello", nome ? `Oi meu irmão, ${nome}!` : "Oi meu irmão!");
+    const u = getUser() || {};
+    const nome = (u.nome||"").trim();
+    setText("payHello", nome ? `Oi meu irmão, ${nome}!` : "Oi meu irmão!");
 
-  const total = updateTotal();
-  setText("payTotal", fmtBRL(total));
-  setText("pixValor", fmtBRL(total));
-
-  const cart   = getCart();
-  const entries = Object.entries(cart).map(([id,q])=>({id:String(id), qtd:Number(q||0)})).filter(x=>x.qtd>0);
-  const prods = Array.isArray(CFG?.produtos) ? CFG.produtos : [];
-  const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
+    const total = updateTotal();
+    setText("payTotal", fmtBRL(total));
+    setText("pixValor", fmtBRL(total));
     
-  const lines = entries.map(e=>{
+    // lista itens para conferência
+    const cart = getCart();
+    const entries = cartEntries(cart).filter(x=>x.qtd>0);
+
+    const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
+    const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
+
+    const lines = entries.map(e=>{
       const p = byId[e.id] || {};
       const nomeP = p.nome || `Item ${e.id}`;
       const preco = Number(p.preco||0);
@@ -1310,21 +1312,61 @@ function buildPayScreen(){
       }
     }
   }
-
 function openPixModal(){
   const total = updateTotal();
-  const key = (CFG?.loja?.pix_chave || "").trim();
+
+  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
   if(!key){ toast("Chave Pix não configurada"); return; }
 
+  // valor no modal
   const elValor = document.getElementById("pixValor");
   if(elValor) elValor.textContent = fmtBRL(total);
 
-  const elCode = document.getElementById("pixChaveModal");
-  if(elCode) elCode.textContent = key;
+  // gera o PIX Copia e Cola (payload)
+function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
+  const k = String(key||"").trim();
+  const a = Number(amount||0).toFixed(2);
+
+  // defaults seguros (ajuste se quiser)
+  const mName = String(merchantName || "AGAPE").slice(0,25);
+  const mCity = String(merchantCity || "BRASIL").slice(0,15);
+  const tId   = String(txid || "AGAPE").slice(0,25);
+
+  // Merchant Account Information (26)
+  const gui = emv("00","BR.GOV.BCB.PIX");
+  const chave = emv("01", k);
+  const mai = emv("26", gui + chave);
+
+  // Payload sem CRC
+  const payloadNoCrc =
+    emv("00","01") +          // Payload Format Indicator
+    emv("01","12") +          // Point of Initiation Method (dinâmico)
+    mai +
+    emv("52","0000") +        // Merchant Category Code
+    emv("53","986") +         // BRL
+    emv("54", a) +            // Amount
+    emv("58","BR") +
+    emv("59", mName) +
+    emv("60", mCity) +
+    emv("62", emv("05", tId)) +
+    "6304";                   // CRC placeholder
+
+  return payloadNoCrc + crc16(payloadNoCrc);
+}
+
+  // joga no campo do código (tenta os ids possíveis)
+  const elCode =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave") ||
+    document.getElementById("pixKeyText") ||
+    null;
+
+  if(elCode) elCode.textContent = payload;
 
   const modal = document.getElementById("pixModal");
   if(modal) modal.classList.remove("hidden");
 }
+
 function closePixModal(){
   const modal = document.getElementById("pixModal");
   if(modal) modal.classList.add("hidden");
@@ -1555,6 +1597,7 @@ boot();
 </script>
 </body>
 </html>
+
 
 
 
