@@ -1340,22 +1340,45 @@ const GIF_TIME   = 5000; // tempo do splash maçônico
 const ZOOM_TIME  = 5000; // tempo do zoom do Ágape
 const LS_PRESENCA = "agape_presenca_v1";
 // ===== Presença (storage) =====
-const LS_PRES_ANS  = "agape_presenca_ans_v1";     // "sessao_agape" | "sessao" | "agape"
-const LS_PRES_READ = "agape_presenca_read_v1";    // "1" quando leu
+// ===== PRESENÇA (SIMPLES - 1 resposta por aparelho) =====
+const LS_PRESENCA_ANS  = "agape_presenca_ans_v1";
+const LS_PRESENCA_READ = "agape_presenca_read_v1";
 
-function setPresencaAns(val){
-  try{ localStorage.setItem(LS_PRES_ANS, String(val||"")); }catch(_){}
+function getSessaoKey(){
+  return String(CFG?.sessao?.data || "").trim(); // ex: "01/02/2026"
 }
+
+function getPresencaMap(){
+  try{ return JSON.parse(localStorage.getItem(LS_PRESENCA_ANS) || "{}"); }
+  catch(_){ return {}; }
+}
+
+function setPresencaAns(ans){ // ans: "sessao_agape" | "somente_sessao" | "somente_agape"
+  const key = getSessaoKey();
+  if(!key) return;
+
+  const map = getPresencaMap();
+  map[key] = ans;                 // 1 resposta por sessão neste aparelho
+  localStorage.setItem(LS_PRESENCA_ANS, JSON.stringify(map));
+}
+
 function getPresencaAns(){
-  try{ return (localStorage.getItem(LS_PRES_ANS) || "").trim(); }catch(_){ return ""; }
+  const key = getSessaoKey();
+  if(!key) return "";
+  const map = getPresencaMap();
+  return String(map[key] || "");
 }
+
 function setReadPresenca(){
-  try{ localStorage.setItem(LS_PRES_READ, "1"); }catch(_){}
+  const key = getSessaoKey();
+  if(!key) return;
+  localStorage.setItem(LS_PRESENCA_READ, key);
 }
+
 function isReadPresenca(){
-  try{ return localStorage.getItem(LS_PRES_READ) === "1"; }catch(_){ return false; }
-}
-  
+  const key = getSessaoKey();
+  return key && (localStorage.getItem(LS_PRESENCA_READ) === key);
+}  
 const PROD_ICON_BY_ID = {
   agua: "agua.jpg",
   carvao: "carvao.jpg",
@@ -1419,26 +1442,45 @@ function responderPresenca(tipo){
   refreshPresenceUI();
 }
   
+// Atualiza números + barrinha do resumo (funciona mesmo se algum elemento não existir)
 function refreshPresenceUI(){
-  // atualiza a linha "Você respondeu..."
-  const ans = getPresencaAns?.() || "";
+  const totalIrmaos = Array.isArray(CFG?.irmaos) ? CFG.irmaos.length : 0;
+  const ans = getPresencaAns();
 
+  const nSessaoAgape = ans === "sessao_agape" ? 1 : 0;
+  const nSomenteSess = ans === "somente_sessao" ? 1 : 0;
+  const nSomenteAgp  = ans === "somente_agape" ? 1 : 0;
+
+  const totalResp = (ans ? 1 : 0);
+  const totalNao  = Math.max(0, totalIrmaos - totalResp);
+
+  // ---- Troque os IDs abaixo pelos IDs que você colocou no seu "Resumo:" ----
+  const setNum = (id, v)=>{ const el=document.getElementById(id); if(el) el.textContent = String(v); };
+
+  setNum("presN_SA", nSessaoAgape);     // Sessão e Ágape
+  setNum("presN_SS", nSomenteSess);     // Somente sessão
+  setNum("presN_AG", nSomenteAgp);      // Somente ágape
+  setNum("presN_TR", totalResp);        // Total respondidos
+  setNum("presN_TN", totalNao);         // Total não respondidos
+
+  // Barrinha (se existir)
+  const barYes = document.getElementById("presBarYes");
+  const barNo  = document.getElementById("presBarNo");
+  if(barYes && barNo && totalIrmaos > 0){
+    barYes.style.height = (100 * totalResp / totalIrmaos) + "%";
+    barNo.style.height  = (100 * totalNao  / totalIrmaos) + "%";
+  }
+
+  // Status line
   const line = document.getElementById("presStatusLine");
   if(line){
-    const map = {
-      "sessao_agape": "Sessão e Ágape",
-      "sessao": "Somente sessão",
-      "agape": "Somente ágape",
-    };
-    line.textContent = ans ? `Você respondeu: ${map[ans] || ans}.` : "Você ainda não respondeu.";
+    line.textContent = ans
+      ? `Você respondeu: ${ans === "sessao_agape" ? "Sessão e Ágape" : ans === "somente_sessao" ? "Somente sessão" : "Somente ágape"}.`
+      : "Você ainda não respondeu.";
   }
 
-  // atualiza badge do envelope (!)
-  const badge = document.getElementById("msgBadge");
-  if(badge){
-    // se ainda não respondeu, mostra a bolinha
-    badge.classList.toggle("hidden", !!ans);
-  }
+  // Envelope (!)
+  updateEnvelopeUI?.();
 }
   
 function animateTotal(to){
@@ -1655,11 +1697,12 @@ function openPresenca(){
   // marca como lido ao abrir
   setReadPresenca?.();
 
-  // atualiza UI (status + badge)
+   // abre tela
+  showScreen("scr_presenca","forward");
+
+   // atualiza UI (status + badge)
   refreshPresenceUI();
 
-  // abre tela
-  showScreen("scr_presenca","forward");
 }
 
 function closePresenca(){
@@ -1777,12 +1820,12 @@ document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=>{
 });
 
 document.getElementById("btnRespSessao")?.addEventListener("click", ()=>{
-  setPresencaAns("sessao");
+  setPresencaAns("somente_sessao");
   refreshPresenceUI();
 });
 
 document.getElementById("btnRespAgape")?.addEventListener("click", ()=>{
-  setPresencaAns("agape");
+  setPresencaAns("somente_agape");
   refreshPresenceUI();
 });
 
