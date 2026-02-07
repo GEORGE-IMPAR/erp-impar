@@ -1338,9 +1338,23 @@ const LS_CASH = "agape_cash_v1";
 const LS_CASH_DATE = "agape_cash_date_v1";
 const GIF_TIME   = 5000; // tempo do splash maçônico
 const ZOOM_TIME  = 5000; // tempo do zoom do Ágape
-const LS_PRES_READ = "agape_pres_read_v1";
-const LS_PRES_ANS  = "agape_pres_ans_v1";
 const LS_PRESENCA = "agape_presenca_v1";
+// ===== Presença (storage) =====
+const LS_PRES_ANS  = "agape_presenca_ans_v1";     // "sessao_agape" | "sessao" | "agape"
+const LS_PRES_READ = "agape_presenca_read_v1";    // "1" quando leu
+
+function setPresencaAns(val){
+  try{ localStorage.setItem(LS_PRES_ANS, String(val||"")); }catch(_){}
+}
+function getPresencaAns(){
+  try{ return (localStorage.getItem(LS_PRES_ANS) || "").trim(); }catch(_){ return ""; }
+}
+function setReadPresenca(){
+  try{ localStorage.setItem(LS_PRES_READ, "1"); }catch(_){}
+}
+function isReadPresenca(){
+  try{ return localStorage.getItem(LS_PRES_READ) === "1"; }catch(_){ return false; }
+}
   
 const PROD_ICON_BY_ID = {
   agua: "agua.jpg",
@@ -1397,6 +1411,14 @@ function getProdIcon(p){
   return "./assets/icon-192.png";
 }
 
+function responderPresenca(tipo){
+  // tipo: "sessao_agape" | "sessao" | "agape"
+  setPresencaAns(tipo);
+  setReadPresenca();
+  toast("Resposta registrada ✅");
+  refreshPresenceUI();
+}
+  
 
 function animateTotal(to){
   const el1 = $("#totalValue");
@@ -1736,9 +1758,16 @@ document.getElementById("btnFecharPresenca")?.addEventListener("click", ()=>{
 });
 
 // Respostas
-document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=> setPresenceAnswer("sessao_agape"));
-document.getElementById("btnRespSessao")?.addEventListener("click", ()=> setPresenceAnswer("somente_sessao"));
-document.getElementById("btnRespAgape")?.addEventListener("click", ()=> setPresenceAnswer("somente_agape"));
+document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=>{
+  responderPresenca("sessao_agape");
+});
+document.getElementById("btnRespSessao")?.addEventListener("click", ()=>{
+  responderPresenca("sessao");
+});
+document.getElementById("btnRespAgape")?.addEventListener("click", ()=>{
+  responderPresenca("agape");
+});
+
 
 const el = document.getElementById("pixChaveWait");
 
@@ -2084,47 +2113,36 @@ $("#btnEntrar").addEventListener("click", async ()=>{
 });
 
 function refreshPresenceUI(){
-  // total de irmãos no JSON
-  const total = Array.isArray(CFG?.irmaos) ? CFG.irmaos.length : 0;
+  const ans = getPresencaAns();
 
-  // pega mapa de respostas salvo no localStorage (você pode ajustar a chave)
-  // formato sugerido: { "825955":"sa", "825956":"s", "825957":"a" }
-  const key = "agape_presenca_map_v1";
-  let map = {};
-  try{ map = JSON.parse(localStorage.getItem(key) || "{}"); }catch(_){ map = {}; }
-
-  let sa=0, s=0, a=0;
-  Object.values(map).forEach(v=>{
-    if(v==="sa") sa++;
-    else if(v==="s") s++;
-    else if(v==="a") a++;
-  });
-
-  const responded = sa + s + a;
-  const notAnswered = Math.max(0, total - responded);
-
-  // números na esquerda
-  const setN = (id,val)=>{ const el=document.getElementById(id); if(el) el.textContent = String(val); };
-  setN("rSA", sa);
-  setN("rS",  s);
-  setN("rA",  a);
-  setN("rT",  responded);
-  setN("rN",  notAnswered);
-
-  // barra direita (top = não, bottom = sim)
-  const barNao = document.getElementById("barNao");
-  const barSim = document.getElementById("barSim");
-  if(barNao && barSim){
-    barNao.textContent = String(notAnswered);
-    barSim.textContent = String(responded);
-
-    const h = 130; // altura da barBox
-    const pNao = total ? (notAnswered/total) : 0;
-    const pSim = total ? (responded/total) : 0;
-
-    barNao.style.height = Math.round(h * pNao) + "px";
-    barSim.style.height = Math.round(h * pSim) + "px";
+  // linha "Você respondeu..."
+  const line = document.getElementById("presStatusLine");
+  if(line){
+    const map = {
+      "sessao_agape": "Sessão e Ágape",
+      "sessao": "Somente sessão",
+      "agape": "Somente ágape",
+    };
+    line.textContent = ans ? `Você respondeu: ${map[ans] || ans}.` : "Você ainda não respondeu.";
   }
+
+  // badge do envelope: aparece se NÃO leu ou NÃO respondeu
+  const badge = document.getElementById("msgBadge");
+  if(badge){
+    const show = (!isReadPresenca() || !ans);
+    badge.classList.toggle("hidden", !show);
+  }
+
+  // resumo (como é resposta por usuário, aqui é 1 ou 0)
+  const c1 = (ans==="sessao_agape") ? 1 : 0;
+  const c2 = (ans==="sessao") ? 1 : 0;
+  const c3 = (ans==="agape") ? 1 : 0;
+  const totalResp = ans ? 1 : 0;
+
+  document.getElementById("sumSessaoAgape") && (document.getElementById("sumSessaoAgape").textContent = c1);
+  document.getElementById("sumSomenteSessao") && (document.getElementById("sumSomenteSessao").textContent = c2);
+  document.getElementById("sumSomenteAgape") && (document.getElementById("sumSomenteAgape").textContent = c3);
+  document.getElementById("sumResp") && (document.getElementById("sumResp").textContent = totalResp);
 }
 
 
