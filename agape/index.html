@@ -1019,7 +1019,37 @@ function crc16(payload){
  * Gera o PIX Copia e Cola (payload do QRCode) a partir da chave Pix + valor.
  * key: email/cpf/cnpj/telefone/chave aleatória (CFG.loja.pix_chave)
  */
- 
+function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
+  const k = String(key||"").trim();
+  const a = Number(amount||0).toFixed(2);
+
+  // defaults seguros (ajuste se quiser)
+  const mName = String(merchantName || "AGAPE").slice(0,25);
+  const mCity = String(merchantCity || "BRASIL").slice(0,15);
+  const tId   = String(txid || "AGAPE").slice(0,25);
+
+  // Merchant Account Information (26)
+  const gui = emv("00","BR.GOV.BCB.PIX");
+  const chave = emv("01", k);
+  const mai = emv("26", gui + chave);
+
+  // Payload sem CRC
+  const payloadNoCrc =
+    emv("00","01") +          // Payload Format Indicator
+    emv("01","12") +          // Point of Initiation Method (dinâmico)
+    mai +
+    emv("52","0000") +        // Merchant Category Code
+    emv("53","986") +         // BRL
+    emv("54", a) +            // Amount
+    emv("58","BR") +
+    emv("59", mName) +
+    emv("60", mCity) +
+    emv("62", emv("05", tId)) +
+    "6304";                   // CRC placeholder
+
+  return payloadNoCrc + crc16(payloadNoCrc);
+}
+
 function closePresenca(){
   updateEnvelopeUI();
   showScreen("scr_wait","back");
@@ -1598,6 +1628,7 @@ boot();
 </script>
 </body>
 </html>
+
 
 
 
