@@ -78,3 +78,49 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "Sistema Ágape", body: event.data?.text?.() || "" };
+  }
+
+  const title = data.title || "Sistema Ágape";
+  const options = {
+    body: data.body || "Nova notificação",
+    icon: data.icon || "./assets/icon-192.png",
+    badge: data.badge || "./assets/icon-192.png",
+    data: {
+      url: data.url || "/agape/index.html"
+    },
+    vibrate: [80, 30, 80],
+    requireInteraction: false
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification?.data?.url || "/agape/index.html";
+
+  event.waitUntil((async () => {
+    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+
+    // se já tem uma aba do app aberta, foca nela
+    for (const client of allClients) {
+      if (client.url.includes("/agape/") && "focus" in client) {
+        await client.focus();
+        // tenta navegar pra url desejada
+        try { client.navigate(url); } catch (e) {}
+        return;
+      }
+    }
+
+    // se não tem, abre
+    if (clients.openWindow) return clients.openWindow(url);
+  })());
+});
+
