@@ -711,6 +711,25 @@
   text-align:center;
 }
 .waitPresencaOk.hidden{display:none;}
+
+/* bolinha vermelha */
+.msgBtn{ position:relative; }
+
+.msgBadge{
+  position:absolute;
+  top:-6px; right:-6px;
+  width:18px; height:18px;
+  border-radius:999px;
+  background:#ff3b30;
+  border:2px solid rgba(6,26,43,1);
+  color:#fff;
+  font-weight:1000;
+  font-size:12px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 10px 24px rgba(0,0,0,.35);
+}
+
+.msgBadge.hidden{ display:none !important; }
     
   </style>
 </head>
@@ -755,7 +774,7 @@
           <div class="sessionLine" id="sessaoLineWait">Sessão fechada — —</div>
           <button class="msgBtn" id="btnEnvelope" type="button" aria-label="Mensagem do Venerável">
             <img src="./assets/icon-envelope.png" alt="" class="msgIcon">
-            <span class="msgBadge hidden" id="msgBadge">!</span>
+            <span class="msgBadge hidden" id="badgeConvocacao">!</span>
           </button>
         </div>
 
@@ -1224,6 +1243,39 @@ function refreshPresenceUI(){
   }
 }
 
+const LS_CONVOCACAO_READ = "agape_convocacao_read_v1";
+
+function getConvocacaoId(){
+  return String(CFG?.sessao?.convocacao?.id || "").trim();
+}
+function isConvocacaoAtiva(){
+  return !!CFG?.sessao?.convocacao?.ativa;
+}
+function isConvocacaoLida(){
+  const id = getConvocacaoId();
+  if(!id) return false;
+  return localStorage.getItem(LS_CONVOCACAO_READ) === id;
+}
+function marcarConvocacaoLida(){
+  const id = getConvocacaoId();
+  if(!id) return;
+  localStorage.setItem(LS_CONVOCACAO_READ, id);
+}
+
+/** Atualiza a bolinha do ícone (badgeConvocacao) */
+function updateConvocacaoBadge(){
+  const badge = document.getElementById("badgeConvocacao");
+  if(!badge) return;
+
+  // aparece se estiver ativa e ainda não foi “lida” (praquele id)
+  const show = isConvocacaoAtiva() && !isConvocacaoLida();
+  badge.classList.toggle("hidden", !show);
+
+  // pode trocar o conteúdo se quiser: "!" ou "1"
+  badge.textContent = "!";
+}
+  
+  
 function updateEnvelopeUI(){
   const badge = document.getElementById("msgBadge");
   if(!badge) return;
@@ -1247,6 +1299,9 @@ function choosePresenca(val){
 
 function openPresenca(){
   if(!CFG?.sessao) return;
+  // marcou como lida ao abrir a presença
+  marcarConvocacaoLida();
+  updateConvocacaoBadge();
   const elTxt = document.getElementById("presTexto");
   if(elTxt){
     elTxt.textContent = CFG.sessao.chamado || "Mensagem não configurada.";
@@ -1430,6 +1485,9 @@ function applyBrand(){
   updateEnvelopeUI();
 }
 
+applyBrand();
+updateConvocacaoBadge();
+  
 /* ==========================
    PRODUCTS / TOTAL
 ========================== */
@@ -1579,6 +1637,7 @@ function startWaitPolling(){
     try{
       setText('lastCheck', nowDT());
       CFG = await loadConfig();
+      updateConvocacaoBadge();
       initCashFromConfig();
       applyBrand();
       renderCash();
@@ -2117,6 +2176,7 @@ boot();
 </script>
 </body>
 </html>
+
 
 
 
