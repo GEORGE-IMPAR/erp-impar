@@ -648,7 +648,6 @@
     .payBtn.isChosen{outline:2px solid rgba(255,255,255,.35);}
 
 /* ===== BOTÃO ESCOLHIDO: BORDA AMARELA BRILHANTE ===== */
-
 .presBtnsRow .payBtn.isChosen{
   border: 2px solid rgba(255,215,0,.98) !important;
   box-shadow:
@@ -782,14 +781,6 @@
             Sair do aplicativo
           </button>
         </div>
-
-<!-- =======================
-     BLOCO PRESENÇA (PRONTO)
-     - borda amarela brilhante no botão escolhido
-     - overlay preto com presenca.gif por 3s
-     - volta para scr_wait
-     - aviso "PRESENÇA JÁ CONFIRMADA" na WAIT
-     ======================= -->
 
 <!-- 1) COLE ISTO DENTRO DO #scr_wait (ex: logo abaixo do infoCard ou antes do hint) -->
 <div id="waitPresencaOk" class="waitPresencaOk hidden">✅ PRESENÇA JÁ CONFIRMADA</div>
@@ -1027,8 +1018,8 @@
     <img id="presGif" src="./assets/presenca.gif" alt="Confirmado">
     <div class="presOkText">PRESENÇA CONFIRMADA!!!!!!!!!</div>
   </div>
-</div>  
-  
+</div>
+
 <script>
 /* ==========================
    CONFIG / HELPERS
@@ -1255,16 +1246,15 @@ function choosePresenca(val){
 }
 
 function openPresenca(){
-const _oldOpenPresenca = (typeof openPresenca === "function") ? openPresenca : null;
-if(_oldOpenPresenca){
-  window.openPresenca = function(){
-    _oldOpenPresenca();
-    try{
-      const ans = (typeof getPresencaAns === "function") ? getPresencaAns() : "";
-      highlightPresenceChoiceByVal(ans);
-      updatePresenceConfirmedWait();
-    }catch(_){}
-  };
+  if(!CFG?.sessao) return;
+  const elTxt = document.getElementById("presTexto");
+  if(elTxt){
+    elTxt.textContent = CFG.sessao.chamado || "Mensagem não configurada.";
+  }
+  showScreen("scr_presenca","forward");
+  setReadPresenca();
+  refreshPresenceUI();
+  updateEnvelopeUI();
 }
   // ===== Pagamento v25 flow =====
   // ===== Pagamento v25 flow =====
@@ -1829,7 +1819,7 @@ async function boot(){
       showScreen("scr_wait","forward");
       startWaitPolling();
       return;
-    }hint
+    }
 
     // entra no consumo
     renderProducts();
@@ -1916,7 +1906,7 @@ async function boot(){
     if(!payReady) return;
     finalizePayment("pix", "Registrado: pix");
   });
-
+}
 function highlightPresenceChoice(chosenId){
   const ids = ["btnRespSessaoAgape","btnRespSessao","btnRespAgape"];
   ids.forEach(id=>{
@@ -1948,122 +1938,10 @@ document.getElementById("btnRespAgape")?.addEventListener("click", ()=>{
   updateEnvelopeUI();
 });
 
-/* ======== CONFIG ======== */
-const PRES_SUCCESS_MS = 3000;
-
-/* ======== 1) HIGHLIGHT (borda amarela no escolhido) ======== */
-function highlightPresenceChoiceByVal(ans){
-  const map = {
-    "sessao_agape": "btnRespSessaoAgape",
-    "somente_sessao": "btnRespSessao",
-    "somente_agape": "btnRespAgape",
-  };
-  const chosenId = map[String(ans||"")];
-  const ids = ["btnRespSessaoAgape","btnRespSessao","btnRespAgape"];
-  ids.forEach(id=>{
-    const el = document.getElementById(id);
-    if(el) el.classList.remove("isChosen");
-  });
-  if(chosenId){
-    const chosen = document.getElementById(chosenId);
-    if(chosen) chosen.classList.add("isChosen");
-  }
-}
-
-/* ======== 2) OVERLAY ======== */
-function showPresSuccess(){
-  const ov = document.getElementById("presSuccess");
-  if(ov) ov.classList.remove("hidden");
-
-  // reinicia gif sempre
-  const gif = document.getElementById("presGif");
-  if(gif){
-    const src = gif.getAttribute("src") || "./assets/presenca.gif";
-    gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
-  }
-}
-function hidePresSuccess(){
-  const ov = document.getElementById("presSuccess");
-  if(ov) ov.classList.add("hidden");
-}
-
-/* ======== 3) WAIT: aviso presença confirmada ======== */
-function updatePresenceConfirmedWait(){
-  const el = document.getElementById("waitPresencaOk");
-  if(!el) return;
-  const ans = (typeof getPresencaAns === "function") ? (getPresencaAns() || "") : "";
-  el.classList.toggle("hidden", !ans);
-}
-
-/* ======== 4) FUNÇÃO DE CONFIRMAÇÃO ======== */
-function confirmPresenca(ans){
-  // grava
-  if(typeof setPresencaAns === "function") setPresencaAns(ans);
-  if(typeof setReadPresenca === "function") setReadPresenca();
-
-  // UI presença
-  highlightPresenceChoiceByVal(ans);
-  if(typeof refreshPresenceUI === "function") refreshPresenceUI();
-  if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
-
-  // overlay 3s e volta pra wait
-  showPresSuccess();
-  setTimeout(()=>{
-    hidePresSuccess();
-    updatePresenceConfirmedWait();
-    if(typeof showScreen === "function") showScreen("scr_wait","back");
-    // revalida badge envelope + aviso
-    if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
-  }, PRES_SUCCESS_MS);
-}
-
-/* ======== 5) BIND DOS 3 BOTÕES (CLICK + TOUCH) ======== */
-function bindPresBtn(id, ans){
-  const btn = document.getElementById(id);
-  if(!btn || btn.dataset.presBound) return;
-  btn.dataset.presBound = "1";
-
-  const handler = (e)=>{
-    e?.preventDefault?.();
-    confirmPresenca(ans);
-  };
-
-  btn.addEventListener("click", handler);
-  btn.addEventListener("touchend", (e)=>{ e.preventDefault(); handler(e); }, {passive:false});
-}
-
-function initPresencaBlock(){
-  bindPresBtn("btnRespSessaoAgape","sessao_agape");
-  bindPresBtn("btnRespSessao","somente_sessao");
-  bindPresBtn("btnRespAgape","somente_agape");
-
-  // quando abrir a tela, já pinta o escolhido se existir
-  try{
-    const ans = (typeof getPresencaAns === "function") ? getPresencaAns() : "";
-    highlightPresenceChoiceByVal(ans);
-  }catch(_){}
-
-  // quando entrar no app / atualizar config
-  updatePresenceConfirmedWait();
- }
-
-/* Chame isso UMA vez (pode chamar no final do boot também) */
-initPresencaBlock();
-
-}
-  
 boot();
-
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
 
 
 
