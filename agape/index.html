@@ -1766,6 +1766,65 @@ async function boot(){
     CFG = {loja:{nome:"Loja",subtitulo:"",pix_chave:"",logo_url:"./assets/logo-Clementino-Brito.jpeg"},sessao:{status:"fechada",data:""},produtos:[],irmaos:[]};
   }
 
+
+// ===== PUSH (PWA) =====
+// 1) Gere suas chaves VAPID e cole a PUBLICA aqui:
+const VAPID_PUBLIC_KEY = "COLE_AQUI_SUA_VAPID_PUBLIC_KEY";
+
+// endpoint do KingHost
+const PUSH_SUBSCRIBE_URL = "/api/push_subscribe.php";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function ativarNotificacoes() {
+  if (!("Notification" in window)) { toast("Este aparelho não suporta notificações"); return; }
+  if (!("serviceWorker" in navigator)) { toast("Sem service worker"); return; }
+  if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.includes("COLE_AQUI")) {
+    toast("Falta VAPID_PUBLIC_KEY");
+    return;
+  }
+
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") { toast("Notificações negadas"); return; }
+
+  const reg = await navigator.serviceWorker.ready;
+
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+
+  // salva no servidor
+  const r = await fetch(PUSH_SUBSCRIBE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      loja: (CFG?.loja?.nome || "Loja"),
+      // opcional: identifica quem está logado
+      user: getUser() || null,
+      subscription: sub
+    })
+  });
+
+  const j = await r.json().catch(()=> ({}));
+  if (r.ok && j.ok) toast("Notificações ativadas ✅");
+  else toast("Falha ao ativar notificações");
+}
+
+// expõe pra você testar no console: ativarNotificacoes()
+window.ativarNotificacoes = ativarNotificacoes;
+
+  
   setTimeout(()=>{
     const img = document.getElementById("splashSymbol");
     if(img) img.src = "./assets/maconaria.gif";
@@ -2058,6 +2117,7 @@ boot();
 </script>
 </body>
 </html>
+
 
 
 
