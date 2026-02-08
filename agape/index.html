@@ -1938,7 +1938,111 @@ document.getElementById("btnRespAgape")?.addEventListener("click", ()=>{
   updateEnvelopeUI();
 });
 
+/* ======== CONFIG ======== */
+const PRES_SUCCESS_MS = 3000;
+
+/* ======== 1) HIGHLIGHT (borda amarela no escolhido) ======== */
+function highlightPresenceChoiceByVal(ans){
+  const map = {
+    "sessao_agape": "btnRespSessaoAgape",
+    "somente_sessao": "btnRespSessao",
+    "somente_agape": "btnRespAgape",
+  };
+  const chosenId = map[String(ans||"")];
+  const ids = ["btnRespSessaoAgape","btnRespSessao","btnRespAgape"];
+  ids.forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.remove("isChosen");
+  });
+  if(chosenId){
+    const chosen = document.getElementById(chosenId);
+    if(chosen) chosen.classList.add("isChosen");
+  }
+}
+
+/* ======== 2) OVERLAY ======== */
+function showPresSuccess(){
+  const ov = document.getElementById("presSuccess");
+  if(ov) ov.classList.remove("hidden");
+
+  // reinicia gif sempre
+  const gif = document.getElementById("presGif");
+  if(gif){
+    const src = gif.getAttribute("src") || "./assets/presenca.gif";
+    gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
+  }
+}
+function hidePresSuccess(){
+  const ov = document.getElementById("presSuccess");
+  if(ov) ov.classList.add("hidden");
+}
+
+/* ======== 3) WAIT: aviso presença confirmada ======== */
+function updatePresenceConfirmedWait(){
+  const el = document.getElementById("waitPresencaOk");
+  if(!el) return;
+  const ans = (typeof getPresencaAns === "function") ? (getPresencaAns() || "") : "";
+  el.classList.toggle("hidden", !ans);
+}
+
+/* ======== 4) FUNÇÃO DE CONFIRMAÇÃO ======== */
+function confirmPresenca(ans){
+  // grava
+  if(typeof setPresencaAns === "function") setPresencaAns(ans);
+  if(typeof setReadPresenca === "function") setReadPresenca();
+
+  // UI presença
+  highlightPresenceChoiceByVal(ans);
+  if(typeof refreshPresenceUI === "function") refreshPresenceUI();
+  if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+
+  // overlay 3s e volta pra wait
+  showPresSuccess();
+  setTimeout(()=>{
+    hidePresSuccess();
+    updatePresenceConfirmedWait();
+    if(typeof showScreen === "function") showScreen("scr_wait","back");
+    // revalida badge envelope + aviso
+    if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+  }, PRES_SUCCESS_MS);
+}
+
+/* ======== 5) BIND DOS 3 BOTÕES (CLICK + TOUCH) ======== */
+function bindPresBtn(id, ans){
+  const btn = document.getElementById(id);
+  if(!btn || btn.dataset.presBound) return;
+  btn.dataset.presBound = "1";
+
+  const handler = (e)=>{
+    e?.preventDefault?.();
+    confirmPresenca(ans);
+  };
+
+  btn.addEventListener("click", handler);
+  btn.addEventListener("touchend", (e)=>{ e.preventDefault(); handler(e); }, {passive:false});
+}
+
+function initPresencaBlock(){
+  bindPresBtn("btnRespSessaoAgape","sessao_agape");
+  bindPresBtn("btnRespSessao","somente_sessao");
+  bindPresBtn("btnRespAgape","somente_agape");
+
+  // quando abrir a tela, já pinta o escolhido se existir
+  try{
+    const ans = (typeof getPresencaAns === "function") ? getPresencaAns() : "";
+    highlightPresenceChoiceByVal(ans);
+  }catch(_){}
+
+  // quando entrar no app / atualizar config
+  updatePresenceConfirmedWait();
+}
+
+/* Chame isso UMA vez (pode chamar no final do boot também) */
+initPresencaBlock();
+
 boot();
+
+
 </script>
 </body>
 </html>
