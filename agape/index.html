@@ -1862,38 +1862,37 @@ async function registerPush() {
 ========================== */
 async function boot(){
   // 1) Service Worker
-  if ("serviceWorker" in navigator) {
-    try {
+  if("serviceWorker" in navigator){
+    try{
       await navigator.serviceWorker.register("./service-worker.js");
       console.log("SW registrado");
-    } catch (e) {
-      console.warn("Erro ao registrar SW", e);
+    }catch(e){
+      console.warn("Erro SW", e);
     }
   }
 
-  // 2) Push (chama aqui)
-  try {
-    await registerPush();
-  } catch (e) {
+  // 2) Config primeiro (pra não quebrar loja/pix/mensagem)
+  try{
+    CFG = await loadConfig();   // <- mantenha assim
+  }catch(_){
+    // fallback, se precisar
+  }
+
+  // 3) Só tenta push se estiver habilitado no JSON
+  try{
+    if (CFG?.push?.habilitado === true) {
+      await registerPush();
+    }
+  }catch(e){
     console.warn("Push não registrado", e);
   }
-
-  // 3) Config
-  try {
-    CFG = await loadConfig();
-  } catch (e) {
-    CFG = {
-      loja:{ nome:"Loja", subtitulo:"", pix_chave:"", logo_url:"./assets/logo-Clementino-Brito.jpeg" },
-      sessao:{ status:"fechada" }
-    };
-  }
-
+  
 // ===== PUSH (PWA) =====
 // 1) Gere suas chaves VAPID e cole a PUBLICA aqui:
 const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
 
 // endpoint do KingHost
-const PUSH_SUBSCRIBE_URL = "/api/push_subscribe.php";
+const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -2232,10 +2231,61 @@ if(_oldOpenPresenca){
   };
  
 }
+// ===== PUSH (PWA) =====
+const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
+const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function registerPush() {
+  // 1) permissao
+  if (!("Notification" in window)) throw new Error("Sem Notification API");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Permissão negada");
+
+  // 2) pega SW ativo
+  const reg = await navigator.serviceWorker.ready;
+
+  // 3) cria/pega subscription
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+
+  // 4) envia pro servidor
+  const payload = { subscription: sub.toJSON(), ua: navigator.userAgent };
+
+  const resp = await fetch(PUSH_SUBSCRIBE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(()=> "");
+    throw new Error("Subscribe falhou: HTTP " + resp.status + " " + txt);
+  }
+
+  const json = await resp.json().catch(()=> ({}));
+  console.log("Push registrado com sucesso", json);
+  return json;
+}
+
 boot();
 </script>
 </body>
 </html>
+
 
 
 
