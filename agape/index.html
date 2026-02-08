@@ -1813,13 +1813,74 @@ function sairDoAplicativo(){
 }
 
 /* ==========================
+   PUSH HELPERS
+========================== */
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+/* ==========================
+   REGISTER PUSH
+========================== */
+async function registerPush(){
+  try{
+    if(!("serviceWorker" in navigator)) return;
+    if(!("PushManager" in window)) return;
+
+    const permission = await Notification.requestPermission();
+    if(permission !== "granted") return;
+
+    const reg = await navigator.serviceWorker.ready;
+
+    const existing = await reg.pushManager.getSubscription();
+    if(existing) return; // já registrado
+
+    const res = await fetch(
+      "https://api.erpimpar.com.br/agape/push/vapid_keys.json"
+    );
+    const keys = await res.json();
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keys.publicKey)
+    });
+
+    await fetch(
+      "https://api.erpimpar.com.br/agape/push/push_subscribe.php",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub)
+      }
+    );
+
+    console.log("✅ Push registrado");
+  }catch(e){
+    console.error("❌ Push erro", e);
+  }
+}
+  
+  
+/* ==========================
    BOOT
 ========================== */
 async function boot(){
   if("serviceWorker" in navigator){
-    try{ await navigator.serviceWorker.register("./service-worker.js"); }catch(_){}
-  }
+    try{
+      await navigator.serviceWorker.register("./service-worker.js");
 
+      // 👇 ESTA É A LINHA NOVA
+      registerPush();
+
+    }catch(_){}
+  }
+}
   try{ CFG = await loadConfig(); }
   catch(_){
     CFG = {loja:{nome:"Loja",subtitulo:"",pix_chave:"",logo_url:"./assets/logo-Clementino-Brito.jpeg"},sessao:{status:"fechada",data:""},produtos:[],irmaos:[]};
@@ -2176,6 +2237,7 @@ boot();
 </script>
 </body>
 </html>
+
 
 
 
