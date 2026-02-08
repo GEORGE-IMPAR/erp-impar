@@ -1829,41 +1829,30 @@ function urlBase64ToUint8Array(base64String) {
    REGISTER PUSH
 ========================== */
 async function registerPush(){
-  try{
-    if(!("serviceWorker" in navigator)) return;
-    if(!("PushManager" in window)) return;
+  if (!("serviceWorker" in navigator)) return;
+  if (!("PushManager" in window)) return;
 
-    const permission = await Notification.requestPermission();
-    if(permission !== "granted") return;
-
-    const reg = await navigator.serviceWorker.ready;
-
-    const existing = await reg.pushManager.getSubscription();
-    if(existing) return; // já registrado
-
-    const res = await fetch(
-      "https://api.erpimpar.com.br/agape/push/vapid_keys.json"
-    );
-    const keys = await res.json();
-
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(keys.publicKey)
-    });
-
-    await fetch(
-      "https://api.erpimpar.com.br/agape/push/push_subscribe.php",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sub)
-      }
-    );
-
-    console.log("✅ Push registrado");
-  }catch(e){
-    console.error("❌ Push erro", e);
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    console.log("Notificação negada");
+    return;
   }
+
+  const reg = await navigator.serviceWorker.ready;
+
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+  });
+
+  // envia para o servidor
+  await fetch("/api/agape/push/push_subscribe.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sub)
+  });
+
+  console.log("Push registrado com sucesso");
 }
   
   
@@ -1871,25 +1860,36 @@ async function registerPush(){
    BOOT
 ========================== */
 async function boot(){
-  if("serviceWorker" in navigator){
-    try{
+  // 1) Service Worker
+  if ("serviceWorker" in navigator) {
+    try {
       await navigator.serviceWorker.register("./service-worker.js");
-
-      // 👇 ESTA É A LINHA NOVA
-      registerPush();
-
-    }catch(_){}
-  }
-}
-  try{ CFG = await loadConfig(); }
-  catch(_){
-    CFG = {loja:{nome:"Loja",subtitulo:"",pix_chave:"",logo_url:"./assets/logo-Clementino-Brito.jpeg"},sessao:{status:"fechada",data:""},produtos:[],irmaos:[]};
+      console.log("SW registrado");
+    } catch (e) {
+      console.warn("Erro ao registrar SW", e);
+    }
   }
 
+  // 2) Push (chama aqui)
+  try {
+    await registerPush();
+  } catch (e) {
+    console.warn("Push não registrado", e);
+  }
+
+  // 3) Config
+  try {
+    CFG = await loadConfig();
+  } catch (e) {
+    CFG = {
+      loja:{ nome:"Loja", subtitulo:"", pix_chave:"", logo_url:"./assets/logo-Clementino-Brito.jpeg" },
+      sessao:{ status:"fechada" }
+    };
+  }
 
 // ===== PUSH (PWA) =====
 // 1) Gere suas chaves VAPID e cole a PUBLICA aqui:
-const VAPID_PUBLIC_KEY = "COLE_AQUI_SUA_VAPID_PUBLIC_KEY";
+const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
 
 // endpoint do KingHost
 const PUSH_SUBSCRIBE_URL = "/api/push_subscribe.php";
@@ -2229,43 +2229,9 @@ if(_oldOpenPresenca){
       updatePresenceConfirmedWait();
     }catch(_){}
   };
+ refreshUI();
 }
-
 boot();
-
-
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
