@@ -1048,6 +1048,8 @@ const LS_CART  = "agape_cart_v14";
 const LS_USER  = "agape_user_v14";
 const LS_CASH = "agape_cash_v1";
 const LS_CASH_DATE = "agape_cash_date_v1";
+const LS_PRES_LIDA = "agape_presenca_lida_v1";
+const LS_PRES_RESP = "agape_presenca_resp_v1";
 const GIF_TIME   = 6000;
 const ZOOM_TIME  = 6000;
 
@@ -1117,7 +1119,7 @@ function showScreen(id, dir="forward"){
 }
 
 async function loadConfig(){
-  const r=await fetch(CONFIG_URL,{cache:"no-store"});
+  const r=await fetch("./agape_config.json?v=" + Date.now(),{cache:"no-store"});
   if(!r.ok) throw new Error("config");
   return await r.json();
 }
@@ -1129,6 +1131,19 @@ function sessionIsOpen(){
 /* ==========================
    STORAGE: CART / USER / CASH
 ========================== */
+function resetPresencaState(){
+  localStorage.removeItem(LS_PRES_LIDA);
+  localStorage.removeItem(LS_PRES_RESP);
+
+if(CFG?.convocacao?.ativa){
+  const lastId = localStorage.getItem("agape_conv_id");
+  if(lastId !== CFG.convocacao.id){
+    resetPresencaState();
+    localStorage.setItem("agape_conv_id", CFG.convocacao.id);
+  }
+ }
+}
+  
 function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}catch(_){return {}} }
 function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
 function clearCart(){ localStorage.removeItem(LS_CART); }
@@ -1280,14 +1295,13 @@ function updateEnvelopeUI(){
   const badge = document.getElementById("msgBadge");
   if(!badge) return;
 
-  const ans  = getPresencaAns();
-  const read = isReadPresenca();
+  const convocacaoAtiva = CFG?.convocacao?.ativa === true;
 
-  const show = (!read) || (!ans);
-  badge.classList.toggle("hidden", !show);
-
-  badge.classList.toggle("pulse", !read);
-  badge.textContent = !ans ? "!" : "•";
+  if(convocacaoAtiva && !isPresencaLida() && !isPresencaRespondida()){
+    badge.classList.remove("hidden");
+  }else{
+    badge.classList.add("hidden");
+  }
 }
 
 function choosePresenca(val){
@@ -1299,19 +1313,19 @@ function choosePresenca(val){
 
 function openPresenca(){
   if(!CFG?.sessao) return;
-  // marcou como lida ao abrir a presença
-  marcarConvocacaoLida();
-  updateConvocacaoBadge();
+
   const elTxt = document.getElementById("presTexto");
   if(elTxt){
     elTxt.textContent = CFG.sessao.chamado || "Mensagem não configurada.";
   }
-  showScreen("scr_presenca","forward");
-  setReadPresenca();
-  refreshPresenceUI();
+
+  setPresencaLida();
   updateEnvelopeUI();
+
+  showScreen("scr_presenca","forward");
+  refreshPresenceUI();
 }
-  // ===== Pagamento v25 flow =====
+
   // ===== Pagamento v25 flow =====
   const PAY_SUCCESS_MS = 2200; // tempo para o GIF completar um ciclo (ajuste se quiser)
 
@@ -1395,6 +1409,22 @@ function closePresenca(){
   showScreen("scr_wait","back");
 }
 
+function isPresencaLida(){
+  return localStorage.getItem(LS_PRES_LIDA) === "1";
+}
+
+function setPresencaLida(){
+  localStorage.setItem(LS_PRES_LIDA, "1");
+}
+
+function isPresencaRespondida(){
+  return localStorage.getItem(LS_PRES_RESP) === "1";
+}
+
+function setPresencaRespondida(){
+  localStorage.setItem(LS_PRES_RESP, "1");
+}
+  
 function bindPresencaUI(){
   const b1 = document.getElementById("btnRespSessaoAgape");
   const b2 = document.getElementById("btnRespSessao");
@@ -2153,24 +2183,17 @@ function updatePresenceConfirmedWait(){
 
 /* ======== 4) FUNÇÃO DE CONFIRMAÇÃO ======== */
 function confirmPresenca(ans){
-  // grava
+  setPresencaRespondida();
+
   if(typeof setPresencaAns === "function") setPresencaAns(ans);
-  if(typeof setReadPresenca === "function") setReadPresenca();
 
-  // UI presença
-  highlightPresenceChoiceByVal(ans);
-  if(typeof refreshPresenceUI === "function") refreshPresenceUI();
-  if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+  updateEnvelopeUI();
 
-  // overlay 3s e volta pra wait
   showPresSuccess();
   setTimeout(()=>{
     hidePresSuccess();
-    updatePresenceConfirmedWait();
-    if(typeof showScreen === "function") showScreen("scr_wait","back");
-    // revalida badge envelope + aviso
-    if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
-  }, PRES_SUCCESS_MS);
+    showScreen("scr_wait","back");
+  }, 2000);
 }
 
 /* ======== 5) BIND DOS 3 BOTÕES (CLICK + TOUCH) ======== */
@@ -2222,6 +2245,7 @@ boot();
 </script>
 </body>
 </html>
+
 
 
 
