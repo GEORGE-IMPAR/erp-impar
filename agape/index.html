@@ -1204,10 +1204,6 @@ const ZOOM_TIME  = 6000;
 
 const $ = (s)=>document.querySelector(s);
 
-function adminSanTel(v){
-  return String(v || "").replace(/\D/g, "");
-}
-
 function setText(sel, val){
   if(!sel) return;
   const isCSS =
@@ -1789,68 +1785,58 @@ function adminSanTel(v){
   return String(v || "").replace(/\D/g, "");
 }
 
-// toast de erro do admin (usa seu toast já existente)
-function adminToastErr(msg){
-  try{ console.warn("[ADMIN]", msg); }catch(_){}
-  try{ toast(msg); }catch(_){}
-}
-
 // URL base pra carregar sempre o JSON atual
 const ADMIN_GET_URL = "./agape_config.json?v=" + Date.now();
-
-// carrega dados SEM apagar nada do storage
-async function adminLoadFromServer(){
-  try{
-    // reaproveita sua função existente
-    CFG = await loadConfig();
-
-    // atualiza UI padrão (sem inventar lógica)
-    try{ applyBrand(); }catch(_){}
-    try{ updateConvocacaoBadge(); }catch(_){}
-
-    // se você já tiver alguma função de render admin, chama aqui sem obrigar nada
-    if(typeof adminRender === "function") adminRender();
-    if(typeof adminRenderAll === "function") adminRenderAll();
-    if(typeof adminRenderUI === "function") adminRenderUI();
-
-  }catch(e){
-    adminToastErr("Falha ao carregar o JSON do Admin");
-  }
-}
 
 // alterna abas do admin (funciona mesmo que você ainda não tenha painéis completos)
 // estado atual do admin
 let ADMIN_TAB = "cfg";
 
+// ==========================
+// ADMIN - DEPENDÊNCIAS MÍNIMAS (pra não quebrar)
+// ==========================
+let ADMIN_CFG = null;
+let ADMIN_TAB = "cfg";
+
+// pega sempre do mesmo json do app (não inventa outro)
+const ADMIN_GET_URL = "./agape_config.json?v=" + Date.now();
+
+// toast de erro (mínimo)
+function adminToastErr(msg){
+  try { toast(msg || "Erro"); } catch(_) { console.warn(msg); }
+}
+
+// sanitiza telefone
+function adminSanTel(s){
+  return String(s || "").replace(/\D/g, "");
+}
+
+// set tab ativo (sem lógica extra, só mostra/esconde)
 function adminSetActiveTab(tab){
   ADMIN_TAB = tab || "cfg";
 
-  // --- tabs (botões)
-  const bCfg   = document.getElementById("tabCfg");
-  const bSes   = document.getElementById("tabSessao");
-  const bIrmao = document.getElementById("tabIrmaos");
+  document.getElementById("tabCfg")?.classList.toggle("active", ADMIN_TAB==="cfg");
+  document.getElementById("tabSessao")?.classList.toggle("active", ADMIN_TAB==="sessao");
+  document.getElementById("tabIrmaos")?.classList.toggle("active", ADMIN_TAB==="irmaos");
 
-  if(bCfg)   bCfg.classList.toggle("active", ADMIN_TAB === "cfg");
-  if(bSes)   bSes.classList.toggle("active", ADMIN_TAB === "sessao");
-  if(bIrmao) bIrmao.classList.toggle("active", ADMIN_TAB === "irmaos");
-
-  // --- painéis (conteúdo)
-  const pCfg   = document.getElementById("adminPanelCfg");
-  const pSes   = document.getElementById("adminPanelSessao");
-  const pIrmao = document.getElementById("adminPanelIrmaos");
-
-  if(pCfg)   pCfg.classList.toggle("hidden", ADMIN_TAB !== "cfg");
-  if(pSes)   pSes.classList.toggle("hidden", ADMIN_TAB !== "sessao");
-  if(pIrmao) pIrmao.classList.toggle("hidden", ADMIN_TAB !== "irmaos");
-
-  // --- se você tiver render por aba, chama sem obrigar
-  try{
-    if(ADMIN_TAB === "cfg" && typeof adminRenderCfg === "function") adminRenderCfg();
-    if(ADMIN_TAB === "sessao" && typeof adminRenderSessao === "function") adminRenderSessao();
-    if(ADMIN_TAB === "irmaos" && typeof adminRenderIrmaos === "function") adminRenderIrmaos();
-  }catch(_){}
+  document.getElementById("adminPanelCfg")?.classList.toggle("hidden", ADMIN_TAB!=="cfg");
+  document.getElementById("adminPanelSessao")?.classList.toggle("hidden", ADMIN_TAB!=="sessao");
+  document.getElementById("adminPanelIrmaos")?.classList.toggle("hidden", ADMIN_TAB!=="irmaos");
 }
 
+// carrega o json sempre do server (como você pediu)
+async function adminLoadFromServer(){
+  try{
+    const r = await fetch(ADMIN_GET_URL, { cache:"no-store" });
+    if(!r.ok) throw new Error("GET admin json");
+    ADMIN_CFG = await r.json();
+    adminSetActiveTab("cfg");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro ao carregar JSON do Admin");
+  }
+}
+  
   
 async function openAdmin(){
   adminSetActiveTab("cfg");
@@ -3016,6 +3002,7 @@ if(_oldOpenPresenca){
 
 boot();
 </script>
+
 
 
 
