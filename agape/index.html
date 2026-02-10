@@ -757,6 +757,102 @@
 }
 
 .msgBadge.hidden{ display:none !important; }
+
+/* ===== ADMIN ===== */
+#scr_admin{align-items:stretch; justify-content:center;}
+.adminWrap{
+  width:min(440px, 100%);
+  margin:0 auto;
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  gap:12px;
+}
+
+.adminTabs{
+  display:flex; gap:8px;
+}
+.adminTab{
+  flex:1;
+  padding:10px 8px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  font-weight:1000;
+  cursor:pointer;
+}
+.adminTab.active{
+  border:2px solid rgba(255,215,0,.85);
+  box-shadow:0 0 0 3px rgba(255,215,0,.18);
+}
+
+.adminPanel{
+  flex:1;
+  min-height:0;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:14px;
+  border-radius:22px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow: 0 24px 55px rgba(0,0,0,.32);
+}
+
+.aRow{display:flex; gap:10px; align-items:center; margin-top:10px;}
+.aRow > *{flex:1; min-width:0;}
+.aLbl{font-size:12px; opacity:.75; font-weight:900; margin-top:12px;}
+.aInp, .aTxt{
+  width:100%;
+  padding:12px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  outline:none;
+  font-size:14px;
+}
+.aTxt{min-height:90px; resize:vertical;}
+
+.aMini{
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  font-weight:1000;
+  cursor:pointer;
+}
+
+.adminFooter{
+  display:flex;
+  gap:10px;
+}
+.adminFooter .btn2{margin-top:0}
+.adminFooter .miniBtn{margin-top:0}
+
+.adminTable{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:10px;
+  font-size:12px;
+}
+.adminTable th, .adminTable td{
+  border-bottom:1px solid rgba(255,255,255,.10);
+  padding:8px 6px;
+  text-align:left;
+}
+.adminTable th{opacity:.75; font-weight:1000;}
+.adminBadge{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:999px;
+  font-weight:1000;
+  font-size:11px;
+  background: rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+}
     
   </style>
 </head>
@@ -1066,6 +1162,32 @@
     </div>
   </div>
 
+<!-- ADMIN -->
+<section id="scr_admin" class="screen safe">
+  <div class="adminWrap">
+    <div class="topBrand">
+      <div class="bLogo"><img id="adminLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="logo"/></div>
+      <div class="bTxt">
+        <div class="bTitle">Admin</div>
+        <div class="bSub" id="adminSub">Configuração • Sessão • Irmãos</div>
+      </div>
+    </div>
+
+    <div class="adminTabs">
+      <button class="adminTab active" id="tabCfg" type="button">CONFIGURAÇÃO</button>
+      <button class="adminTab" id="tabSessao" type="button">SESSÃO</button>
+      <button class="adminTab" id="tabIrmaos" type="button">IRMÃOS</button>
+    </div>
+
+    <div class="adminPanel" id="adminPanel"></div>
+
+    <div class="adminFooter">
+      <button class="btn2" id="btnAdminSalvar" type="button">CONFIRMAR</button>
+      <button class="miniBtn" id="btnAdminSair" type="button">SAIR</button>
+    </div>
+  </div>
+</section>
+  
 <script>
 /* ==========================
    CONFIG / HELPERS
@@ -1653,6 +1775,26 @@ function applyRememberedUser(){
   }
 }
 
+function openAdmin(){
+  // pede senha = telefone do tesoureiro
+  const telTes = adminSanTel(CFG?.loja?.tesoureiro_whatsapp || "");
+  const s = prompt("Senha do Admin (telefone do tesoureiro):");
+  const typed = adminSanTel(s);
+
+  if(!telTes){
+    toast("Falta loja.tesoureiro_whatsapp no JSON");
+    return;
+  }
+  if(!typed || typed !== telTes){
+    toast("Senha inválida");
+    return;
+  }
+
+  ADMIN_SENHA = typed;
+  showScreen("scr_admin","forward");
+  adminLoadFromServer(); // carrega do server sempre
+}
+
 function setupAdminTap(){
   const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
   for(const el of logos){
@@ -1662,12 +1804,412 @@ function setupAdminTap(){
       adminTapTimer=setTimeout(()=>adminTapCount=0, 1200);
       if(adminTapCount>=5){
         adminTapCount=0;
-        toast("Admin (em breve) ✅");
+        openAdmin();
       }
     });
   }
 }
 
+async function adminLoadFromServer(){
+  try{
+    const r = await fetch(ADMIN_GET_URL, {cache:"no-store"});
+    const j = await r.json().catch(()=> ({}));
+    if(!r.ok || !j.ok || !j.config){
+      console.warn("admin_get_config fail", r.status, j);
+      adminToastErr("Não carregou config do servidor");
+      return;
+    }
+    ADMIN_CFG = j.config;
+
+    // espelha logo
+    const logoUrl = (ADMIN_CFG?.ui?.logo_url) ? ADMIN_CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+    const adminLogo = document.getElementById("adminLogo");
+    if(adminLogo) adminLogo.src = logoUrl;
+
+    ADMIN_TAB = "cfg";
+    adminSetActiveTab("cfg");
+    adminToastOk("Admin carregado ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro carregando Admin");
+  }
+}
+
+async function adminSaveToServer(){
+  if(!ADMIN_CFG) return;
+
+  try{
+    const r = await fetch(ADMIN_SAVE_URL, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ senha: ADMIN_SENHA, config: ADMIN_CFG })
+    });
+    const j = await r.json().catch(()=> ({}));
+    if(!r.ok || !j.ok){
+      console.warn("admin_save fail", r.status, j);
+      adminToastErr("Falha ao salvar");
+      return;
+    }
+
+    // atualiza CFG local também (sem limpar storage)
+    CFG = ADMIN_CFG;
+    applyBrand();
+    renderProducts();
+    refreshPresenceUI();
+    updateConvocacaoBadge();
+    updatePresenceConfirmedWait?.();
+
+    adminToastOk("Salvo ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro ao salvar");
+  }
+}
+
+async function adminUploadLogo(file){
+  if(!file) return;
+  try{
+    const fd = new FormData();
+    fd.append("senha", ADMIN_SENHA);
+    fd.append("file", file);
+
+    const r = await fetch(ADMIN_UPLOAD_URL, { method:"POST", body: fd });
+    const j = await r.json().catch(()=> ({}));
+    if(!r.ok || !j.ok || !j.url){
+      console.warn("upload fail", r.status, j);
+      adminToastErr("Falha upload");
+      return;
+    }
+
+    if(!ADMIN_CFG.ui) ADMIN_CFG.ui = {};
+    ADMIN_CFG.ui.logo_url = j.url;
+
+    // re-render
+    adminRender();
+    adminToastOk("Logo atualizado ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro upload");
+  }
+}
+
+function adminRender(){
+  const p = document.getElementById("adminPanel");
+  if(!p) return;
+
+  if(!ADMIN_CFG){
+    p.innerHTML = `<div style="opacity:.75;font-weight:900">Carregando...</div>`;
+    return;
+  }
+
+  if(ADMIN_TAB==="cfg"){
+    const loja = ADMIN_CFG.loja || {};
+    const ui = ADMIN_CFG.ui || {};
+    p.innerHTML = `
+      <div class="aLbl">Nome da Loja</div>
+      <input class="aInp" id="a_loja_nome" value="${escapeHtml(loja.nome||"")}" />
+
+      <div class="aLbl">Subtítulo</div>
+      <input class="aInp" id="a_loja_sub" value="${escapeHtml(loja.subtitulo||"")}" />
+
+      <div class="aLbl">Chave Pix</div>
+      <input class="aInp" id="a_loja_pix" value="${escapeHtml(loja.pix_chave||"")}" />
+
+      <div class="aLbl">Telefone do tesoureiro (senha do Admin)</div>
+      <input class="aInp" id="a_loja_tes" value="${escapeHtml(loja.tesoureiro_whatsapp||"")}" />
+
+      <div class="aLbl">Logo (upload)</div>
+      <div class="aRow">
+        <input class="aInp" id="a_logo_url" value="${escapeHtml(ui.logo_url||"")}" placeholder="/assets/logo.png" />
+        <input class="aInp" id="a_logo_file" type="file" accept="image/*" />
+      </div>
+      <div style="margin-top:8px; opacity:.75; font-size:12px;">Ao escolher arquivo, ele faz upload em /assets e grava ui.logo_url.</div>
+    `;
+
+    const f = document.getElementById("a_logo_file");
+    if(f){
+      f.onchange = ()=> {
+        const file = f.files && f.files[0];
+        if(file) adminUploadLogo(file);
+      };
+    }
+    return;
+  }
+
+  if(ADMIN_TAB==="sessao"){
+    const sessao = ADMIN_CFG.sessao || {};
+    const push = ADMIN_CFG.push || {};
+    const conv = ADMIN_CFG.convocacao || {};
+
+    p.innerHTML = `
+      <div class="aLbl">Status da Sessão</div>
+      <select class="aInp" id="a_sessao_status">
+        <option value="fechada" ${String(sessao.status||"").toLowerCase()==="fechada"?"selected":""}>Fechada</option>
+        <option value="aberta" ${String(sessao.status||"").toLowerCase()==="aberta"?"selected":""}>Aberta</option>
+      </select>
+
+      <div class="aLbl">Data da sessão (DD/MM/AAAA)</div>
+      <input class="aInp" id="a_sessao_data" value="${escapeHtml(sessao.data||"")}" placeholder="01/02/2026" />
+
+      <div class="aLbl">Caixa inicial (R$)</div>
+      <input class="aInp" id="a_sessao_caixa" value="${escapeHtml(String(sessao.caixa_inicial ?? ""))}" placeholder="500" />
+
+      <div class="aLbl">Chamado do Venerável (texto)</div>
+      <textarea class="aTxt" id="a_sessao_chamado">${escapeHtml(sessao.chamado||"")}</textarea>
+
+      <div class="aLbl">PUSH</div>
+      <div class="aRow">
+        <select class="aInp" id="a_push_on">
+          <option value="true" ${push.habilitado===true?"selected":""}>Ativado</option>
+          <option value="false" ${push.habilitado!==true?"selected":""}>Desativado</option>
+        </select>
+        <input class="aInp" id="a_push_titulo" value="${escapeHtml(push.titulo||"Convocação")}" placeholder="Título" />
+      </div>
+
+      <div class="aLbl">Mensagem do PUSH</div>
+      <input class="aInp" id="a_push_msg" value="${escapeHtml(push.mensagem||"")}" />
+
+      <div class="aLbl">URL ao tocar</div>
+      <input class="aInp" id="a_push_url" value="${escapeHtml(push.url||"/agape/index.html#presenca")}" />
+
+      <div class="aLbl">CONVOCAÇÃO</div>
+      <div class="aRow">
+        <select class="aInp" id="a_conv_on">
+          <option value="true" ${conv.ativa===true?"selected":""}>Ativada</option>
+          <option value="false" ${conv.ativa!==true?"selected":""}>Desativada</option>
+        </select>
+        <input class="aInp" id="a_conv_id" value="${escapeHtml(conv.id||"")}" placeholder="2026-02-07-001" />
+      </div>
+      <div class="aRow">
+        <input class="aInp" id="a_conv_titulo" value="${escapeHtml(conv.titulo||"Convocação")}" placeholder="Título (convocação)" />
+        <input class="aInp" id="a_conv_texto" value="${escapeHtml(conv.texto||"")}" placeholder="Texto (convocação)" />
+      </div>
+
+      <div class="aRow" style="margin-top:12px;">
+        <button class="aMini" id="btnAdminEnviarPush" type="button">DISPARAR NOTIFICAÇÃO</button>
+        <button class="aMini" id="btnAdminResumo" type="button">ATUALIZAR RESUMO</button>
+      </div>
+
+      <div class="aLbl">Resumo do Consumo (online)</div>
+      <div id="adminResumoBox" style="margin-top:10px; opacity:.85;">—</div>
+    `;
+
+    document.getElementById("btnAdminEnviarPush")?.addEventListener("click", adminSendPushNow);
+    document.getElementById("btnAdminResumo")?.addEventListener("click", adminLoadResumoConsumo);
+
+    // carrega resumo automaticamente
+    adminLoadResumoConsumo();
+    return;
+  }
+
+  if(ADMIN_TAB==="irmaos"){
+    const arr = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
+    const rows = arr.map((it, idx)=>`
+      <tr>
+        <td><input class="aInp" data-i="${idx}" data-k="nome" value="${escapeHtml(it.nome||"")}" /></td>
+        <td><input class="aInp" data-i="${idx}" data-k="telefone" value="${escapeHtml(it.telefone||"")}" /></td>
+        <td><input class="aInp" data-i="${idx}" data-k="cim" value="${escapeHtml(it.cim||"")}" /></td>
+        <td><button class="aMini" data-del="${idx}" type="button">X</button></td>
+      </tr>
+    `).join("");
+
+    p.innerHTML = `
+      <div style="display:flex; gap:10px; align-items:center; justify-content:space-between;">
+        <div style="font-weight:1000;">Irmãos cadastrados: ${arr.length}</div>
+        <button class="aMini" id="btnAddIrmao" type="button">+ Adicionar</button>
+      </div>
+
+      <table class="adminTable">
+        <thead>
+          <tr><th>Nome</th><th>Telefone</th><th>CIM</th><th></th></tr>
+        </thead>
+        <tbody id="tbIrmaos">${rows || `<tr><td colspan="4" style="opacity:.75">Nenhum irmão no JSON.</td></tr>`}</tbody>
+      </table>
+
+      <div style="margin-top:10px; opacity:.75; font-size:12px;">
+        Status (Admin): Não confirmado / Somente sessão / Somente ágape / Sessão e ágape (isso aparece no painel de presença do app).
+      </div>
+    `;
+
+    document.getElementById("btnAddIrmao")?.addEventListener("click", ()=>{
+      if(!Array.isArray(ADMIN_CFG.irmaos)) ADMIN_CFG.irmaos = [];
+      ADMIN_CFG.irmaos.push({nome:"", telefone:"", cim:""});
+      adminRender();
+    });
+
+    // binds: inputs
+    p.querySelectorAll("input[data-i][data-k]").forEach(inp=>{
+      inp.addEventListener("input", ()=>{
+        const i = Number(inp.getAttribute("data-i"));
+        const k = inp.getAttribute("data-k");
+        if(!Array.isArray(ADMIN_CFG.irmaos) || !ADMIN_CFG.irmaos[i]) return;
+        ADMIN_CFG.irmaos[i][k] = inp.value;
+      });
+    });
+
+    // delete
+    p.querySelectorAll("button[data-del]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const i = Number(b.getAttribute("data-del"));
+        if(!Array.isArray(ADMIN_CFG.irmaos)) return;
+        ADMIN_CFG.irmaos.splice(i,1);
+        adminRender();
+      });
+    });
+
+    return;
+  }
+}
+
+async function adminLoadResumoConsumo(){
+  try{
+    const data = adminVal("a_sessao_data") || (ADMIN_CFG?.sessao?.data || "");
+    const sessao_id = adminSessaoIdFromData(data);
+
+    const r = await fetch(`${CONSUMO_RESUMO_URL}?sessao_id=${encodeURIComponent(sessao_id)}`, {cache:"no-store"});
+    const j = await r.json().catch(()=> ({}));
+
+    const box = document.getElementById("adminResumoBox");
+    if(!box) return;
+
+    if(!r.ok || !j.ok){
+      box.innerHTML = `<div style="opacity:.75">Falha ao ler resumo.</div>`;
+      return;
+    }
+
+    const tp = j.totais_pagamento || {};
+    const din = Number(tp.dinheiro||0), pix = Number(tp.pix||0), prox = Number(tp.proxima||0);
+    const caixaDin = Number(j.caixa_dinheiro||0);
+
+    const topProds = Array.isArray(j.produtos) ? j.produtos.slice(0,8) : [];
+    const pend = Array.isArray(j.pendencias) ? j.pendencias : [];
+
+    box.innerHTML = `
+      <div class="aRow">
+        <div><span class="adminBadge">Dinheiro</span> <b>${fmtBRL(din)}</b></div>
+        <div><span class="adminBadge">Pix</span> <b>${fmtBRL(pix)}</b></div>
+      </div>
+      <div class="aRow">
+        <div><span class="adminBadge">Próxima</span> <b>${fmtBRL(prox)}</b></div>
+        <div><span class="adminBadge">Caixa (DIN)</span> <b>${fmtBRL(caixaDin)}</b></div>
+      </div>
+
+      <div class="aLbl">Top produtos (qtd / total)</div>
+      ${topProds.length ? `
+        <table class="adminTable">
+          <thead><tr><th>Produto</th><th>Qtd</th><th>Total</th></tr></thead>
+          <tbody>
+            ${topProds.map(p=>`
+              <tr>
+                <td>${escapeHtml(p.desc||p.id)}</td>
+                <td><b>${String(p.qtd||0)}</b></td>
+                <td><b>${fmtBRL(Number(p.total||0))}</b></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<div style="opacity:.75">Nenhum consumo registrado ainda.</div>`}
+
+      <div class="aLbl">Pendências (próxima sessão)</div>
+      ${pend.length ? `
+        <table class="adminTable">
+          <thead><tr><th>Irmão</th><th>Telefone</th><th>Total</th></tr></thead>
+          <tbody>
+            ${pend.slice(0,12).map(x=>`
+              <tr>
+                <td>${escapeHtml(x.nome||"")}</td>
+                <td>${escapeHtml(x.telefone||"")}</td>
+                <td><b>${fmtBRL(Number(x.total||0))}</b></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<div style="opacity:.75">Sem pendências.</div>`}
+    `;
+  }catch(e){
+    console.warn(e);
+  }
+}
+
+async function adminSendPushNow(){
+  try{
+    // respeita regra: se push e convocacao estiverem ativos
+    const pushOn = adminVal("a_push_on")==="true";
+    const convOn = adminVal("a_conv_on")==="true";
+    if(!pushOn || !convOn){
+      toast("Ative PUSH e CONVOCAÇÃO para disparar");
+      return;
+    }
+
+    const title = adminVal("a_push_titulo") || "Convocação";
+    const body  = adminVal("a_push_msg") || "Sessão convocada. Confirme sua presença.";
+    const url   = adminVal("a_push_url") || "/agape/index.html#presenca";
+
+    const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ title, body, url })
+    });
+
+    const j = await r.json().catch(()=> ({}));
+    if(r.ok && j.ok) toast(`Notificação enviada ✅ (${j.sent||0})`);
+    else toast("Falha ao enviar notificação");
+  }catch(e){
+    console.warn(e);
+    toast("Erro ao enviar notificação");
+  }
+}
+
+function adminBindUI(){
+  document.getElementById("tabCfg")?.addEventListener("click", ()=>adminSetActiveTab("cfg"));
+  document.getElementById("tabSessao")?.addEventListener("click", ()=>adminSetActiveTab("sessao"));
+  document.getElementById("tabIrmaos")?.addEventListener("click", ()=>adminSetActiveTab("irmaos"));
+
+  document.getElementById("btnAdminSair")?.addEventListener("click", ()=>{
+    // sair NÃO salva nada
+    showScreen("scr_login","back");
+  });
+
+  document.getElementById("btnAdminSalvar")?.addEventListener("click", ()=>{
+    if(!ADMIN_CFG) return;
+
+    // aplica changes da aba atual no ADMIN_CFG (mínimo)
+    if(ADMIN_TAB==="cfg"){
+      if(!ADMIN_CFG.loja) ADMIN_CFG.loja = {};
+      if(!ADMIN_CFG.ui) ADMIN_CFG.ui = {};
+      ADMIN_CFG.loja.nome = adminVal("a_loja_nome");
+      ADMIN_CFG.loja.subtitulo = adminVal("a_loja_sub");
+      ADMIN_CFG.loja.pix_chave = adminVal("a_loja_pix");
+      ADMIN_CFG.loja.tesoureiro_whatsapp = adminVal("a_loja_tes");
+      ADMIN_CFG.ui.logo_url = adminVal("a_logo_url") || ADMIN_CFG.ui.logo_url;
+    }
+
+    if(ADMIN_TAB==="sessao"){
+      if(!ADMIN_CFG.sessao) ADMIN_CFG.sessao = {};
+      if(!ADMIN_CFG.push) ADMIN_CFG.push = {};
+      if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
+
+      ADMIN_CFG.sessao.status = adminVal("a_sessao_status");
+      ADMIN_CFG.sessao.data = adminVal("a_sessao_data");
+      ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa")||0);
+      ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
+
+      ADMIN_CFG.push.habilitado = (adminVal("a_push_on")==="true");
+      ADMIN_CFG.push.titulo = adminVal("a_push_titulo");
+      ADMIN_CFG.push.mensagem = adminVal("a_push_msg");
+      ADMIN_CFG.push.url = adminVal("a_push_url");
+
+      ADMIN_CFG.convocacao.ativa = (adminVal("a_conv_on")==="true");
+      ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
+      ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
+      ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
+    }
+
+    // salva no servidor
+    adminSaveToServer();
+  });
+}
+  
 /* ==========================
    WAIT POLLING
 ========================== */
@@ -1828,8 +2370,84 @@ function hidePaySuccess(){
   if(ps) ps.classList.add("hidden");
 }
 
+const CONSUMO_LOG_URL = "https://api.erpimpar.com.br/agape/consumo/consumo_log.php";
+
+function makeSessaoId(){
+  // transforma "01/02/2026" -> "2026-02-01"
+  const d = String(CFG?.sessao?.data || "").trim();
+  const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : d.replaceAll("/", "-");
+}
+
+function buildConsumoPayload(tipo){
+  const u = getUser() || {};
+  const cart = getCart();
+  const entries = cartEntries(cart).filter(x => x.qtd > 0);
+
+  const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
+  const byId = Object.fromEntries(prods.map(p => [String(p.id), p]));
+
+  const itens = entries.map(e=>{
+    const p = byId[e.id] || {};
+    const preco = Number(p.preco || 0);
+    const subtotal = Number(e.qtd || 0) * preco;
+    return {
+      id: String(e.id),
+      desc: String(p.nome || p.desc || `Item ${e.id}`),
+      qtd: Number(e.qtd || 0),
+      preco: preco,
+      subtotal: subtotal
+    };
+  });
+
+  const total = itens.reduce((s,it)=> s + Number(it.subtotal||0), 0);
+
+  const sessao_id = makeSessaoId();
+  const tel = String(u.telefone || "").replace(/\D/g,"");
+  const txid = `${sessao_id}-${tel || "semfone"}-${Date.now()}`;
+
+  return {
+    sessao_id,
+    sessao_data: String(CFG?.sessao?.data || "").trim(),
+    loja: String(CFG?.loja?.nome || "Loja"),
+    timestamp: new Date().toISOString(),
+    pagamento: String(tipo),
+    irmao: { nome: String(u.nome || ""), telefone: tel },
+    total,
+    itens,
+    txid
+  };
+}
+
+async function logConsumoOnline(tipo){
+  try{
+    const payload = buildConsumoPayload(tipo);
+
+    // se não tem itens, não grava
+    if(!payload.itens || payload.itens.length === 0) return;
+
+    const r = await fetch(CONSUMO_LOG_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    // não quebra o app se falhar
+    const j = await r.json().catch(()=> ({}));
+    if(!r.ok || !j.ok){
+      console.warn("Falha ao logar consumo", r.status, j);
+    }
+  }catch(e){
+    console.warn("Erro ao logar consumo", e);
+  }
+}
+
+  
 function finalizePayment(tipo, msg){
   const total = updateTotal();
+
+  logConsumoOnline(tipo);
+  
   if(tipo === "dinheiro" || tipo === "pix"){
     setCash(getCash() + Number(total || 0));
     renderCash();
@@ -1960,6 +2578,7 @@ try{
     bindPresencaUI();
     refreshPresenceUI();
     updateEnvelopeUI();
+    adminBindUI();
 
     if(sessionIsOpen()){
       showScreen("scr_login","forward");
@@ -2316,6 +2935,7 @@ if(_oldOpenPresenca){
 
 boot();
 </script>
+
 
 
 
