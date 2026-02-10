@@ -1264,24 +1264,34 @@ function refreshPresenceUI(){
 
 const LS_CONVOCACAO_READ = "agape_convocacao_read_v1";
 
+function getConvocacaoObj(){
+  // aceita convocacao na raiz OU dentro de sessao (compatível com os 2 formatos)
+  return (CFG && (CFG.convocacao || (CFG.sessao && CFG.sessao.convocacao))) || null;
+}
+
 function getConvocacaoId(){
-  return String(CFG?.sessao?.convocacao?.id || "").trim();
+  const c = getConvocacaoObj();
+  return String(c?.id || "").trim();
 }
+
 function isConvocacaoAtiva(){
-  return !!CFG?.sessao?.convocacao?.ativa;
+  const c = getConvocacaoObj();
+  return c?.ativa === true;
 }
+
 function isConvocacaoLida(){
   const id = getConvocacaoId();
   if(!id) return false;
   return localStorage.getItem(LS_CONVOCACAO_READ) === id;
 }
+
 function marcarConvocacaoLida(){
   const id = getConvocacaoId();
   if(!id) return;
   localStorage.setItem(LS_CONVOCACAO_READ, id);
 }
 
-/** Atualiza a bolinha do ícone (badgeConvocacao) */
+/** Atualiza a bolinha do envelope (id correto: badgeConvocacao) */
 function updateConvocacaoBadge(){
   const badge = document.getElementById("badgeConvocacao");
   if(!badge) return;
@@ -1291,14 +1301,9 @@ function updateConvocacaoBadge(){
   badge.textContent = "!";
 }
 
-/* (mantido como estava; não mexo na sua lógica daqui pra baixo) */
+/** Mantém compatibilidade com chamadas antigas */
 function updateEnvelopeUI(){
-  const badge = document.getElementById("badgeConvocacao"); // ✅ id correto
-  if(!badge) return;
-
-  const show = isConvocacaoAtiva() && !isConvocacaoLida();  // ✅ mesma lógica
-  badge.classList.toggle("hidden", !show);
-  badge.textContent = "!";
+  updateConvocacaoBadge();
 }
 
 function choosePresenca(val){
@@ -1397,6 +1402,7 @@ function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
 
 function closePresenca(){
   updateEnvelopeUI();
+  updatePresenceConfirmedWait(); // ✅ mostra no wait imediatamente
   showScreen("scr_wait","back");
 }
 
@@ -2119,15 +2125,20 @@ function updatePresenceConfirmedWait(){
 
 function confirmPresenca(ans){
   setPresencaRespondida();
+
   if(typeof setPresencaAns === "function") setPresencaAns(ans);
+
+  refreshPresenceUI();            // ✅ retângulo / texto atualiza na hora
   updateEnvelopeUI();
+  updatePresenceConfirmedWait();  // ✅ garante o aviso no wait
 
   showPresSuccess();
   setTimeout(()=>{
     hidePresSuccess();
     showScreen("scr_wait","back");
-  }, 2000);
+  }, 3000);
 }
+
 
 function bindPresBtn(id, ans){
   const btn = document.getElementById(id);
@@ -2172,5 +2183,6 @@ if(_oldOpenPresenca){
 
 boot();
 </script>
+
 
 
