@@ -1863,15 +1863,28 @@ function adminSanTel(s){
 function adminSetActiveTab(tab){
   ADMIN_TAB = tab;
 
-  document.getElementById("tabCfg")?.classList.toggle("active", tab==="cfg");
-  document.getElementById("tabSessao")?.classList.toggle("active", tab==="sessao");
-  document.getElementById("tabIrmaos")?.classList.toggle("active", tab==="irmaos");
+  // ativa botão
+  document.querySelectorAll(".adminTab").forEach(b=>b.classList.remove("active"));
+  if(tab==="cfg")   document.getElementById("tabCfg")?.classList.add("active");
+  if(tab==="sessao")document.getElementById("tabSessao")?.classList.add("active");
+  if(tab==="irmaos")document.getElementById("tabIrmaos")?.classList.add("active");
 
-  document.getElementById("adminPaneCfg")?.classList.toggle("hidden", tab!=="cfg");
-  document.getElementById("adminPaneSessao")?.classList.toggle("hidden", tab!=="sessao");
-  document.getElementById("adminPaneIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
+  // mostra painel
+  document.querySelectorAll(".adminPanel").forEach(p=>p.classList.add("hidden"));
+  if(tab==="cfg")   document.getElementById("panelCfg")?.classList.remove("hidden");
+  if(tab==="sessao")document.getElementById("panelSessao")?.classList.remove("hidden");
+  if(tab==="irmaos")document.getElementById("panelIrmaos")?.classList.remove("hidden");
+
+  // renderiza (se tiver)
+  if(tab==="cfg") adminRenderCfg?.();
+  if(tab==="sessao") adminRenderSessao?.();
+  if(tab==="irmaos") adminRenderIrmaos?.();
 }
 
+if(!window.CONSUMO_RESUMO_URL){
+  console.warn("CONSUMO_RESUMO_URL não definido");
+  return;
+}
 
 function setupAdminTap(){
   const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
@@ -1891,102 +1904,51 @@ function setupAdminTap(){
 // carrega o json sempre do server (como você pediu)
 async function adminLoadFromServer(){
   try{
-    const r = await fetch("./agape_config.json?v=" + Date.now(), {
-      cache: "no-store"
-    });
+    const r = await fetch("./agape_config.json?v=" + Date.now(), {cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP " + r.status);
 
-    if(!r.ok){
-      console.warn("admin_get_config http fail", r.status);
-      adminToastErr("Não carregou config do servidor");
-      return;
-    }
+    const j = await r.json();      // <-- aqui é o CFG puro
+    ADMIN_CFG = j;                 // <-- sem .config
 
-    const j = await r.json();
-    ADMIN_CFG = j; // <<< JSON PURO, SEM ENVELOPE
-
+    // depois disso você renderiza a aba atual
+    adminSetActiveTab(ADMIN_TAB || "cfg");
+    adminToastOk("Admin carregado ✅");
   }catch(e){
-    console.warn("adminLoadFromServer error", e);
-    adminToastErr("Erro ao carregar config");
+    console.warn("adminLoadFromServer fail", e);
+    adminToastErr("Não carregou config");
   }
 }
   
 function adminSanTel(v){
   return String(v ?? "").replace(/\D+/g, ""); // só números
 }
-
+  
 async function openAdmin(){
-  // 1) Garante CFG (pra senha). Se falhar, ainda dá pra entrar com fallback.
-  try{
-    if(!window.CFG) window.CFG = await loadConfig();
-  }catch(_){}
+  // garante CFG disponível pra ler o telefone do tesoureiro
+  try{ if(!CFG) CFG = await loadConfig(); }catch(_){}
 
-  // 2) Valida senha (telefone do tesoureiro). Se não tiver, usa fallback só pra teste.
-  const telTes = adminSanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
+  const telTes = adminSanTel(CFG?.loja?.tesoureiro_whatsapp || "");
+  if(!telTes){
+    toast("Falta loja.tesoureiro_whatsapp no JSON");
+    return;
+  }
+
   const s = prompt("Senha do Admin (telefone do tesoureiro):");
-  if(s === null) return; // cancelou
   const typed = adminSanTel(s);
 
-  // fallback (SÓ PRA TESTE): se JSON não tem tesoureiro, permite 1234 pra você validar UI
-  const ok = telTes ? (typed === telTes) : (typed === "1234");
-  if(!ok){
+  if(!typed || typed !== telTes){
     toast("Senha inválida");
     return;
   }
 
-  // 3) Entra na tela e injeta FAKE CONFIG
+  // só entra no admin depois de validar
   showScreen("scr_admin","forward");
 
-  // CONFIG FAKE (mínima) só pra renderizar tudo
-  ADMIN_CFG = {
-    loja: {
-      nome: "Loja Prof. Clementino Brito",
-      subtitulo: "App Ágape • Consumo & Pagamento",
-      pix_chave: "comissao.agape@gmail.com",
-      tesoureiro_whatsapp: "5547992204527"
-    },
-    ui: {
-      logo_url: "./assets/logo-Clementino-Brito.jpeg"
-    },
-    sessao: {
-      status: "fechada",
-      data: "01/02/2026",
-      caixa_inicial: 500,
-      chamado: "BOA NOITE MEUS QUERIDOS IRMÃOS! Sessão convocada. Toque para confirmar presença."
-    },
-    push: {
-      habilitado: true,
-      titulo: "Convocação",
-      mensagem: "Sessão convocada. Toque para confirmar presença.",
-      url: "/agape/index.html#presenca"
-    },
-    convocacao: {
-      ativa: true,
-      id: "2026-02-07-001",
-      titulo: "Convocação",
-      texto: "Sessão convocada. Confirme sua presença."
-    },
-    irmaos: [
-      {nome:"Edson Do Carmo", telefone:"48992204527", cim:"825955"},
-      {nome:"George Peterson Ramos", telefone:"47992204527", cim:"825958"},
-      {nome:"Helder Souza", telefone:"48992204552", cim:"825960"}
-    ],
-    produtos: [
-      {id:"agua", nome:"Água", desc:"Garrafinha", preco:5.0, icon:"./assets/agua.jpg", img:"./assets/agua.jpg"},
-      {id:"carvao", nome:"Carvão", desc:"Saco 5kg", preco:35.0, icon:"./assets/carvao.jpg", img:"./assets/carvao.jpg"}
-    ]
-  };
-
-  // 4) Agora sim: bind + render
+  // bind 1x (se você já chama em outro lugar, remova daqui)
   adminBindUI?.();
-  adminSetActiveTab?.("cfg"); // força render/realce da aba
-  toast("Admin (modo teste) ✅");
 
-showScreen("scr_admin","forward");
-adminRenderFake();
-adminSetActiveTab("cfg");
-
-
-  
+  // carrega dados e renderiza
+  await adminLoadFromServer();
 }
 
 async function adminLoadFromServer(){
@@ -2071,7 +2033,10 @@ async function adminUploadLogo(file){
     adminToastErr("Erro upload");
   }
 }
-
+  
+function adminToastOk(msg){ toast(msg); }
+function adminToastErr(msg){ toast(msg); }
+  
 function adminRender(){
   const p = document.getElementById("adminPanel");
   if(!p) return;
@@ -3114,6 +3079,7 @@ if(_oldOpenPresenca){
 
 boot();
 </script>
+
 
 
 
