@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP ÍMPAR — Atividades do Dia</title>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+:root{
+  --primary:#0f172a;
+  --accent:#1d4ed8;
+  --green:#16a34a;
+  --danger:#dc2626;
+  --border:#e5e7eb;
+  --muted:#6b7280;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family:Arial, Helvetica, sans-serif;
+  background:#f3f4f6;
+  color:#111;
+}
+
+.header{
+  background:var(--primary);
+  color:#fff;
+  padding:14px 20px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.container{
+  max-width:1200px;
+  margin:20px auto;
+  padding:0 16px;
+}
+
+.card{
+  background:#fff;
+  border-radius:10px;
+  padding:16px;
+  margin-bottom:16px;
+  box-shadow:0 2px 6px rgba(0,0,0,.05);
+}
+
+.title{
+  font-weight:bold;
+  font-size:18px;
+}
+
+.hint{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.btn{
+  padding:8px 14px;
+  border-radius:6px;
+  border:none;
+  cursor:pointer;
+  font-weight:bold;
+}
+
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-success{background:var(--green);color:#fff;}
+.btn-danger{background:var(--danger);color:#fff;}
+.btn-secondary{background:#e5e7eb;}
+
+input,select,textarea{
+  padding:6px;
+  border-radius:6px;
+  border:1px solid var(--border);
+  font-size:13px;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:12px;
+}
+
+th,td{
+  border:1px solid var(--border);
+  padding:6px;
+  font-size:12px;
+}
+
+th{
+  background:#f9fafb;
+}
+
+.locked{
+  opacity:.6;
+  pointer-events:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <div>ERP ÍMPAR — Atividades do Dia</div>
+  <div>
+    <button class="btn btn-secondary" onclick="voltarMenu()">Menu</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="card">
+    <div class="title">Escala do Dia</div>
+    <div id="escala"></div>
+  </div>
+
+  <div class="card">
+    <div class="title">Lançamentos</div>
+
+    <table id="tabela">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Nome</th>
+          <th>Obra</th>
+          <th>Carro</th>
+          <th>Atividades</th>
+          <th>%</th>
+          <th>Motivo</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <br>
+    <button class="btn btn-primary" onclick="addLinha()">+ Nova Linha</button>
+    <button class="btn btn-success" onclick="gerarPDF()">Gerar PDF</button>
+    <button class="btn btn-danger" onclick="finalizarDia()">Finalizar Dia</button>
+  </div>
+
+  <div class="card">
+    <div class="title">Histórico</div>
+    <div id="historico"></div>
+  </div>
+
+</div>
+
+<script>
+const STORAGE_KEY = "ERPIMPAR_ATIVIDADES_DIARIAS_V2";
+const STORAGE_HIST = "ERPIMPAR_ATIVIDADES_HIST_V1";
+
+let linhas = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+let historico = JSON.parse(localStorage.getItem(STORAGE_HIST)) || [];
+
+function salvarLocal(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(linhas));
+}
+
+function salvarHistorico(){
+  localStorage.setItem(STORAGE_HIST, JSON.stringify(historico));
+}
+
+function voltarMenu(){
+  window.location.href="/menu.html";
+}
+
+function addLinha(){
+  linhas.push({
+    data:"",
+    nome:"",
+    obra:"",
+    carro:"",
+    atividades:"",
+    percentual:"",
+    motivo:""
+  });
+  render();
+  salvarLocal();
+}
+
+function removerLinha(i){
+  linhas.splice(i,1);
+  render();
+  salvarLocal();
+}
+
+function render(){
+  const tbody=document.querySelector("#tabela tbody");
+  tbody.innerHTML="";
+
+  linhas.forEach((l,i)=>{
+    const tr=document.createElement("tr");
+
+    tr.innerHTML=`
+      <td><input type="date" value="${l.data||""}" onchange="update(${i},'data',this.value)"></td>
+      <td><input value="${l.nome||""}" onchange="update(${i},'nome',this.value)"></td>
+      <td><input value="${l.obra||""}" onchange="update(${i},'obra',this.value)"></td>
+      <td><input value="${l.carro||""}" onchange="update(${i},'carro',this.value)"></td>
+      <td><textarea onchange="update(${i},'atividades',this.value)">${l.atividades||""}</textarea></td>
+      <td><input type="number" value="${l.percentual||""}" onchange="update(${i},'percentual',this.value)"></td>
+      <td><input value="${l.motivo||""}" onchange="update(${i},'motivo',this.value)"></td>
+      <td><button class="btn btn-danger" onclick="removerLinha(${i})">X</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  renderHistorico();
+}
+
+function update(i, campo, valor){
+  linhas[i][campo]=valor;
+  salvarLocal();
+}
+
+function gerarPDF(){
+  window.print();
+}
+
+function finalizarDia(){
+  if(!linhas.length){
+    Swal.fire("Erro","Nenhuma atividade lançada.","error");
+    return;
+  }
+
+  historico.unshift({
+    data:new Date().toISOString(),
+    linhas:[...linhas]
+  });
+
+  salvarHistorico();
+  linhas=[];
+  salvarLocal();
+  render();
+
+  Swal.fire("Finalizado","Dia encerrado com sucesso.","success");
+}
+
+function renderHistorico(){
+  const div=document.getElementById("historico");
+  div.innerHTML="";
+
+  historico.forEach((h,i)=>{
+    const btn=document.createElement("button");
+    btn.className="btn btn-secondary";
+    btn.style.margin="4px";
+    btn.innerText=new Date(h.data).toLocaleDateString();
+    btn.onclick=()=>mostrarHistorico(i);
+    div.appendChild(btn);
+  });
+}
+
+function mostrarHistorico(i){
+  const h=historico[i];
+  let html="<ul>";
+  h.linhas.forEach(l=>{
+    html+=`<li>${l.nome} - ${l.obra} - ${l.percentual}%</li>`;
+  });
+  html+="</ul>";
+
+  Swal.fire({
+    title:"Histórico",
+    html:html,
+    width:600
+  });
+}
+
+render();
+</script>
+
+</body>
+</html>
