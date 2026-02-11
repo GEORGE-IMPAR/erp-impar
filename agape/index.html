@@ -1843,40 +1843,57 @@ async function adminLoadFromServer(){
   }
 }
   
-async function openAdmin(){
-  showScreen("scr_admin","forward");
-  await adminLoadFromServer();
-  adminSetActiveTab("cfg"); // isso força render/realce da aba
-  try{
-    if(!CFG) CFG = await loadConfig();
-  }catch(_){}
+function adminSanTel(v){
+  return String(v ?? "").replace(/\D+/g, ""); // só números
+}
 
-  const telTes = adminSanTel(CFG?.loja?.tesoureiro_whatsapp || "");
-  const s = prompt("Senha do Admin (telefone do tesoureiro):");
-  const typed = adminSanTel(s);
+async function openAdmin(){
+  // garante que CFG está carregado (se já tiver, não faz nada)
+  try{
+    if(!window.CFG) window.CFG = await loadConfig();
+  }catch(e){
+    toast("Não carregou config");
+    return;
+  }
+
+  const telTesRaw = CFG?.loja?.tesoureiro_whatsapp;
+  const telTes = adminSanTel(telTesRaw);
 
   if(!telTes){
     toast("Falta loja.tesoureiro_whatsapp no JSON");
     return;
   }
-  if(!typed || typed !== telTes){
+
+  const s = prompt("Senha do Admin (telefone do tesoureiro):");
+  if(s === null) return; // cancelou
+
+  const typed = adminSanTel(s);
+
+  // segurança: não deixa vazio passar
+  if(!typed){
     toast("Senha inválida");
     return;
   }
 
+  if(typed !== telTes){
+    toast("Senha inválida");
+    return;
+  }
+
+  // ok: entrou
   showScreen("scr_admin","forward");
-  adminLoadFromServer(); // carrega do JSON
+  adminLoadFromServer(); // carrega dados da tela admin
 }
 
 async function adminLoadFromServer(){
   try{
     const r=await fetch("./agape_config.json?v=" + Date.now(),{cache:"no-store"});
-    //const j = await r.json().catch(()=> ({}));
-    //if(!r.ok || !j.ok || !j.config){
-    //  console.warn("admin_get_config fail", r.status, j);
-    //  adminToastErr("Não carregou config do servidor");
-    //  return;
-   // }
+    const j = await r.json().catch(()=> ({}));
+    if(!r.ok || !j.ok || !j.config){
+      console.warn("admin_get_config fail", r.status, j);
+      adminToastErr("Não carregou config do servidor");
+      return;
+    }
     ADMIN_CFG = r.config;
 
     // espelha logo
@@ -2993,6 +3010,7 @@ if(_oldOpenPresenca){
 
 boot();
 </script>
+
 
 
 
