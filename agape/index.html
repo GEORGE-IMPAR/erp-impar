@@ -1848,41 +1848,71 @@ function adminSanTel(v){
 }
 
 async function openAdmin(){
-  // garante que CFG está carregado (se já tiver, não faz nada)
+  // 1) Garante CFG (pra senha). Se falhar, ainda dá pra entrar com fallback.
   try{
     if(!window.CFG) window.CFG = await loadConfig();
-  }catch(e){
-    toast("Não carregou config");
-    return;
-  }
+  }catch(_){}
 
-  const telTesRaw = CFG?.loja?.tesoureiro_whatsapp;
-  const telTes = adminSanTel(telTesRaw);
-
-  if(!telTes){
-    toast("Falta loja.tesoureiro_whatsapp no JSON");
-    return;
-  }
-
+  // 2) Valida senha (telefone do tesoureiro). Se não tiver, usa fallback só pra teste.
+  const telTes = adminSanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
   const s = prompt("Senha do Admin (telefone do tesoureiro):");
   if(s === null) return; // cancelou
-
   const typed = adminSanTel(s);
 
-  // segurança: não deixa vazio passar
-  if(!typed){
+  // fallback (SÓ PRA TESTE): se JSON não tem tesoureiro, permite 1234 pra você validar UI
+  const ok = telTes ? (typed === telTes) : (typed === "1234");
+  if(!ok){
     toast("Senha inválida");
     return;
   }
 
-  if(typed !== telTes){
-    toast("Senha inválida");
-    return;
-  }
-
-  // ok: entrou
+  // 3) Entra na tela e injeta FAKE CONFIG
   showScreen("scr_admin","forward");
-  adminLoadFromServer(); // carrega dados da tela admin
+
+  // CONFIG FAKE (mínima) só pra renderizar tudo
+  ADMIN_CFG = {
+    loja: {
+      nome: "Loja Prof. Clementino Brito",
+      subtitulo: "App Ágape • Consumo & Pagamento",
+      pix_chave: "comissao.agape@gmail.com",
+      tesoureiro_whatsapp: "5547992204527"
+    },
+    ui: {
+      logo_url: "./assets/logo-Clementino-Brito.jpeg"
+    },
+    sessao: {
+      status: "fechada",
+      data: "01/02/2026",
+      caixa_inicial: 500,
+      chamado: "BOA NOITE MEUS QUERIDOS IRMÃOS! Sessão convocada. Toque para confirmar presença."
+    },
+    push: {
+      habilitado: true,
+      titulo: "Convocação",
+      mensagem: "Sessão convocada. Toque para confirmar presença.",
+      url: "/agape/index.html#presenca"
+    },
+    convocacao: {
+      ativa: true,
+      id: "2026-02-07-001",
+      titulo: "Convocação",
+      texto: "Sessão convocada. Confirme sua presença."
+    },
+    irmaos: [
+      {nome:"Edson Do Carmo", telefone:"48992204527", cim:"825955"},
+      {nome:"George Peterson Ramos", telefone:"47992204527", cim:"825958"},
+      {nome:"Helder Souza", telefone:"48992204552", cim:"825960"}
+    ],
+    produtos: [
+      {id:"agua", nome:"Água", desc:"Garrafinha", preco:5.0, icon:"./assets/agua.jpg", img:"./assets/agua.jpg"},
+      {id:"carvao", nome:"Carvão", desc:"Saco 5kg", preco:35.0, icon:"./assets/carvao.jpg", img:"./assets/carvao.jpg"}
+    ]
+  };
+
+  // 4) Agora sim: bind + render
+  adminBindUI?.();
+  adminSetActiveTab?.("cfg"); // força render/realce da aba
+  adminToastOk?.("Admin (modo teste) ✅");
 }
 
 async function adminLoadFromServer(){
@@ -3010,6 +3040,7 @@ if(_oldOpenPresenca){
 
 boot();
 </script>
+
 
 
 
