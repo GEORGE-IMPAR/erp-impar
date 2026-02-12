@@ -5,7 +5,6 @@ const CORE_ASSETS = [
   "./index.html",
   "./assets/maconaria.png",
   "./assets/maconaria.gif",
-  "./agape_config.json",
   "./manifest.webmanifest",
   "./service-worker.js",
   "./favicon.ico",
@@ -52,22 +51,34 @@ self.addEventListener("message", (event) => {
   }
 });
 
+const CONFIG_URL = "https://api.erpimpar.com.br/agape/consumo/agape_config.json";
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // sempre buscar config atualizado
-  if (url.pathname.endsWith("/agape_config.json")) {
-    event.respondWith(fetch(req, { cache: "no-store" }).catch(() => caches.match(req)));
+  // 1) Config remoto SEMPRE atualizado
+  if (req.url === CONFIG_URL) {
+    event.respondWith(
+      fetch(req, { cache: "no-store" }).catch(() => fetch(req))
+    );
     return;
   }
 
+  // 2) Se alguém tentar pedir o config local, redireciona pro remoto
+  if (url.pathname.endsWith("/agape_config.json")) {
+    event.respondWith(
+      fetch(CONFIG_URL, { cache: "no-store" }).catch(() => fetch(CONFIG_URL))
+    );
+    return;
+  }
+
+  // resto: seu cache normal
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req)
         .then((resp) => {
-          // cache only GET same-origin
           if (req.method === "GET" && url.origin === self.location.origin && resp.ok) {
             const copy = resp.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
