@@ -2137,7 +2137,7 @@ function setupAdminTap(){
       adminTapCount++;
       clearTimeout(adminTapTimer);
       adminTapTimer=setTimeout(()=>adminTapCount=0, 1200);
-      if(adminTapCount>=5){
+      if(adminTapCount>=2){
         adminTapCount=0;
         openAdmin();
       }
@@ -2972,48 +2972,69 @@ function adminApplyCurrentTabToCfg(){
   }
 }
 
+async function adminLoadResumoConsumo(sessao_id){
+  try{
+    const r = await fetch(CONSUMO_RESUMO_ADM_URL + "?sessao_id=" + encodeURIComponent(sessao_id), { cache:"no-store" });
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json().catch(()=> ({}));
+
+    // aqui você decide o formato do JSON retornado.
+    // Vou assumir algo assim:
+    // { ok:true, totals:{irmaos_total:31, nao_confirmaram:25, por_pagamento:{dinheiro:10,pix:20,pendente:5}, caixa:10}, produtos:[{desc,qtd}] }
+
+    if(!j || j.ok !== true){
+      console.warn("resumo inválido", j);
+      return;
+    }
+
+    // joga no HTML (ids que você vai criar no layout)
+    setText("adm_tot_irmaos", j.totals?.irmaos_total ?? "—");
+    setText("adm_tot_nao", j.totals?.nao_confirmaram ?? "—");
+
+    setText("adm_tot_dinheiro", money(j.totals?.por_pagamento?.dinheiro ?? 0));
+    setText("adm_tot_pix",      money(j.totals?.por_pagamento?.pix ?? 0));
+    setText("adm_tot_pendente", money(j.totals?.por_pagamento?.pendente ?? 0));
+    setText("adm_tot_caixa",    money(j.totals?.caixa ?? 0));
+
+  }catch(e){
+    console.warn("admin resumo erro", e);
+  }
+}
+
+function setText(id, v){
+  const el = document.getElementById(id);
+  if(el) el.textContent = String(v);
+}
+
+function money(n){
+  const x = Number(n||0);
+  return x.toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
+}
+
+  
 // ---- Load (Opção A: CFG puro) ----
 async function adminLoadFromServer(){
-  // prioridade:
-  // 1) rascunho local (para não perder nada)
-  // 2) CFG global (se já carregou no app)
-  // 3) loadConfig() (se existir)
-  // 4) fetch do agape_config.json
-
-  // 1) draft local
-  const draft = localStorage.getItem("AGAPE_ADMIN_DRAFT");
-  if(draft){
-    try{
-      ADMIN_CFG = JSON.parse(draft);
-      adminToastOk("Admin carregado (rascunho local) ✅");
-      adminSetActiveTab(ADMIN_TAB || "cfg");
+  try{
+    // lê o MESMO JSON cru que o app já lê
+    const r = await fetch("./agape_config.json?v=" + Date.now(), { cache:"no-store" });
+    if(!r.ok){
+      console.warn("admin_get_config fail", r.status);
+      adminToastErr("Não carregou config do servidor");
       return;
-    }catch(_){}
+    }
+    const j = await r.json().catch(()=> ({}));
+    ADMIN_CFG = j;
+
+    // default tab
+    ADMIN_TAB = "cfg";
+    adminSetActiveTab("cfg");
+
+    adminToastOk("Admin pronto ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro carregando Admin");
   }
-
-  // 2) CFG global
-  if(typeof CFG !== "undefined" && CFG){
-    ADMIN_CFG = JSON.parse(JSON.stringify(CFG));
-    adminSetActiveTab(ADMIN_TAB || "cfg");
-    return;
-  }
-
-  // 3) loadConfig()
-  if(typeof loadConfig === "function"){
-    try{
-      const j = await loadConfig();
-      ADMIN_CFG = j;
-      adminSetActiveTab(ADMIN_TAB || "cfg");
-      return;
-    }catch(_){}
-  }
-
-  // 4) fetch direto
-  const r = await fetch("./agape_config.json?v=" + Date.now(), {cache:"no-store"});
-  if(!r.ok) throw new Error("HTTP " + r.status);
-  ADMIN_CFG = await r.json();
-
-  adminSetActiveTab(ADMIN_TAB || "cfg");
+  adminLoadResumoConsumo(ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.id || ""); 
 }
 
 // ---- Save (seguro) ----
@@ -3590,4 +3611,5 @@ async function openAdmin(){
 boot();
 
 </script>
+
 
