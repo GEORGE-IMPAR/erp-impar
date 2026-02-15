@@ -1412,6 +1412,40 @@
   white-space: pre-wrap !important; /* mantém quebras e evita scroll horizontal */
   word-break: break-word;
 }
+.switchPremium{
+  display:flex; align-items:center; gap:10px;
+  user-select:none;
+}
+.switchPremium input{ display:none; }
+
+.switchPremium .track{
+  width:52px; height:30px; border-radius:999px;
+  background: rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.16);
+  position:relative;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.15);
+  transition: .18s ease;
+}
+.switchPremium .track:before{
+  content:"";
+  width:24px; height:24px; border-radius:50%;
+  position:absolute; top:50%; left:3px;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 6px 16px rgba(0,0,0,.28);
+  transition: .18s ease;
+}
+.switchPremium input:checked + .track{
+  background: rgba(0,180,255,.35);
+  border-color: rgba(0,180,255,.45);
+}
+.switchPremium input:checked + .track:before{
+  left: 25px;
+}
+.switchPremium .txtOn{ display:none; font-weight:800; }
+.switchPremium .txtOff{ display:inline; font-weight:800; opacity:.75; }
+.switchPremium input:checked ~ .txtOn{ display:inline; }
+.switchPremium input:checked ~ .txtOff{ display:none; }
 
   </style>
 </head>
@@ -1773,11 +1807,12 @@
 <!-- PUSH / NOTIFICAÇÃO -->
 <div class="admField">
   <label>Notificação (Push)</label>
-  <select id="a_push_on">
-    <option value="false">Desativada</option>
-    <option value="true">Ativada</option>
-  </select>
-</div>
+  <label class="switchPremium">
+    <input type="checkbox" id="a_push_on_chk">
+    <span class="track"></span>
+    <span class="txtOff">Desativada</span>
+    <span class="txtOn">Ativada</span>
+  </label></div>
 
 <div class="admField">
   <label>Título da notificação</label>
@@ -3518,7 +3553,7 @@ async function openAdmin(){
     adminSetActiveTab("cfg");
   }
 }
-   ========================== */  
+  
   /* ==========================
    ADMIN ONLINE - BLOCO ÚNICO
    cole no FINAL do <script>
@@ -3635,8 +3670,8 @@ function adminRenderSessao(){
   adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
   adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
   adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
-
-  adminSetVal("a_push_on", String(!!ADMIN_CFG?.push?.habilitado));
+  const chk = document.getElementById("a_push_on_chk");
+  if(chk) chk.checked = (ADMIN_CFG?.push?.habilitado === true);
   adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
   adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
   adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
@@ -3710,7 +3745,9 @@ function adminApplyCurrentTabToCfg(){
     ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
     ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
 
-    ADMIN_CFG.push.habilitado = (adminVal("a_push_on")==="true");
+    const chk = document.getElementById("a_push_on_chk");
+    ADMIN_CFG.push.habilitado = !!(chk && chk.checked);
+
     ADMIN_CFG.push.titulo = adminVal("a_push_titulo");
     ADMIN_CFG.push.mensagem = adminVal("a_push_msg");
     ADMIN_CFG.push.url = adminVal("a_push_url");
@@ -4157,8 +4194,66 @@ function closeAdminModal(){
     closeAdminModal();
   }
 
-  // ====== bind UI ======
-// ====== bind UI ======
+  // ---- Save (seguro) ----
+const ADMIN_SAVE_URL = "https://api.erpimpar.com.br/agape/consumo/admin_save_config.php";
+const PUSH_SEND_URL  = "https://api.erpimpar.com.br/agape/push/push_send.php";
+
+async function adminSave(){
+  if(!ADMIN_CFG) return;
+
+  adminApplyCurrentTabToCfg();
+
+  // salva no servidor (json)
+  const rr = await fetch(ADMIN_SAVE_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ config: ADMIN_CFG })
+  });
+  const jj = await rr.json().catch(()=>null);
+  if(!rr.ok || !jj || jj.ok !== true){
+    toast("Não salvou no servidor ❌");
+    console.warn("admin_save fail", rr.status, jj);
+    return;
+  }
+
+  toast("Salvo no servidor ✅");
+
+  // se push habilitado, dispara agora
+  if(ADMIN_CFG?.push?.habilitado === true){
+    await fetch(PUSH_SEND_URL, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        title: ADMIN_CFG?.push?.titulo || "Convocação",
+        body:  ADMIN_CFG?.push?.mensagem || "Sessão convocada. Toque para confirmar presença.",
+        url:   ADMIN_CFG?.push?.url || "/agape/index.html#presenca"
+      })
+    }).catch(e=> console.warn("push_send fail", e));
+
+    toast("Push disparado ✅");
+  }
+}
+
+async function adminSendPushFromConfig(){
+  const p = ADMIN_CFG?.push || {};
+  if(ADMIN_CFG?.push?.habilitado !== true) return;
+
+  await fetch(PUSH_SEND_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      title: p.titulo || "Convocação",
+      body:  p.mensagem || "Sessão convocada. Toque para confirmar presença.",
+      url:   p.url || "/agape/index.html#presenca"
+    })
+  });
+}
+  
+  // sem endpoint: oferece download
+  adminToastOk("Rascunho salvo ✅ (local) — JSON pronto para copiar/baixar");
+}
+  
+ / ====== bind UI ======
 function bindAdminUI(){
 
   // ====== ABAS DO ADMIN ======
@@ -4205,6 +4300,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 
 </script>
+
 
 
 
