@@ -3783,6 +3783,23 @@ async function openAdmin(){
     }
     offSave(keep);
   }
+  async function updateIrmaoNoConfig(irmao, status){
+  const payload = {
+    nome: irmao?.nome || "",
+    telefone: irmao?.telefone || "",
+    cin: irmao?.cin || "",
+    status: status || "NAO_CONFIRMADO"
+  };
+
+  const r = await fetch("https://api.erpimpar.com.br/agape/consumo/admin_update_irmao.php",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload)
+  });
+  const j = await r.json().catch(()=>null);
+  if(!r.ok || !j || j.ok !== true) throw new Error("update_irmao_fail");
+  return j;
+}
 
   // ---- Tabs / Panels ----
   function adminSetActiveTab(tab){
@@ -3878,6 +3895,7 @@ async function openAdmin(){
         </tbody>
       </table>
     `;
+    adminUpdateNaoConfirmadosUI();
   }
 
   // ---- Coletar alterações do painel atual ----
@@ -3982,10 +4000,15 @@ async function openAdmin(){
   async function openAdminSafe(){
     try{
       if(!window.CFG) window.CFG = await loadConfigDirect();
-    }catch(e){
-      adminToast("Não carregou config");
-      return;
-    }
+      ADMIN_CFG = window.CFG;
+
+      // já renderiza tudo com o config atualizado
+      adminRenderCfg();
+      adminRenderSessao();
+      adminRenderIrmaos();
+
+      // e já calcula o total "Não confirmaram"
+      adminUpdateNaoConfirmadosUI();
 
     const telTes = sanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
     if(!telTes){
@@ -4017,6 +4040,25 @@ async function openAdmin(){
     adminToast("Admin pronto ✅ " + (ADMIN_CFG?.convocacao?.id || ""));
   }
 
+  function adminCountNaoConfirmados(){
+  const irmaos = Array.isArray(ADMIN_CFG?.irmaos) ? ADMIN_CFG.irmaos : [];
+  let n = 0;
+  for(const u of irmaos){
+    const st = (u?.status || "NAO_CONFIRMADO");
+    if(st === "NAO_CONFIRMADO" || st === "" || st == null) n++;
+  }
+  return { total: irmaos.length, nao: n };
+}
+
+function adminUpdateNaoConfirmadosUI(){
+  const x = adminCountNaoConfirmados();
+  // se você tiver esses IDs no painel “Resumo”
+  const elTot = document.getElementById("r_total_irmaos");
+  const elNao = document.getElementById("r_nao_confirm");
+  if(elTot) elTot.textContent = String(x.total);
+  if(elNao) elNao.textContent = String(x.nao);
+}
+  
   // ====== MODAL ======
   function openAdminModal(){
     const m = document.getElementById("adminModal");
@@ -4151,6 +4193,10 @@ async function openAdmin(){
     // 5) se alterou sessão, reinicia polling
     if(ADMIN_TAB==="sessao") startPolling();
     if(ADMIN_TAB==="irmaos") adminRefreshOnline();
+
+    await apiPost("consumo_add.php", { sessao_id, event: evtConfirm });
+    await updateIrmaoNoConfig({nome, telefone, cin}, evtConfirm.status);
+
   }
 
   // ====== bind UI ======
@@ -4169,7 +4215,8 @@ async function openAdmin(){
     });
 
     // ✅ CONFIRMAR agora salva no KingHost + push
-    $("btnAdminSalvar")?.addEventListener("click", adminSave);
+    document.getElementById("btnAdminSalvar")?.addEventListener("click", adminSave);
+
 
     $("m_close")?.addEventListener("click", closeAdminModal);
 
@@ -4203,6 +4250,7 @@ async function openAdmin(){
 })(); // ✅ FECHA O IIFE
 
 </script>
+
 
 
 
