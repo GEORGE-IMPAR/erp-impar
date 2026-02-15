@@ -3678,7 +3678,7 @@ async function openAdmin(){
   }
 }
   
-  /* ==========================
+ /* ==========================
    ADMIN ONLINE - BLOCO ÚNICO
    cole no FINAL do <script>
    ========================== */
@@ -3686,8 +3686,12 @@ async function openAdmin(){
   "use strict";
 
   // ====== AJUSTE AQUI (URL BASE DO KINGHOST) ======
-  // Exemplo final: https://api.erpimpar.com/agape/consumo/consumo_resumo_adm.php
   const AGAPE_API_BASE = "https://api.erpimpar.com.br/agape/consumo";
+
+  // ====== endpoints ======
+  const ADMIN_SAVE_URL = "https://api.erpimpar.com.br/agape/consumo/admin_save_config.php";
+  const CONFIG_URL     = "https://api.erpimpar.com.br/agape/consumo/agape_config.json";
+  const PUSH_SEND_URL  = "https://api.erpimpar.com.br/agape/push/push_send.php";
 
   // ====== estado admin ======
   let ADMIN_CFG = null;
@@ -3697,37 +3701,18 @@ async function openAdmin(){
   let ADMIN_CURRENT_IRMAO = null;
 
   // ---- helpers seguros (não quebram) ----
-function adminToastOk(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
-function adminToastErr(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
-function adminShow(screen, dir){
-  if(typeof showScreen === "function") showScreen(screen, dir || "forward");
-  else document.getElementById(screen)?.classList.remove("hidden");
-}
-function adminHide(screen){
-  document.getElementById(screen)?.classList.add("hidden");
-}
-function adminEl(id){ return document.getElementById(id); }
-function adminVal(id){ return (adminEl(id)?.value ?? "").trim(); }
-function adminSetVal(id, v){
-  const el = adminEl(id);
-  if(!el) return;
-  el.value = (v ?? "");
-}
-function adminSanTel(s){
-  return String(s || "").replace(/\D+/g,"");
-}
-function adminJsonPretty(o){
-  try{ return JSON.stringify(o, null, 2); }catch(_){ return String(o); }
-}
-function adminDownloadJson(filename, obj){
-  const blob = new Blob([adminJsonPretty(obj)], {type:"application/json;charset=utf-8"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename || "agape_config.json";
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 300);
-}
+  function adminToastOk(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
+  function adminToastErr(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
+  function adminEl(id){ return document.getElementById(id); }
+  function adminVal(id){ return (adminEl(id)?.value ?? "").trim(); }
+  function adminSetVal(id, v){
+    const el = adminEl(id);
+    if(!el) return;
+    el.value = (v ?? "");
+  }
+  function adminJsonPretty(o){
+    try{ return JSON.stringify(o, null, 2); }catch(_){ return String(o); }
+  }
 
   // ====== helpers ======
   function $(id){ return document.getElementById(id); }
@@ -3741,160 +3726,19 @@ function adminDownloadJson(filename, obj){
   // Toast mínimo (não depende do seu toast)
   function adminToast(msg){
     try{ console.log("[ADMIN]", msg); }catch(_){}
-    // opcional: se você já tiver toast(), usa ele
     if(typeof window.toast === "function"){ window.toast(msg); }
   }
 
-  // ---- Tabs / Panels ----
-function adminSetActiveTab(tab){
-  ADMIN_TAB = tab;
-
-  // ativa botões
-  document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
-  if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
-  if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
-  if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
-
-  // mostra painéis
-adminEl("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
-adminEl("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
-adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
-
-  // render
-  if(tab==="cfg") adminRenderCfg();
-  if(tab==="sessao") adminRenderSessao();
-  if(tab==="irmaos") adminRenderIrmaos();
-}
-
-// ---- Render (preencher inputs) ----
-function adminRenderCfg(){
-  if(!ADMIN_CFG) return;
-
-  adminSetVal("a_loja_nome", ADMIN_CFG?.loja?.nome || "");
-  adminSetVal("a_loja_sub", ADMIN_CFG?.loja?.subtitulo || "");
-  adminSetVal("a_loja_pix", ADMIN_CFG?.loja?.pix_chave || "");
-  adminSetVal("a_loja_tes", ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
-  adminSetVal("a_logo_url", ADMIN_CFG?.ui?.logo_url || ADMIN_CFG?.loja?.logo || "");
-
-  // logo preview
-  const logoUrl = adminVal("a_logo_url") || ADMIN_CFG?.ui?.logo_url || "./assets/logo-Clementino-Brito.jpeg";
-  const img = adminEl("adminLogo");
-  if(img) img.src = logoUrl;
-}
-
-function adminRenderSessao(){
-  if(!ADMIN_CFG) return;
-
-  adminSetVal("a_sessao_status", ADMIN_CFG?.sessao?.status || "fechada");
-  adminSetVal("a_sessao_data", ADMIN_CFG?.sessao?.data || "");
-  adminSetVal("a_sessao_caixa", ADMIN_CFG?.sessao?.caixa_inicial ?? 0);
-  adminSetVal("a_sessao_chamado", ADMIN_CFG?.sessao?.chamado || "");
-
-  adminSetVal("a_conv_on", String(!!ADMIN_CFG?.convocacao?.ativa));
-  adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
-  adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
-  adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
-  const chk = document.getElementById("a_push_on_chk");
-  if(chk) chk.checked = (ADMIN_CFG?.push?.habilitado === true);
-  adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
-  adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
-  adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
-}
-
-function adminStatusPill(status){
-  const s = String(status || "").toLowerCase();
-  if(s.includes("sessão e ágape") || s.includes("sessao e agape")) return `<span class="pill ok">SESSÃO E ÁGAPE</span>`;
-  if(s.includes("somente ágape") || s.includes("somente agape")) return `<span class="pill warn">SOMENTE ÁGAPE</span>`;
-  if(s.includes("somente sessão") || s.includes("somente sessao")) return `<span class="pill warn">SOMENTE SESSÃO</span>`;
-  if(s.includes("não confirmado") || s.includes("nao confirmado")) return `<span class="pill bad">NÃO CONFIRMADO</span>`;
-  return `<span class="pill">${status || "-"}</span>`;
-}
-
-function adminRenderIrmaos(){
-  if(!ADMIN_CFG) return;
-
-  const wrap = adminEl("adminIrmaosWrap");
-  if(!wrap) return;
-
-  const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
-  const rows = irmaos.map((u, i)=>{
-    const nome = u?.nome || "(sem nome)";
-    const tel = u?.telefone || "";
-    const st  = u?.status || "Não confirmado";
-    return `
-      <tr>
-        <td>${i+1}</td>
-        <td>${nome}<div style="opacity:.72;font-size:11px;margin-top:2px">${tel}</div></td>
-        <td>${adminStatusPill(st)}</td>
-      </tr>
-    `;
-  }).join("");
-
-  wrap.innerHTML = `
-    <table class="adminTable">
-      <thead>
-        <tr><th>#</th><th>Irmão</th><th>Status</th></tr>
-      </thead>
-      <tbody>
-        ${rows || `<tr><td colspan="3" style="opacity:.7">Sem irmãos no JSON</td></tr>`}
-      </tbody>
-    </table>
-  `;
-}
-
-// ---- Coletar alterações do painel atual ----
-function adminApplyCurrentTabToCfg(){
-  if(!ADMIN_CFG) return;
-
-  if(ADMIN_TAB==="cfg"){
-    ADMIN_CFG.loja = ADMIN_CFG.loja || {};
-    ADMIN_CFG.ui   = ADMIN_CFG.ui   || {};
-
-    ADMIN_CFG.loja.nome = adminVal("a_loja_nome");
-    ADMIN_CFG.loja.subtitulo = adminVal("a_loja_sub");
-    ADMIN_CFG.loja.pix_chave = adminVal("a_loja_pix");
-    ADMIN_CFG.loja.tesoureiro_whatsapp = adminVal("a_loja_tes");
-
-    const logo = adminVal("a_logo_url");
-    if(logo) ADMIN_CFG.ui.logo_url = logo;
-  }
-
-  if(ADMIN_TAB==="sessao"){
-    ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
-    ADMIN_CFG.push = ADMIN_CFG.push || {};
-    ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
-
-    ADMIN_CFG.sessao.status = adminVal("a_sessao_status");
-    ADMIN_CFG.sessao.data = adminVal("a_sessao_data");
-    ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
-    ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
-
-    const chk = document.getElementById("a_push_on_chk");
-    ADMIN_CFG.push.habilitado = !!(chk && chk.checked);
-
-    ADMIN_CFG.push.titulo = adminVal("a_push_titulo");
-    ADMIN_CFG.push.mensagem = adminVal("a_push_msg");
-    ADMIN_CFG.push.url = adminVal("a_push_url");
-
-    ADMIN_CFG.convocacao.ativa = (adminVal("a_conv_on")==="true");
-    ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
-    ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
-    ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
-  }
-}
-
   // ====== CONFIG ======
-  
   async function loadConfigDirect(){
-  const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json", { cache:"no-store" });
-  if(!r.ok) throw new Error("config");
-  return await r.json();
-}
-
+    const r = await fetch(CONFIG_URL, { cache:"no-store" });
+    if(!r.ok) throw new Error("config");
+    return await r.json();
+  }
 
   // ====== API ======
   async function apiGet(path, params){
-    const url = new URL("https://api.erpimpar.com.br/agape/consumo" + "/" + path);
+    const url = new URL(AGAPE_API_BASE + "/" + path);
     Object.keys(params||{}).forEach(k=> url.searchParams.set(k, params[k]));
     const r = await fetch(url.toString(), {cache:"no-store"});
     const j = await r.json().catch(()=>null);
@@ -3903,7 +3747,7 @@ function adminApplyCurrentTabToCfg(){
   }
 
   async function apiPost(path, payload){
-    const r = await fetch("https://api.erpimpar.com.br/agape/consumo" + "/" + path, {
+    const r = await fetch(AGAPE_API_BASE + "/" + path, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify(payload||{})
@@ -3941,75 +3785,146 @@ function adminApplyCurrentTabToCfg(){
   }
 
   // ---- Tabs / Panels ----
-function adminSetActiveTab(tab){
-  ADMIN_TAB = tab;
-
-  // ativa botões
-  document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
-  if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
-  if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
-  if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
-
-  // mostra painéis
-adminEl("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
-adminEl("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
-adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
-
-  // render
-  if(tab==="cfg") adminRenderCfg();
-  if(tab==="sessao") adminRenderSessao();
-  if(tab==="irmaos") adminRenderIrmaos();
-}
-
-
-  // ====== render ======
-  function setActiveTab(tab){
+  function adminSetActiveTab(tab){
     ADMIN_TAB = tab;
 
-    ["tabCfg","tabSessao","tabIrmaos"].forEach(id=> $(id)?.classList.remove("active"));
-    if(tab==="cfg") $("tabCfg")?.classList.add("active");
-    if(tab==="sessao") $("tabSessao")?.classList.add("active");
-    if(tab==="irmaos") $("tabIrmaos")?.classList.add("active");
+    document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
+    if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
+    if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
+    if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
 
-    $("tabCfg")?.addEventListener("click", ()=> adminSetActiveTab("cfg"));
-    $("tabSessao")?.addEventListener("click", ()=> adminSetActiveTab("sessao"));
-    $("tabIrmaos")?.addEventListener("click", ()=> adminSetActiveTab("irmaos"));
+    adminEl("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
+    adminEl("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
+    adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
 
+    if(tab==="cfg") adminRenderCfg();
+    if(tab==="sessao") adminRenderSessao();
+    if(tab==="irmaos") adminRenderIrmaos();
   }
 
-  function fillCfgUI(cfg){
-    const loja = cfg?.loja || {};
-    const ui = cfg?.ui || {};
-    const sessao = cfg?.sessao || {};
-    const conv = cfg?.convocacao || {};
+  // ---- Render (preencher inputs) ----
+  function adminRenderCfg(){
+    if(!ADMIN_CFG) return;
 
-    if($("a_loja_nome")) $("a_loja_nome").value = loja.nome || "";
-    if($("a_loja_sub")) $("a_loja_sub").value = loja.subtitulo || "";
-    if($("a_loja_pix")) $("a_loja_pix").value = loja.pix_chave || "";
-    if($("a_loja_tes")) $("a_loja_tes").value = loja.tesoureiro_whatsapp || "";
-    if($("a_logo_url")) $("a_logo_url").value = ui.logo_url || "";
+    adminSetVal("a_loja_nome", ADMIN_CFG?.loja?.nome || "");
+    adminSetVal("a_loja_sub", ADMIN_CFG?.loja?.subtitulo || "");
+    adminSetVal("a_loja_pix", ADMIN_CFG?.loja?.pix_chave || "");
+    adminSetVal("a_loja_tes", ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
+    adminSetVal("a_logo_url", ADMIN_CFG?.ui?.logo_url || ADMIN_CFG?.loja?.logo || "");
 
-    if($("a_sessao_status")) $("a_sessao_status").value = sessao.status || "fechada";
-    if($("a_sessao_data")) $("a_sessao_data").value = sessao.data || "";
-    if($("a_sessao_caixa")) $("a_sessao_caixa").value = String(sessao.caixa_inicial ?? "");
-    if($("a_conv_id")) $("a_conv_id").value = conv.id || "";
-    if($("a_sessao_chamado")) $("a_sessao_chamado").value = sessao.chamado || "";
+    const logoUrl = adminVal("a_logo_url") || ADMIN_CFG?.ui?.logo_url || "./assets/logo-Clementino-Brito.jpeg";
+    const img = adminEl("adminLogo");
+    if(img) img.src = logoUrl;
   }
 
-  function badgeClassFromStatus(st){
-    if(st==="SESSAO_E_AGAPE") return "badgeSt st-SE";
-    if(st==="SOMENTE_SESSAO") return "badgeSt st-SS";
-    if(st==="SOMENTE_AGAPE") return "badgeSt st-SA";
-    return "badgeSt st-N";
+  function adminRenderSessao(){
+    if(!ADMIN_CFG) return;
+
+    adminSetVal("a_sessao_status", ADMIN_CFG?.sessao?.status || "fechada");
+    adminSetVal("a_sessao_data", ADMIN_CFG?.sessao?.data || "");
+    adminSetVal("a_sessao_caixa", ADMIN_CFG?.sessao?.caixa_inicial ?? 0);
+    adminSetVal("a_sessao_chamado", ADMIN_CFG?.sessao?.chamado || "");
+
+    adminSetVal("a_conv_on", String(!!ADMIN_CFG?.convocacao?.ativa));
+    adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
+    adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
+    adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
+
+    // ✅ PUSH: usa o checkbox real
+    const chk = document.getElementById("a_push_on_chk");
+    if(chk) chk.checked = (ADMIN_CFG?.push?.habilitado === true);
+
+    adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
+    adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
+    adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
   }
 
-  function statusLabel(st){
-    if(st==="SESSAO_E_AGAPE") return "Sessão e ágape";
-    if(st==="SOMENTE_SESSAO") return "Somente sessão";
-    if(st==="SOMENTE_AGAPE") return "Somente ágape";
-    return "Não confirmado";
+  function adminStatusPill(status){
+    const s = String(status || "").toLowerCase();
+    if(s.includes("sessão e ágape") || s.includes("sessao e agape")) return `<span class="pill ok">SESSÃO E ÁGAPE</span>`;
+    if(s.includes("somente ágape") || s.includes("somente agape")) return `<span class="pill warn">SOMENTE ÁGAPE</span>`;
+    if(s.includes("somente sessão") || s.includes("somente sessao")) return `<span class="pill warn">SOMENTE SESSÃO</span>`;
+    if(s.includes("não confirmado") || s.includes("nao confirmado")) return `<span class="pill bad">NÃO CONFIRMADO</span>`;
+    return `<span class="pill">${status || "-"}</span>`;
   }
 
+  function adminRenderIrmaos(){
+    if(!ADMIN_CFG) return;
+
+    const wrap = adminEl("adminIrmaosWrap");
+    if(!wrap) return;
+
+    const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
+    const rows = irmaos.map((u, i)=>{
+      const nome = u?.nome || "(sem nome)";
+      const tel = u?.telefone || "";
+      const st  = u?.status || "Não confirmado";
+      return `
+        <tr>
+          <td>${i+1}</td>
+          <td>${nome}<div style="opacity:.72;font-size:11px;margin-top:2px">${tel}</div></td>
+          <td>${adminStatusPill(st)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    wrap.innerHTML = `
+      <table class="adminTable">
+        <thead>
+          <tr><th>#</th><th>Irmão</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="3" style="opacity:.7">Sem irmãos no JSON</td></tr>`}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // ---- Coletar alterações do painel atual ----
+  function adminApplyCurrentTabToCfg(){
+    if(!ADMIN_CFG) return;
+
+    if(ADMIN_TAB==="cfg"){
+      ADMIN_CFG.loja = ADMIN_CFG.loja || {};
+      ADMIN_CFG.ui   = ADMIN_CFG.ui   || {};
+
+      ADMIN_CFG.loja.nome = adminVal("a_loja_nome");
+      ADMIN_CFG.loja.subtitulo = adminVal("a_loja_sub");
+      ADMIN_CFG.loja.pix_chave = adminVal("a_loja_pix");
+      ADMIN_CFG.loja.tesoureiro_whatsapp = adminVal("a_loja_tes");
+
+      const logo = adminVal("a_logo_url");
+      if(logo) ADMIN_CFG.ui.logo_url = logo;
+    }
+
+    if(ADMIN_TAB==="sessao"){
+      ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
+      ADMIN_CFG.push = ADMIN_CFG.push || {};
+      ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
+
+      ADMIN_CFG.sessao.status = adminVal("a_sessao_status");
+      ADMIN_CFG.sessao.data = adminVal("a_sessao_data");
+      ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
+      ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
+
+      // ✅ PUSH: pega do checkbox correto
+      const chk = document.getElementById("a_push_on_chk");
+      ADMIN_CFG.push.habilitado = !!(chk && chk.checked);
+
+      ADMIN_CFG.push.titulo = adminVal("a_push_titulo");
+      ADMIN_CFG.push.mensagem = adminVal("a_push_msg");
+      ADMIN_CFG.push.url = adminVal("a_push_url");
+
+      ADMIN_CFG.convocacao.ativa = (adminVal("a_conv_on")==="true");
+      ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
+      ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
+      ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
+    }
+
+    window.CFG = ADMIN_CFG;
+  }
+
+  // ====== polling online ======
   function renderResumo(res){
     ADMIN_LAST_RESUMO = res;
 
@@ -4022,7 +3937,6 @@ adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
     $("r_prox").textContent = money(p.PROXIMA_SESSAO || 0);
     $("r_caixa").textContent = money(res.caixa_total || 0);
 
-    // lista produtos
     const list = res.produtos || [];
     if(!$("r_prod_list")) return;
     if(!list.length){
@@ -4034,140 +3948,11 @@ adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
     }).join("") + (list.length>12 ? `<div style="margin-top:8px; opacity:.7; font-size:11px;">+${list.length-12} itens...</div>` : "");
   }
 
-  function renderIrmaosFromEvents(events){
-    // monta “estado atual” por irmão (última confirmação + pagamentos + consumo)
-    const map = new Map();
-
-    function keyOf(e){
-      if(e.cin) return "cin:"+e.cin;
-      if(e.telefone) return "tel:"+e.telefone;
-      return "nome:"+safeText(e.nome||"");
-    }
-    function ensure(e){
-      const k = keyOf(e);
-      if(!map.has(k)){
-        map.set(k,{
-          key:k,
-          nome: e.nome||"",
-          telefone: e.telefone||"",
-          cin: e.cin||"",
-          status:"NAO_CONFIRMADO",
-          consumo:{},
-          pagamentos:{}
-        });
-      }
-      return map.get(k);
-    }
-
-    for(const e of (events||[])){
-      const it = ensure(e);
-      if(e.type==="confirmacao_presenca"){
-        it.status = e.status || "NAO_CONFIRMADO";
-      }
-      if(e.type==="lancamento_consumo"){
-        (e.itens||[]).forEach(x=>{
-          const d = safeText(x.desc).trim();
-          const q = Number(x.qtd||0);
-          if(!d || q<=0) return;
-          it.consumo[d] = (it.consumo[d]||0) + q;
-        });
-      }
-      if(e.type==="pagamento"){
-        const f = safeText(e.forma||"PIX").toUpperCase();
-        const v = Number(e.valor||0);
-        if(v<=0) return;
-        it.pagamentos[f] = (it.pagamentos[f]||0) + v;
-      }
-    }
-
-    // render tabela
-    const arr = Array.from(map.values()).sort((a,b)=> a.nome.localeCompare(b.nome));
-    const tb = $("adminIrmaosBody");
-    if(!tb) return;
-    tb.innerHTML = arr.map((it,idx)=>{
-      const totalPago = Object.values(it.pagamentos||{}).reduce((s,v)=> s+Number(v||0), 0);
-      const st = it.status || "NAO_CONFIRMADO";
-      return `
-        <tr>
-          <td>${idx+1}</td>
-          <td>
-            <button class="rowBtn" data-k="${it.key}">
-              <div style="font-weight:900">${safeText(it.nome||"—")}</div>
-              <div style="font-size:11px; opacity:.75">${safeText(it.telefone||it.cin||"")}</div>
-            </button>
-          </td>
-          <td><span class="${badgeClassFromStatus(st)}">${statusLabel(st)}</span></td>
-          <td style="font-weight:900">${money(totalPago)}</td>
-        </tr>
-      `;
-    }).join("");
-
-    // click row => abre modal
-    tb.querySelectorAll("button.rowBtn").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        const k = btn.getAttribute("data-k");
-        const it = arr.find(x=>x.key===k);
-        if(it) openModalIrmao(it);
-      });
-    });
-
-    // guarda snapshot pra modal pagar
-    window.__ADMIN_IRMAOS_SNAP__ = arr;
-  }
-
-  function openModalIrmao(it){
-    ADMIN_CURRENT_IRMAO = it;
-
-    $("m_nome").textContent = it.nome || "Irmão";
-    $("m_meta").textContent = (it.telefone || it.cin || it.key);
-
-    $("m_status").textContent = statusLabel(it.status||"NAO_CONFIRMADO");
-
-    const pag = it.pagamentos || {};
-    const parts = Object.keys(pag).map(k=> `${k}: ${money(pag[k])}`);
-    $("m_pag").textContent = parts.length ? parts.join(" • ") : "—";
-
-    const cons = it.consumo || {};
-    const ckeys = Object.keys(cons);
-    $("m_cons").innerHTML = ckeys.length
-      ? ckeys.map(k=> `<div class="sheetRow"><span>${k}</span><b>${cons[k]}</b></div>`).join("")
-      : "—";
-
-    $("adminModal")?.classList.add("open");
-    $("m_valor").value = "";
-    $("m_forma").value = "DINHEIRO";
-  }
-  function openAdminModal(){
-  const m = document.getElementById("adminModal");
-  if(!m) return;
-  m.classList.add("show");
-
-  // trava scroll do fundo (mobile-friendly)
-  document.documentElement.style.overflow = "hidden";
-  document.body.style.overflow = "hidden";
-}
-
-function closeAdminModal(){
-  const m = document.getElementById("adminModal");
-  if(!m) return;
-  m.classList.remove("show");
-
-  // libera scroll do fundo
-  document.documentElement.style.overflow = "";
-  document.body.style.overflow = "";
-}
-
-  function closeModal(){
-    $("adminModal")?.classList.remove("open");
-  }
-
-  // ====== polling online ======
   async function adminRefreshOnline(){
     if(!ADMIN_CFG) return;
     const sessao_id = ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.data || "";
     if(!sessao_id) return;
 
-    // tenta sincronizar fila offline primeiro
     await offFlush();
 
     try{
@@ -4178,8 +3963,7 @@ function closeAdminModal(){
     }
 
     try{
-      const r2 = await apiGet("consumo_get.php", {sessao_id});
-      (r2.events || []);
+      await apiGet("consumo_get.php", {sessao_id});
     }catch(e){
       adminToast("Falha ao buscar lista online");
     }
@@ -4196,15 +3980,13 @@ function closeAdminModal(){
 
   // ====== abrir admin (senha) ======
   async function openAdminSafe(){
-    // 1) garante CFG
     try{
       if(!window.CFG) window.CFG = await loadConfigDirect();
     }catch(e){
-      adminToast("Não carregou config" + !a_conv_id + ADMIN_CFG?.convocacao?.id);
+      adminToast("Não carregou config");
       return;
     }
 
-    // 2) senha = telefone do tesoureiro
     const telTes = sanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
     if(!telTes){
       adminToast("Falta loja.tesoureiro_whatsapp no JSON");
@@ -4218,108 +4000,38 @@ function closeAdminModal(){
       return;
     }
 
-    // 3) abre tela e carrega cfg
     if(typeof window.showScreen === "function"){
       window.showScreen("scr_admin","forward");
     }else{
-      // fallback: ativa manual
       document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
       $("scr_admin")?.classList.add("active");
     }
 
     ADMIN_CFG = window.CFG;
-    fillCfgUI(ADMIN_CFG);
 
-    // espelha logo
     const logoUrl = (ADMIN_CFG?.ui?.logo_url) ? ADMIN_CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
     if($("adminLogo")) $("adminLogo").src = logoUrl;
 
     adminSetActiveTab("cfg");
     startPolling();
-    adminToast("Admin pronto ✅" + ADMIN_CFG?.convocacao?.id);
+    adminToast("Admin pronto ✅ " + (ADMIN_CFG?.convocacao?.id || ""));
   }
 
-  // ====== salvar (por enquanto: só reflete em memória) ======
-  function applyAdminChanges(){
-    if(!ADMIN_CFG) return;
-
-    if(ADMIN_TAB === "cfg"){
-      ADMIN_CFG.loja = ADMIN_CFG.loja || {};
-      ADMIN_CFG.ui = ADMIN_CFG.ui || {};
-      ADMIN_CFG.loja.nome = $("a_loja_nome")?.value || ADMIN_CFG.loja.nome;
-      ADMIN_CFG.loja.subtitulo = $("a_loja_sub")?.value || ADMIN_CFG.loja.subtitulo;
-      ADMIN_CFG.loja.pix_chave = $("a_loja_pix")?.value || ADMIN_CFG.loja.pix_chave;
-      ADMIN_CFG.loja.tesoureiro_whatsapp = $("a_loja_tes")?.value || ADMIN_CFG.loja.tesoureiro_whatsapp;
-      ADMIN_CFG.ui.logo_url = $("a_logo_url")?.value || ADMIN_CFG.ui.logo_url;
-      window.CFG = ADMIN_CFG;
-      adminToast("Alterações aplicadas (memória). Config no GitHub é somente leitura.");
-    }
-
-    if(ADMIN_TAB === "sessao"){
-      ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
-      ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
-      ADMIN_CFG.sessao.status = $("a_sessao_status")?.value || ADMIN_CFG.sessao.status;
-      ADMIN_CFG.sessao.data = $("a_sessao_data")?.value || ADMIN_CFG.sessao.data;
-      ADMIN_CFG.sessao.caixa_inicial = Number($("a_sessao_caixa")?.value || ADMIN_CFG.sessao.caixa_inicial || 0);
-      ADMIN_CFG.sessao.chamado = $("a_sessao_chamado")?.value || ADMIN_CFG.sessao.chamado;
-
-      ADMIN_CFG.convocacao.id = $("a_conv_id")?.value || ADMIN_CFG.convocacao.id;
-      window.CFG = ADMIN_CFG;
-
-      adminToast("Sessão atualizada (memória).");
-      startPolling(); // troca de sessao_id reflete no online
-    }
-
-    if(ADMIN_TAB === "irmaos"){
-      // aqui o "Confirmar" apenas força refresh
-      adminRefreshOnline();
-      adminToast("Atualizado ✅");
-    }
-(function(){
-  const PUSH_SEND_URL = "https://api.erpimpar.com.br/agape/push/push_send.php";
-
-  async function sendPushFromUI(){
-    const on = (document.getElementById("a_push_on")?.value || "").toLowerCase() === "true";
-    if(!on) return false;
-
-    const title = (document.getElementById("a_push_titulo")?.value || "Convocação").trim();
-    const body  = (document.getElementById("a_push_msg")?.value || "Sessão convocada. Toque para confirmar presença.").trim();
-    const url   = (document.getElementById("a_push_url")?.value || "/agape/index.html#presenca").trim();
-
-    const r = await fetch(PUSH_SEND_URL, {
-      method: "POST",
-      headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ title, body, url })
-    });
-
-    const txt = await r.text();
-    console.log("[PUSH_SEND]", r.status, txt);
-
-    if(!r.ok) throw new Error("push_send_http_" + r.status);
-    return true;
+  // ====== MODAL ======
+  function openAdminModal(){
+    const m = document.getElementById("adminModal");
+    if(!m) return;
+    m.classList.add("show");
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
   }
-
-  const btn = document.getElementById("btnAdminSalvar");
-  if(!btn) return;
-
-  // remove listeners antigos? não dá. então: captura e executa o push SEMPRE.
-  btn.addEventListener("click", async ()=>{
-    try{
-      const sent = await sendPushFromUI();
-      if(typeof toast === "function" && sent) toast("Notificação enviada ✅");
-      if(typeof toast === "function" && !sent) toast("Push desativado (não enviado)");
-    }catch(e){
-      console.warn(e);
-      if(typeof toast === "function") toast("Falha ao enviar notificação ❌");
-    }
-  }, true);
-})();
-
+  function closeAdminModal(){
+    const m = document.getElementById("adminModal");
+    if(!m) return;
+    m.classList.remove("show");
+    document.documentElement.style.overflow = "";
+    document.body.style.overflow = "";
   }
-
-    fetch("https://api.erpimpar.com.br/agape/push/push_send.php", { method:"POST" })
-   .then(r=>r.text()).then(t=>console.log("push_send resp:", t))
-   .catch(e=>console.error(e));
 
   // ====== registrar pagamento (online) ======
   async function registrarPagamento(){
@@ -4354,7 +4066,6 @@ function closeAdminModal(){
     try{
       await apiPost("consumo_add.php", payload);
     }catch(e){
-      // offline: enfileira
       offEnqueue(payload);
       adminToast("Sem rede: pagamento ficou pendente (vai sincronizar).");
     }
@@ -4362,167 +4073,137 @@ function closeAdminModal(){
     closeAdminModal();
   }
 
-  // ---- Save (seguro) ----
-const ADMIN_SAVE_URL = "https://api.erpimpar.com.br/agape/consumo/admin_save_config.php";
-const PUSH_SEND_URL  = "https://api.erpimpar.com.br/agape/push/push_send.php";
+  // ==========================
+  // ✅ SALVAR NO KINGHOST + PUSH
+  // ==========================
+  async function adminSave(){
+    if(!ADMIN_CFG) return;
 
-async function adminSave(){
-  if(!ADMIN_CFG) return;
+    // 1) aplica alterações do UI
+    adminApplyCurrentTabToCfg();
 
-  adminApplyCurrentTabToCfg();
+    // 2) salva no servidor
+    let jj = null;
+    try{
+      const rr = await fetch(ADMIN_SAVE_URL, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ config: ADMIN_CFG })
+      });
+      jj = await rr.json().catch(()=>null);
+      if(!rr.ok || !jj || jj.ok !== true){
+        console.warn("admin_save fail", rr.status, jj);
+        adminToastErr("Não salvou no servidor ❌");
+        return;
+      }
+    }catch(e){
+      console.warn(e);
+      adminToastErr("Falha ao salvar no servidor ❌");
+      return;
+    }
 
-  // salva no servidor (json)
-  const rr = await fetch(ADMIN_SAVE_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ config: ADMIN_CFG })
-  });
-  const jj = await rr.json().catch(()=>null);
-  if(!rr.ok || !jj || jj.ok !== true){
-    toast("Não salvou no servidor ❌");
-    console.warn("admin_save fail", rr.status, jj);
-    return;
-  }
+    adminToastOk("Salvo no servidor ✅");
 
-  toast("Salvo no servidor ✅");
+    // 3) RECARREGA o config remoto (garante que o SW pega o arquivo atualizado)
+    try{
+      window.CFG = await loadConfigDirect();
+      ADMIN_CFG = window.CFG;
+      adminRenderCfg();
+      adminRenderSessao();
+    }catch(e){
+      // não impede o push, mas avisa
+      console.warn("reload config fail", e);
+    }
 
-  // se push habilitado, dispara agora
-  if(ADMIN_CFG?.push?.habilitado === true){
-    await fetch(PUSH_SEND_URL, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({
-        title: ADMIN_CFG?.push?.titulo || "Convocação",
-        body:  ADMIN_CFG?.push?.mensagem || "Sessão convocada. Toque para confirmar presença.",
-        url:   ADMIN_CFG?.push?.url || "/agape/index.html#presenca"
-      })
-    }).catch(e=> console.warn("push_send fail", e));
+    // 4) dispara push se habilitado
+    if(ADMIN_CFG?.push?.habilitado === true){
+      try{
+        const payload = {
+          title: (ADMIN_CFG?.push?.titulo || "Convocação").trim(),
+          body:  (ADMIN_CFG?.push?.mensagem || "Sessão convocada. Toque para confirmar presença.").trim(),
+          url:   (ADMIN_CFG?.push?.url || "/agape/index.html#presenca").trim()
+        };
 
-    toast("Push disparado ✅");
-  }
-}
+        const r = await fetch(PUSH_SEND_URL, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
+        });
 
-async function adminSendPushFromConfig(){
-  const p = ADMIN_CFG?.push || {};
-  if(ADMIN_CFG?.push?.habilitado !== true) return;
+        const txt = await r.text();
+        console.log("[PUSH_SEND] resp:", r.status, txt);
 
-  await fetch(PUSH_SEND_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({
-      title: p.titulo || "Convocação",
-      body:  p.mensagem || "Sessão convocada. Toque para confirmar presença.",
-      url:   p.url || "/agape/index.html#presenca"
-    })
-  });
-}
-  
-  // sem endpoint: oferece download
-  adminToastOk("Rascunho salvo ✅ (local) — JSON pronto para copiar/baixar");
+        if(!r.ok){
+          adminToastErr("Salvou, mas falhou o push ❌");
+          return;
+        }
 
-  (function(){
-  const chk = document.getElementById("a_push_on_chk");
-  const txt = document.getElementById("a_push_on_txt");
-  if(!chk || !txt) return;
-
-  const sync = ()=>{ txt.textContent = chk.checked ? "Ativada" : "Desativada"; };
-  chk.addEventListener("change", sync);
-  sync();
-})();
-
-  
- // ====== bind UI ======
-function bindAdminUI(){
-
-  // ====== ABAS DO ADMIN ======
-  $("tabCfg")?.addEventListener("click", ()=> adminSetActiveTab("cfg"));
-  $("tabSessao")?.addEventListener("click", ()=> adminSetActiveTab("sessao"));
-  $("tabIrmaos")?.addEventListener("click", ()=> adminSetActiveTab("irmaos"));
-
-  // ====== SAIR DO ADMIN ======
-  $("btnAdminSair")?.addEventListener("click", ()=>{
-    stopPolling();
-    if(typeof window.showScreen === "function"){
-      window.showScreen("scr_login","back");
+        adminToastOk("Push disparado ✅");
+      }catch(e){
+        console.warn(e);
+        adminToastErr("Salvou, mas falhou o push ❌");
+      }
     }else{
-      location.hash = "#";
+      console.log("[PUSH] desativado no UI (checkbox)");
+      adminToast("Push desativado (não enviado)");
     }
-  });
 
-  // ====== CONFIRMAR (SALVAR CONFIG + PUSH) ======
-  $("btnAdminSalvar")?.addEventListener("click", applyAdminChanges);
+    // 5) se alterou sessão, reinicia polling
+    if(ADMIN_TAB==="sessao") startPolling();
+    if(ADMIN_TAB==="irmaos") adminRefreshOnline();
+  }
 
-  // ====== MODAL IRMÃO (PREMIUM) ======
-  $("m_close")?.addEventListener("click", closeAdminModal);
+  // ====== bind UI ======
+  function bindAdminUI(){
+    $("tabCfg")?.addEventListener("click", ()=> adminSetActiveTab("cfg"));
+    $("tabSessao")?.addEventListener("click", ()=> adminSetActiveTab("sessao"));
+    $("tabIrmaos")?.addEventListener("click", ()=> adminSetActiveTab("irmaos"));
 
-  $("adminModal")?.addEventListener("click", (e)=>{
-    if(e.target && e.target.id === "adminModal"){
-      closeAdminModal();
-    }
-  });
+    $("btnAdminSair")?.addEventListener("click", ()=>{
+      stopPolling();
+      if(typeof window.showScreen === "function"){
+        window.showScreen("scr_login","back");
+      }else{
+        location.hash = "#";
+      }
+    });
 
-  // ====== REGISTRAR PAGAMENTO ======
-  $("m_btn_pagar")?.addEventListener("click", registrarPagamento);
-}
+    // ✅ CONFIRMAR agora salva no KingHost + push
+    $("btnAdminSalvar")?.addEventListener("click", adminSave);
 
-// ====== expõe função para “5 toques no logo” ======
-window.openAdmin = openAdminSafe;
+    $("m_close")?.addEventListener("click", closeAdminModal);
 
-// ====== bind quando DOM pronto ======
-document.addEventListener("DOMContentLoaded", ()=>{
+    $("adminModal")?.addEventListener("click", (e)=>{
+      if(e.target && e.target.id === "adminModal"){
+        closeAdminModal();
+      }
+    });
+
+    $("m_btn_pagar")?.addEventListener("click", registrarPagamento);
+
+    // status textual do toggle (se existir)
+    (function(){
+      const chk = document.getElementById("a_push_on_chk");
+      const txt = document.getElementById("a_push_on_txt");
+      if(!chk || !txt) return;
+      const sync = ()=>{ txt.textContent = chk.checked ? "Ativada" : "Desativada"; };
+      chk.addEventListener("change", sync);
+      sync();
+    })();
+  }
+
+  // expõe função para “5 toques no logo”
+  window.openAdmin = openAdminSafe;
+
+  document.addEventListener("DOMContentLoaded", ()=>{
     bindAdminUI();
     if (typeof boot === "function") boot();
   });
 
-})(); // ✅ FECHA O IIFE AQUI
-
-(function(){
-  const PUSH_SEND_URL = "https://api.erpimpar.com.br/agape/push/push_send.php";
-
-  async function sendPushFromUI(){
-    // lê campos da aba Sessão (ids que você já tem)
-    const on = (document.getElementById("a_push_on")?.value || "").toLowerCase() === "true";
-    if(!on){
-      console.log("[PUSH] desativado no UI");
-      return;
-    }
-
-    const title = (document.getElementById("a_push_titulo")?.value || "Convocação").trim();
-    const body  = (document.getElementById("a_push_msg")?.value || "Sessão convocada. Toque para confirmar presença.").trim();
-    const url   = (document.getElementById("a_push_url")?.value || "/agape/index.html#presenca").trim();
-
-    console.log("[PUSH] Enviando...", {title, body, url});
-
-    const r = await fetch(PUSH_SEND_URL, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ title, body, url })
-    });
-
-    const t = await r.text();
-    console.log("[PUSH] resp:", r.status, t);
-
-    if(!r.ok) throw new Error("push_send_http_" + r.status);
-  }
-
-  const btn = document.getElementById("btnAdminSalvar");
-  if(!btn) return;
-
-  btn.addEventListener("click", async ()=>{
-    // espera um tiquinho (caso seu código faça “save” primeiro)
-    setTimeout(async ()=>{
-      try{
-        await sendPushFromUI();
-        if(typeof toast === "function") toast("Push enviado ✅");
-      }catch(e){
-        console.warn(e);
-        if(typeof toast === "function") toast("Falha ao enviar push ❌");
-      }
-    }, 50);
-  }, true); // capture=true pra pegar antes/depois, não importa
-})();
+})(); // ✅ FECHA O IIFE
 
 </script>
+
 
 
 
