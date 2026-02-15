@@ -58,12 +58,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
 
   // 1) Config remoto SEMPRE atualizado
-  if (req.url === CONFIG_URL) {
-    event.respondWith(
-      fetch(req, { cache: "no-store" }).catch(() => fetch(req))
-    );
-    return;
-  }
+if (url.href.startsWith(CONFIG_URL)) {
+  event.respondWith(fetch(req, { cache:"no-store" }).catch(()=>fetch(req)));
+  return;
+}
 
   // 2) Se alguém tentar pedir o config local, redireciona pro remoto
   if (url.pathname.endsWith("/agape_config.json")) {
@@ -115,23 +113,21 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification?.data?.url || "/agape/index.html";
+  const raw = event.notification?.data?.url || "/agape/index.html";
+  const targetUrl = new URL(raw, self.location.origin).toString();
 
   event.waitUntil((async () => {
     const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
 
-    // se já tem uma aba do app aberta, foca nela
     for (const client of allClients) {
       if (client.url.includes("/agape/") && "focus" in client) {
         await client.focus();
-        // tenta navegar pra url desejada
-        try { client.navigate(url); } catch (e) {}
+        try { await client.navigate(targetUrl); } catch(e){}
         return;
       }
     }
-
-    // se não tem, abre
-    if (clients.openWindow) return clients.openWindow(url);
+    if (clients.openWindow) return clients.openWindow(targetUrl);
   })());
 });
+
 
