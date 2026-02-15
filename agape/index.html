@@ -4093,13 +4093,27 @@ async function sendPresencaOnline(ans){
     }
   }
 
-  function startPolling(){
-    stopPolling();
-    adminRefreshOnline();
-    ADMIN_POLL = setInterval(adminRefreshOnline, 4000);
+// ====== aliases compat (evita ReferenceError) ======
+function startPolling(){
+  try{
+    if(typeof adminRefreshOnline === "function") adminRefreshOnline();
+    if(typeof ADMIN_POLL !== "undefined" && ADMIN_POLL) clearInterval(ADMIN_POLL);
+    ADMIN_POLL = setInterval(()=>{
+      try{ adminRefreshOnline(); }catch(_){}
+    }, 4000);
+  }catch(e){
+    console.warn("[ADMIN] startPolling fail", e);
   }
-  function stopPolling(){
-    if(ADMIN_POLL){ clearInterval(ADMIN_POLL); ADMIN_POLL = null; }
+}
+
+function stopPolling(){
+  try{
+    if(typeof ADMIN_POLL !== "undefined" && ADMIN_POLL){
+      clearInterval(ADMIN_POLL);
+      ADMIN_POLL = null;
+    }
+  }catch(e){
+    console.warn("[ADMIN] stopPolling fail", e);
   }
 }
 // ====== abrir admin (senha) ======
@@ -4325,35 +4339,42 @@ function adminUpdateNaoConfirmadosUI(){
 
   }
 
-  // ====== bind UI ======
-  function bindAdminUI(){
-    $("tabCfg")?.addEventListener("click", ()=> adminSetActiveTab("cfg"));
-    $("tabSessao")?.addEventListener("click", ()=> adminSetActiveTab("sessao"));
-    $("tabIrmaos")?.addEventListener("click", ()=> adminSetActiveTab("irmaos"));
+function bindAdminUI(){
+  $("tabCfg")?.addEventListener("click", ()=> adminSetActiveTab("cfg"));
+  $("tabSessao")?.addEventListener("click", ()=> adminSetActiveTab("sessao"));
+  $("tabIrmaos")?.addEventListener("click", ()=> adminSetActiveTab("irmaos"));
 
-    $("btnAdminSair")?.addEventListener("click", ()=>{
-      stopPolling();
-      if(typeof window.showScreen === "function"){
-        window.showScreen("scr_login","back");
-      }else{
-        location.hash = "#";
-      }
-    });
+  $("btnAdminSair")?.addEventListener("click", ()=>{
+    stopPolling();
+    if(typeof window.showScreen === "function") window.showScreen("scr_login","back");
+    else location.hash = "#";
+  });
 
-    // ✅ CONFIRMAR agora salva no KingHost + push
-    $("btnAdminSalvar")?.addEventListener("click", adminSave);
+  // ✅ CONFIRMAR salva no KingHost + push (se habilitado)
+  $("btnAdminSalvar")?.addEventListener("click", async ()=>{
+    try{
+      await adminSave(); // a sua função
+      // após salvar, recarrega config fresco e re-renderiza (pra você "ver que gravou")
+      ADMIN_CFG = await loadConfigDirect();
+      window.CFG = ADMIN_CFG;
+      adminRenderCfg();
+      adminRenderSessao();
+      adminRenderIrmaos();
+      if(typeof adminUpdateNaoConfirmadosUI === "function") adminUpdateNaoConfirmadosUI();
+      startPolling();
+    }catch(e){
+      console.warn("[ADMIN] btnAdminSalvar fail", e);
+      if(typeof toast==="function") toast("Falha ao salvar ❌");
+    }
+  });
 
+  $("m_close")?.addEventListener("click", closeAdminModal);
+  $("adminModal")?.addEventListener("click", (e)=>{
+    if(e.target && e.target.id === "adminModal") closeAdminModal();
+  });
+  $("m_btn_pagar")?.addEventListener("click", registrarPagamento);
+}
 
-
-    $("m_close")?.addEventListener("click", closeAdminModal);
-
-    $("adminModal")?.addEventListener("click", (e)=>{
-      if(e.target && e.target.id === "adminModal"){
-        closeAdminModal();
-      }
-    });
-
-    $("m_btn_pagar")?.addEventListener("click", registrarPagamento);
 
     // status textual do toggle (se existir)
     (function(){
@@ -4377,6 +4398,7 @@ function adminUpdateNaoConfirmadosUI(){
 })(); // ✅ FECHA O IIFE
 
 </script>
+
 
 
 
