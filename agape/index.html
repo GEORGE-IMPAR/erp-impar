@@ -3241,16 +3241,60 @@ const bd = pick([
   _waitPresFxTimer = setInterval(applyOnce, pick([1200, 1500, 1800, 2200, 2600]));
 }
 
-function confirmPresenca(ans){
+async function confirmPresenca(ans){
+  // 1) UI imediata (mantém tua experiência boa)
   setPresencaRespondida();
-
   if(typeof setPresencaAns === "function") setPresencaAns(ans);
 
-  refreshPresenceUI();            // ✅ retângulo / texto atualiza na hora
+  refreshPresenceUI();
   updateEnvelopeUI();
-  updatePresenceConfirmedWait();  // ✅ garante o aviso no wait
+  updatePresenceConfirmedWait();
 
   showPresSuccess();
+
+  // 2) servidor + atualizar agape_config.json
+  try{
+    // garante config fresco pra gravar (evita sobrescrever com velho)
+    ADMIN_CFG = await loadConfigDirect();
+    window.CFG = ADMIN_CFG;
+
+    // envia evento (isso alimenta o resumo/lista online)
+    await sendPresencaOnline(ans);
+
+    // atualiza também o agape_config.json (status do irmão)
+    const u = getLoggedUser();
+    const tel = sanTel(u.telefone || "");
+    const cin = (u.cin || "").trim();
+    const st  = mapAnsToStatus(ans);
+
+    if(!Array.isArray(ADMIN_CFG.irmaos)) ADMIN_CFG.irmaos = [];
+
+    // encontra por CIN, senão por telefone, senão por nome
+    let idx = -1;
+    if(cin) idx = ADMIN_CFG.irmaos.findIndex(x => String(x?.cin||"").trim() === cin);
+    if(idx < 0 && tel) idx = ADMIN_CFG.irmaos.findIndex(x => sanTel(x?.telefone||"") === tel);
+    if(idx < 0 && u.nome) idx = ADMIN_CFG.irmaos.findIndex(x => String(x?.nome||"").trim().toLowerCase() === String(u.nome).trim().toLowerCase());
+
+    if(idx >= 0){
+      ADMIN_CFG.irmaos[idx].status = st;
+    }else{
+      // se não existe, cadastra (opcional, mas ajuda no teu requisito)
+      ADMIN_CFG.irmaos.push({
+        nome: u.nome || "—",
+        telefone: tel,
+        cin: cin,
+        status: st
+      });
+    }
+
+    await adminSaveConfigOnly();
+
+  }catch(e){
+    console.warn("[PRESENCA] falha ao enviar/atualizar", e);
+    // não trava o usuário — só registra
+  }
+
+  // 3) volta pra tela wait
   setTimeout(()=>{
     hidePresSuccess();
     showScreen("scr_wait","back");
@@ -3729,6 +3773,69 @@ async function openAdmin(){
     if(typeof window.toast === "function"){ window.toast(msg); }
   }
 
+  function getLoggedUser(){
+  // tenta achar o usuário logado do seu RP
+  const raw = localStorage.getItem("usuarioLogado")
+          || localStorage.getItem("ERPIMPAR_USER")
+          || localStorage.getItem("impar_user")
+          || "";
+  try{
+    const u = JSON.parse(raw);
+    return {
+      nome: u.Nome || u.nome || "",
+      email: u.Email || u.email || "",
+      telefone: (u.Telefone || u.telefone || ""),
+      cin: (u.CIN || u.cin || "")
+    };
+  }catch(_){
+    return { nome:"", email:"", telefone:"", cin:"" };
+  }
+}
+
+function mapAnsToStatus(ans){
+  const a = String(ans||"");
+  if(a === "sessao_agape") return "SESSAO_E_AGAPE";
+  if(a === "somente_sessao") return "SOMENTE_SESSAO";
+  if(a === "somente_agape") return "SOMENTE_AGAPE";
+  return "NAO_CONFIRMADO";
+}
+
+// salva SOMENTE o config no servidor (sem disparar push)
+async function adminSaveConfigOnly(){
+  const ADMIN_SAVE_URL = "https://api.erpimpar.com.br/agape/consumo/admin_save_config.php";
+
+  const rr = await fetch(ADMIN_SAVE_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ config: ADMIN_CFG })
+  });
+  const jj = await rr.json().catch(()=>null);
+  if(!rr.ok || !jj || jj.ok !== true){
+    console.warn("admin_save_config fail", rr.status, jj);
+    throw new Error("admin_save_config_fail");
+  }
+  return jj;
+}
+
+async function sendPresencaOnline(ans){
+  const sessao_id = ADMIN_CFG?.convocacao?.id || window.CFG?.convocacao?.id || "";
+  if(!sessao_id) throw new Error("sessao_id_vazio");
+
+  const u = getLoggedUser();
+  const evt = {
+    type: "confirmacao_presenca",
+    status: mapAnsToStatus(ans),
+    nome: u.nome || "",
+    telefone: sanTel(u.telefone || ""),
+    cin: u.cin || "",
+    ts: Math.floor(Date.now()/1000)
+  };
+
+  // usa tua apiPost existente
+  await apiPost("consumo_add.php", { sessao_id, event: evt });
+}
+
+  
   // ====== CONFIG ======
   async function loadConfigDirect(){
     const r = await fetch(CONFIG_URL, { cache:"no-store" });
@@ -3996,20 +4103,15 @@ async function openAdmin(){
     if(ADMIN_POLL){ clearInterval(ADMIN_POLL); ADMIN_POLL = null; }
   }
 
-  // ====== abrir admin (senha) ======
-  async function openAdminSafe(){
-    try{
-      ADMIN_CFG = await loadConfigDirect();  // cache:no-store
-      window.CFG = ADMIN_CFG;
-      
-      adminSetActiveTab("cfg");    // preenche Configuração
-      adminRenderSessao();         // preenche Sessão
-      adminRenderIrmaos();         // já lista irmãos
-      startPolling();
+// ====== abrir admin (senha) ======
+async function openAdminSafe(){
+  try{
+    // 1) sempre busca o config atual do servidor
+    const fresh = await loadConfigDirect(); // cache:no-store
+    ADMIN_CFG = fresh;
+    window.CFG = fresh;
 
-      // e já calcula o total "Não confirmaram"
-      adminUpdateNaoConfirmadosUI();
-
+    // 2) valida senha (telefone do tesoureiro)
     const telTes = sanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
     if(!telTes){
       adminToast("Falta loja.tesoureiro_whatsapp no JSON");
@@ -4023,22 +4125,35 @@ async function openAdmin(){
       return;
     }
 
+    // 3) abre tela
     if(typeof window.showScreen === "function"){
       window.showScreen("scr_admin","forward");
     }else{
-      document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
-      $("scr_admin")?.classList.add("active");
-    }
+      document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active");
+      $("scr_admin")?.classList.add("active")};
+    
 
-    ADMIN_CFG = window.CFG;
-
+    // 4) pinta logo e renderiza abas com dados ATUAIS
     const logoUrl = (ADMIN_CFG?.ui?.logo_url) ? ADMIN_CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
     if($("adminLogo")) $("adminLogo").src = logoUrl;
 
     adminSetActiveTab("cfg");
+    adminRenderSessao();
+    adminRenderIrmaos();
+
+    // 5) contador "não confirmaram" (se sua UI tiver campos)
+    if(typeof adminUpdateNaoConfirmadosUI === "function"){
+      adminUpdateNaoConfirmadosUI();
+    }
+
     startPolling();
     adminToast("Admin pronto ✅ " + (ADMIN_CFG?.convocacao?.id || ""));
+  }catch(e){
+    console.warn("[ADMIN] openAdminSafe fail", e);
+    adminToast("Falha ao abrir Admin (config/servidor).");
   }
+}
+
 
   function adminCountNaoConfirmados(){
   const irmaos = Array.isArray(ADMIN_CFG?.irmaos) ? ADMIN_CFG.irmaos : [];
@@ -4051,12 +4166,22 @@ async function openAdmin(){
 }
 
 function adminUpdateNaoConfirmadosUI(){
-  const x = adminCountNaoConfirmados();
-  // se você tiver esses IDs no painel “Resumo”
-  const elTot = document.getElementById("r_total_irmaos");
-  const elNao = document.getElementById("r_nao_confirm");
-  if(elTot) elTot.textContent = String(x.total);
-  if(elNao) elNao.textContent = String(x.nao);
+  try{
+    const irmaos = Array.isArray(ADMIN_CFG?.irmaos) ? ADMIN_CFG.irmaos : [];
+    const total = irmaos.length;
+
+    const nao = irmaos.filter(x=>{
+      const st = String(x?.status || "NAO_CONFIRMADO").toUpperCase();
+      return (st === "NAO_CONFIRMADO" || st === "" || st === "NAO");
+    }).length;
+
+    // Se tiver elementos no HTML, preenche. Se não tiver, só ignora.
+    const elTotal = document.getElementById("adm_total_irmaos");
+    const elNao   = document.getElementById("adm_nao_confirmaram");
+
+    if(elTotal) elTotal.textContent = String(total);
+    if(elNao)   elNao.textContent   = String(nao);
+  }catch(_){}
 }
   
   // ====== MODAL ======
@@ -4251,6 +4376,7 @@ function adminUpdateNaoConfirmadosUI(){
 })(); // ✅ FECHA O IIFE
 
 </script>
+
 
 
 
