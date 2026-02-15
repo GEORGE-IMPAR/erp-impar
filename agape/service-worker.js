@@ -53,37 +53,41 @@ self.addEventListener("message", (event) => {
 
 const CONFIG_URL = "https://api.erpimpar.com.br/agape/consumo/agape_config.json";
 
+const CONFIG_ORIGIN = "https://api.erpimpar.com.br";
+const CONFIG_PATH   = "/agape/consumo/agape_config.json";
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // 1) Config remoto SEMPRE atualizado
-if (url.href.startsWith(CONFIG_URL)) {
-  event.respondWith(fetch(req, { cache:"no-store" }).catch(()=>fetch(req)));
-  return;
-}
-
-  // 2) Se alguém tentar pedir o config local, redireciona pro remoto
-  if (url.pathname.endsWith("/agape_config.json")) {
+  // 1) Config remoto: SEMPRE da rede, SEM cache (mesmo com ?t=...)
+  if (url.origin === CONFIG_ORIGIN && url.pathname === CONFIG_PATH) {
     event.respondWith(
-      fetch(CONFIG_URL, { cache: "no-store" }).catch(() => fetch(CONFIG_URL))
+      fetch(req, { cache: "no-store" })
+        .then(r => r)
+        .catch(() => fetch(req))
     );
     return;
   }
 
-  // resto: seu cache normal
+  // 2) Se pedir config "local", redireciona pro remoto
+  if (url.pathname.endsWith("/agape_config.json")) {
+    const remote = CONFIG_ORIGIN + CONFIG_PATH;
+    event.respondWith(fetch(remote, { cache: "no-store" }).catch(() => fetch(remote)));
+    return;
+  }
+
+  // resto: cache normal
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
-      return fetch(req)
-        .then((resp) => {
-          if (req.method === "GET" && url.origin === self.location.origin && resp.ok) {
-            const copy = resp.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
-          }
-          return resp;
-        })
-        .catch(() => cached);
+      return fetch(req).then((resp) => {
+        if (req.method === "GET" && url.origin === self.location.origin && resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+        }
+        return resp;
+      }).catch(() => cached);
     })
   );
 });
@@ -129,5 +133,6 @@ self.addEventListener("notificationclick", (event) => {
     if (clients.openWindow) return clients.openWindow(targetUrl);
   })());
 });
+
 
 
