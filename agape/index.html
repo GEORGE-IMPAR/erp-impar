@@ -2128,7 +2128,8 @@ function showScreen(id, dir="forward"){
 
 
 async function loadConfig(){
-  const r=await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+  const u = "https://api.erpimpar.com.br/agape/consumo/agape_config.json?t=" + Date.now();
+  const r = await fetch(u, { cache:"no-store" });
   if(!r.ok) throw new Error("config");
   return await r.json();
 }
@@ -4274,6 +4275,46 @@ function closeAdminModal(){
       adminRefreshOnline();
       adminToast("Atualizado ✅");
     }
+(function(){
+  const PUSH_SEND_URL = "https://api.erpimpar.com.br/agape/push/push_send.php";
+
+  async function sendPushFromUI(){
+    const on = (document.getElementById("a_push_on")?.value || "").toLowerCase() === "true";
+    if(!on) return false;
+
+    const title = (document.getElementById("a_push_titulo")?.value || "Convocação").trim();
+    const body  = (document.getElementById("a_push_msg")?.value || "Sessão convocada. Toque para confirmar presença.").trim();
+    const url   = (document.getElementById("a_push_url")?.value || "/agape/index.html#presenca").trim();
+
+    const r = await fetch(PUSH_SEND_URL, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ title, body, url })
+    });
+
+    const txt = await r.text();
+    console.log("[PUSH_SEND]", r.status, txt);
+
+    if(!r.ok) throw new Error("push_send_http_" + r.status);
+    return true;
+  }
+
+  const btn = document.getElementById("btnAdminSalvar");
+  if(!btn) return;
+
+  // remove listeners antigos? não dá. então: captura e executa o push SEMPRE.
+  btn.addEventListener("click", async ()=>{
+    try{
+      const sent = await sendPushFromUI();
+      if(typeof toast === "function" && sent) toast("Notificação enviada ✅");
+      if(typeof toast === "function" && !sent) toast("Push desativado (não enviado)");
+    }catch(e){
+      console.warn(e);
+      if(typeof toast === "function") toast("Falha ao enviar notificação ❌");
+    }
+  }, true);
+})();
+
   }
 
     fetch("https://api.erpimpar.com.br/agape/push/push_send.php", { method:"POST" })
@@ -4482,6 +4523,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 })();
 
 </script>
+
 
 
 
