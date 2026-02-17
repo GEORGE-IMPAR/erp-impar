@@ -1,0 +1,3699 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#071a2b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVRIx2NgGAWjYBSMglEwCkbBSAcACBAAAeaR9cIAAAAASUVORK5CYII=">
+  <title>Sistema Agape</title>
+
+  <style>
+    :root{
+      --bad: #ff3b30;
+      --bg1:#071a2b;
+      --bg2:#0c3a56;
+      --glass: rgba(255,255,255,.08);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.60);
+      --good:#33d07a;
+      --blue:#2d8cff;
+      --yellow: rgba(255,215,0,.20);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: var(--bg1); color:var(--text);}
+    body{overflow:hidden}
+
+/* ===== Pagamento v25 (top) ===== */
+.payCard{
+  margin-top:12px;
+  padding:16px;
+  border-radius:22px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow: 0 24px 55px rgba(0,0,0,.32);
+}
+.payMsg{line-height:1.2}
+.payHello{font-weight:1000; font-size:28px; margin-bottom:6px}
+.payTotal{font-weight:800; opacity:.95}
+/* === Conferência: limita a lista e cria scroll interno === */
+/* === Conferência: limita a lista e cria scroll interno (6 itens visíveis) === */
+#payItems{
+  max-height: calc(4 * 36px);      /* 4 linhas */
+  overflow-y: auto;               /* scroll à direita */
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;             /* respiro pro scrollbar */
+}
+ .background: rgba(255,255,255,.25); border:1px solid rgba(255,255,255,.10);}
+.payItemRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 0;
+  min-height:36px;               /* casa com o calc(6 * 36px) */
+}
+.payItemLeft{
+  font-weight:900;
+
+  flex: 1 1 auto;        /* ocupa só o espaço disponível */
+  min-width: 0;          /* 🔴 ESSENCIAL para funcionar com flex */
+  
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.payItemDots{flex:1; border-bottom: 2px dotted rgba(255,255,255,.25); height:0; opacity:.9}
+.payItemRight{
+  font-weight:1000;
+  white-space:nowrap;
+  flex: 0 0 auto;
+}
+.payQ{font-weight:1000; font-size:22px; margin:4px 0 12px}
+.payIconRow{display:flex; gap:14px; justify-content:center; margin:10px 0 14px}
+.payIconBtn{
+  width:74px; height:54px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+  box-shadow: 0 16px 35px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.06);
+  transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+  cursor:pointer;
+}
+.payIconBtn:hover{transform: translateY(-1px) scale(1.03); filter:brightness(1.05)}
+.payIconBtn:active{transform: translateY(0) scale(.98)}
+.payIconBtn::after{
+  content: attr(data-tip);
+  position:absolute;
+  left:50%; top:-10px;
+  transform: translate(-50%,-100%);
+  padding:6px 10px;
+  border-radius:999px;
+  background: rgba(0,0,0,.72);
+  border:1px solid rgba(255,255,255,.12);
+  color:#fff;
+  font-weight:900;
+  font-size:12px;
+  opacity:0;
+  pointer-events:none;
+  transition: opacity .15s ease, transform .15s ease;
+  white-space:nowrap;
+}
+.payIconBtn:hover::after{opacity:1; transform: translate(-50%,-115%)}
+.payIconImg{width:62px; height:30px; object-fit:contain; display:block; filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+.paySvg{font-size:26px; line-height:1}
+.payBack{margin-top:8px}
+.payHint{margin-top:10px; opacity:.70; font-size:12px}
+
+/* Modal */
+.modal{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:999;}
+.modal.hidden{display:none;}
+.modal::before{content:""; position:absolute; inset:0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);}
+.modalCard{
+  position:relative;
+  width:min(420px, calc(100% - 36px));
+  border-radius:20px;
+  padding:16px;
+  background: rgba(10,20,32,.92);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55);
+}
+.modalTop{display:flex; align-items:center; justify-content:space-between; gap:10px}
+.modalTitle{font-weight:1000; font-size:20px}
+.modalX{border:none; background: rgba(255,255,255,.06); color:var(--text); border-radius:12px; padding:8px 10px; font-weight:1000}
+.modalText{margin-top:8px; opacity:.85; font-size:13px; line-height:1.35}
+.pixValueRow{display:flex; align-items:center; justify-content:space-between; margin-top:14px;
+  padding:12px; border-radius:16px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);}
+.pixValueLbl{opacity:.80; font-weight:900}
+.pixValue{font-weight:1000; font-size:18px}
+.pixKeyRow{display:flex; align-items:center; gap:10px; margin-top:12px;
+  padding:12px; border-radius:16px; background: rgba(10,200,160,.12); border:1px solid rgba(100,255,230,.25);}
+.pixKeyText{flex:1; font-weight:1000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.pixCopyBtn{
+  width:44px; height:44px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color:var(--text);
+  font-size:20px;
+  cursor:pointer;
+}
+.modalOk{margin-top:14px}
+.modalCancel{
+  width:100%;
+  margin-top:10px;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid red;
+  background: rgba(255,0,0,0.5);
+  color:var(--text);
+  font-weight:900;
+}
+
+/* Success overlay */
+.paySuccess{
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  width:100vw; height:100vh;
+  background: rgba(230,204,24,.96);
+}
+.paySuccess.hidden{display:none;}
+.paySuccessBox{
+  background: rgba(255,255,255,.75);
+  border-radius:18px;
+  padding:16px 18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  box-shadow: 0 22px 70px rgba(0,0,0,.35);
+}
+.paySuccessGif{width:140px; height:140px; object-fit:contain; display:block}
+.payOkText{font-weight:1000; color:#083018}
+
+/* === v25 pay success overlay (yellow full, gif + text only) === */
+.paySuccess{position:fixed; inset:0; background:rgba(230,204,24,.96); display:flex; align-items:center; justify-content:center; z-index:9999;}
+.paySuccess.hidden{display:none;}
+.paySuccessInner{display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center;}
+#payGif{width:160px; height:160px; object-fit:contain; filter:drop-shadow(0 12px 26px rgba(0,0,0,.25));}
+.payOkText{font-weight:1000; font-size:22px; color:#053018; text-shadow:0 1px 0 rgba(255,255,255,.35);}
+
+
+    
+    .safe{
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+
+    .screen{
+      position:fixed; inset:0;
+      display:none;
+      background: radial-gradient(1200px 900px at 50% 0%, var(--bg2), var(--bg1));
+    }
+    .screen.active{display:flex}
+
+    /* Slide transitions */
+    .enter-left{transform:translateX(100%); opacity:1}
+    .enter-right{transform:translateX(-100%); opacity:1}
+    .exit-left{transform:translateX(-100%); opacity:1}
+    .exit-right{transform:translateX(100%); opacity:1}
+    .screen{transition: transform .46s ease, opacity .46s ease;}
+    .screen.active{transform:translateX(0); opacity:1}
+    .screen.exit-left,.screen.exit-right,.screen.enter-left,.screen.enter-right{display:flex}
+
+    /* Splash 1 */
+    #scr_splash1{
+      background:#000 !important;
+      align-items:center;
+      justify-content:center;
+    }
+
+    /* Splash 2 */
+    #scr_splash2{align-items:center; justify-content:center; background:#061a2b !important;}
+    .splashCenter{display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; padding:24px;}
+    .logoWrap{
+      width:92px; height:92px; border-radius:22px;
+      background: rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      overflow:hidden;
+      box-shadow: 0 18px 40px rgba(0,0,0,.35);
+      transform: scale(.78);
+      opacity:0;
+      animation: logoZoom 3.0s ease forwards;
+    }
+    .logoWrap img{width:100%; height:100%; object-fit:cover; display:block}
+    .brandText{
+      font-weight:800; letter-spacing:.3px;
+      font-size: 34px;
+      transform: scale(.96);
+      opacity:0;
+      animation: textZoom 3.0s ease forwards;
+      animation-delay: .05s;
+    }
+    @keyframes logoZoom{
+      0%{transform:scale(.78); opacity:0}
+      30%{opacity:1}
+      100%{transform:scale(1.00); opacity:1}
+    }
+    @keyframes textZoom{
+      0%{transform:scale(.96); opacity:0}
+      35%{opacity:1}
+      100%{transform:scale(1.00); opacity:1}
+    }
+
+    /* Card layout */
+    .wrap{width:min(420px, 100%); margin:0 auto; padding:16px;}
+    .topBrand{
+      display:flex; gap:12px; align-items:center;
+      padding:14px 16px;
+      border-radius:18px;
+      background: rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.10);
+      box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    }
+    .topBrand .bLogo{
+      width:46px;height:46px;border-radius:12px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.15);
+      flex:0 0 auto;
+      background: rgba(255,255,255,.10);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .topBrand .bLogo img{width:100%; height:100%; object-fit:cover; display:block}
+    .topBrand .bTxt{line-height:1.15}
+    .topBrand .bTxt .bTitle{font-weight:800; font-size:18px; line-height:1.1;}
+    .topBrand .bTxt .bSub{font-size:12px; opacity:.85; margin-top:2px;}
+
+    .sessionBar{
+      margin-top:14px; display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:14px;
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10);
+    }
+    .dotBig{width:16px;height:16px;border-radius:50%; background:var(--bad); box-shadow:0 0 0 4px rgba(255,0,0,.10);}
+    .sessionLine{font-weight:800; font-size:15px; letter-spacing:.2px; flex:1; min-width:0;}
+
+    .card{
+      margin-top:14px;
+      padding:16px;
+      border-radius:22px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 24px 55px rgba(0,0,0,.32);
+    }
+
+    .btn{
+      width:100%;
+      margin-top:14px;
+      padding:11px 12px;
+      border-radius:14px;
+      border:none;
+      background: linear-gradient(90deg, #1bb3ff, #3b6cff);
+      color:#001018;
+      font-weight:900;
+      font-size:17px;
+      line-height: 1.1 !important;
+    }
+
+    .btn2{
+      width:100%;
+      padding:11px 12px;
+      border:none;
+      border-radius:14px;
+      background: linear-gradient(90deg, #19baff, #3a66ff);
+      color:#001018;
+      font-weight:1000;
+      font-size:17px;
+      line-height: 1.1 !important;
+    }
+
+    .miniBtn{
+      border:1px solid red;
+      background: rgba(255,0,0,0.5);
+      color: var(--text);
+      padding:10px 14px;
+      border-radius:14px;
+      font-weight:800;
+    }
+
+
+    /* Pix bar */
+    .pixBar{
+      margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:12px 14px; border-radius:14px;
+      background:rgba(10,200,160,.16); border:1px solid rgba(100,255,230,.25);
+    }
+    .pixBadge{width:64px; height:36px; border-radius:10px; background:rgba(255,255,255,.12);
+      display:flex; align-items:center; justify-content:center;}
+    .pixBadge img{width:70px;height:26px;object-fit:contain;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+    .pixKey{font-weight:900; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0;}
+
+    /* Toast */
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background: rgba(0,0,0,.75);
+      color:white; padding:10px 14px;
+      border-radius:14px;
+      opacity:0; pointer-events:none;
+      transition: opacity .25s ease;
+      font-weight:800;
+      z-index:99999;
+    }
+    .toast.show{opacity:1}
+
+    /* Wait envelope */
+    .waitCard{ position:relative; }
+    .msgBtn{
+      position:relative;
+      width:44px; height:44px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .msgIcon{width:24px; height:24px; object-fit:contain; opacity:.95; filter:drop-shadow(0 2px 6px rgba(0,0,0,.35));}
+    .msgBadge{
+      position:absolute;
+      top:-6px; right:-6px;
+      width:18px; height:18px;
+      border-radius:999px;
+      background:#ff3b30;
+      border:2px solid rgba(6,26,43,1);
+      color:#fff;
+      font-weight:1000;
+      font-size:12px;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 10px 24px rgba(0,0,0,.35);
+    }
+    .hidden{display:none !important;}
+    @keyframes pulseBadge{
+      0%{transform:scale(1); filter:brightness(1);}
+      50%{transform:scale(1.12); filter:brightness(1.2);}
+      100%{transform:scale(1); filter:brightness(1);}
+    }
+    .msgBadge.pulse{animation:pulseBadge 1.1s ease-in-out infinite;}
+
+    /* ===== PRESENÇA (bonitona) ===== */
+    #scr_presenca{
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      padding:16px 0;
+    }
+    #scr_presenca .wrap{min-height:100%; height:auto !important; align-items:flex-start;}
+    #scr_presenca .card{max-height: calc(100vh - 32px); overflow-y:auto; -webkit-overflow-scrolling:touch;}
+
+    .hint{
+      margin-top:12px; padding:12px 14px; border-radius:14px;
+      background:linear-gradient(90deg, rgba(60,170,120,.35), rgba(80,210,160,.22));
+      border:1px solid rgba(150,255,210,.25);
+    }
+
+    .presResumo{
+      display:grid;
+      grid-template-columns: 1fr 120px;
+      gap:12px;
+      border-radius:14px;
+      border:2px solid rgba(255, 220, 40, .55);
+      background: rgba(180, 150, 0, .25);
+      padding:10px;
+      margin: 12px 0;
+    }
+    .presResumoTitle{font-weight:900; margin-bottom:6px;}
+    .presResumoLine{display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:2px 0;}
+    .barBox{
+      width:86px;
+      height:130px;
+      border-radius:10px;
+      overflow:hidden;
+      border:2px solid rgba(255,255,255,.18);
+      background: rgba(0,0,0,.25);
+      display:flex;
+      flex-direction:column;
+    }
+    .barTop{
+      background: rgba(255,120,0,.85);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900; font-size:13px;
+      flex:1;
+    }
+    .barBottom{
+      background: rgba(70,190,120,.85);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900; font-size:13px;
+      flex:1;
+    }
+    .barLegend{display:flex; gap:10px; margin-top:8px; font-size:11px; opacity:.95; justify-content:center;}
+    .barLegend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+    .lgNo i{background: rgba(255,120,0,.85);}
+    .lgYes i{background: rgba(70,190,120,.85);}
+
+    /* ===== CONSUMO (layout simples e estável) ===== */
+    #scr_consumo{align-items:stretch; justify-content:center;}
+    .page{
+      display:flex;
+      flex-direction:column;
+      height:100%;
+      width:min(440px, 100%);
+      margin:0 auto;
+      padding:16px;
+      gap:12px;
+    }
+    .cashBar{
+      display:flex; align-items:center; gap:12px;
+      padding:12px 14px; border-radius:14px;
+      background: rgba(255,165,0,.22);
+      border: 1px solid rgba(255,200,120,.22);
+    }
+    .cashText{font-weight:1000; font-size:14px;}
+    #cashValue{font-weight:1000;}
+
+    .prodScroll{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      -webkit-overflow-scrolling:touch;
+      padding: 4px 0;
+    }
+    .prodRow{
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:14px 14px;
+      border-radius:18px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
+      margin-bottom:12px;
+    }
+    .pIcon{
+      width:50px;height:50px;border-radius:18px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.08);
+      flex:0 0 auto;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .pIcon img{background:#fff;width:100%; height:100%; object-fit:contain; display:block}
+    .pMid{flex:1; min-width:0}
+    .pName{font-weight:900}
+    .pDesc{font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .pPrice{margin-top:6px; font-weight:900}
+    .qtyWrap{display:flex; align-items:center; gap:10px; flex:0 0 auto;}
+    .qtyBtn{
+      width:40px;height:40px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-size:22px;
+      line-height:1;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .qty{min-width:20px; text-align:center; font-weight:900}
+
+    .consFooter{
+      padding: 10px 0 0 0;
+      background: linear-gradient(180deg, rgba(7,26,43,0) 0%, rgba(7,26,43,.65) 30%, rgba(7,26,43,.92) 100%);
+      border-radius:18px;
+    }
+    .totalBox{
+      padding:14px 14px;
+      border-radius:18px;
+      background: rgba(0,0,0,.20);
+      border:1px solid rgba(255,255,255,.10);
+      margin-bottom:12px;
+    }
+    .totalBox .tLbl{font-size:12px; color:var(--muted)}
+    .totalBox .tVal{font-size:28px; font-weight:1000; margin-top:6px}
+
+    /* desktop center */
+    @media (min-width:900px){
+      body{display:flex; align-items:center; justify-content:center; background:#081b2c;}
+      .screen{position:relative; width:420px; height:860px; border-radius:26px; overflow:hidden; box-shadow: 0 30px 80px rgba(0,0,0,.55);}
+    }
+    .payIconBtn:hover::after{opacity:1; transform: translate(-50%,-115%)}
+    .payIconImg{width:62px; height:30px; object-fit:contain; display:block; filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+    .paySvg{font-size:26px; line-height:1}
+    .payBack{margin-top:8px}
+    .payHint{margin-top:10px; opacity:.70; font-size:12px}
+
+    /* FIX: não quebrar linha dentro do #payItems (trunca descrição e mantém preço na mesma linha) */
+#payItems{
+  max-height: calc(4 * 36px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  color: #FFD700; /* Amarelo ouro forte */
+  font-weight: bold;
+}
+
+#payItems .payItemRow{
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  min-height: 36px;
+  flex-wrap: nowrap !important;     /* nunca quebra */
+}
+
+#payItems .payItemLeft{
+  flex: 1 1 auto !important;
+  min-width: 0 !important;          /* ESSENCIAL pro "..." funcionar no flex */
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#payItems .payItemDots{
+  flex: 1 1 auto !important;        /* pontilhado ocupa o meio */
+  min-width: 16px;
+}
+
+#payItems .payItemRight{
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+    /* Pagamento */
+    #scr_pagamento{align-items:flex-start; justify-content:center;}
+    .payBtns{display:flex; flex-direction:column; gap:12px; margin-top:12px}
+    /* .payBtn{
+      padding:16px 14px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:900;
+      font-size:18px;
+      text-align:center;
+    }
+    .payBtn.primary{background: rgba(51,208,122,.18); border-color: rgba(51,208,122,.35)}
+    .payBtn.warn{background: rgba(255,215,0,.14); border-color: rgba(255,215,0,.25)}*/
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background: rgba(0,0,0,.75);
+      color:white; padding:10px 14px;
+      border-radius:14px;
+      opacity:0; pointer-events:none;
+      transition: opacity .25s ease;
+      font-weight:800;
+      z-index:99;
+    }
+    .toast.show{opacity:1}
+
+
+/* v15 fixes */
+.panel{flex:1;display:flex;flex-direction:column;min-height:0;}
+.prodScroll{flex:1;min-height:0;-webkit-overflow-scrolling:touch;}
+
+.pIconImg{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25));}
+/* botão selecionado = contorno azul brilhante */
+.payBtn.isChosen{
+  border: 2px solid rgba(45,140,255,.95) !important;
+  box-shadow:
+    0 0 0 3px rgba(45,140,255,.22),
+    0 0 18px rgba(45,140,255,.45) !important;
+  filter: brightness(1.06);
+}
+    .presCard{padding:14px; max-width:420px;}
+    .presMsg{
+      border: 2px solid rgba(70, 190, 120, .55);
+      background: rgba(0,0,0,.18);
+      margin: 12px 0;
+    }
+    .presMsg .infoText{
+      font-size: 12px;
+      line-height: 1.35;
+      max-height: 170px;
+      overflow: auto;
+      padding-right: 6px;
+    }
+    .infoCard{margin-top:12px; padding:14px; border-radius:16px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.10);}
+    .infoTitle{font-weight:900; font-size:18px;}
+    .infoText{margin-top:6px; font-size:13px; opacity:.90; line-height:1.35;}
+
+    .presBtnsRow{display:flex; gap:10px;}
+    .payBtn{
+      flex:1;
+      min-height:44px;
+      padding:10px 8px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:900;
+      font-size:8px;
+      text-align:center;
+      cursor:pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      line-height:1.1;
+    }
+    .payBtn.primary{background: rgba(51,208,122,.18); border-color: rgba(51,208,122,.35)}
+    .payBtn.isChosen{outline:2px solid rgba(255,255,255,.35);}
+
+/* ===== BOTÃO ESCOLHIDO: BORDA AMARELA BRILHANTE ===== */
+.presBtnsRow .payBtn.isChosen{
+  border: 2px solid rgba(255,215,0,.98) !important;
+  box-shadow:
+    0 0 0 3px rgba(255,215,0,.22),
+    0 0 18px rgba(255,215,0,.45) !important;
+  filter: brightness(1.06);
+}
+
+/* ===== STATUS (retângulo preto já no seu #presStatusLine) ===== */
+#presStatusLine{
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 900;
+}
+
+/* ===== OVERLAY: PRESENÇA CONFIRMADA (preto full) ===== */
+.presSuccess{
+  position:fixed;
+  inset:0;
+  width:100vw;
+  height:100dvh;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:999999;
+}
+.presSuccess.hidden{display:none;}
+.presSuccessInner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:14px;
+  text-align:center;
+  padding: 18px;
+}
+#presGif{
+  width:220px;
+  max-width:70vw;
+  height:auto;
+  object-fit:contain;
+  filter: drop-shadow(0 14px 30px rgba(0,0,0,.55));
+}
+.presOkText{
+  font-weight:1000;
+  font-size:22px;
+  color:#fff;
+  text-shadow:0 2px 12px rgba(0,0,0,.6);
+}
+
+/* ===== WAIT: AVISO PRESENÇA JÁ CONFIRMADA ===== */
+.waitPresencaOk{
+  margin-top:8px;
+  padding:7px 10px;              /* menor */
+  border-radius:12px;
+  background: rgba(80,170,255,.16);  /* azul claro transparente */
+  border: 1px solid rgba(140,210,255,.28);
+  font-weight:900;
+  font-size:12px;                /* menor (ajuda no celular) */
+  line-height:1.05;              /* mais baixo */
+  text-align:center;
+  letter-spacing:.2px;
+
+  transition: transform .35s ease, filter .35s ease, background .35s ease, border-color .35s ease, box-shadow .35s ease, opacity .35s ease;
+  will-change: transform, filter;
+}
+
+.waitPresencaOk.pulse{
+  animation: presPulse 1.15s ease-in-out infinite;
+}
+
+@keyframes presPulse{
+  0%   { transform: scale(1);    filter: brightness(1);   }
+  50%  { transform: scale(1.04); filter: brightness(1.15);}
+  100% { transform: scale(1);    filter: brightness(1);   }
+}
+
+@keyframes presBlink{
+  0%   { opacity:1; }
+  50%  { opacity:.82; }
+  100% { opacity:1; }
+}
+
+.waitPresencaOk.blink{
+  animation: presBlink 1.0s ease-in-out infinite;
+}
+
+.waitPresencaOk.hidden{display:none;}
+
+/* bolinha vermelha */
+.msgBtn{ position:relative; }
+
+.msgBadge{
+  position:absolute;
+  top:-6px; right:-6px;
+  width:18px; height:18px;
+  border-radius:999px;
+  background:#ff3b30;
+  border:2px solid rgba(6,26,43,1);
+  color:#fff;
+  font-weight:1000;
+  font-size:12px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 10px 24px rgba(0,0,0,.35);
+}
+
+.msgBadge.hidden{ display:none !important; }
+
+/* ==========================
+   ADMIN (tela completa) - CSS
+   Cole no FINAL do seu <style>
+   ========================== */
+#scr_admin .cardTitleRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+#scr_admin .adminLogo{
+  width:38px;height:38px;border-radius:10px;
+  object-fit:cover;border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 8px 20px rgba(0,0,0,.25);
+}
+#scr_admin .adminHeadTxt{ line-height:1.1; }
+#scr_admin .adminHeadTxt .t1{ font-weight:800; font-size:16px; letter-spacing:.2px; }
+#scr_admin .adminHeadTxt .t2{ font-size:11px; opacity:.82; margin-top:2px; }
+
+#scr_admin .adminTabs{
+  display:flex;
+  gap:8px;
+  margin:10px 0 12px;
+}
+#scr_admin .adminTab{
+  flex:1;
+  padding:9px 10px;
+  border-radius:12px;
+  font-weight:800;
+  font-size:12px;
+  border:1px solid rgba(255,255,255,.15);
+  background:rgba(255,255,255,.06);
+  color:#fff;
+  cursor:pointer;
+  transition:transform .08s ease, filter .2s ease, background .2s ease;
+}
+#scr_admin .adminTab:active{ transform:scale(.99); }
+#scr_admin .adminTab.active{
+  background:rgba(0,210,255,.12);
+  border-color:rgba(255,215,0,.75);
+  box-shadow:0 0 0 2px rgba(255,215,0,.10) inset;
+}
+
+#scr_admin .adminPanel{
+  margin-top:6px;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.06));
+  min-height:240px;
+}
+#scr_admin .hidden{ display:none !important; }
+
+#scr_admin .adminGrid{
+  display:grid;
+  gap:10px;
+}
+#scr_admin .adminField label{
+  display:block;
+  font-size:11px;
+  font-weight:800;
+  opacity:.9;
+  margin:2px 0 6px;
+}
+#scr_admin .adminField input,
+#scr_admin .adminField textarea,
+#scr_admin .adminField select{
+  width:100%;
+  box-sizing:border-box;
+  padding:10px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.18);
+  color:#fff;
+  outline:none;
+}
+#scr_admin .adminField textarea{
+  min-height:70px;
+  resize:vertical;
+}
+
+#scr_admin .adminTwoCol{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+@media (max-width:420px){
+  #scr_admin .adminTwoCol{ grid-template-columns:1fr; }
+}
+
+#scr_admin .adminTable{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  overflow:hidden;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.12);
+  margin-top:8px;
+}
+#scr_admin .adminTable th,
+#scr_admin .adminTable td{
+  padding:8px 10px;
+  font-size:12px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+#scr_admin .adminTable th{
+  font-size:11px;
+  opacity:.9;
+  text-transform:uppercase;
+  letter-spacing:.35px;
+  background:rgba(255,255,255,.06);
+}
+#scr_admin .pill{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:900;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.18);
+}
+#scr_admin .pill.ok{ background:rgba(46,204,113,.15); border-color:rgba(46,204,113,.35); }
+#scr_admin .pill.warn{ background:rgba(52,152,219,.15); border-color:rgba(52,152,219,.35); }
+#scr_admin .pill.bad{ background:rgba(231,76,60,.15); border-color:rgba(231,76,60,.35); }
+
+#scr_admin .adminFooterBtns{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+}
+#scr_admin #btnAdminSalvar{
+  flex:1;
+}
+#scr_admin #btnAdminSair{
+  width:86px;
+}
+#scr_admin .adminMini{
+  margin-top:10px;
+  font-size:11px;
+  opacity:.8;
+}
+#scr_admin .adminMini strong{ opacity:1; }
+#scr_admin .adminJsonBox{
+  width:100%;
+  margin-top:10px;
+  padding:10px;
+  border-radius:14px;
+  border:1px dashed rgba(255,255,255,.22);
+  background:rgba(0,0,0,.18);
+  color:#fff;
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:11px;
+  line-height:1.35;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+/* container do conteúdo dentro das screens */
+.phoneFrame{
+  width:100%;
+  min-height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding: 14px 14px 18px;
+  overflow:auto;
+}
+
+ /* ==========================
+   ADMIN ONLINE (UI PREMIUM)
+   cole no FINAL do <style>
+   ========================== */
+.adminWrap{
+  width:100%;
+  max-width:420px;
+  margin:0 auto;
+  padding:14px 14px 12px;
+}
+.adminHeader{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 12px;
+  border-radius:18px;
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+}
+.adminHeader img{width:34px;height:34px;border-radius:10px;object-fit:cover;}
+.adminHeader .t1{font-weight:900; font-size:15px; line-height:1.1;}
+.adminHeader .t2{font-size:11px; opacity:.75; margin-top:2px;}
+
+.adminTabs{
+  display:flex; gap:10px;
+  margin-top:12px;
+}
+.adminTab{
+  flex:1;
+  padding:10px 10px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color:#fff;
+  font-weight:900;
+  font-size:12px;
+  letter-spacing:.3px;
+  cursor:pointer;
+}
+.adminTab.active{
+  outline:2px solid rgba(255,220,0,.65);
+  background: rgba(0, 200, 255, .10);
+}
+
+.adminPanel{
+  margin-top:12px;
+  border-radius:20px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.10);
+  overflow:hidden;
+}
+.adminScroll{
+  max-height:520px;
+  overflow:auto;
+  padding:12px;
+}
+
+.adminGrid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+@media(max-width:420px){ .adminGrid2{grid-template-columns:1fr;} }
+
+.aLabel{font-size:11px; opacity:.75; margin:10px 0 6px;}
+.aInput,.aSelect{
+  width:100%;
+  padding:10px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color:#fff;
+  outline:none;
+}
+.aInput::placeholder{opacity:.55;}
+
+.adminTable{
+  width:100%;
+  border-collapse:collapse;
+  overflow:hidden;
+  border-radius:14px;
+}
+.adminTable th, .adminTable td{
+  padding:10px 10px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  font-size:12px;
+}
+.adminTable th{
+  text-transform:uppercase;
+  letter-spacing:.3px;
+  font-size:11px;
+  opacity:.85;
+}
+.rowBtn{
+  width:100%;
+  text-align:left;
+  background:transparent;
+  border:none;
+  color:#fff;
+  cursor:pointer;
+  padding:0;
+}
+.badgeSt{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:900;
+  border:1px solid rgba(255,255,255,.12);
+}
+.st-N{background:rgba(255,60,60,.18);}
+.st-SS{background:rgba(255,220,0,.16);}
+.st-SA{background:rgba(0,190,255,.16);}
+.st-SE{background:rgba(0,255,140,.14);}
+
+.adminFooter{
+  display:flex;
+  gap:10px;
+  padding:12px;
+}
+.btnAdminPrimary{
+  flex:1;
+  padding:12px 10px;
+  border-radius:14px;
+  border:none;
+  background: linear-gradient(90deg, rgba(0,200,255,.95), rgba(90,120,255,.95));
+  color:#00131f;
+  font-weight:900;
+  cursor:pointer;
+}
+.btnAdminDanger{
+  width:90px;
+  padding:12px 10px;
+  border-radius:14px;
+  border:none;
+  background: rgba(255,0,0,.75);
+  color:#fff;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.adminResumo{
+  margin-top:10px;
+  border-radius:18px;
+  padding:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+}
+.adminResumo .rTitle{font-weight:900; font-size:12px; opacity:.9; margin-bottom:10px;}
+.adminResumo .rLine{display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.07);}
+.adminResumo .rLine:last-child{border-bottom:none;}
+.adminResumo .k{opacity:.78;}
+.adminResumo .v{font-weight:900;}
+
+.adminModal{
+  position:fixed; inset:0;
+  display:none;
+  align-items:flex-end; justify-content:center;
+  background: rgba(0,0,0,.55);
+  z-index:9999;
+}
+.adminModal.open{display:flex;}
+.adminSheet{
+  width:min(420px, 96vw);
+  border-radius:18px 18px 0 0;
+  background: radial-gradient(800px 600px at 50% 0%, rgba(0,170,255,.18), rgba(0,0,0,.55));
+  border:1px solid rgba(255,255,255,.14);
+  padding:12px;
+  max-height:78vh;
+  overflow:auto;
+}
+.sheetHead{display:flex; justify-content:space-between; align-items:center; gap:12px;}
+.sheetHead .h1{font-weight:900; font-size:13px;}
+.sheetClose{border:none; background:rgba(255,255,255,.08); color:#fff; border-radius:12px; padding:8px 10px; font-weight:900; cursor:pointer;}
+.sheetBlock{margin-top:10px; padding:10px; border-radius:14px; background:rgba(0,0,0,.20); border:1px solid rgba(255,255,255,.10);}
+.sheetRow{display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.07);}
+.sheetRow:last-child{border-bottom:none;}
+   
+  </style>
+</head>
+
+<body>
+  <div id="toast" class="toast"></div>
+
+  <!-- Splash 1 -->
+  <section id="scr_splash1" class="screen active safe">
+    <div class="splashCenter">
+      <img id="splashSymbol" class="splashSymbol" src="./assets/maconaria.png" alt="Carregando" style="width:160px;height:160px;object-fit:contain;">
+      <div class="splashLoading" style="margin-top:6px;font-weight:900;font-size:18px;opacity:.95;">Carregando…..</div>
+    </div>
+  </section>
+
+  <!-- Splash 2 -->
+  <section id="scr_splash2" class="screen safe">
+    <div class="splashCenter">
+      <div class="logoWrap">
+        <img id="splashLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+      </div>
+      <div class="brandText">Sistema Agape</div>
+    </div>
+  </section>
+
+  <!-- Wait -->
+  <section id="scr_wait" class="screen safe">
+    <div class="wrap">
+      <div class="card waitCard">
+        <div class="topBrand">
+          <div class="bLogo">
+            <img id="brandLogoWait" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+          </div>
+          <div class="bTxt">
+            <div class="bTitle" id="lojaNomeWait">Loja</div>
+            <div class="bSub" id="lojaSubWait">App Agape • Consumo & Pagamento</div>
+          </div>
+        </div>
+
+        <div class="sessionBar">
+          <div class="dotBig" id="sessaoDotWait"></div>
+          <div class="sessionLine" id="sessaoLineWait">Sessão fechada — —</div>
+          <button class="msgBtn" id="btnEnvelope" type="button" aria-label="Mensagem do Venerável">
+            <img src="./assets/icon-envelope.png" alt="" class="msgIcon">
+            <span class="msgBadge hidden" id="badgeConvocacao">!</span>
+          </button>
+        </div>
+
+        <div class="pixBar" style="margin-top:12px;">
+          <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
+          <div class="pixKey" id="pixChaveWait">—</div>
+        </div>
+
+        <div class="infoCard">
+          <div class="infoTitle">Sessão ainda não liberada 🔒</div>
+          <div class="infoText">A sessão ainda não foi aberta pelo responsável, mas não se preocupe. Quando liberar a sessão, automaticamente aparecerá a tela de login.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+            <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);">
+              <div style="font-size:12px;opacity:.75;">Última verificação</div>
+              <div style="margin-top:4px;font-weight:900;font-size:16px;" id="lastCheck">—</div>
+            </div>
+            <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);">
+              <div style="font-size:12px;opacity:.75;">Sessão</div>
+              <div style="margin-top:4px;font-weight:900;font-size:16px;" id="sessaoStatus">Fechada</div>
+            </div>
+          </div>
+          <button class="miniBtn" id="btnSairWait" type="button" style="margin-top:12px;background:#e53935;border-color:#e53935;color:#fff;">
+            Sair do aplicativo
+          </button>
+        </div>
+
+<!-- 1) COLE ISTO DENTRO DO #scr_wait (ex: logo abaixo do infoCard ou antes do hint) -->
+<div id="waitPresencaOk" class="waitPresencaOk hidden">✅ PRESENÇA JÁ CONFIRMADA</div>
+
+        <div class="hint">
+          <div style="font-weight:900;font-size:14px;">Modo tesoureiro</div>
+          <div style="font-size:13px;opacity:.95;margin-top:4px;">toque 5x no logo para abrir Admin (sessão, caixa, produtos, Pix).</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Presença -->
+  <section id="scr_presenca" class="screen safe">
+    <div class="wrap">
+      <div class="card presCard">
+
+        <div class="topBrand presTop">
+          <div class="bLogo">
+            <img id="brandLogoPres" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+          </div>
+          <div class="bTxt">
+            <div class="bTitle" id="lojaNomePres">Loja</div>
+            <div class="bSub">Presença • Sessão & Agape</div>
+          </div>
+        </div>
+
+        <div class="sessionBar presSessionBar">
+          <div class="dotBig" id="sessaoDotPres"></div>
+          <div class="sessionLine" id="sessaoLinePres">Sessão fechada</div>
+        </div>
+
+        <div class="infoCard presMsg">
+          <div class="infoTitle">Chamado do Venerável</div>
+          <div class="infoText" id="presTexto">Carregando...</div>
+        </div>
+
+        <div class="presBtnsRow">
+          <button class="payBtn primary" id="btnRespSessaoAgape" type="button">Sessão e Agape</button>
+          <button class="payBtn" id="btnRespSessao" type="button">Somente sessão</button>
+          <button class="payBtn" id="btnRespAgape" type="button">Somente ágape</button>
+        </div>
+
+        <div class="hint" id="presStatusLine">Você ainda não respondeu.</div>
+
+        <div class="presResumo">
+          <div class="presResumoLeft">
+            <div class="presResumoTitle">Resumo:</div>
+            <div class="presResumoLine"><span>Sessão e Agape:</span><b id="rSA">0</b></div>
+            <div class="presResumoLine"><span>Somente sessão:</span><b id="rS">0</b></div>
+            <div class="presResumoLine"><span>Somente ágape:</span><b id="rA">0</b></div>
+            <div class="presResumoLine"><span>Total respondidos:</span><b id="rT">0</b></div>
+            <div class="presResumoLine"><span>Total não respondidos:</span><b id="rN">0</b></div>
+          </div>
+
+          <div class="presResumoRight" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <div class="barBox">
+              <div class="barTop" id="barNao">0</div>
+              <div class="barBottom" id="barSim">0</div>
+            </div>
+            <div class="barLegend">
+              <span class="lgNo" style="display:inline-flex;gap:6px;align-items:center;"><i></i>Não</span>
+              <span class="lgYes" style="display:inline-flex;gap:6px;align-items:center;"><i></i>Sim</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn2" id="btnFecharPresenca" type="button">Fechar</button>
+      </div>
+    </div>
+  </section>
+
+   
+  <!-- Login -->
+  <section id="scr_login" class="screen safe">
+    <div class="wrap">
+      <div class="topBrand" id="brandBar">
+        <div class="bLogo"><img id="brandLogo" alt="logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="lojaNome">Loja</div>
+          <div class="bSub" id="lojaSub"></div>
+        </div>
+      </div>
+
+      <div class="sessionBar" id="sessionBarLogin">
+        <span class="dotBig" id="sessaoDotLogin" style="width:16px;height:16px;border-radius:50%;"></span>
+        <div class="sessionLine" id="sessaoLineLogin">Sessão —</div>
+      </div>
+
+      <div class="pixBar">
+        <div class="pixBadge"><img src="./assets/logo-pix.jpg" alt="Pix"></div>
+        <div class="pixKey" id="pixChave">—</div>
+      </div>
+
+      <div class="card" id="loginCard">
+        <h2 id="welcomeTitle" style="margin:0 0 6px 0; font-size:34px; letter-spacing:.2px">Bem-vindo 👋</h2>
+        <p style="margin:0 0 14px 0; color:var(--muted)">Digite seu <strong>CIM</strong> para entrar. Botões grandes e tudo bem simples.</p>
+
+        <div id="telWrap">
+          <label style="display:block; font-weight:700; margin:10px 0 6px 0; font-size:15px">Telefone</label>
+          <input id="inpTel" inputmode="tel" placeholder="Ex: 48999990000" style="width:100%;padding:14px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background: rgba(255,255,255,.06);color:var(--text);outline:none;font-size:16px;" />
+        </div>
+
+        <label style="display:block; font-weight:700; margin:10px 0 6px 0; font-size:15px">CIM (senha)</label>
+        <input id="inpCIM" inputmode="numeric" placeholder="Digite seu CIM" style="width:100%;padding:14px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background: rgba(255,255,255,.06);color:var(--text);outline:none;font-size:16px;" />
+
+        <button class="btn" id="btnEntrar">Entrar</button>
+        <button class="miniBtn" id="btnSairLogin" style="width:100%;margin-top:10px;">Sair do aplicativo</button>
+
+        <div style="margin-top:10px; color: rgba(255,255,255,.65)">Admin: toque 5x no logo.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Consumo -->
+  <section id="scr_consumo" class="screen safe">
+    <div class="page">
+      <div class="topBrand">
+        <div class="bLogo"><img id="brandLogoCons" src="./assets/logo-Clementino-Brito.jpeg" alt="logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="consLoja">Loja</div>
+          <div class="bSub" id="consSub"></div>
+        </div>
+      </div>
+
+      <div class="sessionBar">
+        <span class="dotBig" id="sessaoDotCons"></span>
+        <div class="sessionLine" id="sessaoLineCons">Sessão —</div>
+      </div>
+
+      <div class="cashBar" id="cashBar">
+        <div class="cashText">Valor em caixa: <span id="cashValue">R$ 0,00</span></div>
+      </div>
+
+      <div class="pixBar">
+        <div class="pixKey" >Meu Consumo</div>
+        <button class="miniBtn" id="btnSair">Sair</button>
+      </div>
+
+      <div class="prodScroll" id="prodScroll">
+        <div id="prodList"></div>
+      </div>
+
+      <div class="consFooter">
+        <div class="totalBox">
+          <div class="tLbl">Total</div>
+          <div class="tVal" id="totalValue">R$ 0,00</div>
+        </div>
+        <button class="btn2" id="btnFechar">Fechar e pagar</button>
+      </div>
+    </div>
+  </section>
+
+   <!-- Pagamento -->
+  <section id="scr_pagamento" class="screen safe">
+    <div class="wrap">
+      <div class="topBrand" id="payBrandBar">
+        <div class="bLogo"><img id="payLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="payLoja">Loja</div>
+          <div class="bSub">App Agape • Consumo & Pagamento</div>
+        </div>
+      </div>
+
+      <div class="sessionBar">
+        <span class="dotbig" id="paySessaoDot" style="width:12px;height:12px;border-radius:99px;"></span>
+        <div class="sessionLine" id="paySessaoLine">Sessão —</div>
+      </div>
+
+      <div class="payCard">
+        <div class="payMsg">
+          <div class="payHello" id="payHello">Oi meu irmão,</div>
+          <div class="payTotal">Sua conta totalizou <span id="payTotal">R$ 0,00</span>:</div><br>
+        </div>
+
+        <div id="payItems" class="payItems"></div>
+              
+        <div class="payQ"><br>Como deseja pagar?</div><br>
+
+        <div class="payIconRow" aria-label="Formas de pagamento">
+          <button class="payIconBtn" id="btnPix" type="button" data-tip="Pix">
+            <img src="./assets/logo-pix.jpg" alt="Pix" class="payIconImg"/>
+          </button>
+
+          <button class="payIconBtn" id="btnDinheiro" type="button" data-tip="Dinheiro">
+            <span class="paySvg" aria-hidden="true">💵</span>
+          </button>
+
+          <button class="payIconBtn" id="btnProxima" type="button" data-tip="Próxima sessão">
+            <span class="paySvg" aria-hidden="true">📅</span>
+          </button>
+        </div>
+
+        <button class="btn2 payBack" id="btnVoltarConsumo" type="button">Voltar para comanda</button>
+        <div class="payHint">Ao pagar, registramos e voltamos para o login.</div>
+      </div>
+    </div>
+
+
+    <!-- Modal Pix -->
+    <div id="pixModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pixTitle">
+      <div class="modalCard">
+        <div class="modalTop">
+          <div class="modalTitle" id="pixTitle">Pix</div>
+          <button class="modalX" id="btnPixCancel" type="button" aria-label="Fechar">✕</button>
+        </div>
+
+        <div class="modalText">Copie a chave e faça a transferência do valor exato.</div>
+
+        <div class="pixValueRow">
+          <div class="pixValueLbl">Valor</div>
+          <div class="pixValue" id="pixValor">R$ 0,00</div>
+        </div>
+
+        <div class="pixKeyRow">
+          <div class="pixKeyText" id="pixChaveModal">—</div>
+          <button class="pixCopyBtn" id="btnCopyPix" type="button" title="Copiar">📋</button>
+        </div>
+
+        <button class="btn2 modalOk" id="btnPixOk" type="button">OK, transferi</button>
+        <button class="modalCancel" id="btnPixCancel2" type="button">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Sucesso -->
+    <div id="paySuccess" class="hidden" style="position:fixed;inset:0;background:rgba(230,204,24,.96);display:flex;align-items:center;justify-content:center;z-index:9999;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;">
+        <img id="payGif" src="./assets/check.gif" alt="Pago" style="width:160px;height:160px;object-fit:contain;filter:drop-shadow(0 12px 26px rgba(0,0,0,.25));">
+        <div style="font-weight:1000;font-size:22px;color:#053018;text-shadow:0 1px 0 rgba(255,255,255,.35);">Pagamento registrado</div>
+      </div>
+    </div>
+  </section>
+  <div id="presSuccess" class="presSuccess hidden" aria-hidden="true">
+     <div class="presSuccessInner">
+       <img id="presGif" src="./assets/presenca.gif" alt="Confirmado">
+       <div class="presOkText">PRESENÇA CONFIRMADA!!!!!!!!!</div>
+    </div>
+  </div>
+
+<!-- ==========================
+     ADMIN (SUBSTITUIR O SECTION INTEIRO)
+     ========================== -->
+<section id="scr_admin" class="screen">
+  <div class="adminWrap">
+    <div class="adminHeader">
+      <img id="adminLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="logo">
+      <div>
+        <div class="t1">Admin</div>
+        <div class="t2">Configuração • Sessão • Irmãos</div>
+      </div>
+    </div>
+
+    <div class="adminTabs">
+      <button class="adminTab" id="tabCfg" type="button">CONFIGURAÇÃO</button>
+      <button class="adminTab active" id="tabSessao" type="button">SESSÃO</button>
+      <button class="adminTab" id="tabIrmaos" type="button">IRMÃOS</button>
+    </div>
+
+    <div class="adminPanel">
+      <div class="adminScroll">
+
+                <!-- ABA SESSAO -->
+        <div id="adminViewSessao" class="hidden">
+          <div class="adminGrid2">
+            <div>
+              <div class="aLabel">Status</div>
+              <select class="aSelect" id="a_sessao_status">
+                <option value="aberta">aberta</option>
+                <option value="fechada">fechada</option>
+              </select>
+            </div>
+            <div>
+              <div class="aLabel">Data</div>
+              <input class="aInput" id="a_sessao_data" placeholder="dd/mm/aaaa">
+            </div>
+          </div>
+
+          <div class="adminGrid2">
+            <div>
+              <div class="aLabel">Caixa inicial</div>
+              <input class="aInput" id="a_sessao_caixa" placeholder="0" inputmode="decimal">
+            </div>
+            <div>
+              <div class="aLabel">Sessão ID (convocação)</div>
+              <input class="aInput" id="a_conv_id" placeholder="2026-02-07-001">
+            </div>
+          </div>
+
+          <div class="aLabel">Chamado</div>
+          <input class="aInput" id="a_sessao_chamado" placeholder="Texto do chamado">
+        </div>
+
+        <!-- ABA CFG -->
+        <div id="adminViewCfg">
+          <div class="aLabel">Nome da loja</div>
+          <input class="aInput" id="a_loja_nome" placeholder="Nome da loja">
+          <div class="aLabel">Subtítulo</div>
+          <input class="aInput" id="a_loja_sub" placeholder="Subtítulo">
+          <div class="aLabel">PIX</div>
+          <input class="aInput" id="a_loja_pix" placeholder="Chave PIX">
+          <div class="aLabel">WhatsApp Tesoureiro (senha)</div>
+          <input class="aInput" id="a_loja_tes" placeholder="55...">
+          <div class="aLabel">Logo URL (GitHub)</div>
+          <input class="aInput" id="a_logo_url" placeholder="./assets/logo...">
+        </div>
+
+
+        <!-- ABA IRMAOS (ONLINE) -->
+        <div id="adminViewIrmaos" class="hidden">
+          <div class="aLabel">Status: Não confirmado • Somente sessão • Somente ágape • Sessão e ágape</div>
+          <table class="adminTable" id="adminTableIrmaos">
+            <thead>
+              <tr>
+                <th style="width:40px;">#</th>
+                <th>IRMÃO</th>
+                <th style="width:130px;">STATUS</th>
+                <th style="width:90px;">PAGOU</th>
+              </tr>
+            </thead>
+            <tbody id="adminIrmaosBody"></tbody>
+          </table>
+
+          <div class="adminResumo" id="adminResumoBox">
+            <div class="rTitle">Resumo (online)</div>
+            <div class="rLine"><span class="k">Total de irmãos na sessão</span><span class="v" id="r_total_irmaos">—</span></div>
+            <div class="rLine"><span class="k">Não confirmaram</span><span class="v" id="r_nao_confirm">—</span></div>
+            <div class="rLine"><span class="k">Recebido em DINHEIRO</span><span class="v" id="r_din">—</span></div>
+            <div class="rLine"><span class="k">Recebido em PIX</span><span class="v" id="r_pix">—</span></div>
+            <div class="rLine"><span class="k">Próxima sessão (pendência)</span><span class="v" id="r_prox">—</span></div>
+            <div class="rLine"><span class="k">Total em caixa (físico)</span><span class="v" id="r_caixa">—</span></div>
+          </div>
+
+          <div class="adminResumo" id="adminProdutosBox">
+            <div class="rTitle">Consumo por produto (total)</div>
+            <div id="r_prod_list" style="font-size:12px; opacity:.9;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="adminFooter">
+        <button class="btnAdminPrimary" id="btnAdminSalvar" type="button">CONFIRMAR</button>
+        <button class="btnAdminDanger" id="btnAdminSair" type="button">SAIR</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MODAL/DETALHE IRMÃO -->
+<div class="adminModal" id="adminModal">
+  <div class="adminSheet">
+    <div class="sheetHead">
+      <div>
+        <div class="h1" id="m_nome">Irmão</div>
+        <div style="font-size:11px;opacity:.75" id="m_meta">—</div>
+      </div>
+      <button class="sheetClose" id="m_close" type="button">Fechar</button>
+    </div>
+
+    <div class="sheetBlock">
+      <div class="sheetRow"><span>Status</span><b id="m_status">—</b></div>
+      <div class="sheetRow"><span>Pagamentos</span><b id="m_pag">—</b></div>
+    </div>
+
+    <div class="sheetBlock">
+      <div style="font-weight:900; font-size:12px; margin-bottom:8px;">Consumo (descrição + qtd)</div>
+      <div id="m_cons" style="font-size:12px; opacity:.92;">—</div>
+    </div>
+
+    <div class="sheetBlock">
+      <div style="font-weight:900; font-size:12px; margin-bottom:8px;">Lançar pagamento (online)</div>
+      <div class="adminGrid2">
+        <input class="aInput" id="m_valor" placeholder="Valor (ex: 10)" inputmode="decimal">
+        <select class="aSelect" id="m_forma">
+          <option value="DINHEIRO">DINHEIRO</option>
+          <option value="PIX">PIX</option>
+          <option value="PROXIMA_SESSAO">PROXIMA_SESSAO</option>
+        </select>
+      </div>
+      <button class="btnAdminPrimary" id="m_btn_pagar" type="button" style="margin-top:10px;">Registrar pagamento</button>
+    </div>
+  </div>
+</div>
+</section>
+ 
+<script>
+/* ==========================
+   CONFIG / HELPERS
+========================== */
+const CONFIG_URL = fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+const LS_CART  = "agape_cart_v14";
+const LS_USER  = "agape_user_v14";
+const LS_CASH = "agape_cash_v1";
+const LS_CASH_DATE = "agape_cash_date_v1";
+const LS_PRES_LIDA = "agape_presenca_lida_v1";
+const LS_PRES_RESP = "agape_presenca_resp_v1";
+const GIF_TIME   = 6000;
+const ZOOM_TIME  = 6000;
+
+const $ = (s)=>document.querySelector(s);
+
+function setText(sel, val){
+  if(!sel) return;
+  const isCSS =
+    sel.startsWith("#") || sel.startsWith(".") ||
+    sel.includes(" ") || sel.includes(",") ||
+    sel.includes("[") || sel.includes(">") || sel.includes(":");
+  const q = isCSS ? sel : ("#" + sel);
+  const el = document.querySelector(q);
+  if(el) el.textContent = (val ?? "");
+}
+
+const fmtBRL = (v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+
+let CFG=null;
+let lastTotal = 0;
+let currentScreen="scr_splash1";
+let waitTimer=null;
+let waitOpenTimer=null;
+let waitPollingStarted=false;
+let payReady = true;
+let adminTapCount=0;
+let adminTapTimer=null;
+
+function toast(msg){
+  const t=$("#toast");
+  t.textContent=msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1700);
+}
+
+function showScreen(id, dir="forward"){
+  const from=document.getElementById(currentScreen);
+  const to=document.getElementById(id);
+  if(!from||!to||id===currentScreen) return;
+
+  to.classList.remove("exit-left","exit-right","enter-left","enter-right");
+  from.classList.remove("exit-left","exit-right","enter-left","enter-right");
+
+  if(dir==="forward") to.classList.add("enter-left"); else to.classList.add("enter-right");
+  to.classList.add("active");
+  to.classList.remove("hidden");
+
+  if (id === "scr_splash2") {
+    const lw = to.querySelector(".logoWrap");
+    const bt = to.querySelector(".brandText");
+    [lw, bt].forEach(el => {
+      if (!el) return;
+      el.style.animation = "none";
+      void el.offsetHeight;
+      el.style.animation = "";
+    });
+  }
+
+  void to.offsetWidth;
+  to.classList.remove("enter-left","enter-right");
+
+  if(dir==="forward") from.classList.add("exit-left"); else from.classList.add("exit-right");
+
+  setTimeout(()=>{
+    from.classList.remove("active","exit-left","exit-right");
+    currentScreen=id;
+  }, 460);
+}
+
+async function loadConfig(){
+  const r=await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+  if(!r.ok) throw new Error("config");
+  return await r.json();
+}
+
+function sessionIsOpen(){
+  return (CFG?.sessao?.status||"").toLowerCase()==="aberta";
+}
+
+/* ==========================
+   STORAGE: CART / USER / CASH
+========================== */
+
+/* ✅ FIX mínimo: sua função tinha recursão (chamava ela mesma) */
+function resetPresencaState(){
+  localStorage.removeItem(LS_PRES_LIDA);
+  localStorage.removeItem(LS_PRES_RESP);
+
+  // se houver convocação e o ID mudar, limpa estado de presença
+  if(CFG?.convocacao?.ativa){
+    const lastId = localStorage.getItem("agape_conv_id");
+    if(lastId !== CFG.convocacao.id){
+      localStorage.removeItem(LS_PRES_LIDA);
+      localStorage.removeItem(LS_PRES_RESP);
+      localStorage.setItem("agape_conv_id", CFG.convocacao.id);
+    }
+  }
+}
+
+function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}catch(_){return {}} }
+function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
+function clearCart(){ localStorage.removeItem(LS_CART); }
+
+function getUser(){ try { return JSON.parse(localStorage.getItem(LS_USER) || "null"); } catch(e){ return null; } }
+function setUser(u){ localStorage.setItem(LS_USER, JSON.stringify(u)); }
+//function clearUser(){ localStorage.removeItem(LS_USER); }
+
+function getCashFromCFG(){
+  const n = Number(CFG?.sessao?.caixa_inicial);
+  return Number.isFinite(n) ? n : 0;
+}
+function getCash(){
+  const n = Number(localStorage.getItem(LS_CASH));
+  return Number.isFinite(n) ? n : getCashFromCFG();
+}
+function setCash(n){
+  localStorage.setItem(LS_CASH, String(Number(n) || 0));
+}
+function initCashFromConfig(){
+  const sessionDate = String(CFG?.sessao?.data || "").trim();
+  const savedDate   = localStorage.getItem(LS_CASH_DATE);
+  const hasCash     = localStorage.getItem(LS_CASH) !== null;
+
+  if(!hasCash || (sessionDate && savedDate !== sessionDate)){
+    setCash(getCashFromCFG());
+    localStorage.setItem(LS_CASH_DATE, sessionDate);
+  }
+}
+function renderCash(){
+  const el = document.getElementById("cashValue");
+  if(el) el.textContent = fmtBRL(getCash());
+}
+
+/* ==========================
+   ===== PRESENÇA (ÚNICA) =====
+========================== */
+const LS_PRESENCA_ANS  = "agape_presenca_ans_v1";
+const LS_PRESENCA_READ = "agape_presenca_read_v1";
+
+function sessaoKey(){
+  return String(CFG?.sessao?.data || "").trim();
+}
+function getPresencaMap(){
+  try{ return JSON.parse(localStorage.getItem(LS_PRESENCA_ANS) || "{}"); }
+  catch(_){ return {}; }
+}
+function getPresencaAns(){
+  const key = sessaoKey();
+  if(!key) return "";
+  return String(getPresencaMap()[key] || "");
+}
+async function setPresencaAns(ans){
+  const key = sessaoKey();
+  if(!key) return;
+  
+  // 1️⃣ Salva local (compatibilidade)
+  const map = getPresencaMap();
+  map[key] = ans;
+  localStorage.setItem(LS_PRESENCA_ANS, JSON.stringify(map));
+  
+  // 2️⃣ Envia para o servidor
+  const userTel = (typeof LOGGED_USER !== "undefined" && LOGGED_USER) ? LOGGED_USER.telefone : "";
+  const userName = (typeof LOGGED_USER !== "undefined" && LOGGED_USER) ? LOGGED_USER.nome : "";
+  
+  if(!userTel){ console.warn("setPresencaAns: usuário não logado"); return; }
+  
+  const evt = { type: "confirmacao_presenca", status: ans || "NAO_CONFIRMADO", telefone: userTel, nome: userName, ts: Math.floor(Date.now()/1000) };
+  const payload = { sessao_id: key, event: evt };
+  
+  try {
+    const response = await fetch("https://api.erpimpar.com.br/agape/consumo/presenca_confirm.php", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    if(!response.ok) throw new Error("HTTP " + response.status);
+    const result = await response.json();
+    console.log("✅ Presença confirmada:", result);
+    if(typeof showPresSuccess === "function"){ showPresSuccess(); setTimeout(() => { if(typeof hidePresSuccess === "function") hidePresSuccess(); }, PRES_SUCCESS_MS || 6000); }
+    if(typeof toast === "function") toast("Presença confirmada!");
+  } catch(e) {
+    console.warn("❌ Erro ao enviar presença:", e);
+    if(typeof offEnqueue === "function"){ offEnqueue(payload); if(typeof toast === "function") toast("Sem rede: presença salva localmente"); }
+  }
+}
+function setReadPresenca(){
+  const key = sessaoKey();
+  if(!key) return;
+  localStorage.setItem(LS_PRESENCA_READ, key);
+}
+function isReadPresenca(){
+  const key = sessaoKey();
+  return !!key && localStorage.getItem(LS_PRESENCA_READ) === key;
+}
+
+function refreshPresenceUI(){
+  const totalIrmaos = Array.isArray(CFG?.irmaos) ? CFG.irmaos.length : 0;
+  const ans = getPresencaAns();
+
+  const nSA = ans === "sessao_agape"   ? 1 : 0;
+  const nSS = ans === "somente_sessao" ? 1 : 0;
+  const nAG = ans === "somente_agape"  ? 1 : 0;
+
+  const totalResp = ans ? 1 : 0;
+  const totalNao  = Math.max(0, totalIrmaos - totalResp);
+
+  const setNum = (id, v)=>{ const el=document.getElementById(id); if(el) el.textContent = String(v); };
+
+  setNum("rSA", nSA);
+  setNum("rS",  nSS);
+  setNum("rA",  nAG);
+  setNum("rT",  totalResp);
+  setNum("rN",  totalNao);
+
+  setNum("barNao", totalNao);
+  setNum("barSim", totalResp);
+
+  const line = document.getElementById("presStatusLine");
+  if(line){
+    const label =
+      ans === "sessao_agape" ? "Sessão e Agape" :
+      ans === "somente_sessao" ? "Somente sessão" :
+      ans === "somente_agape" ? "Somente ágape" : "";
+    line.textContent = ans ? `Você respondeu: ${label}.` : "Você ainda não respondeu.";
+  }
+
+  ["btnRespSessaoAgape","btnRespSessao","btnRespAgape"].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.classList.remove("isChosen");
+  });
+  const chosenId =
+    ans === "sessao_agape" ? "btnRespSessaoAgape" :
+    ans === "somente_sessao" ? "btnRespSessao" :
+    ans === "somente_agape" ? "btnRespAgape" : "";
+  if(chosenId){
+    const b = document.getElementById(chosenId);
+    if(b) b.classList.add("isChosen");
+  }
+}
+
+const LS_CONVOCACAO_READ = "agape_convocacao_read_v1";
+
+function getConvocacaoObj(){
+  // aceita convocacao na raiz OU dentro de sessao (compatível com os 2 formatos)
+  return (CFG && (CFG.convocacao || (CFG.sessao && CFG.sessao.convocacao))) || null;
+}
+
+function getConvocacaoId(){
+  const c = getConvocacaoObj();
+  return String(c?.id || "").trim();
+}
+
+function isConvocacaoAtiva(){
+  const c = getConvocacaoObj();
+  return c?.ativa === true;
+}
+
+function isConvocacaoLida(){
+  const id = getConvocacaoId();
+  if(!id) return false;
+  return localStorage.getItem(LS_CONVOCACAO_READ) === id;
+}
+
+function marcarConvocacaoLida(){
+  const id = getConvocacaoId();
+  if(!id) return;
+  localStorage.setItem(LS_CONVOCACAO_READ, id);
+}
+
+/** Atualiza a bolinha do envelope (id correto: badgeConvocacao) */
+function updateConvocacaoBadge(){
+  const badge = document.getElementById("badgeConvocacao");
+  if(!badge) return;
+
+  const show = isConvocacaoAtiva() && !isConvocacaoLida();
+  badge.classList.toggle("hidden", !show);
+  badge.textContent = "!";
+}
+
+/** Mantém compatibilidade com chamadas antigas */
+function updateEnvelopeUI(){
+  updateConvocacaoBadge();
+}
+
+function choosePresenca(val){
+  setPresencaAns(val);
+  setReadPresenca();
+  refreshPresenceUI();
+  updateEnvelopeUI();
+}
+
+function openPresenca(){
+  if(!CFG?.sessao) return;
+
+  marcarConvocacaoLida();
+  updateConvocacaoBadge();
+
+  const elTxt = document.getElementById("presTexto");
+  if(elTxt){
+    elTxt.textContent = CFG.sessao.chamado || "Mensagem não configurada.";
+  }
+
+  setPresencaLida();
+  updateEnvelopeUI();
+
+  showScreen("scr_presenca","forward");
+  refreshPresenceUI();
+}
+
+// ===== Pagamento v25 flow =====
+const PAY_SUCCESS_MS = 2200;
+
+function escapeHtml(s){
+  return String(s||"")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function cartEntries(cart){
+  if(!cart) return [];
+  if(!Array.isArray(cart) && typeof cart==="object"){
+    return Object.entries(cart).map(([id,q])=>({id:String(id), qtd:Number(q||0)}));
+  }
+  if(Array.isArray(cart)){
+    return cart.map(it=>({id:String(it.id), qtd:Number(it.qtd||it.qtd||0)}));
+  }
+  return [];
+}
+
+// ===== PIX =====
+function emv(id, value){
+  const v = String(value);
+  const len = String(v.length).padStart(2,"0");
+  return `${id}${len}${v}`;
+}
+
+function crc16(payload){
+  let crc = 0xFFFF;
+  for(let i=0;i<payload.length;i++){
+    crc ^= (payload.charCodeAt(i) << 8);
+    for(let j=0;j<8;j++){
+      crc = (crc & 0x8000) ? (((crc << 1) ^ 0x1021) & 0xFFFF) : ((crc << 1) & 0xFFFF);
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4,"0");
+}
+
+function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
+  const k = String(key||"").trim();
+  const a = Number(amount||0).toFixed(2);
+
+  const mName = String(merchantName || "AGAPE").slice(0,25);
+  const mCity = String(merchantCity || "BRASIL").slice(0,15);
+  const tId   = String(txid || "AGAPE").slice(0,25);
+
+  const gui = emv("00","BR.GOV.BCB.PIX");
+  const chave = emv("01", k);
+  const mai = emv("26", gui + chave);
+
+  const payloadNoCrc =
+    emv("00","01") +
+    emv("01","12") +
+    mai +
+    emv("52","0000") +
+    emv("53","986") +
+    emv("54", a) +
+    emv("58","BR") +
+    emv("59", mName) +
+    emv("60", mCity) +
+    emv("62", emv("05", tId)) +
+    "6304";
+
+  return payloadNoCrc + crc16(payloadNoCrc);
+}
+
+function closePresenca(){
+  updateEnvelopeUI();
+  updatePresenceConfirmedWait(); // ✅ mostra no wait imediatamente
+  showScreen("scr_wait","back");
+}
+
+function isPresencaLida(){
+  return localStorage.getItem(LS_PRES_LIDA) === "1";
+}
+function setPresencaLida(){
+  localStorage.setItem(LS_PRES_LIDA, "1");
+}
+function isPresencaRespondida(){
+  return localStorage.getItem(LS_PRES_RESP) === "1";
+}
+function setPresencaRespondida(){
+  localStorage.setItem(LS_PRES_RESP, "1");
+}
+
+function bindPresencaUI(){
+  const b1 = document.getElementById("btnRespSessaoAgape");
+  const b2 = document.getElementById("btnRespSessao");
+  const b3 = document.getElementById("btnRespAgape");
+
+  const bind = (btn, val)=>{
+    if(!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+
+    const handler = (e)=>{
+      e?.preventDefault?.();
+      choosePresenca(val);
+    };
+
+    btn.addEventListener("click", handler);
+    btn.addEventListener("touchend", (e)=>{ e.preventDefault(); handler(e); }, {passive:false});
+  };
+
+  bind(b1, "sessao_agape");
+  bind(b2, "somente_sessao");
+  bind(b3, "somente_agape");
+
+  const env = document.getElementById("btnEnvelope");
+  if(env && !env.dataset.bound){
+    env.dataset.bound="1";
+    env.addEventListener("click", openPresenca);
+    env.addEventListener("touchend", (e)=>{ e.preventDefault(); openPresenca(); }, {passive:false});
+  }
+
+  const fechar = document.getElementById("btnFecharPresenca");
+  if(fechar && !fechar.dataset.bound){
+    fechar.dataset.bound="1";
+    fechar.addEventListener("click", closePresenca);
+    fechar.addEventListener("touchend", (e)=>{ e.preventDefault(); closePresenca(); }, {passive:false});
+  }
+}
+
+/* ==========================
+   BRAND / UI
+========================== */
+function applyBrand(){
+  const setTextId = (id, val) => { const el=document.getElementById(id); if(el) el.textContent = val; };
+  const setSrc  = (id, src) => { const el=document.getElementById(id); if(el && src) el.src = src; };
+
+  const logoUrl = (CFG?.ui?.logo_url) ? CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+
+  ["brandLogo","brandLogoWait","brandLogoCons","brandLogoPres","payLogo"].forEach(id=>setSrc(id, logoUrl));
+
+  setTextId("lojaNome", CFG?.loja?.nome || "Loja");
+  setTextId("lojaSub",  CFG?.loja?.subtitulo || "");
+  setTextId("lojaNomeWait", CFG?.loja?.nome || "Loja");
+  setTextId("lojaSubWait",  CFG?.loja?.subtitulo || "");
+  setTextId("consLoja", CFG?.loja?.nome || "Loja");
+  setTextId("consSub",  CFG?.loja?.subtitulo || "");
+  setTextId("lojaNomePres", CFG?.loja?.nome || "Loja");
+  setTextId("payLoja", CFG?.loja?.nome || "Loja");
+
+  const pix = (CFG?.loja?.pix_chave || "").trim();
+  setTextId("pixChave", pix || "—");
+  setTextId("pixChaveWait", pix || "—");
+
+  const opened = (CFG?.sessao?.status || "").toLowerCase() === "aberta";
+
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,"0");
+  const mm = String(now.getMinutes()).padStart(2,"0");
+  const ss = String(now.getSeconds()).padStart(2,"0");
+  const nowStr = `${hh}:${mm}:${ss}`;
+  const d = (CFG?.sessao?.data || "").trim();
+  const sessaoStr = d ? `${d} — ${nowStr}` : `— — ${nowStr}`;
+
+  const dotColor = opened ? "var(--good)" : "var(--bad)";
+  ["sessaoDotLogin","sessaoDotCons","paySessaoDot","sessaoDotWait","sessaoDotPres"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.background = dotColor;
+  });
+
+  const sessaoLabel = opened ? "Sessão aberta" : "Sessão fechada";
+  const sessaoLine = `${sessaoLabel} — ${sessaoStr}`;
+  setTextId("sessaoLineLogin", sessaoLine);
+  setTextId("sessaoLineCons", sessaoLine);
+  setTextId("paySessaoLine", sessaoLine);
+  setTextId("sessaoLineWait", sessaoLine);
+  setTextId("sessaoLinePres", sessaoLine);
+  setTextId("sessaoStatus", opened ? "Aberta" : "Fechada");
+  setTextId("lastCheck", now.toLocaleString("pt-BR"));
+
+  updateEnvelopeUI();
+}
+
+applyBrand();
+updateConvocacaoBadge();
+
+/* ==========================
+   PRODUCTS / TOTAL
+========================== */
+function animateTotal(to){
+  const el1 = $("#totalValue");
+  const el2 = $("#payTotal");
+  const el3 = $("#pixValor");
+  if(!el1 || !el2 || !el3 ) { lastTotal = to; return; }
+
+  const from = Math.round(lastTotal);
+  const target = Math.round(to);
+
+  if(from === target){
+    el1.textContent = fmtBRL(to);
+    el2.textContent = fmtBRL(to);
+    el3.textContent = fmtBRL(to);
+    lastTotal = to;
+    return;
+  }
+  const dir = target > from ? 1 : -1;
+  let cur = from;
+  const stepMs = 18;
+  const timer = setInterval(()=>{
+    cur += dir;
+    el1.textContent = fmtBRL(cur);
+    el2.textContent = fmtBRL(cur);
+    el3.textContent = fmtBRL(cur);
+
+    if(cur === target){
+      clearInterval(timer);
+      el1.textContent = fmtBRL(to);
+      el2.textContent = fmtBRL(to);
+      el3.textContent = fmtBRL(to);
+      lastTotal = to;
+    }
+  }, stepMs);
+}
+
+function renderProducts(){
+  const list=$("#prodList");
+  list.innerHTML="";
+  const produtos=Array.isArray(CFG?.produtos)?CFG.produtos:[];
+  const cart=getCart();
+
+  if(produtos.length===0){
+    list.innerHTML='<div style="color:rgba(255,255,255,.65)">Sem produtos no JSON.</div>';
+    return;
+  }
+
+  for(const p of produtos){
+    const q=Number(cart[p.id]||0);
+    const row=document.createElement("div");
+    row.className="prodRow";
+    row.innerHTML=`
+      <div class="pIcon"><img src="${p.icon || './assets/icon-192.png'}" alt=""></div>
+      <div class="pMid">
+        <div class="pName">${p.nome||"Produto"}</div>
+        <div class="pDesc">${p.desc||""}</div>
+        <div class="pPrice">${fmtBRL(Number(p.preco||0))}</div>
+      </div>
+      <div class="qtyWrap">
+        <button class="qtyBtn" data-act="dec" data-id="${p.id}">−</button>
+        <div class="qty" id="qty_${p.id}">${q}</div>
+        <button class="qtyBtn" data-act="inc" data-id="${p.id}">+</button>
+      </div>
+    `;
+    list.appendChild(row);
+  }
+  updateTotal();
+}
+
+function updateTotal(){
+  const cart=getCart();
+  const produtos=Array.isArray(CFG?.produtos)?CFG.produtos:[];
+  let total=0;
+  for(const p of produtos){
+    total += Number(cart[p.id]||0)*Number(p.preco||0);
+  }
+  animateTotal(total);
+  return total;
+}
+
+function findIrmao(tel,cim){
+  tel=String(tel||"").replace(/\D/g,"");
+  cim=String(cim||"").trim();
+  return (Array.isArray(CFG?.irmaos)?CFG.irmaos:[]).find(i =>
+    String(i.telefone||"").replace(/\D/g,"")===tel &&
+    String(i.cim||"").trim()===cim
+  );
+}
+
+function applyRememberedUser(){
+  const u = getUser();
+  const telWrap = document.getElementById("telWrap");
+  const telInp  = document.getElementById("inpTel");
+  const welcome = document.getElementById("welcomeTitle");
+  const hasPhone = !!(u && u.telefone && String(u.telefone).trim());
+
+  if (hasPhone){
+    if (telWrap) telWrap.style.display = "none";
+    if (telInp) {
+      telInp.value = String(u.telefone);
+      telInp.disabled = true;
+    }
+    if (welcome && u.nome) welcome.textContent = `Bem-vindo, ${u.nome} 👋`;
+  } else {
+    if (telWrap) telWrap.style.display = "";
+    if (telInp) {
+      telInp.disabled = false;
+    }
+    if (welcome) welcome.textContent = "Bem-vindo 👋";
+  }
+}
+
+function setupAdminTap(){
+  const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
+  for(const el of logos){
+    el.addEventListener("click", ()=>{
+      adminTapCount++;
+      clearTimeout(adminTapTimer);
+      adminTapTimer=setTimeout(()=>adminTapCount=0, 1200);
+      if(adminTapCount>=2){
+        adminTapCount=0;
+        openAdmin();
+      }
+    });
+  }
+}
+
+/* ==========================
+   WAIT POLLING
+========================== */
+function nowDT(){ return new Date().toLocaleString("pt-BR"); }
+
+function stopWaitPolling(){
+  if(waitTimer){ clearInterval(waitTimer); waitTimer=null; }
+  if(waitOpenTimer){ clearInterval(waitOpenTimer); waitOpenTimer=null; }
+  waitPollingStarted=false;
+}
+
+function startWaitPolling(){
+  if(waitPollingStarted) return;
+  waitPollingStarted=true;
+  stopWaitPolling();
+
+  const tick = async ()=>{
+    try{
+      setText('lastCheck', nowDT());
+      CFG = await loadConfig();
+      updateConvocacaoBadge();
+      initCashFromConfig();
+      applyBrand();
+      
+      try{ updatePresenceConfirmedWait(); }catch(_){}
+      try{ if(typeof startWaitPresencaFX==="function") startWaitPresencaFX(); }catch(_){}
+      
+      renderCash();
+
+      if(sessionIsOpen()){
+        stopWaitPolling();
+        showScreen("scr_login","forward");
+      }
+    }catch(_){}
+  };
+
+  tick();
+  waitTimer = setInterval(tick, 6000);
+
+  waitOpenTimer = setInterval(async ()=>{
+    if(currentScreen !== 'scr_wait') return;
+    try{
+      CFG = await loadConfig();
+      applyBrand();
+      if(sessionIsOpen()){
+        stopWaitPolling();
+        showScreen('scr_login','forward');
+      }
+    }catch(_){}
+  }, 15000);
+}
+
+/* ==========================
+   PAY FLOW
+========================== */
+function buildPayScreen(){
+  payReady = false;
+  setTimeout(()=>{ payReady = true; }, 350);
+
+  applyBrand();
+
+  const u = getUser() || {};
+  const nome = (u.nome||"").trim();
+  setText("payHello", nome ? `Oi meu irmão, ${nome}!` : "Oi meu irmão!");
+
+  const total = updateTotal();
+  setText("payTotal", fmtBRL(total));
+  setText("pixValor", fmtBRL(total));
+
+  const cart = getCart();
+  const entries = cartEntries(cart).filter(x=>x.qtd>0);
+
+  const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
+  const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
+
+  const lines = entries.map(e=>{
+    const p = byId[e.id] || {};
+    const nomeP = p.nome || `Item ${e.id}`;
+    const preco = Number(p.preco||0);
+    const sub = e.qtd * preco;
+    return {q:e.qtd, nome:nomeP, sub};
+  });
+
+  const box = document.getElementById("payItems");
+  if(box){
+    if(lines.length===0){
+      box.innerHTML = `<div style="opacity:.75;font-weight:900">Nenhum item selecionado.</div>`;
+    }else{
+      box.innerHTML = lines.map(l=>{
+        const left = `${l.q} ${l.nome}`;
+        const right = fmtBRL(l.sub);
+        return `<div class="payItemRow"><div class="payItemLeft">${escapeHtml(left)}</div><div class="payItemDots"></div><div class="payItemRight">${escapeHtml(right)}</div></div>`;
+      }).join("");
+    }
+  }
+}
+
+function openPixModal(){
+  const total = updateTotal();
+  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
+  if(!key){ toast("Chave Pix não configurada"); return; }
+
+  const elValor = document.getElementById("pixValor");
+  if(elValor) elValor.textContent = fmtBRL(total);
+
+  const payload = buildPixPayload({
+    key,
+    amount: total,
+    merchantName: (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "AGAPE",
+    merchantCity: (CFG && CFG.loja && CFG.loja.cidade) ? CFG.loja.cidade : "BRASIL",
+    txid: "AGAPE"
+  });
+
+  const elCode =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave") ||
+    document.getElementById("pixKeyText") ||
+    null;
+
+  if(elCode) elCode.textContent = payload;
+
+  const modal = document.getElementById("pixModal");
+  if(modal) modal.classList.remove("hidden");
+}
+
+function closePixModal(){
+  const modal = document.getElementById("pixModal");
+  if(modal) modal.classList.add("hidden");
+}
+
+async function copyText(txt){
+  try{ await navigator.clipboard.writeText(txt); toast("Copiado ✅"); }
+  catch(_){
+    const ta=document.createElement("textarea");
+    ta.value=txt; ta.style.position="fixed"; ta.style.left="-9999px";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ document.execCommand("copy"); toast("Copiado ✅"); } catch(__){ toast("Não foi possível copiar"); }
+    document.body.removeChild(ta);
+  }
+}
+
+function showPaySuccess(){
+  const ps = document.getElementById("paySuccess");
+  if(ps) ps.classList.remove("hidden");
+  const gif = document.getElementById("payGif");
+  if(gif){
+    const src = gif.getAttribute("src") || "./assets/check.gif";
+    gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
+  }
+  try{
+    const a = new Audio("./assets/coin.mp3");
+    a.play().catch(()=>{});
+  }catch(e){}
+}
+
+function hidePaySuccess(){
+  const ps = document.getElementById("paySuccess");
+  if(ps) ps.classList.add("hidden");
+}
+
+function finalizePayment(tipo, msg){
+  const total = updateTotal();
+  if(tipo === "dinheiro" || tipo === "pix"){
+    setCash(getCash() + Number(total || 0));
+    renderCash();
+  }
+
+  toast(msg);
+  clearCart();
+  updateTotal();
+  closePixModal();
+  showPaySuccess();
+
+  setTimeout(()=>{
+    hidePaySuccess();
+    showScreen("scr_login","back");
+  }, 2200);
+}
+
+/* ==========================
+   EXIT
+========================== */
+function sairDoAplicativo(){
+  //try{ localStorage.removeItem(LS_USER); }catch(_){}
+  try{ localStorage.removeItem(LS_CART); }catch(_){}
+  try{ sessionStorage.clear(); }catch(_){}
+  setTimeout(()=>{
+    try{ window.location.href = "about:blank"; }catch(_){}
+    try{ window.close(); }catch(_){}
+  }, 80);
+}
+
+/* ==========================
+   PUSH HELPERS (✅ agora no lugar certo)
+========================== */
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
+const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
+
+/* ==========================
+   REGISTER PUSH (✅ mínimo + sem duplicar inscrição)
+========================== */
+async function registerPush() {
+  if (!("serviceWorker" in navigator)) return;
+
+  const reg = await navigator.serviceWorker.ready;
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    console.warn("Permissão de notificação negada");
+    return;
+  }
+
+  // ✅ evita duplicar / re-assinar toda vez
+  let subscription = await reg.pushManager.getSubscription();
+
+  if (!subscription) {
+    subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+
+  const sub = subscription.toJSON();
+
+  await fetch(PUSH_SUBSCRIBE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sub)
+  });
+
+  console.log("Push registrado com sucesso");
+}
+
+/* ==========================
+   BOOT
+========================== */
+async function boot(){
+  // 1) Service Worker
+  if("serviceWorker" in navigator){
+    try{
+      await navigator.serviceWorker.register("./service-worker.js");
+      console.log("SW registrado");
+    }catch(e){
+      console.warn("Erro SW", e);
+    }
+  }
+
+  // 2) Config primeiro
+try{
+  CFG = await loadConfig();   // <- mantenha assim
+  try{ updatePresenceConfirmedWait(); }catch(_){}
+  try{ if(typeof startWaitPresencaFX==="function") startWaitPresencaFX(); }catch(_){}
+  try{ updateConvocacaoBadge(); }catch(_){}
+}catch(_){
+  // fallback, se precisar
+}
+
+
+  // 3) Só tenta push se estiver habilitado no JSON
+  try{
+    if (CFG?.push?.habilitado === true) {
+      await registerPush();
+    }
+  }catch(e){
+    console.warn("Push não registrado", e);
+  }
+
+  setTimeout(()=>{
+    const img = document.getElementById("splashSymbol");
+    if(img) img.src = "./assets/maconaria.gif";
+  }, 1200);
+
+  setTimeout(()=>{ showScreen("scr_splash2","forward"); }, GIF_TIME);
+
+  setTimeout(()=>{
+    applyBrand();
+    initCashFromConfig();
+    renderCash();
+    applyRememberedUser();
+    setupAdminTap();
+    bindPresencaUI();
+    refreshPresenceUI();
+    updateEnvelopeUI();
+
+    if(sessionIsOpen()){
+      showScreen("scr_login","forward");
+    }else{
+      showScreen("scr_wait","forward");
+      startWaitPolling();
+    }
+  }, GIF_TIME + ZOOM_TIME);
+
+  // LOGIN
+  document.getElementById("btnEntrar")?.addEventListener("click", async ()=>{
+    const u = getUser();
+    const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
+
+    const telInp = document.getElementById("inpTel");
+    const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
+
+    const cimInp = document.getElementById("inpCIM");
+    const cim = cimInp ? String(cimInp.value||"").trim() : "";
+
+    if(!tel){ toast("Digite o telefone"); return; }
+    if(!cim){ toast("Digite o CIM"); return; }
+
+    try{ CFG = await loadConfig(); }catch(_){}
+    applyBrand();
+
+    const irmao = findIrmao(tel, cim);
+    if(!irmao){ toast("CIM inválido"); return; }
+
+    setUser({ nome: irmao.nome, telefone: String(irmao.telefone).replace(/\D/g,"") });
+    applyRememberedUser();
+
+    if(!sessionIsOpen()){
+      toast("Sessão fechada (tesoureiro precisa abrir)");
+      showScreen("scr_wait","forward");
+      startWaitPolling();
+      return;
+    }
+
+    renderProducts();
+    lastTotal = 0;
+    updateTotal();
+    initCashFromConfig();
+    renderCash();
+    showScreen("scr_consumo","forward");
+  });
+
+  // QTY
+  document.addEventListener("click",(e)=>{
+    const btn=e.target.closest(".qtyBtn");
+    if(!btn) return;
+    const id=btn.getAttribute("data-id");
+    const act=btn.getAttribute("data-act");
+    const cart=getCart();
+    const cur=Number(cart[id]||0);
+    cart[id]= act==="inc" ? cur+1 : Math.max(0, cur-1);
+    setCart(cart);
+    const el=document.getElementById("qty_"+id);
+    if(el) el.textContent=String(cart[id]);
+    updateTotal();
+  });
+
+  // FECHAR -> PAGAMENTO
+  document.getElementById("btnFechar")?.addEventListener("click", ()=>{
+    const total = updateTotal();
+    if(total<=0){ toast("Selecione ao menos 1 item"); return; }
+    buildPayScreen();
+    hidePaySuccess();
+    closePixModal();
+    showScreen("scr_pagamento","forward");
+  });
+
+  document.getElementById("btnVoltarConsumo")?.addEventListener("click", ()=>{
+    closePixModal();
+    hidePaySuccess();
+    showScreen("scr_consumo","back");
+  });
+
+  document.getElementById("btnSair")?.addEventListener("click", ()=>{
+    closePixModal();
+    hidePaySuccess();
+    clearCart();
+    const cim = document.getElementById("inpCIM"); if(cim) cim.value="";
+    showScreen("scr_login","back");
+    toast("Saiu");
+  });
+
+  document.getElementById("btnSairWait")?.addEventListener("click", ()=>{
+    if(confirm("Deseja sair do aplicativo?")) sairDoAplicativo();
+  });
+
+  document.getElementById("btnSairLogin")?.addEventListener("click", sairDoAplicativo);
+
+  // PAY
+  document.getElementById("btnPix")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    openPixModal();
+  });
+  document.getElementById("btnDinheiro")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    finalizePayment("dinheiro", "Registrado: dinheiro");
+  });
+  document.getElementById("btnProxima")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    finalizePayment("proxima", "Registrado: próxima sessão");
+  });
+
+  document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
+    const el = document.getElementById("pixChaveModal");
+    const payload = el ? (el.textContent || "").trim() : "";
+    if(!payload){ toast("Código Pix vazio"); return; }
+    copyText(payload);
+  });
+
+  ["btnPixCancel","btnPixCancel2"].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.addEventListener("click", closePixModal);
+  });
+
+  document.getElementById("btnPixOk")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    finalizePayment("pix", "Registrado: pix");
+  });
+}
+
+/* ======== PRESENÇA (mantido como você tinha) ======== */
+function highlightPresenceChoice(chosenId){
+  const ids = ["btnRespSessaoAgape","btnRespSessao","btnRespAgape"];
+  ids.forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.remove("isChosen");
+  });
+
+  const chosen = document.getElementById(chosenId);
+  if(chosen) chosen.classList.add("isChosen");
+}
+document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=>{
+  setPresencaAns("sessao_agape");
+  highlightPresenceChoice("btnRespSessaoAgape");
+  refreshPresenceUI();
+  updateEnvelopeUI();
+});
+
+document.getElementById("btnRespSessao")?.addEventListener("click", ()=>{
+  setPresencaAns("somente_sessao");
+  highlightPresenceChoice("btnRespSessao");
+  refreshPresenceUI();
+  updateEnvelopeUI();
+});
+
+document.getElementById("btnRespAgape")?.addEventListener("click", ()=>{
+  setPresencaAns("somente_agape");
+  highlightPresenceChoice("btnRespAgape");
+  refreshPresenceUI();
+  updateEnvelopeUI();
+});
+
+const PRES_SUCCESS_MS = 6000;
+
+function highlightPresenceChoiceByVal(ans){
+  const map = {
+    "sessao_agape": "btnRespSessaoAgape",
+    "somente_sessao": "btnRespSessao",
+    "somente_agape": "btnRespAgape",
+  };
+  const chosenId = map[String(ans||"")];
+  const ids = ["btnRespSessaoAgape","btnRespSessao","btnRespAgape"];
+  ids.forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.remove("isChosen");
+  });
+  if(chosenId){
+    const chosen = document.getElementById(chosenId);
+    if(chosen) chosen.classList.add("isChosen");
+  }
+}
+
+function showPresSuccess(){
+  const ov = document.getElementById("presSuccess");
+  if(ov) ov.classList.remove("hidden");
+
+  const gif = document.getElementById("presGif");
+  if(gif){
+    const src = gif.getAttribute("src") || "./assets/presenca.gif";
+    gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
+  }
+}
+function hidePresSuccess(){
+  const ov = document.getElementById("presSuccess");
+  if(ov) ov.classList.add("hidden");
+}
+
+function updatePresenceConfirmedWait(){
+  const el = document.getElementById("waitPresencaOk");
+  if(!el) return;
+  const ans = (typeof getPresencaAns === "function") ? (getPresencaAns() || "") : "";
+  el.classList.toggle("hidden", !ans);
+  startWaitPresencaFX();
+}
+
+let _waitPresFxTimer = null;  
+  
+function startWaitPresencaFX(){
+  const el = document.getElementById("waitPresencaOk");
+  if(!el) return;
+
+  // evita duplicar timers
+  if(_waitPresFxTimer){ clearInterval(_waitPresFxTimer); _waitPresFxTimer = null; }
+
+  const pick = (arr)=> arr[Math.floor(Math.random()*arr.length)];
+
+  const applyOnce = ()=>{
+    // só anima se realmente tem resposta
+    const ans = (typeof getPresencaAns === "function") ? (getPresencaAns() || "") : "";
+    if(!ans || el.classList.contains("hidden")){
+      el.classList.remove("pulse","blink");
+      return;
+    }
+
+    const label =
+      ans === "sessao_agape" ? "SESSÃO E ÁGAPE" :
+      ans === "somente_sessao" ? "SOMENTE SESSÃO" :
+      ans === "somente_agape" ? "SOMENTE ÁGAPE" : "—";
+
+    // alterna texto (aleatório)
+    el.textContent = pick([
+      "✅ PRESENÇA JÁ CONFIRMADA",
+      `✅ ESCOLHIDO: ${label}`,
+      "✅ CONFIRMADO COM SUCESSO"
+    ]);
+
+    // alterna efeito (aleatório)
+    el.classList.remove("pulse","blink");
+    el.classList.add(pick(["pulse","blink"]));
+
+    // alterna fundo/borda (azuis claros transparentes, aleatório)
+// alterna fundo/borda (multicores transparentes, aleatório)
+const bg = pick([
+  // AZUIS
+  "rgba(80,170,255,.14)",
+  "rgba(100,190,255,.18)",
+  "rgba(60,160,255,.12)",
+  "rgba(120,210,255,.16)",
+
+  // VERDES
+  "rgba(60,200,120,.14)",
+  "rgba(80,220,150,.18)",
+  "rgba(40,180,110,.12)",
+  "rgba(100,240,190,.16)",
+
+  // AMARELOS (dourado suave)
+  "rgba(255,215,0,.14)",
+  "rgba(255,200,60,.16)",
+
+  // VERMELHO SUAVE (alerta leve, sem assustar)
+  "rgba(255,80,80,.10)",
+  "rgba(255,120,120,.12)"
+]);
+
+const bd = pick([
+  // AZUIS
+  "rgba(140,210,255,.26)",
+  "rgba(170,230,255,.30)",
+  "rgba(120,200,255,.22)",
+  "rgba(190,240,255,.28)",
+
+  // VERDES
+  "rgba(120,255,210,.25)",
+  "rgba(150,255,220,.28)",
+  "rgba(100,240,190,.22)",
+
+  // AMARELOS
+  "rgba(255,215,0,.28)",
+  "rgba(255,230,120,.22)",
+
+  // VERMELHO SUAVE
+  "rgba(255,120,120,.22)",
+  "rgba(255,160,160,.18)"
+]);
+
+    el.style.background = bg;
+    el.style.borderColor = bd;
+
+    // sombra leve às vezes
+    el.style.boxShadow = pick([
+      "0 10px 26px rgba(0,0,0,.18)",
+      "0 8px 20px rgba(0,0,0,.14)",
+      "0 0 0 rgba(0,0,0,0)"
+    ]);
+  };
+
+  // aplica agora e depois em intervalos variáveis
+  applyOnce();
+  _waitPresFxTimer = setInterval(applyOnce, pick([1200, 1500, 1800, 2200, 2600]));
+}
+
+function confirmPresenca(ans){
+  setPresencaRespondida();
+
+  if(typeof setPresencaAns === "function") setPresencaAns(ans);
+
+  refreshPresenceUI();            // ✅ retângulo / texto atualiza na hora
+  updateEnvelopeUI();
+  updatePresenceConfirmedWait();  // ✅ garante o aviso no wait
+
+  showPresSuccess();
+  setTimeout(()=>{
+    hidePresSuccess();
+    showScreen("scr_wait","back");
+  }, 3000);
+}
+
+
+function bindPresBtn(id, ans){
+  const btn = document.getElementById(id);
+  if(!btn || btn.dataset.presBound) return;
+  btn.dataset.presBound = "1";
+
+  const handler = (e)=>{
+    e?.preventDefault?.();
+    confirmPresenca(ans);
+  };
+
+  btn.addEventListener("click", handler);
+  btn.addEventListener("touchend", (e)=>{ e.preventDefault(); handler(e); }, {passive:false});
+}
+
+function initPresencaBlock(){
+  bindPresBtn("btnRespSessaoAgape","sessao_agape");
+  bindPresBtn("btnRespSessao","somente_sessao");
+  bindPresBtn("btnRespAgape","somente_agape");
+
+  try{
+    const ans = (typeof getPresencaAns === "function") ? getPresencaAns() : "";
+    highlightPresenceChoiceByVal(ans);
+  }catch(_){}
+
+  updatePresenceConfirmedWait();
+}
+
+initPresencaBlock();
+
+const _oldOpenPresenca = (typeof openPresenca === "function") ? openPresenca : null;
+if(_oldOpenPresenca){
+  window.openPresenca = function(){
+    _oldOpenPresenca();
+    try{
+      const ans = (typeof getPresencaAns === "function") ? getPresencaAns() : "";
+      highlightPresenceChoiceByVal(ans);
+      updatePresenceConfirmedWait();
+    }catch(_){}
+  };
+}
+// ==========================
+// ADMIN (tela completa) - SCRIPT
+// Cole no FINAL do seu <script>
+// ==========================
+
+// estado
+let ADMIN_CFG = null;
+let ADMIN_TAB = "cfg";
+let ADMIN_BOUND = false;
+
+// opcional: se você tiver endpoint depois, preencha aqui
+const ADMIN_SAVE_URL = "https://api.erpimpar.com.br/agape/consumo/admin_save_config.php";
+
+// ---- helpers seguros (não quebram) ----
+function adminToastOk(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
+function adminToastErr(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
+function adminShow(screen, dir){
+  if(typeof showScreen === "function") showScreen(screen, dir || "forward");
+  else document.getElementById(screen)?.classList.remove("hidden");
+}
+function adminHide(screen){
+  document.getElementById(screen)?.classList.add("hidden");
+}
+function adminEl(id){ return document.getElementById(id); }
+function adminVal(id){ return (adminEl(id)?.value ?? "").trim(); }
+function adminSetVal(id, v){
+  const el = adminEl(id);
+  if(!el) return;
+  el.value = (v ?? "");
+}
+function adminSanTel(s){
+  return String(s || "").replace(/\D+/g,"");
+}
+function adminJsonPretty(o){
+  try{ return JSON.stringify(o, null, 2); }catch(_){ return String(o); }
+}
+function adminDownloadJson(filename, obj){
+  const blob = new Blob([adminJsonPretty(obj)], {type:"application/json;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || "agape_config.json";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 300);
+}
+
+// ---- Tabs / Panels ----
+
+// Carrega dados do ADMIN_CFG para os campos da aba atual
+function adminSyncTabToCfg() {
+  console.log("📥 adminSyncTabToCfg - Aba:", ADMIN_TAB);
+  if(!ADMIN_CFG) { console.warn("⚠️ ADMIN_CFG vazio"); return; }
+  if(ADMIN_TAB === "cfg") adminSyncCfgTab();
+  else if(ADMIN_TAB === "sessao") adminSyncSessaoTab();
+  else if(ADMIN_TAB === "irmaos") adminSyncIrmaosTab();
+}
+
+function adminSyncCfgTab() {
+  if(!ADMIN_CFG) return;
+  adminSetVal("a_loja_nome", ADMIN_CFG?.loja?.nome || "");
+  adminSetVal("a_loja_sub", ADMIN_CFG?.loja?.subtitulo || "");
+  adminSetVal("a_loja_pix", ADMIN_CFG?.loja?.pix_chave || "");
+  adminSetVal("a_loja_tes", ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
+  adminSetVal("a_logo_url", ADMIN_CFG?.loja?.logo_url || ADMIN_CFG?.loja?.logo || "");
+  const logoUrl = adminVal("a_logo_url") || "./assets/logo-Clementino-Brito.jpeg";
+  const logoPreview = document.getElementById("a_logo_preview");
+  if(logoPreview) logoPreview.src = logoUrl;
+  console.log("✅ Aba CONFIGURAÇÃO carregada");
+}
+
+function adminSyncSessaoTab() {
+  if(!ADMIN_CFG) return;
+  adminSetVal("a_sessao_status", ADMIN_CFG?.sessao?.status || "fechada");
+  adminSetVal("a_sessao_data", ADMIN_CFG?.sessao?.data || "");
+  adminSetVal("a_sessao_caixa", ADMIN_CFG?.sessao?.caixa_inicial ?? 0);
+  adminSetVal("a_sessao_chamado", ADMIN_CFG?.sessao?.chamado || "");
+  adminSetVal("a_conv_on", String(!!ADMIN_CFG?.convocacao?.ativa));
+  adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
+  adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
+  adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
+  adminSetVal("a_push_on", String(!!ADMIN_CFG?.push?.habilitado));
+  adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
+  adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
+  adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
+  console.log("✅ Aba SESSÃO carregada");
+}
+
+function adminSyncIrmaosTab() {
+  if(!ADMIN_CFG) return;
+  const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
+  const tbody = document.querySelector("#adminTableIrmaos tbody");
+  if(!tbody) { console.warn("⚠️ Tabela irmãos não encontrada"); return; }
+  tbody.innerHTML = "";
+  if(irmaos.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;opacity:0.6;">Nenhum irmão cadastrado</td></tr>';
+    return;
+  }
+  irmaos.forEach((irmao, idx) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${idx + 1}</td><td>${irmao.nome || "—"}</td><td>${irmao.cim || "—"}</td><td>${irmao.telefone || "—"}</td>`;
+    tbody.appendChild(tr);
+  });
+  console.log(\`✅ Aba IRMÃOS carregada (\${irmaos.length} irmãos)\`);
+}
+
+
+function adminSetActiveTab(tab){
+  ADMIN_TAB = tab;
+
+  // ativa botões
+  document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
+  if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
+  if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
+  if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
+
+  // mostra painéis
+  adminEl("panelCfg")?.classList.toggle("hidden", tab!=="cfg");
+  adminEl("panelSessao")?.classList.toggle("hidden", tab!=="sessao");
+  adminEl("panelIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
+
+  // render
+  if(tab==="cfg") adminRenderCfg();
+  if(tab==="sessao") adminRenderSessao();
+  if(tab==="irmaos") adminRenderIrmaos();
+}
+
+// ---- Render (preencher inputs) ----
+function adminRenderCfg(){
+  if(!ADMIN_CFG) return;
+
+  adminSetVal("a_loja_nome", ADMIN_CFG?.loja?.nome || "");
+  adminSetVal("a_loja_sub", ADMIN_CFG?.loja?.subtitulo || "");
+  adminSetVal("a_loja_pix", ADMIN_CFG?.loja?.pix_chave || "");
+  adminSetVal("a_loja_tes", ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
+  adminSetVal("a_logo_url", ADMIN_CFG?.ui?.logo_url || ADMIN_CFG?.loja?.logo || "");
+
+  // logo preview
+  const logoUrl = adminVal("a_logo_url") || ADMIN_CFG?.ui?.logo_url || "./assets/logo-Clementino-Brito.jpeg";
+  const img = adminEl("adminLogo");
+  if(img) img.src = logoUrl;
+}
+
+function adminRenderSessao(){
+  if(!ADMIN_CFG) return;
+
+  adminSetVal("a_sessao_status", ADMIN_CFG?.sessao?.status || "fechada");
+  adminSetVal("a_sessao_data", ADMIN_CFG?.sessao?.data || "");
+  adminSetVal("a_sessao_caixa", ADMIN_CFG?.sessao?.caixa_inicial ?? 0);
+  adminSetVal("a_sessao_chamado", ADMIN_CFG?.sessao?.chamado || "");
+
+  adminSetVal("a_conv_on", String(!!ADMIN_CFG?.convocacao?.ativa));
+  adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
+  adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
+  adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
+
+  adminSetVal("a_push_on", String(!!ADMIN_CFG?.push?.habilitado));
+  adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
+  adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
+  adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
+}
+
+function adminStatusPill(status){
+  const s = String(status || "").toLowerCase();
+  if(s.includes("sessão e ágape") || s.includes("sessao e agape")) return `<span class="pill ok">SESSÃO E ÁGAPE</span>`;
+  if(s.includes("somente ágape") || s.includes("somente agape")) return `<span class="pill warn">SOMENTE ÁGAPE</span>`;
+  if(s.includes("somente sessão") || s.includes("somente sessao")) return `<span class="pill warn">SOMENTE SESSÃO</span>`;
+  if(s.includes("não confirmado") || s.includes("nao confirmado")) return `<span class="pill bad">NÃO CONFIRMADO</span>`;
+  return `<span class="pill">${status || "-"}</span>`;
+}
+
+function adminRenderIrmaos(){
+  if(!ADMIN_CFG) return;
+
+  const wrap = adminEl("adminIrmaosWrap");
+  if(!wrap) return;
+
+  const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
+  const rows = irmaos.map((u, i)=>{
+    const nome = u?.nome || "(sem nome)";
+    const tel = u?.telefone || "";
+    const st  = u?.status || "Não confirmado";
+    return `
+      <tr>
+        <td>${i+1}</td>
+        <td>${nome}<div style="opacity:.72;font-size:11px;margin-top:2px">${tel}</div></td>
+        <td>${adminStatusPill(st)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table class="adminTable">
+      <thead>
+        <tr><th>#</th><th>Irmão</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="3" style="opacity:.7">Sem irmãos no JSON</td></tr>`}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---- Coletar alterações do painel atual ----
+function adminApplyCurrentTabToCfg(){
+  if(!ADMIN_CFG) return;
+
+  if(ADMIN_TAB==="cfg"){
+    ADMIN_CFG.loja = ADMIN_CFG.loja || {};
+    ADMIN_CFG.ui   = ADMIN_CFG.ui   || {};
+
+    ADMIN_CFG.loja.nome = adminVal("a_loja_nome");
+    ADMIN_CFG.loja.subtitulo = adminVal("a_loja_sub");
+    ADMIN_CFG.loja.pix_chave = adminVal("a_loja_pix");
+    ADMIN_CFG.loja.tesoureiro_whatsapp = adminVal("a_loja_tes");
+
+    const logo = adminVal("a_logo_url");
+    if(logo) ADMIN_CFG.ui.logo_url = logo;
+  }
+
+  if(ADMIN_TAB==="sessao"){
+    ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
+    ADMIN_CFG.push = ADMIN_CFG.push || {};
+    ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
+
+    ADMIN_CFG.sessao.status = adminVal("a_sessao_status");
+    ADMIN_CFG.sessao.data = adminVal("a_sessao_data");
+    ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
+    ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
+
+    ADMIN_CFG.push.habilitado = (adminVal("a_push_on")==="true");
+    ADMIN_CFG.push.titulo = adminVal("a_push_titulo");
+    ADMIN_CFG.push.mensagem = adminVal("a_push_msg");
+    ADMIN_CFG.push.url = adminVal("a_push_url");
+
+    ADMIN_CFG.convocacao.ativa = (adminVal("a_conv_on")==="true");
+    ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
+    ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
+    ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
+  }
+}
+
+async function adminLoadResumoConsumo(sessao_id){
+  try{
+    const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json().catch(()=> ({}));
+
+    // aqui você decide o formato do JSON retornado.
+    // Vou assumir algo assim:
+    // { ok:true, totals:{irmaos_total:31, nao_confirmaram:25, por_pagamento:{dinheiro:10,pix:20,pendente:5}, caixa:10}, produtos:[{desc,qtd}] }
+
+    if(!j || j.ok !== true){
+      console.warn("resumo inválido", j);
+      return;
+    }
+
+    // joga no HTML (ids que você vai criar no layout)
+    setText("adm_tot_irmaos", j.totals?.irmaos_total ?? "—");
+    setText("adm_tot_nao", j.totals?.nao_confirmaram ?? "—");
+
+    setText("adm_tot_dinheiro", money(j.totals?.por_pagamento?.dinheiro ?? 0));
+    setText("adm_tot_pix",      money(j.totals?.por_pagamento?.pix ?? 0));
+    setText("adm_tot_pendente", money(j.totals?.por_pagamento?.pendente ?? 0));
+    setText("adm_tot_caixa",    money(j.totals?.caixa ?? 0));
+
+  }catch(e){
+    console.warn("admin resumo erro", e);
+  }
+}
+
+function setText(id, v){
+  const el = document.getElementById(id);
+  if(el) el.textContent = String(v);
+}
+
+function money(n){
+  const x = Number(n||0);
+  return x.toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
+}
+
+  
+// ---- Load (Opção A: CFG puro) ----
+async function adminLoadFromServer(){
+  try{
+    // lê o MESMO JSON cru que o app já lê
+    const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+    if(!r.ok){
+      console.warn("admin_get_config fail", r.status);
+      adminToastErr("Não carregou config do servidor" + a_conv_id + ADMIN_CFG?.convocacao?.id);
+      return;
+    }
+    const j = await r.json().catch(()=> ({}));
+    ADMIN_CFG = j;
+
+    // default tab
+    ADMIN_TAB = "cfg";
+    adminSetActiveTab("cfg");
+
+    adminToastOk("Admin pronto ✅" + a_conv_id + ADMIN_CFG?.convocacao?.id);
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro carregando Admin");
+  }
+  adminLoadResumoConsumo(ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.id || ""); 
+}
+
+// ---- Save (seguro) ----
+async function adminSave(){
+  if(!ADMIN_CFG) return;
+
+  // aplica alterações
+  adminApplyCurrentTabToCfg();
+
+  // sempre guarda draft local (pra não perder nada ao sair)
+  localStorage.setItem("AGAPE_ADMIN_DRAFT", adminJsonPretty(ADMIN_CFG));
+
+  // mostra JSON na tela (copiar/baixar)
+  const box = adminEl("adminJsonBox");
+  if(box){
+    box.classList.remove("hidden");
+    box.textContent = adminJsonPretty(ADMIN_CFG);
+  }
+
+  // se tiver endpoint, tenta postar
+  if(typeof ADMIN_SAVE_URL === "string" && ADMIN_SAVE_URL){
+    try{
+      const rr = await fetch(ADMIN_SAVE_URL, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ config: ADMIN_CFG })
+      });
+      if(!rr.ok) throw new Error("HTTP " + rr.status);
+      adminToastOk("Salvo no servidor ✅");
+      return;
+    }catch(e){
+      console.warn("ADMIN_SAVE_URL falhou, mantendo rascunho local", e);
+      adminToastErr("Não salvou no servidor (mantido rascunho local)");
+      return;
+    }
+  }
+
+  // sem endpoint: oferece download
+  adminToastOk("Rascunho salvo ✅ (local) — JSON pronto para copiar/baixar");
+}
+
+// ---- Bind UI (apenas 1x) ----
+function adminBindUI(){
+  if(ADMIN_BOUND) return;
+  ADMIN_BOUND = true;
+
+  adminEl("tabCfg")?.addEventListener("click", ()=>adminSetActiveTab("cfg"));
+  adminEl("tabSessao")?.addEventListener("click", ()=>adminSetActiveTab("sessao"));
+  adminEl("tabIrmaos")?.addEventListener("click", ()=>adminSetActiveTab("irmaos"));
+
+  adminEl("btnAdminSair")?.addEventListener("click", ()=>{
+    // sair NÃO salva no servidor. Mantém rascunho local (draft) automaticamente.
+    adminHide("scr_admin");
+    if(typeof showScreen==="function") showScreen("scr_login","back");
+  });
+
+  adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
+    await adminSave();
+  });
+
+  // duplo clique no JSON abre download
+  adminEl("adminJsonBox")?.addEventListener("dblclick", ()=>{
+    if(!ADMIN_CFG) return;
+    adminDownloadJson("agape_config.json", ADMIN_CFG);
+  });
+}
+
+// ---- Entrar no Admin (senha antes) ----
+async function openAdmin(){
+  // garante binds
+  adminBindUI();
+
+  // garante CFG para pegar telefone (senha)
+  let cfgLocal = null;
+
+  if(typeof CFG !== "undefined" && CFG) cfgLocal = CFG;
+  else if(typeof loadConfig === "function"){
+    try{ cfgLocal = await loadConfig(); }catch(_){}
+  }else{
+    try{
+      const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+      if(r.ok) cfgLocal = await r.json();
+    }catch(_){}
+  }
+
+  const telTes = adminSanTel(cfgLocal?.loja?.tesoureiro_whatsapp || "");
+  if(!telTes){
+    adminToastErr("Falta loja.tesoureiro_whatsapp no JSON");
+    return;
+  }
+
+  const typed = adminSanTel(prompt("Senha do Admin (telefone do tesoureiro):") || "");
+  if(!typed || typed !== telTes){
+    adminToastErr("Senha inválida");
+    return;
+  }
+
+  // entrou: mostra tela e carrega dados (Opção A)
+  showScreen("scr_admin","forward");
+
+  // carrega (com fallback e sem quebrar)
+  try{
+    await adminLoadFromServer();
+    adminToastOk("Admin pronto ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Falha ao carregar config (sem quebrar a tela)");
+    // cria um mínimo só pra tela não ficar vazia
+    ADMIN_CFG = ADMIN_CFG || {loja:{}, sessao:{}, push:{}, convocacao:{}, irmaos:[], ui:{}};
+    adminSetActiveTab("cfg");
+  }
+
+  /* ==========================
+   ADMIN ONLINE - BLOCO ÚNICO
+   cole no FINAL do <script>
+   ========================== */
+(function(){
+  "use strict";
+
+  // ====== AJUSTE AQUI (URL BASE DO KINGHOST) ======
+  // Exemplo final: https://api.erpimpar.com/agape/consumo/consumo_resumo_adm.php
+  const AGAPE_API_BASE = "https://api.erpimpar.com.br/agape/consumo";
+
+  // ====== estado admin ======
+  let ADMIN_CFG = null;
+  let ADMIN_TAB = "cfg";
+  let ADMIN_POLL = null;
+  let ADMIN_LAST_RESUMO = null;
+  let ADMIN_CURRENT_IRMAO = null;
+
+  // ====== helpers ======
+  function $(id){ return document.getElementById(id); }
+  function money(v){
+    const n = Number(v||0);
+    return n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+  }
+  function safeText(s){ return (s==null) ? "" : String(s); }
+  function sanTel(s){ return safeText(s).replace(/\D+/g,""); }
+
+  // Toast mínimo (não depende do seu toast)
+  function adminToast(msg){
+    try{ console.log("[ADMIN]", msg); }catch(_){}
+    // opcional: se você já tiver toast(), usa ele
+    if(typeof window.toast === "function"){ window.toast(msg); }
+  }
+
+  // ====== CONFIG ======
+  async function loadConfigDirect(){
+    // lê do GitHub (mesmo caminho do app)
+    const r = await ("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+    if(!r.ok) throw new Error("config");
+    return await r.json();
+  }
+
+  // ====== API ======
+  async function apiGet(path, params){
+    const url = new URL("https://api.erpimpar.com.br/agape/consumo" + "/" + path);
+    Object.keys(params||{}).forEach(k=> url.searchParams.set(k, params[k]));
+    const r = await fetch(url.toString(), {cache:"no-store"});
+    const j = await r.json().catch(()=>null);
+    if(!r.ok || !j || j.ok !== true) throw new Error("api_get_fail");
+    return j;
+  }
+
+  async function apiPost(path, payload){
+    const r = await fetch("https://api.erpimpar.com.br/agape/consumo" + "/" + path, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload||{})
+    });
+    const j = await r.json().catch(()=>null);
+    if(!r.ok || !j || j.ok !== true) throw new Error("api_post_fail");
+    return j;
+  }
+
+  // ====== fila offline (se cair internet) ======
+  const OFF_KEY = "AGAPE_OFFLINE_QUEUE_V1";
+  function offLoad(){
+    try{ return JSON.parse(localStorage.getItem(OFF_KEY)||"[]") || []; }catch(_){ return []; }
+  }
+  function offSave(arr){
+    try{ localStorage.setItem(OFF_KEY, JSON.stringify(arr||[])); }catch(_){}
+  }
+  function offEnqueue(item){
+    const q = offLoad();
+    q.push(item);
+    offSave(q);
+  }
+  async function offFlush(){
+    const q = offLoad();
+    if(!q.length) return;
+    const keep = [];
+    for(const it of q){
+      try{
+        await apiPost("consumo_add.php", it);
+      }catch(e){
+        keep.push(it);
+      }
+    }
+    offSave(keep);
+  }
+
+  // ====== render ======
+  function setActiveTab(tab){
+    ADMIN_TAB = tab;
+
+    ["tabCfg","tabSessao","tabIrmaos"].forEach(id=> $(id)?.classList.remove("active"));
+    if(tab==="cfg") $("tabCfg")?.classList.add("active");
+    if(tab==="sessao") $("tabSessao")?.classList.add("active");
+    if(tab==="irmaos") $("tabIrmaos")?.classList.add("active");
+
+    $("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
+    $("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
+    $("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
+  }
+
+  function fillCfgUI(cfg){
+    const loja = cfg?.loja || {};
+    const ui = cfg?.ui || {};
+    const sessao = cfg?.sessao || {};
+    const conv = cfg?.convocacao || {};
+
+    if($("a_loja_nome")) $("a_loja_nome").value = loja.nome || "";
+    if($("a_loja_sub")) $("a_loja_sub").value = loja.subtitulo || "";
+    if($("a_loja_pix")) $("a_loja_pix").value = loja.pix_chave || "";
+    if($("a_loja_tes")) $("a_loja_tes").value = loja.tesoureiro_whatsapp || "";
+    if($("a_logo_url")) $("a_logo_url").value = ui.logo_url || "";
+
+    if($("a_sessao_status")) $("a_sessao_status").value = sessao.status || "fechada";
+    if($("a_sessao_data")) $("a_sessao_data").value = sessao.data || "";
+    if($("a_sessao_caixa")) $("a_sessao_caixa").value = String(sessao.caixa_inicial ?? "");
+    if($("a_conv_id")) $("a_conv_id").value = conv.id || "";
+    if($("a_sessao_chamado")) $("a_sessao_chamado").value = sessao.chamado || "";
+  }
+
+  function badgeClassFromStatus(st){
+    if(st==="SESSAO_E_AGAPE") return "badgeSt st-SE";
+    if(st==="SOMENTE_SESSAO") return "badgeSt st-SS";
+    if(st==="SOMENTE_AGAPE") return "badgeSt st-SA";
+    return "badgeSt st-N";
+  }
+
+  function statusLabel(st){
+    if(st==="SESSAO_E_AGAPE") return "Sessão e ágape";
+    if(st==="SOMENTE_SESSAO") return "Somente sessão";
+    if(st==="SOMENTE_AGAPE") return "Somente ágape";
+    return "Não confirmado";
+  }
+
+  function renderResumo(res){
+    ADMIN_LAST_RESUMO = res;
+
+    $("r_total_irmaos").textContent = res.total_irmaos ?? "—";
+    $("r_nao_confirm").textContent = res.nao_confirmados ?? "—";
+
+    const p = res.pagamentos || {};
+    $("r_din").textContent = money(p.DINHEIRO || 0);
+    $("r_pix").textContent = money(p.PIX || 0);
+    $("r_prox").textContent = money(p.PROXIMA_SESSAO || 0);
+    $("r_caixa").textContent = money(res.caixa_total || 0);
+
+    // lista produtos
+    const list = res.produtos || [];
+    if(!$("r_prod_list")) return;
+    if(!list.length){
+      $("r_prod_list").textContent = "—";
+      return;
+    }
+    $("r_prod_list").innerHTML = list.slice(0,12).map(it=>{
+      return `<div class="sheetRow"><span>${safeText(it.desc)}</span><b>${safeText(it.qtd)}</b></div>`;
+    }).join("") + (list.length>12 ? `<div style="margin-top:8px; opacity:.7; font-size:11px;">+${list.length-12} itens...</div>` : "");
+  }
+
+  function renderIrmaosFromEvents(events){
+    // monta “estado atual” por irmão (última confirmação + pagamentos + consumo)
+    const map = new Map();
+
+    function keyOf(e){
+      if(e.cin) return "cin:"+e.cin;
+      if(e.telefone) return "tel:"+e.telefone;
+      return "nome:"+safeText(e.nome||"");
+    }
+    function ensure(e){
+      const k = keyOf(e);
+      if(!map.has(k)){
+        map.set(k,{
+          key:k,
+          nome: e.nome||"",
+          telefone: e.telefone||"",
+          cin: e.cin||"",
+          status:"NAO_CONFIRMADO",
+          consumo:{},
+          pagamentos:{}
+        });
+      }
+      return map.get(k);
+    }
+
+    for(const e of (events||[])){
+      const it = ensure(e);
+      if(e.type==="confirmacao_presenca"){
+        it.status = e.status || "NAO_CONFIRMADO";
+      }
+      if(e.type==="lancamento_consumo"){
+        (e.itens||[]).forEach(x=>{
+          const d = safeText(x.desc).trim();
+          const q = Number(x.qtd||0);
+          if(!d || q<=0) return;
+          it.consumo[d] = (it.consumo[d]||0) + q;
+        });
+      }
+      if(e.type==="pagamento"){
+        const f = safeText(e.forma||"PIX").toUpperCase();
+        const v = Number(e.valor||0);
+        if(v<=0) return;
+        it.pagamentos[f] = (it.pagamentos[f]||0) + v;
+      }
+    }
+
+    // render tabela
+    const arr = Array.from(map.values()).sort((a,b)=> a.nome.localeCompare(b.nome));
+    const tb = $("adminIrmaosBody");
+    if(!tb) return;
+    tb.innerHTML = arr.map((it,idx)=>{
+      const totalPago = Object.values(it.pagamentos||{}).reduce((s,v)=> s+Number(v||0), 0);
+      const st = it.status || "NAO_CONFIRMADO";
+      return `
+        <tr>
+          <td>${idx+1}</td>
+          <td>
+            <button class="rowBtn" data-k="${it.key}">
+              <div style="font-weight:900">${safeText(it.nome||"—")}</div>
+              <div style="font-size:11px; opacity:.75">${safeText(it.telefone||it.cin||"")}</div>
+            </button>
+          </td>
+          <td><span class="${badgeClassFromStatus(st)}">${statusLabel(st)}</span></td>
+          <td style="font-weight:900">${money(totalPago)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    // click row => abre modal
+    tb.querySelectorAll("button.rowBtn").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const k = btn.getAttribute("data-k");
+        const it = arr.find(x=>x.key===k);
+        if(it) openModalIrmao(it);
+      });
+    });
+
+    // guarda snapshot pra modal pagar
+    window.__ADMIN_IRMAOS_SNAP__ = arr;
+  }
+
+  function openModalIrmao(it){
+    ADMIN_CURRENT_IRMAO = it;
+
+    $("m_nome").textContent = it.nome || "Irmão";
+    $("m_meta").textContent = (it.telefone || it.cin || it.key);
+
+    $("m_status").textContent = statusLabel(it.status||"NAO_CONFIRMADO");
+
+    const pag = it.pagamentos || {};
+    const parts = Object.keys(pag).map(k=> `${k}: ${money(pag[k])}`);
+    $("m_pag").textContent = parts.length ? parts.join(" • ") : "—";
+
+    const cons = it.consumo || {};
+    const ckeys = Object.keys(cons);
+    $("m_cons").innerHTML = ckeys.length
+      ? ckeys.map(k=> `<div class="sheetRow"><span>${k}</span><b>${cons[k]}</b></div>`).join("")
+      : "—";
+
+    $("adminModal")?.classList.add("open");
+    $("m_valor").value = "";
+    $("m_forma").value = "DINHEIRO";
+  }
+
+  function closeModal(){
+    $("adminModal")?.classList.remove("open");
+  }
+
+  // ====== polling online ======
+  async function adminRefreshOnline(){
+    if(!ADMIN_CFG) return;
+    const sessao_id = ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.data || "";
+    if(!sessao_id) return;
+
+    // tenta sincronizar fila offline primeiro
+    await offFlush();
+
+    try{
+      const r1 = await apiGet("consumo_resumo_adm.php", {sessao_id});
+      renderResumo(r1.resumo || {});
+    }catch(e){
+      adminToast("Falha ao buscar resumo online");
+    }
+
+    try{
+      const r2 = await apiGet("consumo_get.php", {sessao_id});
+      renderIrmaosFromEvents(r2.events || []);
+    }catch(e){
+      adminToast("Falha ao buscar lista online");
+    }
+  }
+
+  function startPolling(){
+    stopPolling();
+    adminRefreshOnline();
+    ADMIN_POLL = setInterval(adminRefreshOnline, 4000);
+  }
+  function stopPolling(){
+    if(ADMIN_POLL){ clearInterval(ADMIN_POLL); ADMIN_POLL = null; }
+  }
+
+  // ====== abrir admin (senha) ======
+  async function openAdminSafe(){
+    // 1) garante CFG
+    try{
+      if(!window.CFG) window.CFG = await loadConfigDirect();
+    }catch(e){
+      adminToast("Não carregou config" + !a_conv_id + ADMIN_CFG?.convocacao?.id);
+      return;
+    }
+
+    // 2) senha = telefone do tesoureiro
+    const telTes = sanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
+    if(!telTes){
+      adminToast("Falta loja.tesoureiro_whatsapp no JSON");
+      return;
+    }
+
+    const s = prompt("Senha do Admin (telefone do tesoureiro):");
+    const typed = sanTel(s||"");
+    if(!typed || typed !== telTes){
+      adminToast("Senha inválida");
+      return;
+    }
+
+    // 3) abre tela e carrega cfg
+    if(typeof window.showScreen === "function"){
+      window.showScreen("scr_admin","forward");
+    }else{
+      // fallback: ativa manual
+      document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
+      $("scr_admin")?.classList.add("active");
+    }
+
+    ADMIN_CFG = window.CFG;
+    fillCfgUI(ADMIN_CFG);
+
+    // espelha logo
+    const logoUrl = (ADMIN_CFG?.ui?.logo_url) ? ADMIN_CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+    if($("adminLogo")) $("adminLogo").src = logoUrl;
+
+    setActiveTab("cfg");
+    startPolling();
+    adminToast("Admin pronto ✅" + ADMIN_CFG?.convocacao?.id);
+  }
+
+  // ====== salvar (por enquanto: só reflete em memória) ======
+  function applyAdminChanges(){
+    if(!ADMIN_CFG) return;
+
+    if(ADMIN_TAB === "cfg"){
+      ADMIN_CFG.loja = ADMIN_CFG.loja || {};
+      ADMIN_CFG.ui = ADMIN_CFG.ui || {};
+      ADMIN_CFG.loja.nome = $("a_loja_nome")?.value || ADMIN_CFG.loja.nome;
+      ADMIN_CFG.loja.subtitulo = $("a_loja_sub")?.value || ADMIN_CFG.loja.subtitulo;
+      ADMIN_CFG.loja.pix_chave = $("a_loja_pix")?.value || ADMIN_CFG.loja.pix_chave;
+      ADMIN_CFG.loja.tesoureiro_whatsapp = $("a_loja_tes")?.value || ADMIN_CFG.loja.tesoureiro_whatsapp;
+      ADMIN_CFG.ui.logo_url = $("a_logo_url")?.value || ADMIN_CFG.ui.logo_url;
+      window.CFG = ADMIN_CFG;
+      adminToast("Alterações aplicadas (memória). Config no GitHub é somente leitura.");
+    }
+
+    if(ADMIN_TAB === "sessao"){
+      ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
+      ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
+      ADMIN_CFG.sessao.status = $("a_sessao_status")?.value || ADMIN_CFG.sessao.status;
+      ADMIN_CFG.sessao.data = $("a_sessao_data")?.value || ADMIN_CFG.sessao.data;
+      ADMIN_CFG.sessao.caixa_inicial = Number($("a_sessao_caixa")?.value || ADMIN_CFG.sessao.caixa_inicial || 0);
+      ADMIN_CFG.sessao.chamado = $("a_sessao_chamado")?.value || ADMIN_CFG.sessao.chamado;
+
+      ADMIN_CFG.convocacao.id = $("a_conv_id")?.value || ADMIN_CFG.convocacao.id;
+      window.CFG = ADMIN_CFG;
+
+      adminToast("Sessão atualizada (memória).");
+      startPolling(); // troca de sessao_id reflete no online
+    }
+
+    if(ADMIN_TAB === "irmaos"){
+      // aqui o "Confirmar" apenas força refresh
+      adminRefreshOnline();
+      adminToast("Atualizado ✅");
+    }
+  }
+
+  // ====== registrar pagamento (online) ======
+  async function registrarPagamento(){
+    if(!ADMIN_CFG || !ADMIN_CURRENT_IRMAO) return;
+
+    const sessao_id = ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.data || "";
+    if(!sessao_id){
+      adminToast("Sessão ID não definido");
+      return;
+    }
+
+    const valor = Number(($("m_valor")?.value || "").replace(",", "."));
+    const forma = $("m_forma")?.value || "DINHEIRO";
+    if(!(valor > 0)){
+      adminToast("Informe um valor");
+      return;
+    }
+
+    const it = ADMIN_CURRENT_IRMAO;
+    const evt = {
+      type: "pagamento",
+      nome: it.nome,
+      telefone: it.telefone,
+      cin: it.cin,
+      forma: forma,
+      valor: valor,
+      ts: Math.floor(Date.now()/1000)
+    };
+
+    const payload = { sessao_id, event: evt };
+
+    try{
+      await apiPost("consumo_add.php", payload);
+    }catch(e){
+      // offline: enfileira
+      offEnqueue(payload);
+      adminToast("Sem rede: pagamento ficou pendente (vai sincronizar).");
+    }
+
+    await adminRefreshOnline();
+    closeModal();
+  }
+
+  // ====== bind UI ======
+  function bindAdminUI(){
+    $("tabCfg")?.addEventListener("click", ()=> setActiveTab("cfg"));
+    $("tabSessao")?.addEventListener("click", ()=> setActiveTab("sessao"));
+    $("tabIrmaos")?.addEventListener("click", ()=> setActiveTab("irmaos"));
+
+    $("btnAdminSair")?.addEventListener("click", ()=>{
+      stopPolling();
+      if(typeof window.showScreen === "function"){
+        window.showScreen("scr_login","back");
+      }else{
+        location.hash = "#";
+      }
+    });
+
+    $("btnAdminSalvar")?.addEventListener("click", applyAdminChanges);
+
+    $("m_close")?.addEventListener("click", closeModal);
+    $("adminModal")?.addEventListener("click", (e)=>{
+      if(e.target && e.target.id === "adminModal") closeModal();
+    });
+
+    $("m_btn_pagar")?.addEventListener("click", registrarPagamento);
+  }
+
+  // ====== expõe função para seu “5 toques” chamar ======
+  window.openAdmin = openAdminSafe;
+
+  // roda bind quando DOM pronto
+  document.addEventListener("DOMContentLoaded", bindAdminUI);
+})();
+  
+}
+
+boot();
+
+</script>
