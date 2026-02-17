@@ -3723,52 +3723,81 @@ async function openAdmin(){
 }
   
 /* ==========================
-   ADMIN ONLINE - BLOCO ÚNICO (FIX)
+   ADMIN ONLINE - BLOCO ÚNICO (CORRIGIDO)
    cole no FINAL do <script>
    ========================== */
 (function(){
   "use strict";
 
-  // evita duplicar se você colar 2x sem querer
-  if(window.__AGAPE_ADMIN_ONLINE_LOADED__){ console.warn("[ADMIN] bloco já carregado"); return; }
-  window.__AGAPE_ADMIN_ONLINE_LOADED__ = true;
-
-  // ====== AJUSTE AQUI (URL BASE DO KINGHOST) ======
+  // ====== BASE / ENDPOINTS (KINGHOST) ======
   const AGAPE_API_BASE = "https://api.erpimpar.com.br/agape/consumo";
+  const ADMIN_SAVE_URL = AGAPE_API_BASE + "/admin_save_config.php";
+  const CONFIG_URL     = AGAPE_API_BASE + "/agape_config.json";
+  const UPDATE_IRMAO_URL = AGAPE_API_BASE + "/admin_update_irmao.php";
+  const PUSH_SEND_URL  = "https://api.erpimpar.com.br/agape/push/push_send.php";
 
-  // ====== endpoints (conforme WebFTP) ======
-  const ADMIN_SAVE_URL   = AGAPE_API_BASE + "/admin_save_config.php";
-  const ADMIN_UPD_IRMAO  = AGAPE_API_BASE + "/admin_update_irmao.php";
-  const CONFIG_URL       = AGAPE_API_BASE + "/agape_config.json";
-  const PUSH_SEND_URL    = "https://api.erpimpar.com.br/agape/push/push_send.php";
-
-  // ====== estado admin ======
+  // ====== ESTADO ======
   let ADMIN_CFG = null;
   let ADMIN_TAB = "cfg";
   let ADMIN_POLL = null;
   let ADMIN_CURRENT_IRMAO = null;
-  let __ADMIN_BOUND__ = false;
+  let ADMIN_LAST_RESUMO = null;
 
-  // ---- helpers seguros ----
-  function adminToastOk(msg){ (typeof window.toast==="function") ? window.toast(msg) : alert(msg); }
-  function adminToastErr(msg){ (typeof window.toast==="function") ? window.toast(msg) : alert(msg); }
-  function adminToast(msg){ try{ console.log("[ADMIN]", msg); }catch(_){ } if(typeof window.toast==="function"){ window.toast(msg); } }
-
+  // ====== HELPERS ======
   function $(id){ return document.getElementById(id); }
   function adminEl(id){ return document.getElementById(id); }
   function adminVal(id){ return (adminEl(id)?.value ?? "").trim(); }
-  function adminSetVal(id,v){ const el=adminEl(id); if(el) el.value = (v ?? ""); }
-
+  function adminSetVal(id, v){
+    const el = adminEl(id);
+    if(!el) return;
+    el.value = (v ?? "");
+  }
   function safeText(s){ return (s==null) ? "" : String(s); }
   function sanTel(s){ return safeText(s).replace(/\D+/g,""); }
   function money(v){
     const n = Number(v||0);
     return n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
   }
+  function adminToast(msg){
+    try{ console.log("[ADMIN]", msg); }catch(_){}
+    if(typeof window.toast === "function") window.toast(msg);
+    else alert(msg);
+  }
+  function adminToastOk(msg){ adminToast(msg); }
+  function adminToastErr(msg){ adminToast(msg); }
+
+  // ====== USER (para presença) ======
+  function getLoggedUser(){
+    const raw = localStorage.getItem("usuarioLogado")
+            || localStorage.getItem("ERPIMPAR_USER")
+            || localStorage.getItem("impar_user")
+            || "";
+    try{
+      const u = JSON.parse(raw);
+      return {
+        nome: u.Nome || u.nome || "",
+        email: u.Email || u.email || "",
+        telefone: (u.Telefone || u.telefone || ""),
+        cin: (u.CIN || u.cin || "")
+      };
+    }catch(_){
+      return { nome:"", email:"", telefone:"", cin:"" };
+    }
+  }
+
+  function mapAnsToStatus(ans){
+    const a = String(ans||"");
+    if(a === "sessao_agape") return "SESSAO_E_AGAPE";
+    if(a === "somente_sessao") return "SOMENTE_SESSAO";
+    if(a === "somente_agape") return "SOMENTE_AGAPE";
+    return "NAO_CONFIRMADO";
+  }
 
   // ====== CONFIG ======
   async function loadConfigDirect(){
-    const r = await fetch(CONFIG_URL + "?t=" + Date.now(), { cache:"no-store" });
+    // cache buster para evitar SW/browser cache
+    const url = CONFIG_URL + "?t=" + Date.now();
+    const r = await fetch(url, { cache:"no-store" });
     if(!r.ok) throw new Error("config_http_" + r.status);
     return await r.json();
   }
@@ -3794,24 +3823,59 @@ async function openAdmin(){
     return j;
   }
 
-  // ====== contador "não confirmaram" ======
-  function adminUpdateNaoConfirmadosUI(){
-    try{
-      const irmaos = Array.isArray(ADMIN_CFG?.irmaos) ? ADMIN_CFG.irmaos : [];
-      const total = irmaos.length;
-      const nao = irmaos.filter(x=>{
-        const st = String(x?.status || "NAO_CONFIRMADO").toUpperCase();
-        return (st === "NAO_CONFIRMADO" || st === "" || st === "NAO");
-      }).length;
-
-      const elTotal = $("adm_total_irmaos");
-      const elNao   = $("adm_nao_confirmaram");
-      if(elTotal) elTotal.textContent = String(total);
-      if(elNao)   elNao.textContent   = String(nao);
-    }catch(_){}
+  // ====== OFFLINE QUEUE (pagamentos/consumo) ======
+  const OFF_KEY = "AGAPE_OFFLINE_QUEUE_V1";
+  function offLoad(){ try{ return JSON.parse(localStorage.getItem(OFF_KEY)||"[]") || []; }catch(_){ return []; } }
+  function offSave(arr){ try{ localStorage.setItem(OFF_KEY, JSON.stringify(arr||[])); }catch(_){ } }
+  function offEnqueue(item){ const q = offLoad(); q.push(item); offSave(q); }
+  async function offFlush(){
+    const q = offLoad();
+    if(!q.length) return;
+    const keep = [];
+    for(const it of q){
+      try{ await apiPost("consumo_add.php", it); }
+      catch(_){ keep.push(it); }
+    }
+    offSave(keep);
   }
 
-  // ====== Render (preencher inputs) ======
+  // ====== IRMÃO -> atualiza no agape_config.json (server) ======
+  async function updateIrmaoNoConfig(irmao, status){
+    const payload = {
+      nome: irmao?.nome || "",
+      telefone: irmao?.telefone || "",
+      cin: irmao?.cin || "",
+      status: status || "NAO_CONFIRMADO"
+    };
+    const r = await fetch(UPDATE_IRMAO_URL, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(()=>null);
+    if(!r.ok || !j || j.ok !== true) throw new Error("update_irmao_fail");
+    return j;
+  }
+
+  // ====== TABS ======
+  function adminSetActiveTab(tab){
+    ADMIN_TAB = tab;
+
+    document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
+    if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
+    if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
+    if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
+
+    adminEl("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
+    adminEl("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
+    adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
+
+    if(tab==="cfg") adminRenderCfg();
+    if(tab==="sessao") adminRenderSessao();
+    if(tab==="irmaos") adminRenderIrmaos();
+  }
+
+  // ====== RENDER ======
   function adminRenderCfg(){
     if(!ADMIN_CFG) return;
 
@@ -3822,7 +3886,7 @@ async function openAdmin(){
     adminSetVal("a_logo_url", ADMIN_CFG?.ui?.logo_url || ADMIN_CFG?.loja?.logo || "");
 
     const logoUrl = adminVal("a_logo_url") || ADMIN_CFG?.ui?.logo_url || "./assets/logo-Clementino-Brito.jpeg";
-    const img = $("adminLogo");
+    const img = adminEl("adminLogo");
     if(img) img.src = logoUrl;
   }
 
@@ -3839,30 +3903,48 @@ async function openAdmin(){
     adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
     adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
 
-    // PUSH
-    const chk = $("a_push_on_chk");
+    const chk = document.getElementById("a_push_on_chk");
     if(chk) chk.checked = (ADMIN_CFG?.push?.habilitado === true);
+
     adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
     adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
     adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
   }
 
   function adminStatusPill(status){
-    const s = String(status || "").toUpperCase();
-    if(s === "SESSAO_E_AGAPE")   return `<span class="pill ok">SESSÃO E ÁGAPE</span>`;
-    if(s === "SOMENTE_AGAPE")   return `<span class="pill warn">SOMENTE ÁGAPE</span>`;
-    if(s === "SOMENTE_SESSAO")  return `<span class="pill warn">SOMENTE SESSÃO</span>`;
-    if(s === "NAO_CONFIRMADO")  return `<span class="pill bad">NÃO CONFIRMADO</span>`;
-    // compat (se vier texto antigo)
-    if(String(status||"").toLowerCase().includes("não confirmado") || String(status||"").toLowerCase().includes("nao confirmado"))
-      return `<span class="pill bad">NÃO CONFIRMADO</span>`;
-    return `<span class="pill">${safeText(status) || "-"}</span>`;
+    const up = String(status || "NAO_CONFIRMADO").toUpperCase();
+    if(up === "SESSAO_E_AGAPE") return `<span class="pill ok">SESSÃO E ÁGAPE</span>`;
+    if(up === "SOMENTE_AGAPE")  return `<span class="pill warn">SOMENTE ÁGAPE</span>`;
+    if(up === "SOMENTE_SESSAO") return `<span class="pill warn">SOMENTE SESSÃO</span>`;
+    if(up === "NAO_CONFIRMADO") return `<span class="pill bad">NÃO CONFIRMADO</span>`;
+    // fallback
+    return `<span class="pill">${safeText(status||"-")}</span>`;
+  }
+
+  function adminCountNaoConfirmados(){
+    const irmaos = Array.isArray(ADMIN_CFG?.irmaos) ? ADMIN_CFG.irmaos : [];
+    const total = irmaos.length;
+    const nao = irmaos.filter(x=>{
+      const st = String(x?.status || "NAO_CONFIRMADO").toUpperCase();
+      return (st === "NAO_CONFIRMADO" || st === "" || st === "NAO");
+    }).length;
+    return { total, nao };
+  }
+
+  function adminUpdateNaoConfirmadosUI(){
+    try{
+      const c = adminCountNaoConfirmados();
+      const elTotal = document.getElementById("adm_total_irmaos");
+      const elNao   = document.getElementById("adm_nao_confirmaram");
+      if(elTotal) elTotal.textContent = String(c.total);
+      if(elNao)   elNao.textContent   = String(c.nao);
+    }catch(_){}
   }
 
   function adminRenderIrmaos(){
     if(!ADMIN_CFG) return;
 
-    const wrap = $("adminIrmaosWrap");
+    const wrap = adminEl("adminIrmaosWrap");
     if(!wrap) return;
 
     const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
@@ -3881,7 +3963,9 @@ async function openAdmin(){
 
     wrap.innerHTML = `
       <table class="adminTable">
-        <thead><tr><th>#</th><th>Irmão</th><th>Status</th></tr></thead>
+        <thead>
+          <tr><th>#</th><th>Irmão</th><th>Status</th></tr>
+        </thead>
         <tbody>
           ${rows || `<tr><td colspan="3" style="opacity:.7">Sem irmãos no JSON</td></tr>`}
         </tbody>
@@ -3891,25 +3975,7 @@ async function openAdmin(){
     adminUpdateNaoConfirmadosUI();
   }
 
-  // ====== Tabs ======
-  function adminSetActiveTab(tab){
-    ADMIN_TAB = tab;
-
-    document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
-    if(tab==="cfg")    $("tabCfg")?.classList.add("active");
-    if(tab==="sessao") $("tabSessao")?.classList.add("active");
-    if(tab==="irmaos") $("tabIrmaos")?.classList.add("active");
-
-    $("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
-    $("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
-    $("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
-
-    if(tab==="cfg")    adminRenderCfg();
-    if(tab==="sessao") adminRenderSessao();
-    if(tab==="irmaos") adminRenderIrmaos();
-  }
-
-  // ====== aplica UI -> ADMIN_CFG ======
+  // ====== APLICAR UI -> CFG ======
   function adminApplyCurrentTabToCfg(){
     if(!ADMIN_CFG) return;
 
@@ -3936,8 +4002,9 @@ async function openAdmin(){
       ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
       ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
 
-      const chk = $("a_push_on_chk");
+      const chk = document.getElementById("a_push_on_chk");
       ADMIN_CFG.push.habilitado = !!(chk && chk.checked);
+
       ADMIN_CFG.push.titulo = adminVal("a_push_titulo");
       ADMIN_CFG.push.mensagem = adminVal("a_push_msg");
       ADMIN_CFG.push.url = adminVal("a_push_url");
@@ -3946,35 +4013,32 @@ async function openAdmin(){
       ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
       ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
       ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
-    }
 
-    window.CFG = ADMIN_CFG;
+      window.CFG = ADMIN_CFG;
+    }
   }
 
-  // ====== polling online (resumo) ======
+  // ====== RESUMO / POLLING ======
   function renderResumo(res){
-    $("r_total_irmaos").textContent = res.total_irmaos ?? "—";
-    $("r_nao_confirm").textContent = res.nao_confirmados ?? "—";
+    ADMIN_LAST_RESUMO = res;
+
+    if($("r_total_irmaos")) $("r_total_irmaos").textContent = res.total_irmaos ?? "—";
+    if($("r_nao_confirm"))  $("r_nao_confirm").textContent  = res.nao_confirmados ?? "—";
 
     const p = res.pagamentos || {};
-    $("r_din").textContent = money(p.DINHEIRO || 0);
-    $("r_pix").textContent = money(p.PIX || 0);
-    $("r_prox").textContent = money(p.PROXIMA_SESSAO || 0);
-    $("r_caixa").textContent = money(res.caixa_total || 0);
-
-    const list = res.produtos || [];
-    if(!$("r_prod_list")) return;
-    if(!list.length){ $("r_prod_list").textContent = "—"; return; }
-
-    $("r_prod_list").innerHTML = list.slice(0,12).map(it=>{
-      return `<div class="sheetRow"><span>${safeText(it.desc)}</span><b>${safeText(it.qtd)}</b></div>`;
-    }).join("") + (list.length>12 ? `<div style="margin-top:8px; opacity:.7; font-size:11px;">+${list.length-12} itens...</div>` : "");
+    if($("r_din"))   $("r_din").textContent   = money(p.DINHEIRO || 0);
+    if($("r_pix"))   $("r_pix").textContent   = money(p.PIX || 0);
+    if($("r_prox"))  $("r_prox").textContent  = money(p.PROXIMA_SESSAO || 0);
+    if($("r_caixa")) $("r_caixa").textContent = money(res.caixa_total || 0);
   }
 
   async function adminRefreshOnline(){
     if(!ADMIN_CFG) return;
+
     const sessao_id = ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.data || "";
     if(!sessao_id) return;
+
+    await offFlush();
 
     try{
       const r1 = await apiGet("consumo_resumo_adm.php", { sessao_id });
@@ -3982,88 +4046,116 @@ async function openAdmin(){
     }catch(_){
       adminToast("Falha ao buscar resumo online");
     }
+
+    // (a lista completa você já puxa em consumo_get.php se precisar)
+    try{
+      await apiGet("consumo_get.php", { sessao_id });
+    }catch(_){
+      // silencioso
+    }
   }
 
   function startPolling(){
     stopPolling();
-    adminRefreshOnline();
-    ADMIN_POLL = setInterval(()=>{ adminRefreshOnline(); }, 4000);
+    try{ adminRefreshOnline(); }catch(_){}
+    ADMIN_POLL = setInterval(()=>{ try{ adminRefreshOnline(); }catch(_){} }, 4000);
   }
 
   function stopPolling(){
-    if(ADMIN_POLL){ clearInterval(ADMIN_POLL); ADMIN_POLL = null; }
-  }
-
-  // ====== abrir admin (senha) ======
-  async function openAdminSafe(){
-    try{
-      // sempre pega o config atual do servidor
-      const fresh = await loadConfigDirect();
-      ADMIN_CFG = fresh;
-      window.CFG = fresh;
-
-      // senha = telefone do tesoureiro
-      const telTes = sanTel(ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
-      if(!telTes){ adminToast("Falta loja.tesoureiro_whatsapp no JSON"); return; }
-
-      const s = prompt("Senha do Admin (telefone do tesoureiro):");
-      const typed = sanTel(s||"");
-      if(!typed || typed !== telTes){ adminToast("Senha inválida"); return; }
-
-      // abre tela
-      if(typeof window.showScreen === "function"){
-        window.showScreen("scr_admin","forward");
-      }else{
-        document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
-        $("scr_admin")?.classList.add("active");
-      }
-
-      // renderiza tudo já com dados atuais
-      const logoUrl = (ADMIN_CFG?.ui?.logo_url) ? ADMIN_CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
-      if($("adminLogo")) $("adminLogo").src = logoUrl;
-
-      adminSetActiveTab("cfg");
-      adminRenderCfg();
-      adminRenderSessao();
-      adminRenderIrmaos();
-      adminUpdateNaoConfirmadosUI();
-
-      startPolling();
-      adminToast("Admin pronto ✅ " + (ADMIN_CFG?.convocacao?.id || ""));
-    }catch(e){
-      console.warn("[ADMIN] openAdminSafe fail", e);
-      adminToast("Falha ao abrir Admin (config/servidor).");
+    if(ADMIN_POLL){
+      clearInterval(ADMIN_POLL);
+      ADMIN_POLL = null;
     }
   }
 
-  // ====== salvar no KingHost + push ======
+  // ====== MODAL ======
+  function openAdminModal(){
+    const m = document.getElementById("adminModal");
+    if(!m) return;
+    m.classList.add("show");
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+  }
+  function closeAdminModal(){
+    const m = document.getElementById("adminModal");
+    if(!m) return;
+    m.classList.remove("show");
+    document.documentElement.style.overflow = "";
+    document.body.style.overflow = "";
+  }
+
+  // ====== PAGAMENTO (mantido) ======
+  async function registrarPagamento(){
+    if(!ADMIN_CFG || !ADMIN_CURRENT_IRMAO) return;
+
+    const sessao_id = ADMIN_CFG?.convocacao?.id || ADMIN_CFG?.sessao?.data || "";
+    if(!sessao_id){
+      adminToast("Sessão ID não definido");
+      return;
+    }
+
+    const valor = Number(($("m_valor")?.value || "").replace(",", "."));
+    const forma = $("m_forma")?.value || "DINHEIRO";
+    if(!(valor > 0)){
+      adminToast("Informe um valor");
+      return;
+    }
+
+    const it = ADMIN_CURRENT_IRMAO;
+    const evt = {
+      type: "pagamento",
+      nome: it.nome,
+      telefone: it.telefone,
+      cin: it.cin,
+      forma,
+      valor,
+      ts: Math.floor(Date.now()/1000)
+    };
+
+    const payload = { sessao_id, event: evt };
+
+    try{
+      await apiPost("consumo_add.php", payload);
+    }catch(_){
+      offEnqueue(payload);
+      adminToast("Sem rede: pagamento pendente (vai sincronizar).");
+    }
+
+    closeAdminModal();
+  }
+
+  // ==========================
+  // SALVAR CONFIG NO KINGHOST + PUSH
+  // ==========================
   async function adminSave(){
     if(!ADMIN_CFG) return;
 
-    // 1) aplica alterações do UI
     adminApplyCurrentTabToCfg();
 
-    // 2) salva config no servidor
-    let jj = null;
+    // 1) salva JSON
+    let saveOk = false;
     try{
       const rr = await fetch(ADMIN_SAVE_URL, {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({ config: ADMIN_CFG })
       });
-      jj = await rr.json().catch(()=>null);
+      const jj = await rr.json().catch(()=>null);
       if(!rr.ok || !jj || jj.ok !== true){
         console.warn("admin_save fail", rr.status, jj);
         adminToastErr("Não salvou no servidor ❌");
         return;
       }
+      saveOk = true;
     }catch(e){
       console.warn(e);
       adminToastErr("Falha ao salvar no servidor ❌");
       return;
     }
 
-    // 3) recarrega config do servidor e re-renderiza (pro teu teste do caixa bater)
+    if(saveOk) adminToastOk("Salvo no servidor ✅");
+
+    // 2) recarrega config fresco e re-renderiza (pro admin VER que gravou)
     try{
       const fresh = await loadConfigDirect();
       ADMIN_CFG = fresh;
@@ -4071,14 +4163,12 @@ async function openAdmin(){
       adminRenderCfg();
       adminRenderSessao();
       adminRenderIrmaos();
-      adminUpdateNaoConfirmadosUI();
     }catch(e){
-      console.warn("[ADMIN] reload config fail", e);
+      console.warn("reload config fail", e);
+      // não impede push
     }
 
-    adminToastOk("Salvo no servidor ✅");
-
-    // 4) dispara push se habilitado
+    // 3) push (se habilitado)
     if(ADMIN_CFG?.push?.habilitado === true){
       try{
         const payload = {
@@ -4106,38 +4196,100 @@ async function openAdmin(){
         adminToastErr("Salvou, mas falhou o push ❌");
       }
     }else{
-      console.log("[PUSH] desativado (checkbox)");
+      adminToast("Push desativado (não enviado)");
     }
 
-    // 5) se mexeu na sessão, reinicia polling
+    // 4) se mexeu na sessão, reinicia polling
     if(ADMIN_TAB==="sessao") startPolling();
     if(ADMIN_TAB==="irmaos") adminRefreshOnline();
   }
 
-  // ====== atualizar 1 irmão no config (endpoint separado) ======
-  async function updateIrmaoNoConfig(irmao, status){
-    const payload = {
-      nome: irmao?.nome || "",
-      telefone: irmao?.telefone || "",
-      cin: irmao?.cin || "",
-      status: status || "NAO_CONFIRMADO"
-    };
-    const r = await fetch(ADMIN_UPD_IRMAO, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify(payload)
-    });
-    const j = await r.json().catch(()=>null);
-    if(!r.ok || !j || j.ok !== true) throw new Error("update_irmao_fail");
-    return j;
+  // ==========================
+  // ABRIR ADMIN (sempre lê o JSON do servidor)
+  // ==========================
+  async function openAdminSafe(){
+    try{
+      const fresh = await loadConfigDirect();
+      ADMIN_CFG = fresh;
+      window.CFG = fresh;
+
+      const telTes = sanTel(window.CFG?.loja?.tesoureiro_whatsapp || "");
+      if(!telTes){
+        adminToast("Falta loja.tesoureiro_whatsapp no JSON");
+        return;
+      }
+
+      const s = prompt("Senha do Admin (telefone do tesoureiro):");
+      const typed = sanTel(s||"");
+      if(!typed || typed !== telTes){
+        adminToast("Senha inválida");
+        return;
+      }
+
+      if(typeof window.showScreen === "function"){
+        window.showScreen("scr_admin","forward");
+      }else{
+        document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
+        $("scr_admin")?.classList.add("active");
+      }
+
+      const logoUrl = (ADMIN_CFG?.ui?.logo_url) ? ADMIN_CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+      if($("adminLogo")) $("adminLogo").src = logoUrl;
+
+      adminSetActiveTab("cfg");
+      adminRenderSessao();
+      adminRenderIrmaos();
+      adminUpdateNaoConfirmadosUI();
+
+      startPolling();
+      adminToast("Admin pronto ✅ " + (ADMIN_CFG?.convocacao?.id || ""));
+    }catch(e){
+      console.warn("[ADMIN] openAdminSafe fail", e);
+      adminToast("Falha ao abrir Admin (config/servidor).");
+    }
   }
-  window.__AGAPE_updateIrmaoNoConfig = updateIrmaoNoConfig; // expõe, caso teu bloco de presença use
 
-  // ====== binds ======
+  // ==========================
+  // PRESENÇA -> atualiza STATUS no config (server) + UI
+  // (chame isso quando o irmão confirmar)
+  // ==========================
+  window.agapeAdminUpdatePresenca = async function(ans){
+    try{
+      // garante CFG carregado
+      if(!ADMIN_CFG){
+        const fresh = await loadConfigDirect();
+        ADMIN_CFG = fresh;
+        window.CFG = fresh;
+      }
+
+      const u = getLoggedUser();
+      const status = mapAnsToStatus(ans);
+
+      // atualiza no config (server)
+      await updateIrmaoNoConfig({
+        nome: u.nome || "",
+        telefone: sanTel(u.telefone || ""),
+        cin: u.cin || ""
+      }, status);
+
+      // recarrega config e atualiza UI/contador
+      const fresh2 = await loadConfigDirect();
+      ADMIN_CFG = fresh2;
+      window.CFG = fresh2;
+
+      // se admin estiver aberto, reflete na tela
+      adminRenderIrmaos();
+      adminUpdateNaoConfirmadosUI();
+
+      return true;
+    }catch(e){
+      console.warn("[PRESENCA->CFG] fail", e);
+      return false;
+    }
+  };
+
+  // ====== BIND UI (1x) ======
   function bindAdminUI(){
-    if(__ADMIN_BOUND__) return;
-    __ADMIN_BOUND__ = true;
-
     $("tabCfg")?.addEventListener("click", ()=> adminSetActiveTab("cfg"));
     $("tabSessao")?.addEventListener("click", ()=> adminSetActiveTab("sessao"));
     $("tabIrmaos")?.addEventListener("click", ()=> adminSetActiveTab("irmaos"));
@@ -4148,16 +4300,21 @@ async function openAdmin(){
       else location.hash = "#";
     });
 
-    // CONFIRMAR
     $("btnAdminSalvar")?.addEventListener("click", async ()=>{
       try{ await adminSave(); }
-      catch(e){ console.warn("[ADMIN] salvar fail", e); adminToastErr("Falha ao salvar ❌"); }
+      catch(e){ console.warn("[ADMIN] save fail", e); adminToastErr("Falha ao salvar ❌"); }
     });
 
-    // toggle label (se existir)
+    $("m_close")?.addEventListener("click", closeAdminModal);
+    $("adminModal")?.addEventListener("click", (e)=>{
+      if(e.target && e.target.id === "adminModal") closeAdminModal();
+    });
+    $("m_btn_pagar")?.addEventListener("click", registrarPagamento);
+
+    // texto do toggle (se existir)
     (function(){
-      const chk = $("a_push_on_chk");
-      const txt = $("a_push_on_txt");
+      const chk = document.getElementById("a_push_on_chk");
+      const txt = document.getElementById("a_push_on_txt");
       if(!chk || !txt) return;
       const sync = ()=>{ txt.textContent = chk.checked ? "Ativada" : "Desativada"; };
       chk.addEventListener("change", sync);
@@ -4165,10 +4322,10 @@ async function openAdmin(){
     })();
   }
 
-  // expõe função para “5 toques no logo”
+  // expõe para “5 toques no logo”
   window.openAdmin = openAdminSafe;
 
-  // inicializa binds
+  // init
   document.addEventListener("DOMContentLoaded", ()=>{
     bindAdminUI();
   });
@@ -4176,6 +4333,7 @@ async function openAdmin(){
 })();
 
 </script>
+
 
 
 
