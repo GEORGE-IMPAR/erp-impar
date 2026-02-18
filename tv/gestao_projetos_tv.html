@@ -355,7 +355,7 @@
 <script>
 const API_BASE = 'https://api.erpimpar.com.br/tv';
 let projetosAtuais = [];
-let ultimaAtualizacao = null;
+let ultimaAtualizacaoGlobal = null;
 
 // Inicializar
 window.addEventListener('DOMContentLoaded', () => {
@@ -364,10 +364,8 @@ window.addEventListener('DOMContentLoaded', () => {
   carregarProjetos();
   setInterval(carregarProjetos, 10000);
   
-  // Verificar se já está em fullscreen
   verificarFullscreen();
   
-  // Detectar saída do fullscreen
   document.addEventListener('fullscreenchange', verificarFullscreen);
   document.addEventListener('webkitfullscreenchange', verificarFullscreen);
   document.addEventListener('mozfullscreenchange', verificarFullscreen);
@@ -380,16 +378,16 @@ function ativarFullscreen() {
   
   if (elem.requestFullscreen) {
     elem.requestFullscreen();
-  } else if (elem.webkitRequestFullscreen) { /* Safari */
+  } else if (elem.webkitRequestFullscreen) {
     elem.webkitRequestFullscreen();
-  } else if (elem.msRequestFullscreen) { /* IE11 */
+  } else if (elem.msRequestFullscreen) {
     elem.msRequestFullscreen();
-  } else if (elem.mozRequestFullScreen) { /* Firefox */
+  } else if (elem.mozRequestFullScreen) {
     elem.mozRequestFullScreen();
   }
 }
 
-// Verificar se está em fullscreen
+// Verificar fullscreen
 function verificarFullscreen() {
   const isFullscreen = document.fullscreenElement || 
                        document.webkitFullscreenElement || 
@@ -414,6 +412,29 @@ function atualizarRelogio() {
   document.getElementById('relogio').textContent = hora;
 }
 
+// Converter string de data para objeto Date
+function parseDataBR(dataStr) {
+  // Formato: "2026-02-18 09:30:00"
+  if (!dataStr || typeof dataStr !== 'string') return null;
+  
+  const partes = dataStr.split(' ');
+  if (partes.length !== 2) return null;
+  
+  const [dataParte, horaParte] = partes;
+  const [ano, mes, dia] = dataParte.split('-');
+  const [hora, min, seg] = horaParte.split(':');
+  
+  // Date(ano, mes-1, dia, hora, min, seg)
+  return new Date(
+    parseInt(ano), 
+    parseInt(mes) - 1, 
+    parseInt(dia), 
+    parseInt(hora), 
+    parseInt(min), 
+    parseInt(seg)
+  );
+}
+
 // Carregar projetos da API
 async function carregarProjetos() {
   try {
@@ -427,10 +448,20 @@ async function carregarProjetos() {
       const projetosNovos = data.data.projetos;
       console.log(`✅ ${projetosNovos.length} projetos carregados`);
       
+      // Encontrar a data mais recente de atualização
+      const datasAtualizacao = projetosNovos
+        .map(p => parseDataBR(p.data_atualizacao))
+        .filter(d => d !== null);
+      
+      if (datasAtualizacao.length > 0) {
+        ultimaAtualizacaoGlobal = new Date(Math.max(...datasAtualizacao));
+        console.log('📅 Última atualização global:', ultimaAtualizacaoGlobal);
+      }
+      
       const projetosAtualizados = detectarAtualizacoes(projetosNovos);
       projetosAtuais = projetosNovos;
       renderizarProjetos(projetosAtualizados);
-      atualizarBadgeSync(data.timestamp);
+      atualizarBadgeSync();
       
     } else {
       console.warn('⚠️ Nenhum projeto encontrado');
@@ -474,7 +505,13 @@ function renderizarProjetos(projetosAtualizados) {
   };
   
   const html = projetosAtuais.map(projeto => {
-    const dataAtualizada = new Date(projeto.data_atualizacao);
+    const dataAtualizada = parseDataBR(projeto.data_atualizacao);
+    
+    if (!dataAtualizada) {
+      console.error('Data inválida para projeto:', projeto.nome, projeto.data_atualizacao);
+      return '';
+    }
+    
     const agora = new Date();
     const diffMs = agora - dataAtualizada;
     const diffMins = Math.floor(diffMs / 60000);
@@ -487,7 +524,15 @@ function renderizarProjetos(projetosAtualizados) {
     else if (diffHoras < 24) tempoRelativo = `há ${diffHoras}h`;
     else tempoRelativo = `há ${diffDias} dia${diffDias > 1 ? 's' : ''}`;
     
-    const dataFormatada = dataAtualizada.toLocaleString('pt-BR');
+    const dataFormatada = dataAtualizada.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    
     const foiAtualizado = projetosAtualizados.has(projeto.id);
     
     return `
@@ -546,19 +591,30 @@ function renderizarProjetos(projetosAtualizados) {
   }
 }
 
-// Atualizar badge
-function atualizarBadgeSync(timestamp) {
+// Atualizar badge de sincronização
+function atualizarBadgeSync() {
   const badge = document.getElementById('ultimaSync');
-  const agora = new Date();
-  const hora = agora.toLocaleTimeString('pt-BR');
-  badge.innerHTML = `✅ Última atualização: ${hora}`;
-  badge.style.background = 'rgba(34,197,94,.2)';
-  badge.style.borderColor = 'rgba(34,197,94,.5)';
   
-  setTimeout(() => {
-    badge.style.background = 'rgba(34,197,94,.15)';
-    badge.style.borderColor = 'rgba(34,197,94,.4)';
-  }, 2000);
+  if (ultimaAtualizacaoGlobal) {
+    const dataFormatada = ultimaAtualizacaoGlobal.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    badge.innerHTML = `✅ Última atualização: ${dataFormatada}`;
+    badge.style.background = 'rgba(34,197,94,.2)';
+    badge.style.borderColor = 'rgba(34,197,94,.5)';
+    
+    setTimeout(() => {
+      badge.style.background = 'rgba(34,197,94,.15)';
+      badge.style.borderColor = 'rgba(34,197,94,.4)';
+    }, 2000);
+  } else {
+    badge.innerHTML = '🔄 Aguardando dados...';
+  }
 }
 </script>
 
