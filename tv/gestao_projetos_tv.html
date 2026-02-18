@@ -312,6 +312,38 @@
     main::-webkit-scrollbar-thumb:hover{
       background:rgba(34,197,94,.6);
     }
+
+  .projetos-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    grid-template-rows:repeat(2, 1fr);
+    gap:20px;
+  }
+
+  /* só o miolo anima (o grid) */
+  .slide-out{
+    animation:slideOut .55s ease-in forwards;
+  }
+  .slide-in{
+    animation:slideIn .55s ease-out forwards;
+  }
+
+  @keyframes slideOut{
+    from{ transform:translateX(0); opacity:1; }
+    to{ transform:translateX(-60px); opacity:0; }
+  }
+  @keyframes slideIn{
+    from{ transform:translateX(60px); opacity:0; }
+    to{ transform:translateX(0); opacity:1; }
+  }
+
+  /* destaque mais “TV-friendly” quando atualiza */
+  .projeto-card.atualizado{
+    animation:destaque 2.6s ease-out;
+    border-color:var(--green);
+    box-shadow:0 0 40px rgba(34,197,94,.65), 0 10px 30px rgba(0,0,0,.4);
+  }
+
   </style>
 </head>
 <body>
@@ -354,18 +386,31 @@
 
 <script>
 const API_BASE = 'https://api.erpimpar.com.br/tv';
+
 let projetosAtuais = [];
 let ultimaAtualizacaoGlobal = null;
+let ultimaAtualizacaoUsuario = null;
+
+const PAGE_SIZE = 6;
+const PAGE_INTERVAL_MS = 120000; // 2 minutos
+
+let pageIndex = 0;
+let pageTimer = null;
+
+let highlightProjectId = null;
+let highlightUntilTs = 0;
 
 // Inicializar
 window.addEventListener('DOMContentLoaded', () => {
   atualizarRelogio();
   setInterval(atualizarRelogio, 1000);
+
   carregarProjetos();
   setInterval(carregarProjetos, 10000);
-  
+
+  iniciarPager();
+
   verificarFullscreen();
-  
   document.addEventListener('fullscreenchange', verificarFullscreen);
   document.addEventListener('webkitfullscreenchange', verificarFullscreen);
   document.addEventListener('mozfullscreenchange', verificarFullscreen);
@@ -375,31 +420,23 @@ window.addEventListener('DOMContentLoaded', () => {
 // Ativar fullscreen
 function ativarFullscreen() {
   const elem = document.documentElement;
-  
-  if (elem.requestFullscreen) {
-    elem.requestFullscreen();
-  } else if (elem.webkitRequestFullscreen) {
-    elem.webkitRequestFullscreen();
-  } else if (elem.msRequestFullscreen) {
-    elem.msRequestFullscreen();
-  } else if (elem.mozRequestFullScreen) {
-    elem.mozRequestFullScreen();
-  }
+  if (elem.requestFullscreen) elem.requestFullscreen();
+  else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+  else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+  else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
 }
 
 // Verificar fullscreen
 function verificarFullscreen() {
-  const isFullscreen = document.fullscreenElement || 
-                       document.webkitFullscreenElement || 
-                       document.mozFullScreenElement ||
-                       document.msFullscreenElement;
-  
+  const isFullscreen =
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement;
+
   const btn = document.getElementById('btnFullscreen');
-  if (isFullscreen) {
-    btn.classList.add('hide');
-  } else {
-    btn.classList.remove('hide');
-  }
+  if (isFullscreen) btn.classList.add('hide');
+  else btn.classList.remove('hide');
 }
 
 // Relógio
@@ -407,68 +444,115 @@ function atualizarRelogio() {
   const agora = new Date();
   const data = agora.toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   const hora = agora.toLocaleTimeString('pt-BR');
-  
+
   document.getElementById('dataAtual').textContent = data.charAt(0).toUpperCase() + data.slice(1);
   document.getElementById('relogio').textContent = hora;
 }
 
-// Converter string de data para objeto Date
+// Converter string de data para Date
 function parseDataBR(dataStr) {
   // Formato: "2026-02-18 09:30:00"
   if (!dataStr || typeof dataStr !== 'string') return null;
-  
   const partes = dataStr.split(' ');
   if (partes.length !== 2) return null;
-  
+
   const [dataParte, horaParte] = partes;
   const [ano, mes, dia] = dataParte.split('-');
   const [hora, min, seg] = horaParte.split(':');
-  
-  // Date(ano, mes-1, dia, hora, min, seg)
+
   return new Date(
-    parseInt(ano), 
-    parseInt(mes) - 1, 
-    parseInt(dia), 
-    parseInt(hora), 
-    parseInt(min), 
+    parseInt(ano),
+    parseInt(mes) - 1,
+    parseInt(dia),
+    parseInt(hora),
+    parseInt(min),
     parseInt(seg)
   );
+}
+
+// Pager: troca tela a cada 2 min
+function iniciarPager() {
+  if (pageTimer) clearInterval(pageTimer);
+  pageTimer = setInterval(() => {
+    const totalPages = Math.max(1, Math.ceil(projetosAtuais.length / PAGE_SIZE));
+    if (totalPages <= 1) return;
+    const next = (pageIndex + 1) % totalPages;
+    setPage(next, true);
+  }, PAGE_INTERVAL_MS);
+}
+
+// Setar página (com animação)
+function setPage(newIndex, animate) {
+  const totalPages = Math.max(1, Math.ceil(projetosAtuais.length / PAGE_SIZE));
+  if (totalPages <= 1) {
+    pageIndex = 0;
+    renderizarProjetos(new Set(), false);
+    return;
+  }
+
+  pageIndex = Math.max(0, Math.min(newIndex, totalPages - 1));
+  renderizarProjetos(new Set(), animate);
 }
 
 // Carregar projetos da API
 async function carregarProjetos() {
   try {
-    console.log('🔄 Carregando projetos da TV...');
     const response = await fetch(`${API_BASE}/listar.php?t=${Date.now()}`);
     const data = await response.json();
-    
-    console.log('📦 Resposta da API:', data);
-    
+
     if (data.success && data.data && data.data.projetos && data.data.projetos.length > 0) {
       const projetosNovos = data.data.projetos;
-      console.log(`✅ ${projetosNovos.length} projetos carregados`);
-      
-      // Encontrar a data mais recente de atualização
-      const datasAtualizacao = projetosNovos
-        .map(p => parseDataBR(p.data_atualizacao))
-        .filter(d => d !== null);
-      
-      if (datasAtualizacao.length > 0) {
-        ultimaAtualizacaoGlobal = new Date(Math.max(...datasAtualizacao));
-        console.log('📅 Última atualização global:', ultimaAtualizacaoGlobal);
+
+      // descobrir o projeto mais recente (para badge "Última atualização")
+      let maisRecente = null;
+      let maisRecenteTs = -1;
+
+      projetosNovos.forEach(p => {
+        const d = parseDataBR(p.data_atualizacao);
+        if (!d) return;
+        const ts = d.getTime();
+        if (ts > maisRecenteTs) {
+          maisRecenteTs = ts;
+          maisRecente = p;
+        }
+      });
+
+      if (maisRecente && maisRecenteTs > 0) {
+        ultimaAtualizacaoGlobal = new Date(maisRecenteTs);
+        ultimaAtualizacaoUsuario = (maisRecente.usuario_atualizacao || '').trim() || 'Sistema';
       }
-      
+
+      // detectar quais IDs mudaram
       const projetosAtualizados = detectarAtualizacoes(projetosNovos);
+
+      // Atualiza base atual
       projetosAtuais = projetosNovos;
-      renderizarProjetos(projetosAtualizados);
+
+      // Se houve atualização: focar no mais recente dentre os atualizados
+      if (projetosAtualizados.size > 0) {
+        const foco = encontrarMaisRecenteEntreAtualizados(projetosAtualizados);
+        if (foco) {
+          highlightProjectId = foco.id;
+          highlightUntilTs = Date.now() + 15000; // 15s de destaque forte
+
+          // pular para página do projeto atualizado
+          const idx = projetosAtuais.findIndex(p => p.id === foco.id);
+          if (idx >= 0) {
+            const targetPage = Math.floor(idx / PAGE_SIZE);
+            pageIndex = targetPage;
+          }
+        }
+      }
+
+      // render (com animação se trocou page por foco ou se for refresh normal)
+      renderizarProjetos(projetosAtualizados, false);
       atualizarBadgeSync();
-      
+
     } else {
-      console.warn('⚠️ Nenhum projeto encontrado');
       document.getElementById('projetosGrid').innerHTML = '<div class="loading">📭 Nenhum projeto cadastrado</div>';
     }
   } catch (error) {
-    console.error('❌ Erro ao carregar projetos:', error);
+    console.error('Erro ao carregar projetos:', error);
     document.getElementById('projetosGrid').innerHTML = '<div class="loading">⚠️ Erro ao carregar projetos</div>';
   }
 }
@@ -476,138 +560,170 @@ async function carregarProjetos() {
 // Detectar atualizações
 function detectarAtualizacoes(projetosNovos) {
   const atualizados = new Set();
-  
+
   projetosNovos.forEach(projetoNovo => {
     const projetoAntigo = projetosAtuais.find(p => p.id === projetoNovo.id);
-    
+
     if (projetoAntigo) {
       if (projetoNovo.data_atualizacao !== projetoAntigo.data_atualizacao) {
         atualizados.add(projetoNovo.id);
-        console.log(`🆕 Projeto atualizado: ${projetoNovo.nome}`);
       }
     } else {
       atualizados.add(projetoNovo.id);
-      console.log(`✨ Novo projeto: ${projetoNovo.nome}`);
     }
   });
-  
+
   return atualizados;
 }
 
-// Renderizar projetos
-function renderizarProjetos(projetosAtualizados) {
-  const grid = document.getElementById('projetosGrid');
-  
-  const farolEmoji = {
-    'verde': '🟢',
-    'amarelo': '🟡',
-    'vermelho': '🔴'
-  };
-  
-  const html = projetosAtuais.map(projeto => {
-    const dataAtualizada = parseDataBR(projeto.data_atualizacao);
-    
-    if (!dataAtualizada) {
-      console.error('Data inválida para projeto:', projeto.nome, projeto.data_atualizacao);
-      return '';
+function encontrarMaisRecenteEntreAtualizados(setIds) {
+  let best = null;
+  let bestTs = -1;
+
+  projetosAtuais.forEach(p => {
+    if (!setIds.has(p.id)) return;
+    const d = parseDataBR(p.data_atualizacao);
+    if (!d) return;
+    const ts = d.getTime();
+    if (ts > bestTs) {
+      bestTs = ts;
+      best = p;
     }
-    
-    const agora = new Date();
-    const diffMs = agora - dataAtualizada;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHoras = Math.floor(diffMins / 60);
-    const diffDias = Math.floor(diffHoras / 24);
-    
-    let tempoRelativo;
-    if (diffMins < 1) tempoRelativo = 'Agora mesmo';
-    else if (diffMins < 60) tempoRelativo = `há ${diffMins} min`;
-    else if (diffHoras < 24) tempoRelativo = `há ${diffHoras}h`;
-    else tempoRelativo = `há ${diffDias} dia${diffDias > 1 ? 's' : ''}`;
-    
-    const dataFormatada = dataAtualizada.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-    
-    const foiAtualizado = projetosAtualizados.has(projeto.id);
-    
-    return `
-      <div class="projeto-card ${foiAtualizado ? 'atualizado' : ''}">
-        ${foiAtualizado ? '<div class="badge-novo">Atualizado!</div>' : ''}
-        
-        <div class="card-header">
-          <h2 class="card-titulo">${projeto.nome}</h2>
-          <div class="farol ${projeto.farol}">
-            ${farolEmoji[projeto.farol] || '⚪'}
-          </div>
-        </div>
-        
-        <div class="card-info">
-          <div class="info-badge">
-            <div class="info-badge-label">👷 Coordenador</div>
-            <div class="info-badge-value">${projeto.coordenador}</div>
-          </div>
-          <div class="info-badge">
-            <div class="info-badge-label">🔧 Execução</div>
-            <div class="info-badge-value">${projeto.execucao}</div>
-          </div>
-        </div>
-        
-        <div class="card-status">
-          <div class="status-label">📊 Status Atual</div>
-          <div class="status-text">${projeto.status}</div>
-        </div>
-        
-        <div class="card-footer">
-          <div>
-            <span class="footer-user">🕐 ${tempoRelativo}</span>
-            <div style="font-size:10px;opacity:.7;margin-top:2px">${dataFormatada}</div>
-          </div>
-          <div>
-            <span class="footer-user">${projeto.usuario_atualizacao || 'Sistema'}</span>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  grid.innerHTML = html;
-  
-  if (projetosAtualizados.size > 0) {
-    setTimeout(() => {
-      document.querySelectorAll('.badge-novo').forEach(badge => {
-        badge.style.animation = 'none';
-        badge.style.opacity = '0';
-        setTimeout(() => badge.remove(), 300);
-      });
-      document.querySelectorAll('.projeto-card.atualizado').forEach(card => {
-        card.classList.remove('atualizado');
-      });
-    }, 5000);
-  }
+  });
+
+  return best;
 }
 
-// Atualizar badge de sincronização
+// Renderizar projetos (sempre 6 por tela)
+function renderizarProjetos(projetosAtualizados, animate) {
+  const grid = document.getElementById('projetosGrid');
+
+  const farolEmoji = {'verde':'🟢','amarelo':'🟡','vermelho':'🔴'};
+
+  const totalPages = Math.max(1, Math.ceil(projetosAtuais.length / PAGE_SIZE));
+  if (pageIndex >= totalPages) pageIndex = 0;
+
+  const start = pageIndex * PAGE_SIZE;
+  const slice = projetosAtuais.slice(start, start + PAGE_SIZE);
+
+  const doRender = () => {
+    const agoraTs = Date.now();
+
+    const html = slice.map(projeto => {
+      const dataAtualizada = parseDataBR(projeto.data_atualizacao);
+      if (!dataAtualizada) return '';
+
+      const diffMs = Date.now() - dataAtualizada.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHoras = Math.floor(diffMins / 60);
+      const diffDias = Math.floor(diffHoras / 24);
+
+      let tempoRelativo;
+      if (diffMins < 1) tempoRelativo = 'Agora mesmo';
+      else if (diffMins < 60) tempoRelativo = `há ${diffMins} min`;
+      else if (diffHoras < 24) tempoRelativo = `há ${diffHoras}h`;
+      else tempoRelativo = `há ${diffDias} dia${diffDias > 1 ? 's' : ''}`;
+
+      const dataFormatada = dataAtualizada.toLocaleString('pt-BR', {
+        day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
+      });
+
+      const foiAtualizado = projetosAtualizados.has(projeto.id);
+      const estaEmDestaque = (highlightProjectId === projeto.id) && (agoraTs < highlightUntilTs);
+
+      const classAtualizado = (foiAtualizado || estaEmDestaque) ? 'atualizado' : '';
+      const badge = (foiAtualizado || estaEmDestaque) ? '<div class="badge-novo">Atualizado!</div>' : '';
+
+      return `
+        <div class="projeto-card ${classAtualizado}">
+          ${badge}
+          <div class="card-header">
+            <h2 class="card-titulo">${projeto.nome}</h2>
+            <div class="farol ${projeto.farol}">
+              ${farolEmoji[projeto.farol] || '⚪'}
+            </div>
+          </div>
+
+          <div class="card-info">
+            <div class="info-badge">
+              <div class="info-badge-label">👷 Coordenador</div>
+              <div class="info-badge-value">${projeto.coordenador}</div>
+            </div>
+            <div class="info-badge">
+              <div class="info-badge-label">🔧 Execução</div>
+              <div class="info-badge-value">${projeto.execucao}</div>
+            </div>
+          </div>
+
+          <div class="card-status">
+            <div class="status-label">📊 Status Atual</div>
+            <div class="status-text">${projeto.status}</div>
+          </div>
+
+          <div class="card-footer">
+            <div>
+              <span class="footer-user">🕐 ${tempoRelativo}</span>
+              <div style="font-size:10px;opacity:.7;margin-top:2px">${dataFormatada}</div>
+            </div>
+            <div>
+              <span class="footer-user">${(projeto.usuario_atualizacao || 'Sistema')}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    grid.innerHTML = html || '<div class="loading">📭 Nenhum projeto cadastrado</div>';
+
+    // limpar badges após alguns segundos (mas mantém highlightUntilTs gerenciando o foco)
+    if (projetosAtualizados.size > 0) {
+      setTimeout(() => {
+        document.querySelectorAll('.badge-novo').forEach(b => {
+          b.style.animation = 'none';
+          b.style.opacity = '0';
+          setTimeout(() => b.remove(), 250);
+        });
+        document.querySelectorAll('.projeto-card.atualizado').forEach(card => {
+          // só remove se não estiver no destaque de foco
+          const isFocus = card.querySelector('.badge-novo') && (Date.now() < highlightUntilTs);
+          if (!isFocus) card.classList.remove('atualizado');
+        });
+      }, 6000);
+    }
+  };
+
+  if (!animate) {
+    doRender();
+    return;
+  }
+
+  // anima troca de tela
+  grid.classList.remove('slide-in');
+  grid.classList.add('slide-out');
+
+  setTimeout(() => {
+    grid.classList.remove('slide-out');
+    doRender();
+    grid.classList.add('slide-in');
+    setTimeout(() => grid.classList.remove('slide-in'), 600);
+  }, 560);
+}
+
+// Atualizar badge de sincronização (data do projeto + usuário)
 function atualizarBadgeSync() {
   const badge = document.getElementById('ultimaSync');
-  
+
   if (ultimaAtualizacaoGlobal) {
     const dataFormatada = ultimaAtualizacaoGlobal.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
     });
-    
-    badge.innerHTML = `✅ Última atualização: ${dataFormatada}`;
+
+    const usuario = (ultimaAtualizacaoUsuario || 'Sistema');
+
+    badge.innerHTML = `✅ Última atualização: ${dataFormatada} — ${usuario}`;
     badge.style.background = 'rgba(34,197,94,.2)';
     badge.style.borderColor = 'rgba(34,197,94,.5)';
-    
+
     setTimeout(() => {
       badge.style.background = 'rgba(34,197,94,.15)';
       badge.style.borderColor = 'rgba(34,197,94,.4)';
