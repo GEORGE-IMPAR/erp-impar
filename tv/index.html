@@ -207,9 +207,7 @@
     }
 
     @media (max-width:600px){
-      .menu-cards{
-        grid-template-columns:1fr;
-      }
+      .menu-cards{ grid-template-columns:1fr; }
     }
   </style>
 </head>
@@ -277,58 +275,58 @@
 </footer>
 
 <script>
-function getLoggedUser() {
-  // Prioridade 1: padrão real do seu ERP (minúsculo)
-  const rawERP = localStorage.getItem("ERPIMPAR_USER");
-  if (rawERP) {
-    try {
-      const u = JSON.parse(rawERP);
-      const nome = (u.nome || u.Nome || u.name || "").trim();
-      const email = (u.email || u.Email || "").trim();
-      if (nome) return { nome, email };
-    } catch (e) {
-      console.error("Erro ao ler ERPIMPAR_USER", e);
+  // ===== Logged user (ERP ÍMPAR) — versão ÚNICA (sem duplicar) =====
+  function getLoggedUser(){
+    const candidates = [];
+
+    // prioridade: ERPIMPAR_USER (local e session)
+    const primaryKey = "ERPIMPAR_USER";
+    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+    if(rawPrimary) candidates.push(rawPrimary);
+
+    // fallbacks compatíveis
+    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
+    for(const k of keys){
+      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+      if(raw) candidates.push(raw);
     }
+
+    for(const raw of candidates){
+      try{
+        const u = JSON.parse(raw);
+        const nome  = (u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || "").toString().trim();
+        const email = (u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "").toString().trim();
+        if(nome || email) return { nome: nome || "Usuário", email: email || "—" };
+      }catch(e){
+        // caso venha um email puro
+        if(raw.includes("@")) return { nome:"Usuário", email: raw };
+      }
+    }
+
+    // último fallback simples
+    const nome2  = (localStorage.getItem("usuarioNome")  || "").trim();
+    const email2 = (localStorage.getItem("usuarioEmail") || "").trim();
+    return { nome: nome2 || "—", email: email2 || "—" };
   }
 
-  // Prioridade 2: outras chaves antigas (se existirem)
-  const rawAlt =
-    localStorage.getItem("usuarioLogado") ||
-    localStorage.getItem("impar_user") ||
-    "";
-
-  if (rawAlt) {
-    try {
-      const u = JSON.parse(rawAlt);
-      const nome = (u.nome || u.Nome || u.name || "").trim();
-      const email = (u.email || u.Email || "").trim();
-      if (nome) return { nome, email };
-    } catch (e) {}
+  function voltarMenu(){
+    window.location.href = "../menu.html";
   }
 
-  // Prioridade 3: fallback simples
-  const nome2 = (localStorage.getItem("usuarioNome") || "").trim();
-  const email2 = (localStorage.getItem("usuarioEmail") || "").trim();
-  return { nome: nome2 || "—", email: email2 || "" };
-}
+  window.addEventListener("DOMContentLoaded", () => {
+    document.body.classList.add("impar-enter");
 
-window.addEventListener("DOMContentLoaded", () => {
-  document.body.classList.add("impar-enter");
+    const u = getLoggedUser();
 
-  const u = getLoggedUser();
+    const elNome  = document.getElementById("usuarioNome");
+    const elEmail = document.getElementById("usuarioEmail");
+    if(elNome)  elNome.textContent  = u.nome || "—";
+    if(elEmail) elEmail.textContent = u.email || "—";
 
-  // Exibir no topo
-  document.getElementById("usuarioNome").textContent = u.nome || "—";
-  document.getElementById("usuarioEmail").textContent = u.email || "—";
-
-  // Manter compatibilidade com outros módulos (se quiser)
-  localStorage.setItem("usuarioNome", u.nome || "");
-  localStorage.setItem("usuarioEmail", u.email || "");
-});
-
-function voltarMenu() {
-  window.location.href = "../menu.html";
-}
+    // compat opcional (mantém como você já fazia)
+    localStorage.setItem("usuarioNome", u.nome || "");
+    localStorage.setItem("usuarioEmail", u.email || "");
+  });
 </script>
 
 </body>
