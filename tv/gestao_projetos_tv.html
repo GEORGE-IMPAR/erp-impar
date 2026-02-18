@@ -33,6 +33,7 @@
       background:rgba(2,6,23,.85);
       border-bottom:2px solid rgba(34,197,94,.3);
       flex-shrink:0;
+      position:relative;
     }
     .brand{
       display:flex;
@@ -71,6 +72,22 @@
       font-variant-numeric:tabular-nums;
     }
 
+    /* >>> Linha discreta para usuário logado (não muda layout) <<< */
+    .header-user{
+      margin-top:6px;
+      font-size:12px;
+      opacity:.85;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:520px;
+      margin-left:auto;
+    }
+    .header-user b{
+      color:var(--green);
+      font-weight:900;
+    }
+
     .ultima-sync{
       position:absolute;
       top:16px;
@@ -85,6 +102,7 @@
       align-items:center;
       gap:8px;
       animation:pulseSync 2s ease-in-out infinite;
+      z-index:2;
     }
     @keyframes pulseSync{
       0%, 100%{opacity:.9; transform:translateX(-50%) scale(1);}
@@ -313,37 +331,36 @@
       background:rgba(34,197,94,.6);
     }
 
-  .projetos-grid{
-    display:grid;
-    grid-template-columns:repeat(3, 1fr);
-    grid-template-rows:repeat(2, 1fr);
-    gap:20px;
-  }
+    .projetos-grid{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      grid-template-rows:repeat(2, 1fr);
+      gap:20px;
+    }
 
-  /* só o miolo anima (o grid) */
-  .slide-out{
-    animation:slideOut .55s ease-in forwards;
-  }
-  .slide-in{
-    animation:slideIn .55s ease-out forwards;
-  }
+    /* só o miolo anima (o grid) */
+    .slide-out{
+      animation:slideOut .55s ease-in forwards;
+    }
+    .slide-in{
+      animation:slideIn .55s ease-out forwards;
+    }
 
-  @keyframes slideOut{
-    from{ transform:translateX(0); opacity:1; }
-    to{ transform:translateX(-60px); opacity:0; }
-  }
-  @keyframes slideIn{
-    from{ transform:translateX(60px); opacity:0; }
-    to{ transform:translateX(0); opacity:1; }
-  }
+    @keyframes slideOut{
+      from{ transform:translateX(0); opacity:1; }
+      to{ transform:translateX(-60px); opacity:0; }
+    }
+    @keyframes slideIn{
+      from{ transform:translateX(60px); opacity:0; }
+      to{ transform:translateX(0); opacity:1; }
+    }
 
-  /* destaque mais “TV-friendly” quando atualiza */
-  .projeto-card.atualizado{
-    animation:destaque 2.6s ease-out;
-    border-color:var(--green);
-    box-shadow:0 0 40px rgba(34,197,94,.65), 0 10px 30px rgba(0,0,0,.4);
-  }
-
+    /* destaque mais “TV-friendly” quando atualiza */
+    .projeto-card.atualizado{
+      animation:destaque 2.6s ease-out;
+      border-color:var(--green);
+      box-shadow:0 0 40px rgba(34,197,94,.65), 0 10px 30px rgba(0,0,0,.4);
+    }
   </style>
 </head>
 <body>
@@ -369,6 +386,7 @@
   <div class="header-info">
     <strong id="dataAtual">—</strong>
     <div class="relogio" id="relogio">00:00:00</div>
+    <div class="header-user" id="tvUser">Logado: <b id="tvUserName">—</b> <span id="tvUserEmail" style="opacity:.75;font-size:11px">—</span></div>
   </div>
 </header>
 
@@ -400,8 +418,56 @@ let pageTimer = null;
 let highlightProjectId = null;
 let highlightUntilTs = 0;
 
+// ===== Logged user (ERP ÍMPAR) — versão ÚNICA (mesma do APP) =====
+function getLoggedUser(){
+  const candidates = [];
+
+  const primaryKey = "ERPIMPAR_USER";
+  const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+  if(rawPrimary) candidates.push(rawPrimary);
+
+  const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
+  for(const k of keys){
+    const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+    if(raw) candidates.push(raw);
+  }
+
+  for(const raw of candidates){
+    try{
+      const u = JSON.parse(raw);
+      const nome  = (u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || "").toString().trim();
+      const email = (u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "").toString().trim();
+      if(nome || email) return { nome: nome || "Usuário", email: email || "—" };
+    }catch(e){
+      if(raw.includes("@")) return { nome:"Usuário", email: raw };
+    }
+  }
+
+  const nome2  = (localStorage.getItem("usuarioNome")  || "").trim();
+  const email2 = (localStorage.getItem("usuarioEmail") || "").trim();
+  return { nome: nome2 || "", email: email2 || "" };
+}
+
+function applyLoggedUserTV(){
+  const u = getLoggedUser();
+  const nomeTxt  = u.nome || "—";
+  const emailTxt = u.email || "—";
+
+  const elNome  = document.getElementById("tvUserName");
+  const elEmail = document.getElementById("tvUserEmail");
+
+  if(elNome)  elNome.textContent  = nomeTxt;
+  if(elEmail) elEmail.textContent = emailTxt;
+
+  // compatibilidade (se outros módulos usam isso)
+  localStorage.setItem("usuarioNome", u.nome || "");
+  localStorage.setItem("usuarioEmail", u.email || "");
+}
+
 // Inicializar
 window.addEventListener('DOMContentLoaded', () => {
+  applyLoggedUserTV();
+
   atualizarRelogio();
   setInterval(atualizarRelogio, 1000);
 
@@ -461,12 +527,12 @@ function parseDataBR(dataStr) {
   const [hora, min, seg] = horaParte.split(':');
 
   return new Date(
-    parseInt(ano),
-    parseInt(mes) - 1,
-    parseInt(dia),
-    parseInt(hora),
-    parseInt(min),
-    parseInt(seg)
+    parseInt(ano,10),
+    parseInt(mes,10) - 1,
+    parseInt(dia,10),
+    parseInt(hora,10),
+    parseInt(min,10),
+    parseInt(seg,10)
   );
 }
 
@@ -533,7 +599,7 @@ async function carregarProjetos() {
         const foco = encontrarMaisRecenteEntreAtualizados(projetosAtualizados);
         if (foco) {
           highlightProjectId = foco.id;
-          highlightUntilTs = Date.now() + 15000; // 15s de destaque forte
+          highlightUntilTs = Date.now() + 15000; // 15s
 
           // pular para página do projeto atualizado
           const idx = projetosAtuais.findIndex(p => p.id === foco.id);
@@ -544,7 +610,6 @@ async function carregarProjetos() {
         }
       }
 
-      // render (com animação se trocou page por foco ou se for refresh normal)
       renderizarProjetos(projetosAtualizados, false);
       atualizarBadgeSync();
 
@@ -675,7 +740,6 @@ function renderizarProjetos(projetosAtualizados, animate) {
 
     grid.innerHTML = html || '<div class="loading">📭 Nenhum projeto cadastrado</div>';
 
-    // limpar badges após alguns segundos (mas mantém highlightUntilTs gerenciando o foco)
     if (projetosAtualizados.size > 0) {
       setTimeout(() => {
         document.querySelectorAll('.badge-novo').forEach(b => {
@@ -684,8 +748,7 @@ function renderizarProjetos(projetosAtualizados, animate) {
           setTimeout(() => b.remove(), 250);
         });
         document.querySelectorAll('.projeto-card.atualizado').forEach(card => {
-          // só remove se não estiver no destaque de foco
-          const isFocus = card.querySelector('.badge-novo') && (Date.now() < highlightUntilTs);
+          const isFocus = (Date.now() < highlightUntilTs);
           if (!isFocus) card.classList.remove('atualizado');
         });
       }, 6000);
@@ -697,7 +760,6 @@ function renderizarProjetos(projetosAtualizados, animate) {
     return;
   }
 
-  // anima troca de tela
   grid.classList.remove('slide-in');
   grid.classList.add('slide-out');
 
