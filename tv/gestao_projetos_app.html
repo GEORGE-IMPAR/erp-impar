@@ -378,73 +378,87 @@
 // Configuração da API
 const API_BASE = 'https://api.erpimpar.com.br/tv';
 
-// Carregar usuário logado
-window.addEventListener('DOMContentLoaded', () => {
-  document.body.classList.add('impar-enter');
-  
+// ✅ Pega usuário logado no padrão REAL do seu ERP
 function getLoggedUser() {
-  const raw =
+  // Prioridade 1: ERPIMPAR_USER ({"nome":"...","email":"..."})
+  const rawERP = localStorage.getItem("ERPIMPAR_USER");
+  if (rawERP) {
+    try {
+      const u = JSON.parse(rawERP);
+      const nome = (u.nome || u.Nome || u.name || "").trim();
+      const email = (u.email || u.Email || "").trim();
+      if (nome) return { nome, email };
+    } catch (e) {
+      console.error("Erro ao ler ERPIMPAR_USER", e);
+    }
+  }
+
+  // Prioridade 2: chaves alternativas antigas
+  const rawAlt =
     localStorage.getItem("usuarioLogado") ||
-    localStorage.getItem("ERPIMPAR_USER") ||
     localStorage.getItem("impar_user") ||
     "";
 
-  try {
-    const u = JSON.parse(raw);
-    const nome = (u.Nome || u.nome || u.name || "").trim();
-    const email = (u.Email || u.email || "").trim();
-    if (nome) return { nome, email };
-  } catch (e) {}
+  if (rawAlt) {
+    try {
+      const u = JSON.parse(rawAlt);
+      const nome = (u.nome || u.Nome || u.name || "").trim();
+      const email = (u.email || u.Email || "").trim();
+      if (nome) return { nome, email };
+    } catch (e) {}
+  }
 
+  // Prioridade 3: fallback simples
   const nome2 = (localStorage.getItem("usuarioNome") || "").trim();
   const email2 = (localStorage.getItem("usuarioEmail") || "").trim();
-
-  return { nome: nome2 || "Usuário", email: email2 || "" };
+  return { nome: nome2 || "", email: email2 || "" };
 }
 
-const u = getLoggedUser();
-document.getElementById('usuarioNome').textContent = u.nome;
-document.getElementById('usuarioEmail').textContent = u.email;
-  
-carregarProjetos();
+// Carregar usuário logado + projetos
+window.addEventListener('DOMContentLoaded', () => {
+  document.body.classList.add('impar-enter');
 
+  const u = getLoggedUser();
+  document.getElementById('usuarioNome').textContent = u.nome || "—";
+  document.getElementById('usuarioEmail').textContent = u.email || "—";
+
+  // Mantém compatibilidade com outros módulos
+  localStorage.setItem("usuarioNome", u.nome || "");
+  localStorage.setItem("usuarioEmail", u.email || "");
+
+  carregarProjetos();
 });
 
 // Carregar lista de projetos
 async function carregarProjetos() {
   try {
-    console.log('Carregando projetos da API...');
-    const response = await fetch(`${API_BASE}/listar.php`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
+    const response = await fetch(`${API_BASE}/listar.php?t=${Date.now()}`);
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
     const data = await response.json();
-    console.log('Resposta da API:', data);
-    
-    if (data.success && data.data && data.data.projetos) {
+
+    if (data.success && data.data && Array.isArray(data.data.projetos)) {
       const projetos = data.data.projetos;
       const select = document.getElementById('projeto');
       select.innerHTML = '<option value="">Selecione um projeto</option>';
-      
+
       projetos.forEach(proj => {
         const option = document.createElement('option');
         option.value = proj.id;
         option.textContent = `${proj.nome} (${proj.coordenador})`;
-        option.dataset.coordenador = proj.coordenador;
+        option.dataset.coordenador = proj.coordenador || "";
         select.appendChild(option);
       });
-      
-      console.log(`✅ ${projetos.length} projetos carregados`);
+
     } else {
-      throw new Error('Formato de resposta inválido');
+      throw new Error('Formato inválido da API');
     }
   } catch (error) {
     console.error('Erro ao carregar projetos:', error);
     const select = document.getElementById('projeto');
     select.innerHTML = '<option value="">Erro ao carregar projetos</option>';
-    
+
     Swal.fire({
       icon: 'error',
       title: 'Erro',
@@ -457,7 +471,8 @@ async function carregarProjetos() {
 let farolSelecionado = '';
 function selecionarFarol(cor) {
   document.querySelectorAll('.farol-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelector(`.farol-btn.${cor}`).classList.add('active');
+  const btn = document.querySelector(`.farol-btn.${cor}`);
+  if (btn) btn.classList.add('active');
   document.getElementById('farol').value = cor;
   farolSelecionado = cor;
 }
@@ -465,12 +480,12 @@ function selecionarFarol(cor) {
 // Enviar formulário
 document.getElementById('formProjeto').addEventListener('submit', async (e) => {
   e.preventDefault();
-  
+
   const projetoId = document.getElementById('projeto').value;
   const status = document.getElementById('status').value;
-  const execucao = document.querySelector('input[name="execucao"]:checked')?.value;
+  const execucao = document.querySelector('input[name="execucao"]:checked')?.value || '';
   const farol = document.getElementById('farol').value;
-  
+
   if (!projetoId || !status || !execucao || !farol) {
     Swal.fire({
       icon: 'warning',
@@ -479,26 +494,28 @@ document.getElementById('formProjeto').addEventListener('submit', async (e) => {
     });
     return;
   }
-  
-  const coordenador = document.querySelector(`#projeto option[value="${projetoId}"]`).dataset.coordenador;
-  const usuario = getLoggedUser().nome;
 
-if (!usuario || usuario === "Usuário") {
-  Swal.fire({
-    icon: 'warning',
-    title: 'Login não identificado',
-    text: 'Faça login no ERP ÍMPAR antes de atualizar o projeto.'
-  });
-  return;
-}
+  const opt = document.querySelector(`#projeto option[value="${projetoId}"]`);
+  const coordenador = opt?.dataset?.coordenador || "";
 
-  
+  const u = getLoggedUser();
+  const usuario = (u.nome || "").trim();
+
+  if (!usuario) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Login não identificado',
+      text: 'Faça login no ERP ÍMPAR antes de atualizar o projeto.'
+    });
+    return;
+  }
+
   try {
     const response = await fetch(`${API_BASE}/atualizar.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        projeto_id: parseInt(projetoId),
+        projeto_id: parseInt(projetoId, 10),
         status,
         execucao,
         farol,
@@ -506,9 +523,9 @@ if (!usuario || usuario === "Usuário") {
         usuario_atualizacao: usuario
       })
     });
-    
+
     const data = await response.json();
-    
+
     if (data.success) {
       await Swal.fire({
         icon: 'success',
@@ -516,9 +533,11 @@ if (!usuario || usuario === "Usuário") {
         text: 'Projeto atualizado com sucesso',
         timer: 2000
       });
+
       document.getElementById('formProjeto').reset();
       farolSelecionado = '';
       document.querySelectorAll('.farol-btn').forEach(btn => btn.classList.remove('active'));
+
     } else {
       throw new Error(data.error || 'Erro desconhecido');
     }
