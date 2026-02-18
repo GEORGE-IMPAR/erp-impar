@@ -91,6 +91,33 @@
       50%{opacity:1; transform:translateX(-50%) scale(1.02);}
     }
 
+    .btn-fullscreen{
+      position:fixed;
+      bottom:20px;
+      right:20px;
+      background:var(--green);
+      color:#000;
+      border:none;
+      padding:14px 24px;
+      border-radius:12px;
+      font-size:16px;
+      font-weight:800;
+      cursor:pointer;
+      box-shadow:0 8px 20px rgba(34,197,94,.4);
+      transition:all .3s;
+      z-index:9999;
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .btn-fullscreen:hover{
+      transform:scale(1.05);
+      box-shadow:0 12px 30px rgba(34,197,94,.6);
+    }
+    .btn-fullscreen.hide{
+      display:none;
+    }
+
     main{
       flex:1;
       overflow-y:auto;
@@ -272,7 +299,6 @@
       flex-shrink:0;
     }
 
-    /* Scrollbar customizado */
     main::-webkit-scrollbar{
       width:10px;
     }
@@ -289,6 +315,10 @@
   </style>
 </head>
 <body>
+
+<button class="btn-fullscreen" id="btnFullscreen" onclick="ativarFullscreen()">
+  🖥️ Ativar Tela Cheia
+</button>
 
 <header>
   <div class="brand">
@@ -332,8 +362,47 @@ window.addEventListener('DOMContentLoaded', () => {
   atualizarRelogio();
   setInterval(atualizarRelogio, 1000);
   carregarProjetos();
-  setInterval(carregarProjetos, 10000); // Atualiza a cada 10s
+  setInterval(carregarProjetos, 10000);
+  
+  // Verificar se já está em fullscreen
+  verificarFullscreen();
+  
+  // Detectar saída do fullscreen
+  document.addEventListener('fullscreenchange', verificarFullscreen);
+  document.addEventListener('webkitfullscreenchange', verificarFullscreen);
+  document.addEventListener('mozfullscreenchange', verificarFullscreen);
+  document.addEventListener('MSFullscreenChange', verificarFullscreen);
 });
+
+// Ativar fullscreen
+function ativarFullscreen() {
+  const elem = document.documentElement;
+  
+  if (elem.requestFullscreen) {
+    elem.requestFullscreen();
+  } else if (elem.webkitRequestFullscreen) { /* Safari */
+    elem.webkitRequestFullscreen();
+  } else if (elem.msRequestFullscreen) { /* IE11 */
+    elem.msRequestFullscreen();
+  } else if (elem.mozRequestFullScreen) { /* Firefox */
+    elem.mozRequestFullScreen();
+  }
+}
+
+// Verificar se está em fullscreen
+function verificarFullscreen() {
+  const isFullscreen = document.fullscreenElement || 
+                       document.webkitFullscreenElement || 
+                       document.mozFullScreenElement ||
+                       document.msFullscreenElement;
+  
+  const btn = document.getElementById('btnFullscreen');
+  if (isFullscreen) {
+    btn.classList.add('hide');
+  } else {
+    btn.classList.remove('hide');
+  }
+}
 
 // Relógio
 function atualizarRelogio() {
@@ -358,16 +427,9 @@ async function carregarProjetos() {
       const projetosNovos = data.data.projetos;
       console.log(`✅ ${projetosNovos.length} projetos carregados`);
       
-      // Verificar se houve atualização
       const projetosAtualizados = detectarAtualizacoes(projetosNovos);
-      
-      // Atualizar lista
       projetosAtuais = projetosNovos;
-      
-      // Renderizar todos os projetos
       renderizarProjetos(projetosAtualizados);
-      
-      // Atualizar badge de sincronização
       atualizarBadgeSync(data.timestamp);
       
     } else {
@@ -380,7 +442,7 @@ async function carregarProjetos() {
   }
 }
 
-// Detectar quais projetos foram atualizados
+// Detectar atualizações
 function detectarAtualizacoes(projetosNovos) {
   const atualizados = new Set();
   
@@ -388,13 +450,11 @@ function detectarAtualizacoes(projetosNovos) {
     const projetoAntigo = projetosAtuais.find(p => p.id === projetoNovo.id);
     
     if (projetoAntigo) {
-      // Comparar data de atualização
       if (projetoNovo.data_atualizacao !== projetoAntigo.data_atualizacao) {
         atualizados.add(projetoNovo.id);
         console.log(`🆕 Projeto atualizado: ${projetoNovo.nome}`);
       }
     } else {
-      // Projeto novo
       atualizados.add(projetoNovo.id);
       console.log(`✨ Novo projeto: ${projetoNovo.nome}`);
     }
@@ -403,7 +463,7 @@ function detectarAtualizacoes(projetosNovos) {
   return atualizados;
 }
 
-// Renderizar todos os projetos
+// Renderizar projetos
 function renderizarProjetos(projetosAtualizados) {
   const grid = document.getElementById('projetosGrid');
   
@@ -472,7 +532,6 @@ function renderizarProjetos(projetosAtualizados) {
   
   grid.innerHTML = html;
   
-  // Remover badge "Atualizado!" após 5 segundos
   if (projetosAtualizados.size > 0) {
     setTimeout(() => {
       document.querySelectorAll('.badge-novo').forEach(badge => {
@@ -487,7 +546,7 @@ function renderizarProjetos(projetosAtualizados) {
   }
 }
 
-// Atualizar badge de sincronização
+// Atualizar badge
 function atualizarBadgeSync(timestamp) {
   const badge = document.getElementById('ultimaSync');
   const agora = new Date();
@@ -496,7 +555,6 @@ function atualizarBadgeSync(timestamp) {
   badge.style.background = 'rgba(34,197,94,.2)';
   badge.style.borderColor = 'rgba(34,197,94,.5)';
   
-  // Voltar ao estado normal após 2s
   setTimeout(() => {
     badge.style.background = 'rgba(34,197,94,.15)';
     badge.style.borderColor = 'rgba(34,197,94,.4)';
