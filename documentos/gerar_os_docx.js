@@ -74,9 +74,13 @@
   async function gerarOSDocx({ codigo, nomeObra }){
     if(!codigo) throw new Error("Código do projeto não informado.");
 
-    if(!window.JSZip) throw new Error("JSZip não carregado. Inclua o jszip.min.js antes do gerar_os_docx.js.");
-
-    const jsonUrl = `${API_DOCS}/data/${encodeURIComponent(codigo)}.json`;
+if(!window.PizZip) {
+  throw new Error("PizZip não carregado. Inclua o pizzip.min.js antes do gerar_os_docx.js.");
+}
+if(!window.docxtemplater) {
+  throw new Error("docxtemplater não carregado. Inclua docxtemplater.js antes do gerar_os_docx.js.");
+}
+     const jsonUrl = `${API_DOCS}/data/${encodeURIComponent(codigo)}.json`;
 
     // 1) baixa json + template
     const [dados, tplBuf] = await Promise.all([
@@ -85,7 +89,7 @@
     ]);
 
     // 2) abre docx
-    const zip = await JSZip.loadAsync(tplBuf);
+    const zip = new PizZip(content);;
     const docXmlPath = "word/document.xml";
     if(!zip.file(docXmlPath)) throw new Error("Template inválido (word/document.xml não encontrado).");
 
@@ -123,4 +127,5 @@
   window.gerarOSDocx = gerarOSDocx;
 
 })();
+
 
