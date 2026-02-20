@@ -757,7 +757,48 @@ function startAlertBar(){
   bar.style.transition = `width ${ALERT_DURATION_MS}ms linear`;
   bar.style.width = "100%";
 }
+// ===== BEEP (sem arquivo) =====
+function beep(times = 2, gapMs = 120){
+  try{
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if(!AudioCtx) return;
 
+    const ctx = new AudioCtx();
+
+    // alguns browsers bloqueiam som sem interação do usuário
+    // então tentamos "acordar" o contexto
+    if (ctx.state === "suspended") ctx.resume();
+
+    let t = ctx.currentTime + 0.02;
+
+    for(let i=0;i<times;i++){
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+
+      o.type = "sine";
+      o.frequency.value = 880; // tom do bip
+      g.gain.value = 0.0001;
+
+      o.connect(g);
+      g.connect(ctx.destination);
+
+      // envelope rápido (bip curto)
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.20, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+
+      o.start(t);
+      o.stop(t + 0.16);
+
+      t += (gapMs/1000) + 0.16;
+    }
+
+    setTimeout(() => { try{ ctx.close(); }catch(e){} }, 1200);
+
+  } catch(e){
+    // se falhar, só ignora (TV segue normal)
+  }
+}
 function showTravelAlert(){
   const overlay = document.getElementById("alertOverlay");
   const card = overlay ? overlay.querySelector(".alert-card") : null;
@@ -776,6 +817,7 @@ function showTravelAlert(){
   if(secEl) secEl.textContent = remaining;
 
   overlay.classList.add("show");
+  beep(2); // 2 bips
   overlay.setAttribute("aria-hidden","false");
   alertShowing = true;
 
@@ -795,6 +837,7 @@ function showTravelAlert(){
       overlay.classList.remove("show");
       overlay.setAttribute("aria-hidden","true");
       alertShowing = false;
+      virtualIndex = 0;
     }, 780);
   }, ALERT_DURATION_MS);
 }
@@ -858,9 +901,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
   iniciarPager();
 
-  // Se for seg/sex, começa o loop exibindo o ALERTA primeiro
+// Seg/Sex: mostra alerta imediatamente ao abrir a TV (sem esperar 20s)
 if (isMondayOrFriday(new Date())) {
-  virtualIndex = 0;
   showTravelAlert();
 }
 
@@ -878,6 +920,7 @@ function ativarFullscreen() {
   else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
   else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
   else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
+  beep(1); // desbloqueia o áudio com um bip curtinho
 }
 
 // Verificar fullscreen
