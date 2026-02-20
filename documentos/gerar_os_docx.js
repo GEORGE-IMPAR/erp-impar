@@ -1,59 +1,46 @@
-// gerar_os_docx.js
-// Requer: PizZip carregado antes (via CDN) OU já existente no seu projeto.
-
-(function () {
+/* gerar_os_docx.js - ERP ÍMPAR
+   Gera ORDEM DE SERVIÇO no FRONT:
+   - baixa JSON do projeto
+   - baixa template DOCX (placeholders #...)
+   - substitui e baixa o .docx final
+*/
+(function(){
   "use strict";
 
-  // AJUSTE AQUI (recomendado deixar o template no GitHub também, HTTPS)
-  // Exemplo: https://www.erpimpar.com.br/documentos/templates/Template_OS.docx
-  const OS_TEMPLATE_URL = "https://api.erpimpar.com.br/storage/docs/Template_OS.docx";
+  const API_DOCS = (typeof window.DOCS_BASE === "string" && window.DOCS_BASE)
+    ? window.DOCS_BASE.replace(/\/+$/,"")
+    : "https://api.erpimpar.com.br/storage/docs";
 
-  // JSON (já existe no seu servidor)
-  function getJsonUrl(codigo){
-    return `https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
+  // >>> Ajuste o nome do arquivo do template OS no KingHost aqui:
+  const TEMPLATE_OS_URL = `${API_DOCS}/template-os-PLACEHOLDERS.docx`;
+
+  function safeStr(v){
+    if(v === null || v === undefined) return "";
+    return String(v).replace(/\s+/g," ").trim();
   }
 
   function sanitizeFilenamePart(s){
-    return String(s || "")
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    s = safeStr(s);
+    // remove caracteres ruins de filename
+    return s
       .replace(/[\\\/:*?"<>|]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+      .replace(/\s+/g," ")
+      .trim()
+      .slice(0, 80);
   }
 
   async function fetchArrayBuffer(url){
     const resp = await fetch(url, { cache: "no-store" });
-    if(!resp.ok) throw new Error(`Falha ao baixar arquivo (HTTP ${resp.status}).`);
+    if(!resp.ok) throw new Error(`Falha ao baixar arquivo: ${url} (HTTP ${resp.status})`);
     return await resp.arrayBuffer();
   }
 
   async function fetchJson(url){
     const resp = await fetch(url, { cache: "no-store" });
-    if(!resp.ok) throw new Error(`Falha ao ler JSON (HTTP ${resp.status}).`);
-    return await resp.json();
-  }
-
-  function replaceAllXml(zip, replacements){
-    const fileNames = Object.keys(zip.files || {});
-    const xmlNames = fileNames.filter(n =>
-      n.startsWith("word/") && n.endsWith(".xml")
-    );
-
-    xmlNames.forEach(name => {
-      const file = zip.file(name);
-      if(!file) return;
-
-      let xml = file.asText();
-
-      // replaces simples
-      for(const [needle, value] of Object.entries(replacements)){
-        const v = (value === null || value === undefined) ? "" : String(value);
-        // replace ALL (split/join) pra evitar regex escapando
-        xml = xml.split(needle).join(v);
-      }
-
-      zip.file(name, xml);
-    });
+    if(!resp.ok) throw new Error(`Falha ao baixar JSON: ${url} (HTTP ${resp.status})`);
+    const j = await resp.json();
+    if(!j || typeof j !== "object") throw new Error("JSON inválido.");
+    return j;
   }
 
   function downloadBlob(blob, filename){
@@ -64,46 +51,74 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 8000);
+    setTimeout(()=> URL.revokeObjectURL(url), 8000);
   }
 
-  // Função pública: chama isso quando o usuário escolher "Gerar Ordem de Serviço"
-  window.gerarOSDocx = async function gerarOSDocx({ codigo, nomeObra }){
-    if(!codigo) throw new Error("Código não informado.");
+  // Corrige o caso clássico do DOCX: "#" em um <w:t> e "endereco" em outro <w:t>
+  function fixSplitPlaceholder(xml, name){
+    // tenta juntar "#"</w:t> ... <w:t>name</w:t>  => "#name"
+    const re = new RegExp(`(<w:t[^>]*>)#</w:t>[\\s\\S]*?<w:t[^>]*>${name}</w:t>`, "g");
+    return xml.replace(re, `$1#${name}</w:t>`);
+  }
 
-    // 1) baixa template DOCX + JSON
-    const [tplBuf, data] = await Promise.all([
-      fetchArrayBuffer(OS_TEMPLATE_URL),
-      fetchJson(getJsonUrl(codigo))
+  function applyReplacements(xml, map){
+    // substituição simples
+    Object.keys(map).forEach((k)=>{
+      const val = safeStr(map[k]);
+      // substituir todas as ocorrências
+      xml = xml.split(k).join(val);
+    });
+    return xml;
+  }
+
+  async function gerarOSDocx({ codigo, nomeObra }){
+    if(!codigo) throw new Error("Código do projeto não informado.");
+
+    if(!window.JSZip) throw new Error("JSZip não carregado. Inclua o jszip.min.js antes do gerar_os_docx.js.");
+
+    const jsonUrl = `${API_DOCS}/data/${encodeURIComponent(codigo)}.json`;
+
+    // 1) baixa json + template
+    const [dados, tplBuf] = await Promise.all([
+      fetchJson(jsonUrl),
+      fetchArrayBuffer(TEMPLATE_OS_URL)
     ]);
 
-    // 2) abre DOCX e faz replace
-    if(typeof PizZip === "undefined"){
-      throw new Error("PizZip não carregado. Inclua o CDN do PizZip antes deste script.");
-    }
-    const zip = new PizZip(tplBuf);
+    // 2) abre docx
+    const zip = await JSZip.loadAsync(tplBuf);
+    const docXmlPath = "word/document.xml";
+    if(!zip.file(docXmlPath)) throw new Error("Template inválido (word/document.xml não encontrado).");
 
-    const replacements = {
-      "#codigo": data.codigo || codigo,
-      "#nomeContratante": data.nomeContratante || "",
-      "#servico": data.servico || "",
-      "#contatoContratante": data.contatoContratante || "",
-      "#telefoneContratante": data.telefoneContratante || "",
-      "#emailContratante": data.emailContratante || "",
-      "#endereco": data.enderecoObra || data.endereco || "",
-      "#dataExtenso": data.dataExtenso || "",
-      "#prazo": data.prazoDias || data.prazo || "",
-      // template tem typo "#projtista"
-      "#projtista": data.projetista || ""
+    let xml = await zip.file(docXmlPath).async("string");
+
+    // 3) corrige placeholder quebrado no template (endereco costuma vir splitado)
+    xml = fixSplitPlaceholder(xml, "endereco");
+
+    // 4) mapa de placeholders do template
+    const prazo = (dados.prazoDias ?? dados.prazo ?? "");
+    const map = {
+      "#codigo": dados.codigo ?? codigo,
+      "#nomeContratante": dados.nomeContratante ?? "",
+      "#contatoContratante": dados.contatoContratante ?? "",
+      "#prazo": prazo,
+      "#projtista": dados.projetista ?? "",          // template está com esse nome
+      "#endereco": dados.enderecoObra ?? ""          // seu JSON tem enderecoObra
     };
 
-    replaceAllXml(zip, replacements);
+    // 5) aplica e salva
+    xml = applyReplacements(xml, map);
+    zip.file(docXmlPath, xml);
 
-    // 3) gera docx final
-    const outName = `OS - ${sanitizeFilenamePart(data.codigo || codigo)} ${sanitizeFilenamePart(nomeObra || data.nomeObra || "")}.docx`.trim();
-    const blob = zip.generate({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
-    downloadBlob(blob, outName);
+    const outNomeObra = sanitizeFilenamePart(nomeObra || dados.nomeObra || "obra");
+    const filename = `Ordem de Serviço - ${codigo} ${outNomeObra}.docx`;
+
+    const outBlob = await zip.generateAsync({ type: "blob" });
+    downloadBlob(outBlob, filename);
 
     return true;
-  };
+  }
+
+  // expõe global
+  window.gerarOSDocx = gerarOSDocx;
+
 })();
