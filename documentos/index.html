@@ -2909,23 +2909,28 @@ async function imparAskDocToGenerate(origin="manual"){
 
 async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
   const url = endpoint;
-  const headers = { };
+  const headers = {};
   let body = null;
 
-  if(method === "POST"){
+  const isPost = (method || "GET").toUpperCase() === "POST";
+  if(isPost){
     headers["Content-Type"] = "application/json";
     body = JSON.stringify({ codigo });
   }
 
-window.open(
-  `${DOCS_BASE}/make_contract.php?codigo=${encodeURIComponent(codigo)}`,
-  "_blank"
-);
+  // ✅ NÃO abrir nova aba
+  // window.open(...) REMOVIDO
 
+  const resp = await fetch(url, {
+    method: isPost ? "POST" : "GET",
+    headers,
+    body,
+    mode: "cors",
+    cache: "no-store"
+  });
 
-
-  // se a API devolver erro em JSON
   const ct = (resp.headers.get("content-type") || "").toLowerCase();
+
   if(!resp.ok){
     let msg = `Falha ao gerar documento (HTTP ${resp.status}).`;
     try{
@@ -2934,13 +2939,12 @@ window.open(
         msg = j?.error || j?.message || msg;
       } else {
         const t = await resp.text();
-        if(t && t.length < 500) msg = t;
+        if(t && t.length < 800) msg = t;
       }
     }catch(e){}
     throw new Error(msg);
   }
 
-  // se veio JSON mesmo com ok, pode ser payload de erro
   if(ct.includes("application/json")){
     const j = await resp.json();
     if(j?.ok === false) throw new Error(j?.error || "Falha ao gerar documento.");
@@ -2957,7 +2961,7 @@ window.open(
   a.remove();
   setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
 }
-
+  
 async function gerarDocumento(tipo){
   const {codigo, nomeObra} = getProjetoMetaForFilename();
 
@@ -2965,27 +2969,30 @@ async function gerarDocumento(tipo){
   const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
   const filename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
 
-  const endpoint = (tipo === "contrato")
-    ? `${DOCS_BASE}/make_contract.php`
-    : `${DOCS_BASE}/make_os.php`;
+showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
 
-  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
-
-  try{
-    // 1) tenta POST (mais seguro para payloads)
-    try{
-      await downloadDocxFromApi({ endpoint, codigo, filename, method:"POST" });
-      return true;
-    } catch(postErr){
-      // 2) fallback GET (caso o PHP esteja esperando querystring)
-      const endpointGet = `${endpoint}?codigo=${encodeURIComponent(codigo)}&ts=${Date.now()}`;
-      await downloadDocxFromApi({ endpoint: endpointGet, codigo, filename, method:"GET" });
-      return true;
+try{
+  if(tipo === "contrato"){
+    if(!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function"){
+      throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
     }
-  } finally {
-    hideImparLoading();
+    await window.ERP_DOCX.gerarContrato(codigo);
+    return true;
   }
-}
+
+  // OS (por enquanto via API)
+  const endpoint = `${DOCS_BASE}/make_os.php`;
+  try{
+    await downloadDocxFromApi({ endpoint, codigo, filename, method:"POST" });
+    return true;
+  } catch(postErr){
+    const endpointGet = `${endpoint}?codigo=${encodeURIComponent(codigo)}&ts=${Date.now()}`;
+    await downloadDocxFromApi({ endpoint: endpointGet, codigo, filename, method:"GET" });
+    return true;
+  }
+} finally {
+  hideImparLoading();
+}}
 
 /* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
@@ -3052,7 +3059,7 @@ async function gerarDocumento(tipo){
     bindGerarDepoisSalvar();
   }
 })();
-
+<script src="./gerar_contrato_docx.js"></script>
 </script>
 
 </body>
