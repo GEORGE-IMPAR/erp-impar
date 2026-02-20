@@ -98,6 +98,7 @@
     const prazo = (dados.prazoDias ?? dados.prazo ?? "");
     const map = {
       "#codigo": dados.codigo ?? codigo,
+      "#nomeObra": dados.nomeObra ?? "",   // ✅ NOVO
       "#nomeContratante": dados.nomeContratante ?? "",
       "#contatoContratante": dados.contatoContratante ?? "",
       "#prazo": prazo,
@@ -122,3 +123,4 @@
   window.gerarOSDocx = gerarOSDocx;
 
 })();
+
