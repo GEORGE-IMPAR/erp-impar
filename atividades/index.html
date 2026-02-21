@@ -1627,6 +1627,29 @@ function buildMultiSelect(options, selected, labelText, searchPh){
   const search   = wrap.querySelector(".multi-search");
   const list     = wrap.querySelector(".multi-list");
 
+  
+const NOME_PLACA_MAP = {
+  "CRISTIANO": "RXO8A58",
+  "SILVIO": "RXL6H17",
+  "FABIO": "IZH2A86",
+  "EMPRESA": "MJM3616",
+  "RENAN RIBEIRO": "QIQ3921",
+  "SELO": "QHQ8009",
+  "VALDECI": "QII5E96",
+  "NICOLAS": "QIE6I52",
+  "CARLOS HENRIQUE": "QJO3249"
+};
+	
+function nomeKey(s){ return String(s||"").trim().toUpperCase(); }
+
+function placaDoUltimoNomeComCarro(nomesArr){
+  for(let i = nomesArr.length - 1; i >= 0; i--){
+    const placa = NOME_PLACA_MAP[nomeKey(nomesArr[i])];
+    if(placa) return placa;
+  }
+  return "";
+}
+	
   // --- Portal para dropdown (evita ficar por trás / ser cortado por overflow/stacking)
   const dropEl = wrap.querySelector(".multi-drop");
   const dropParent = wrap;
@@ -1850,6 +1873,44 @@ function newRow(pref={}){
   const multi = buildMultiSelect(LIST_NOME, nomesInit, 'Nome(s)', 'Buscar nome...');
   row.querySelector(".nome-slot").appendChild(multi);
 
+// ===== AUTO-PLACA: se selecionar nome com placa, preenche (último nome com placa vence) =====
+(function(){
+  // pega o <select multiple> dentro do componente
+  const sel = (multi && multi.querySelector) ? multi.querySelector("select") : null;
+
+  // função que aplica placa no payload + UI da linha
+  function applyPlateFromNames(){
+    try{
+      // 1) lê nomes selecionados (da UI)
+      const nomesSel = sel
+        ? Array.from(sel.selectedOptions).map(o => o.value)
+        : (Array.isArray(pref.nomes) ? pref.nomes : []);
+
+      // 2) calcula placa do último nome com placa
+      const placa = placaDoUltimoNomeComCarro(nomesSel);
+      if(!placa) return;
+
+      // 3) atualiza o SELECT de placa da linha (sem desabilitar)
+      const placaSel = row.querySelector(".placa-slot select, .carro-slot select, select[name='carro'], select[name='placa']");
+      if(placaSel){
+        placaSel.value = placa;
+
+        // dispara change pra sua lógica interna atualizar payload/draft do jeito padrão
+        placaSel.dispatchEvent(new Event("change", { bubbles:true }));
+      }
+    }catch(e){}
+  }
+
+  // aplica na carga inicial (se já vier nome com placa)
+  applyPlateFromNames();
+
+  // aplica sempre que mudar nomes
+  const target = sel || multi;
+  if(target && target.addEventListener){
+    target.addEventListener("change", applyPlateFromNames);
+  }
+})();
+	
   // Obra(s) — multi (NxN)
   const obrasInit = Array.isArray(pref.obras) ? pref.obras : (pref.obra ? [pref.obra] : []);
   const multiObra = buildMultiSelect(LIST_OBRA, obrasInit, 'Obra(s)', 'Buscar obra...');
@@ -1869,7 +1930,8 @@ function newRow(pref={}){
     row._refs.selCarro.value = pref.carro || "";
   row._refs.selPerc.value = pref.percentual || "";
 
-  function refreshMotivo(){
+	
+	function refreshMotivo(){
     const pct=pctToNumber(row._refs.selPerc.value);
     const show=(pct!==null && pct<100);
     row._refs.motWrap.style.display = show ? "block" : "none";
