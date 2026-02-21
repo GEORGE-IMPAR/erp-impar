@@ -1329,6 +1329,9 @@ const STORAGE_HIST  = "ERPIMPAR_ATIVIDADES_HIST_V1";
 const API_SAVE = "https://api.erpimpar.com.br/atividades/save.php";
 const API_LIST = "https://api.erpimpar.com.br/atividades/list.php";
 const API_GET  = "https://api.erpimpar.com.br/atividades/get.php";
+// ===== Rascunho do DIA (salvar só quando gerar PDF) =====
+const API_DRAFT_SAVE = "https://api.erpimpar.com.br/atividades/draft_save.php";
+const API_DRAFT_GET  = "https://api.erpimpar.com.br/atividades/draft_get.php";	
 
 async function apiSave(payload){
   const r = await fetch(API_SAVE, {
@@ -1361,7 +1364,28 @@ async function apiGet(id){
   if(!r.ok || !j || j.ok !== true) throw new Error((j && (j.error||j.message)) || "Falha ao abrir no servidor.");
   return j.data;
 }
+async function apiDraftSave(payload){
+  const r = await fetch(API_DRAFT_SAVE, {
+    method: "POST",
+    headers: { "Content-Type":"text/plain;charset=UTF-8" }, // sem preflight
+    body: JSON.stringify(payload)
+  });
+  const j = await r.json().catch(()=>null);
+  if(!r.ok || !j || j.ok !== true){
+    const msg = (j && (j.error || j.message)) ? (j.error || j.message) : "Falha ao salvar rascunho no servidor.";
+    throw new Error(msg);
+  }
+  return true;
+}
 
+async function apiDraftGet(dateStr){ // dateStr = "YYYY-MM-DD"
+  const url = API_DRAFT_GET + "?date=" + encodeURIComponent(dateStr);
+  const r = await fetch(url, { method:"GET" });
+  const j = await r.json().catch(()=>null);
+  if(!r.ok || !j || j.ok !== true) return null;
+  return j.data || null;
+}
+	
 let last = null; // estado carregado (draft/final)
 
 const LIST_NOME = ["CARLOS HENRIQUE", "CRISTIANO", "FABIO", "GLAICON", "HENRIQUE", "IBRAIS", "MARCOS ANTONIO", "NERI", "RODRIGO", "SELO", "SILVIO", "jEILSON", "NICOLAS", "VALDECI"];
@@ -2120,6 +2144,14 @@ async function gerarPDF(){
     return;
   }
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+    // ✅ RISCO ZERO: só salva no servidor quando o PDF pode ser gerado
+  try{
+    await apiDraftSave(payload);
+  }catch(e){
+    // Não trava o usuário: PDF abre igual.
+    // Só avisa que não sincronizou no servidor.
+    alertWarn("PDF OK, mas não consegui salvar o rascunho no servidor.\n\n" + String(e && e.message ? e.message : e));
+  }
   await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
   openPrintWindow(payload);
 }
@@ -2286,7 +2318,25 @@ function renderInitial(){
   setLockedFinal(locked);
   if(btnNewDay) btnNewDay.disabled = false;
 }
+	
+(async function(){
+  try{
+    // tenta puxar o rascunho do DIA do servidor (se existir)
+    const local = loadLast();
+    const dateStr =
+      (local && local.rows && local.rows[0] && local.rows[0].data) ? local.rows[0].data : todayStr();
 
+    const serverDraft = await apiDraftGet(dateStr);
+    if(serverDraft && serverDraft.rows && serverDraft.rows.length){
+      localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft));
+      renderInitial(); // re-render com o rascunho do servidor
+      refreshNameChecklist();
+    }
+  }catch(e){
+    // silencioso (sem atrapalhar a operação)
+  }
+})();
+	
 btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:todayStr()})); refreshNameChecklist(); });
 btnSave.addEventListener("click", gerarPDF);
 btnFinalize.addEventListener("click", finalizeDay);
