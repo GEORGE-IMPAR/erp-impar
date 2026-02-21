@@ -2481,6 +2481,7 @@ async function newDay(){
 
   await withProcessing(async()=>{}, "Preparando novo dia...", "PROCESSANDO DADOS.......", 700);
 
+  // 4) Cria um draft novo com PRÓXIMO DIA ÚTIL
   const payload = {
     usuario: getUser(),
     rows: [{
@@ -2494,37 +2495,18 @@ async function newDay(){
     }]
   };
 
-  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+  try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload)); }catch(e){}
   setLockedFinal(false);
 
   renderInitial();
   renderHistoryServer();
 
-  // mantém sua rotina de “travar/destravar” conforme draft no servidor
-  syncDraftStateFromServerOnLoad();
-    
-	const locked = isLockedFinal();
-    if(!locked){
-      alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois falta finalizar o dia anterior.");
-      return;
-    }
-  await withProcessing(async()=>{}, "Preparando novo dia…", "PROCESSANDO DADOS......", 700);
+  // 5) Atualiza estado conforme servidor (se aparecer draft no servidor, ele puxa e renderiza)
+  await syncDraftStateFromServerOnLoad();
 
-  const payload = { usuario: getUser(), rows: [{data: nextBusinessDayStr(), nomes: [], obra:"", carro:"", atividades:"", percentual:"", motivo:""}] };
-  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-  setLockedFinal(false);
-  renderInitial();
-  renderHistoryServer();
-  syncDraftStateFromServerOnLoad();
-	(async ()=>{
-      const hasDraft = await serverHasOpenDraft();
-       // se tem draft aberto: Novo Dia deve ficar "travado" (soft-disabled)
-       // se não tem draft: libera Novo Dia (locked = true no seu modelo)
-       setLockedFinal(!hasDraft);
-    })();
   refreshNameChecklist();
 }
-function renderInitial(){
+  function renderInitial(){
   rowsEl.innerHTML="";
   last = loadLast();
   if(last && Array.isArray(last.rows) && last.rows.length){ last.rows.forEach(r=>rowsEl.appendChild(newRow(r))); }
