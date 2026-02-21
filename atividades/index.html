@@ -2212,6 +2212,7 @@ try{
 await draftServerClear();
 await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
   openPrintWindow(payload);
+await newDay();
 }
 
 
@@ -2294,16 +2295,40 @@ async function serverHasOpenDraft(){
   }
 }
 
+async function syncDraftStateFromServerOnLoad(){
+  const hasDraft = await serverHasOpenDraft(); // usa API_DRAFT_GET
+
+  if(!hasDraft){
+    // servidor NÃO tem rascunho -> limpa estado local e libera novo dia
+    try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+    setLockedFinal(true);        // libera Novo Dia
+    renderInitial();
+    refreshNameChecklist();
+  }else{
+    // servidor TEM rascunho -> garante que a tela está em modo rascunho
+    setLockedFinal(false);
+  }
+}
+	
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
 
 async function newDay(){
   // ✅ trava global (servidor): se existe draft.json, existe dia aberto
+async function newDay(){
   const hasDraft = await serverHasOpenDraft();
   if(hasDraft){
-    alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois existe um rascunho aberto no servidor. Finalize o dia anterior primeiro.");
+    alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO: existe rascunho aberto no servidor.");
     return;
   }
-    const locked = isLockedFinal();
+
+  // servidor não tem draft -> garante que o local não vai travar
+  try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+  setLockedFinal(true);
+
+  // segue seu fluxo normal...
+  ...
+}    
+	const locked = isLockedFinal();
     if(!locked){
       alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois falta finalizar o dia anterior.");
       return;
@@ -2315,6 +2340,7 @@ async function newDay(){
   setLockedFinal(false);
   renderInitial();
   renderHistoryServer();
+  syncDraftStateFromServerOnLoad();
 	(async ()=>{
       const hasDraft = await serverHasOpenDraft();
        // se tem draft aberto: Novo Dia deve ficar "travado" (soft-disabled)
