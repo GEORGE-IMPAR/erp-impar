@@ -2462,18 +2462,46 @@ async function syncDraftStateFromServerOnLoad(){
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
 
 async function newDay(){
-  // ✅ trava global (servidor): se existe draft.json, existe dia aberto
-
+  // 1) Se existe draft aberto no servidor, não pode abrir novo dia
   const hasDraft = await serverHasOpenDraft();
   if(hasDraft){
     alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO: existe rascunho aberto no servidor.");
     return;
   }
 
-  // servidor não tem draft -> garante que o local não vai travar
+  // 2) Se o dia atual ainda está aberto (não finalizado), não pode abrir novo dia
+  if(!isLockedFinal()){
+    alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois falta finalizar o dia anterior.");
+    return;
+  }
+
+  // 3) Servidor sem draft -> garante que local não vai travar
   try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
   setLockedFinal(true);
 
+  await withProcessing(async()=>{}, "Preparando novo dia...", "PROCESSANDO DADOS.......", 700);
+
+  const payload = {
+    usuario: getUser(),
+    rows: [{
+      data: nextBusinessDayStr(),
+      nomes: [],
+      obra: "",
+      carro: "",
+      atividades: "",
+      percentual: "",
+      motivo: ""
+    }]
+  };
+
+  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+  setLockedFinal(false);
+
+  renderInitial();
+  renderHistoryServer();
+
+  // mantém sua rotina de “travar/destravar” conforme draft no servidor
+  syncDraftStateFromServerOnLoad();
 }    
 	const locked = isLockedFinal();
     if(!locked){
