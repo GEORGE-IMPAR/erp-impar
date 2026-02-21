@@ -124,10 +124,10 @@
   }
 
   // API pública para você chamar do seu código atual
-  window.ERP_DOCX = {
-    gerarOSDocx
-  };
+window.ERP_DOCX = window.ERP_DOCX || {};
+window.ERP_DOCX.gerarOSDocx = gerarOSDocx;
 
 })();
+
 
 
