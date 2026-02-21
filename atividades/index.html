@@ -1642,6 +1642,34 @@ const NOME_PLACA_MAP = {
 	
 function nomeKey(s){ return String(s||"").trim().toUpperCase(); }
 
+function extrairNomesDoMulti(multi){
+  // tenta várias formas sem quebrar nada
+  try{
+    if(multi && typeof multi.getSelected === "function"){
+      const v = multi.getSelected();
+      return Array.isArray(v) ? v : [];
+    }
+  }catch(e){}
+
+  try{
+    if(multi && typeof multi.value === "function"){
+      const v = multi.value();
+      return Array.isArray(v) ? v : [];
+    }
+  }catch(e){}
+
+  // tenta dataset / atributo com CSV
+  try{
+    const raw = (multi && (multi.dataset && (multi.dataset.value || multi.dataset.selected))) ||
+                (multi && multi.getAttribute && (multi.getAttribute("data-value") || multi.getAttribute("data-selected"))) ||
+                "";
+    if(!raw) return [];
+    return String(raw).split(",").map(s=>s.trim()).filter(Boolean);
+  }catch(e){}
+
+  return [];
+}
+
 function placaDoUltimoNomeComCarro(nomesArr){
   for(let i = nomesArr.length - 1; i >= 0; i--){
     const placa = NOME_PLACA_MAP[nomeKey(nomesArr[i])];
@@ -1649,7 +1677,18 @@ function placaDoUltimoNomeComCarro(nomesArr){
   }
   return "";
 }
-	
+
+function aplicarPlacaNaLinhaByMulti(row, multi){
+  const nomesSel = extrairNomesDoMulti(multi);
+  const placa = placaDoUltimoNomeComCarro(nomesSel);
+  if(!placa) return;
+
+  const placaSel = row.querySelector(".placa-slot select, .carro-slot select, select[name='carro'], select[name='placa']");
+  if(placaSel){
+    placaSel.value = placa;
+    placaSel.dispatchEvent(new Event("change", { bubbles:true }));
+  }
+}	
   // --- Portal para dropdown (evita ficar por trás / ser cortado por overflow/stacking)
   const dropEl = wrap.querySelector(".multi-drop");
   const dropParent = wrap;
@@ -1873,43 +1912,12 @@ function newRow(pref={}){
   const multi = buildMultiSelect(LIST_NOME, nomesInit, 'Nome(s)', 'Buscar nome...');
   row.querySelector(".nome-slot").appendChild(multi);
 
-// ===== AUTO-PLACA: se selecionar nome com placa, preenche (último nome com placa vence) =====
-(function(){
-  // pega o <select multiple> dentro do componente
-  const sel = (multi && multi.querySelector) ? multi.querySelector("select") : null;
+// auto-preencher placa baseado nos nomes selecionados (último com placa vence)
+setTimeout(()=> aplicarPlacaNaLinhaByMulti(row, multi), 0);
 
-  // função que aplica placa no payload + UI da linha
-  function applyPlateFromNames(){
-    try{
-      // 1) lê nomes selecionados (da UI)
-      const nomesSel = sel
-        ? Array.from(sel.selectedOptions).map(o => o.value)
-        : (Array.isArray(pref.nomes) ? pref.nomes : []);
-
-      // 2) calcula placa do último nome com placa
-      const placa = placaDoUltimoNomeComCarro(nomesSel);
-      if(!placa) return;
-
-      // 3) atualiza o SELECT de placa da linha (sem desabilitar)
-      const placaSel = row.querySelector(".placa-slot select, .carro-slot select, select[name='carro'], select[name='placa']");
-      if(placaSel){
-        placaSel.value = placa;
-
-        // dispara change pra sua lógica interna atualizar payload/draft do jeito padrão
-        placaSel.dispatchEvent(new Event("change", { bubbles:true }));
-      }
-    }catch(e){}
-  }
-
-  // aplica na carga inicial (se já vier nome com placa)
-  applyPlateFromNames();
-
-  // aplica sempre que mudar nomes
-  const target = sel || multi;
-  if(target && target.addEventListener){
-    target.addEventListener("change", applyPlateFromNames);
-  }
-})();
+multi.addEventListener("change", function(){
+  aplicarPlacaNaLinhaByMulti(row, multi);
+});
 	
   // Obra(s) — multi (NxN)
   const obrasInit = Array.isArray(pref.obras) ? pref.obras : (pref.obra ? [pref.obra] : []);
