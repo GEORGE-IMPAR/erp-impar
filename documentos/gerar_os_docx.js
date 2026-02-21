@@ -1,4 +1,4 @@
-/* gerar_contrato_docx.js
+/* gerar_os_docx.js
    Gera DOCX no browser a partir de:
    - JSON:  https://api.erpimpar.com.br/storage/docs/data/{CODIGO}.json
    - DOCX:  https://api.erpimpar.com.br/storage/docs/template-os-PLACEHOLDERS.docx
@@ -8,7 +8,7 @@
   "use strict";
 
   const API_BASE = "https://api.erpimpar.com.br/storage/docs";
-  const TEMPLATE_URL = API_BASE + "/template-contrato-PLACEHOLDERS.docx";
+  const TEMPLATE_URL = API_BASE + "/template-os-PLACEHOLDERS.docx";
 
   // --- loader simples de libs via CDN (sem build, sem npm) ---
   function loadScript(src) {
@@ -129,4 +129,5 @@
   };
 
 })();
+
 
