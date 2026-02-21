@@ -2436,31 +2436,34 @@ async function serverHasOpenDraft(){
 }
 
 async function syncDraftStateFromServerOnLoad(){
-  const hasDraft = await serverHasOpenDraft(); // chama API_DRAFT_GET
+  // ✅ Sempre tenta puxar o rascunho do servidor (KingHost) primeiro
+  const serverDraft = await draftServerLoad();
 
-  if(!hasDraft){
-    // servidor não tem rascunho: sempre recria rascunho local com próximo dia útil
-    try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-
-    const payload = makeDefaultDraft();
-    localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-
-    setLockedFinal(true); // libera "Novo dia"
+  if(serverDraft && serverDraft.rows && serverDraft.rows.length){
+    try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft)); }catch(e){}
+    setLockedFinal(false); // existe draft -> trava "Novo dia"
     renderInitial();
     refreshNameChecklist();
     renderHistoryServer();
     return;
   }
 
-  // se tem draft, modo rascunho
-  setLockedFinal(false);
-}	
+  // ❌ servidor sem rascunho (ou erro): recria rascunho local com PRÓXIMO DIA ÚTIL
+  try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+  const payload = makeDefaultDraft();
+  try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload)); }catch(e){}
+
+  setLockedFinal(true); // sem draft -> libera "Novo dia"
+  renderInitial();
+  refreshNameChecklist();
+  renderHistoryServer();
+}
 
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
 
 async function newDay(){
   // ✅ trava global (servidor): se existe draft.json, existe dia aberto
-async function newDay(){
+
   const hasDraft = await serverHasOpenDraft();
   if(hasDraft){
     alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO: existe rascunho aberto no servidor.");
@@ -2508,30 +2511,7 @@ function renderInitial(){
   if(btnNewDay) btnNewDay.disabled = false;
 }
 	
-(async function(){
-  try{
-    // tenta puxar o rascunho do DIA do servidor (se existir)
-    const local = loadLast();
-    const dateStr =
-      (local && local.rows && local.rows[0] && local.rows[0].data) ? local.rows[0].data : todayStr();
 
-    const serverDraft = await apiDraftGet(dateStr);
-    if(serverDraft && serverDraft.rows && serverDraft.rows.length){
-      localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft));
-      renderInitial(); // re-render com o rascunho do servidor
-      (async ()=>{
-        const serverDraft = await draftServerLoad();
-        if(serverDraft){
-          localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft));
-          renderInitial();
-          refreshNameChecklist();
-        }
-})();
-    }
-  }catch(e){
-    // silencioso (sem atrapalhar a operação)
-  }
-})();
 	
 btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); refreshNameChecklist(); });
 btnSave.addEventListener("click", gerarPDF);
@@ -2539,8 +2519,7 @@ btnFinalize.addEventListener("click", finalizeDay);
 document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{ window.location.href="/menu.html"; });
 const histDateEl = document.getElementById("histDate");
 if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
-renderInitial();
-renderHistoryServer();
+(async ()=>{ await syncDraftStateFromServerOnLoad(); })();
 if(btnNewDay) btnNewDay.addEventListener("click", newDay);
 
 </script>
