@@ -124,7 +124,7 @@
   }
 
   // API pública para você chamar do seu código atual
-  window.ERP_DOCX = {
-    gerarContrato
-  };
+window.ERP_DOCX = window.ERP_DOCX || {};
+window.ERP_DOCX.gerarContrato = gerarContrato;
+
 })();
