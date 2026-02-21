@@ -1,107 +1,131 @@
-/* gerar_os_docx.js - CLONE do contrato (docxtemplater)
-   - Usa o MESMO motor do contrato
-   - Template OS precisa estar com {{campos}} (não #campos)
+/* gerar_contrato_docx.js
+   Gera DOCX no browser a partir de:
+   - JSON:  https://api.erpimpar.com.br/storage/docs/data/{CODIGO}.json
+   - DOCX:  https://api.erpimpar.com.br/storage/docs/template-os-PLACEHOLDERS.docx
 */
-(function(){
+
+(function () {
   "use strict";
 
-  const API_DOCS = (typeof window.DOCS_BASE === "string" && window.DOCS_BASE)
-    ? window.DOCS_BASE.replace(/\/+$/,"")
-    : "https://api.erpimpar.com.br/storage/docs";
+  const API_BASE = "https://api.erpimpar.com.br/storage/docs";
+  const TEMPLATE_URL = API_BASE + "/template-contrato-PLACEHOLDERS.docx";
 
-  const TEMPLATE_OS_URL = `${API_DOCS}/template-os-PLACEHOLDERS.docx`;
-
-  function safeStr(v){
-    if(v === null || v === undefined) return "";
-    return String(v);
+  // --- loader simples de libs via CDN (sem build, sem npm) ---
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("Falha ao carregar: " + src));
+      document.head.appendChild(s);
+    });
   }
 
-  function sanitizeFilenamePart(s){
-    s = safeStr(s).replace(/\s+/g," ").trim();
-    return s.replace(/[\\\/:*?"<>|]+/g, " ").replace(/\s+/g," ").trim().slice(0, 80);
+  async function ensureLibs() {
+    // PizZip + docxtemplater + FileSaver
+    if (!window.PizZip) {
+      await loadScript("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js");
+    }
+    if (!window.docxtemplater) {
+      await loadScript("https://cdn.jsdelivr.net/npm/docxtemplater@3.53.0/build/docxtemplater.js");
+    }
+    if (!window.saveAs) {
+      await loadScript("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
+    }
   }
 
-  async function fetchArrayBuffer(url){
-    const resp = await fetch(url, { cache:"no-store" });
-    if(!resp.ok) throw new Error(`Falha ao baixar template (HTTP ${resp.status})`);
-    return await resp.arrayBuffer();
+  function safeStr(v) {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim();
   }
 
-  async function fetchJson(url){
-    const resp = await fetch(url, { cache:"no-store" });
-    if(!resp.ok) throw new Error(`Falha ao baixar JSON (HTTP ${resp.status})`);
-    return await resp.json();
+  function enderecoCompleto(d, tipo) {
+    // tipo: 'Contratante' | 'Contratada'
+    const log = safeStr(d["logradouro" + tipo]);
+    const num = safeStr(d["numero" + tipo]);
+    const com = safeStr(d["complemento" + tipo]);
+    const bai = safeStr(d["bairro" + tipo]);
+    const cid = safeStr(d["cidade" + tipo]);
+    const uf  = safeStr(d["uf" + tipo]);
+
+    const parteCom = com ? " - " + com : "";
+    const base = (log || num) ? (log + ", " + num + parteCom).trim() : "";
+    const rest = (bai || cid || uf) ? (bai + " – " + cid + " - " + uf).trim() : "";
+
+    if (!base && !rest) return "";
+    if (!base) return rest;
+    if (!rest) return base;
+    return base + " - " + rest;
   }
 
-  function downloadBlob(blob, filename){
-    const a = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 8000);
+  async function fetchJson(codigo) {
+    const url = API_BASE + "/data/" + encodeURIComponent(codigo) + ".json?ts=" + Date.now();
+    const r = await fetch(url, { method: "GET", mode: "cors", cache: "no-store" });
+    if (!r.ok) throw new Error("JSON não encontrado/erro (" + r.status + "): " + url);
+    return await r.json();
   }
 
-  function dataExtensoHoje(){
-    const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-    const d = new Date();
-    return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
+  async function fetchArrayBuffer(url) {
+    const r = await fetch(url + (url.includes("?") ? "&" : "?") + "ts=" + Date.now(), {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store"
+    });
+    if (!r.ok) throw new Error("Falha ao baixar template (" + r.status + ")");
+    return await r.arrayBuffer();
   }
 
-  async function gerarOSDocx({ codigo, nomeObra }){
-    if(!codigo) throw new Error("Código do projeto não informado.");
+  async function gerarContrato(codigo) {
+    codigo = safeStr(codigo);
+    if (!codigo) throw new Error("Código vazio.");
 
-    // ✅ mesmas libs do contrato
-    if(!window.PizZip) throw new Error("PizZip não carregado.");
-    if(!window.docxtemplater) throw new Error("docxtemplater não carregado.");
+    await ensureLibs();
 
-    const jsonUrl = `${API_DOCS}/data/${encodeURIComponent(codigo)}.json`;
-
-    const [tplBuf, dados] = await Promise.all([
-      fetchArrayBuffer(TEMPLATE_OS_URL),
-      fetchJson(jsonUrl)
+    const [data, templateBuf] = await Promise.all([
+      fetchJson(codigo),
+      fetchArrayBuffer(TEMPLATE_URL)
     ]);
 
-    const zip = new window.PizZip(tplBuf);
+    // Campos compostos que seu template já espera
+    data.codigo = safeStr(data.codigo || codigo);
+    data.enderecoContratanteCompleto = enderecoCompleto(data, "Contratante");
+    data.enderecoContratadaCompleto  = enderecoCompleto(data, "Contratada");
+
+    const zip = new window.PizZip(templateBuf);
+
     const doc = new window.docxtemplater(zip, {
       paragraphLoop: true,
-      linebreaks: true
+      linebreaks: true,
+      delimiters: { start: "{{", end: "}}" } // seu template é {{chave}}
     });
 
-    // ✅ campos iguais ao template ({{...}})
-    doc.setData({
-      codigo: dados.codigo ?? codigo,
-      nomeObra: dados.nomeObra ?? nomeObra ?? "",
-      nomeContratante: dados.nomeContratante ?? "",
-      contatoContratante: dados.contatoContratante ?? "",
-      telefoneContratante: dados.telefoneContratante ?? "",
-      emailContratante: dados.emailContratante ?? "",
-      endereco: dados.enderecoObra ?? dados.endereco ?? "",
-      servico: dados.servico ?? "",
-      dataExtenso: dados.dataExtenso ?? dataExtensoHoje()
-    });
+    doc.setData(data);
 
-    try{
+    try {
       doc.render();
-    }catch(e){
-      // deixa o erro legível
-      throw new Error((e && e.message) ? e.message : "Erro ao renderizar template OS.");
+    } catch (e) {
+      // Mostra erro “legível” quando faltar placeholder
+      console.error(e);
+      const msg = (e.properties && e.properties.errors && e.properties.errors[0])
+        ? e.properties.errors[0].properties.explanation
+        : (e.message || "Erro ao renderizar template");
+      throw new Error(msg);
     }
 
-    const outNomeObra = sanitizeFilenamePart(nomeObra || dados.nomeObra || "obra");
-    const filename = `Ordem de Serviço - ${codigo} ${outNomeObra}.docx`;
-
-    const outBlob = doc.getZip().generate({
+    const out = doc.getZip().generate({
       type: "blob",
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     });
 
-    downloadBlob(outBlob, filename);
-    return true;
+    const filename = data.codigo + "_OS.docx";
+    window.saveAs(out, filename);
+    return { ok: true, filename };
   }
 
-  window.gerarOSDocx = gerarOSDocx;
+  // API pública para você chamar do seu código atual
+  window.ERP_DOCX = {
+    gerarContrato
+  };
 
 })();
