@@ -2351,10 +2351,26 @@ try{
 }
 await draftServerClear();
 await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
-  openPrintWindow(payload);
-await newDay();
-}
+openPrintWindow(payload);
 
+// ✅ NÃO cria novo dia automaticamente.
+// Depois de fechar, deixa a tela “zerada” esperando clicar em Novo Dia.
+try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+
+// trava como “sem dia aberto”; Novo Dia é quem inicia
+setLockedFinal(true);
+
+// limpa tela e histórico (histórico você mantém)
+rowsEl.innerHTML = "";
+renderHistoryServer();
+
+// opcional: se tiver uma função de “estado vazio”, melhor ainda
+// renderEmptyState && renderEmptyState();
+
+refreshNameChecklist();
+await syncDraftStateFromServerOnLoad(); // vai confirmar que não existe draft no servidor
+
+}
 
 if(btnPdfClose) btnPdfClose.addEventListener("click", ()=>{ if(pdfModal) pdfModal.style.display="none"; });
 if(btnPdfPrint) btnPdfPrint.addEventListener("click", ()=>{
@@ -2506,12 +2522,16 @@ async function newDay(){
 
   refreshNameChecklist();
 }
-  function renderInitial(){
+function renderInitial(){
   rowsEl.innerHTML="";
   last = loadLast();
-  if(last && Array.isArray(last.rows) && last.rows.length){ last.rows.forEach(r=>rowsEl.appendChild(newRow(r))); }
-  else { rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); }
-
+  if(last && Array.isArray(last.rows) && last.rows.length){
+    last.rows.forEach(r=>rowsEl.appendChild(newRow(r)));
+  }else{
+    // ✅ sem rascunho: deixa vazio (Novo Dia é quem cria)
+    // (se quiser, aqui você pode mostrar um texto “Clique em Novo Dia”)
+  }
+}
   refreshNameChecklist();
   // Histórico: sempre do servidor (KingHost)
 
