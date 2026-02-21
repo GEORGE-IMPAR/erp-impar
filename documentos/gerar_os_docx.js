@@ -76,7 +76,7 @@
     return await r.arrayBuffer();
   }
 
-  async function gerarContrato(codigo) {
+  async function gerarOSDocx(codigo) {
     codigo = safeStr(codigo);
     if (!codigo) throw new Error("Código vazio.");
 
@@ -125,7 +125,8 @@
 
   // API pública para você chamar do seu código atual
   window.ERP_DOCX = {
-    gerarContrato
+    gerarOSDocx
   };
 
 })();
+
