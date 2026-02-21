@@ -80,16 +80,16 @@ if(!window.PizZip) {
 if(!window.docxtemplater) {
   throw new Error("docxtemplater não carregado. Inclua docxtemplater.js antes do gerar_os_docx.js.");
 }
-     const jsonUrl = `${API_DOCS}/data/${encodeURIComponent(codigo)}.json`;
+     const jsonUrl = `${API_DOCS}/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
 
     // 1) baixa json + template
     const [dados, tplBuf] = await Promise.all([
       fetchJson(jsonUrl),
-      fetchArrayBuffer(TEMPLATE_OS_URL)
+      fetchArrayBuffer(`${TEMPLATE_OS_URL}?ts=${Date.now()}`)
     ]);
 
     // 2) abre docx
-    const zip = new PizZip(content);;
+    const zip = new PizZip(tplBuf);
     const docXmlPath = "word/document.xml";
     if(!zip.file(docXmlPath)) throw new Error("Template inválido (word/document.xml não encontrado).");
 
@@ -106,7 +106,7 @@ if(!window.docxtemplater) {
       "#nomeContratante": dados.nomeContratante ?? "",
       "#contatoContratante": dados.contatoContratante ?? "",
       "#prazo": prazo,
-      "#projtista": dados.projetista ?? "",          // template está com esse nome
+      "#projetista": dados.projetista ?? "",          // template está com esse nome
       "#endereco": dados.enderecoObra ?? ""          // seu JSON tem enderecoObra
     };
 
@@ -127,5 +127,6 @@ if(!window.docxtemplater) {
   window.gerarOSDocx = gerarOSDocx;
 
 })();
+
 
 
