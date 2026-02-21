@@ -1487,16 +1487,30 @@ function cryptoRandomId(){
 function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function nextBusinessDayStr(){
   const d = new Date();
-  d.setHours(12,0,0,0);          // evita bug de fuso/virada
-  d.setDate(d.getDate() + 1);    // começa no dia seguinte
+  d.setHours(12,0,0,0);      // evita bugs de fuso
+  d.setDate(d.getDate() + 1);
 
-  // 0=Dom, 6=Sáb
-  while(d.getDay() === 0 || d.getDay() === 6){
+  while(d.getDay() === 0 || d.getDay() === 6){ // dom ou sáb
     d.setDate(d.getDate() + 1);
   }
 
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+function makeDefaultDraft(){
+  return {
+    usuario: getUser(),
+    rows: [{
+      data: nextBusinessDayStr(),
+      nomes: [],
+      obra: "",
+      carro: "",
+      atividade: "",
+      percentual: "",
+      motivo: ""
+    }]
+  };
+}
+	
 function nowISO(){ return new Date().toISOString(); }
 function escapeHtml(s){ return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m])); }
 function optList(arr, ph){ const o=[`<option value="">${ph}</option>`]; arr.forEach(v=>o.push(`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`)); return o.join(""); }
@@ -1820,7 +1834,7 @@ function newRow(pref={}){
   row.innerHTML = `
     <div class="row-line1">
       <div><button class="iconbtn btn-del" type="button" title="Excluir linha">${TRASH_SVG}</button></div>
-      <div><input type="date" class="inp-data" value="${escapeHtml(pref.data || todayStr())}"></div>
+      <div><input type="date" class="inp-data" value="${escapeHtml(pref.data || nextBusinessDayStr())}"></div>
       <div class="nome-slot"></div>
       <div class="obra-slot"></div>
       </div>
@@ -2378,20 +2392,26 @@ async function serverHasOpenDraft(){
 }
 
 async function syncDraftStateFromServerOnLoad(){
-  const hasDraft = await serverHasOpenDraft(); // usa API_DRAFT_GET
+  const hasDraft = await serverHasOpenDraft(); // chama API_DRAFT_GET
 
   if(!hasDraft){
-    // servidor NÃO tem rascunho -> limpa estado local e libera novo dia
+    // servidor não tem rascunho: sempre recria rascunho local com próximo dia útil
     try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-    setLockedFinal(true);        // libera Novo Dia
+
+    const payload = makeDefaultDraft();
+    localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+
+    setLockedFinal(true); // libera "Novo dia"
     renderInitial();
     refreshNameChecklist();
-  }else{
-    // servidor TEM rascunho -> garante que a tela está em modo rascunho
-    setLockedFinal(false);
+    renderHistoryServer();
+    return;
   }
-}
-	
+
+  // se tem draft, modo rascunho
+  setLockedFinal(false);
+}	
+
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
 
 async function newDay(){
@@ -2415,7 +2435,7 @@ async function newDay(){
     }
   await withProcessing(async()=>{}, "Preparando novo dia…", "PROCESSANDO DADOS......", 700);
 
-  const payload = { usuario: getUser(), rows: [{data: todayStr(), nomes: [], obra:"", carro:"", atividade:"", percentual:"", motivo:""}] };
+  const payload = { usuario: getUser(), rows: [{data: nextBusinessDayStr(), nomes: [], obra:"", carro:"", atividade:"", percentual:"", motivo:""}] };
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
   setLockedFinal(false);
   renderInitial();
@@ -2433,7 +2453,7 @@ function renderInitial(){
   rowsEl.innerHTML="";
   last = loadLast();
   if(last && Array.isArray(last.rows) && last.rows.length){ last.rows.forEach(r=>rowsEl.appendChild(newRow(r))); }
-  else { rowsEl.appendChild(newRow({data:todayStr()})); }
+  else { rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); }
 
   refreshNameChecklist();
   // Histórico: sempre do servidor (KingHost)
@@ -2469,7 +2489,7 @@ function renderInitial(){
   }
 })();
 	
-btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:todayStr()})); refreshNameChecklist(); });
+btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); refreshNameChecklist(); });
 btnSave.addEventListener("click", gerarPDF);
 btnFinalize.addEventListener("click", finalizeDay);
 document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{ window.location.href="/menu.html"; });
