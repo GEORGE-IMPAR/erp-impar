@@ -1329,10 +1329,11 @@ const STORAGE_HIST  = "ERPIMPAR_ATIVIDADES_HIST_V1";
 const API_SAVE = "https://api.erpimpar.com.br/atividades/save.php";
 const API_LIST = "https://api.erpimpar.com.br/atividades/list.php";
 const API_GET  = "https://api.erpimpar.com.br/atividades/get.php";
-// ===== Rascunho do DIA (salvar só quando gerar PDF) =====
-const API_DRAFT_SAVE = "https://api.erpimpar.com.br/atividades/draft_save.php";
-const API_DRAFT_GET  = "https://api.erpimpar.com.br/atividades/draft_get.php";	
-
+// ===== DRAFT ÚNICO DA EMPRESA =====
+const API_DRAFT_SAVE  = "https://api.erpimpar.com.br/atividades/draft_save.php";
+const API_DRAFT_GET   = "https://api.erpimpar.com.br/atividades/draft_get.php";
+const API_DRAFT_CLEAR = "https://api.erpimpar.com.br/atividades/draft_clear.php";
+	
 async function apiSave(payload){
   const r = await fetch(API_SAVE, {
     method: "POST",
@@ -1364,26 +1365,29 @@ async function apiGet(id){
   if(!r.ok || !j || j.ok !== true) throw new Error((j && (j.error||j.message)) || "Falha ao abrir no servidor.");
   return j.data;
 }
-async function apiDraftSave(payload){
-  const r = await fetch(API_DRAFT_SAVE, {
-    method: "POST",
-    headers: { "Content-Type":"text/plain;charset=UTF-8" }, // sem preflight
-    body: JSON.stringify(payload)
-  });
-  const j = await r.json().catch(()=>null);
-  if(!r.ok || !j || j.ok !== true){
-    const msg = (j && (j.error || j.message)) ? (j.error || j.message) : "Falha ao salvar rascunho no servidor.";
-    throw new Error(msg);
-  }
-  return true;
+async function draftServerSave(payload){
+  try{
+    await fetch(API_DRAFT_SAVE,{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      body:JSON.stringify(payload)
+    });
+  }catch(e){}
 }
 
-async function apiDraftGet(dateStr){ // dateStr = "YYYY-MM-DD"
-  const url = API_DRAFT_GET + "?date=" + encodeURIComponent(dateStr);
-  const r = await fetch(url, { method:"GET" });
-  const j = await r.json().catch(()=>null);
-  if(!r.ok || !j || j.ok !== true) return null;
-  return j.data || null;
+async function draftServerLoad(){
+  try{
+    const r = await fetch(API_DRAFT_GET);
+    const j = await r.json();
+    if(j && j.ok && j.data) return j.data;
+  }catch(e){}
+  return null;
+}
+
+async function draftServerClear(){
+  try{
+    await fetch(API_DRAFT_CLEAR,{method:"POST"});
+  }catch(e){}
 }
 	
 let last = null; // estado carregado (draft/final)
@@ -2144,14 +2148,7 @@ async function gerarPDF(){
     return;
   }
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-    // ✅ RISCO ZERO: só salva no servidor quando o PDF pode ser gerado
-  try{
-    await apiDraftSave(payload);
-  }catch(e){
-    // Não trava o usuário: PDF abre igual.
-    // Só avisa que não sincronizou no servidor.
-    alertWarn("PDF OK, mas não consegui salvar o rascunho no servidor.\n\n" + String(e && e.message ? e.message : e));
-  }
+  await draftServerSave(payload);
   await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
   openPrintWindow(payload);
 }
@@ -2212,7 +2209,7 @@ try{
 }catch(e){
   alertWarn("Finalizado localmente, mas não consegui salvar no servidor.\n\n" + (e && e.message ? e.message : "Verifique o caminho dos PHPs e permissões."), "Servidor (KingHost)");
 }
-
+await draftServerClear();
 await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
   openPrintWindow(payload);
 }
@@ -2286,15 +2283,31 @@ function setLockedFinal(isLocked){
     }
   }catch(e){}
 }
+async function serverHasOpenDraft(){
+  try{
+    const r = await fetch(API_DRAFT_GET, { cache:"no-store" });
+    const j = await r.json().catch(()=>null);
+    return !!(j && j.ok === true && j.data);
+  }catch(e){
+    // Se der erro de rede, melhor não liberar "Novo dia" por segurança
+    return true;
+  }
+}
 
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
+
 async function newDay(){
-  const locked = isLockedFinal();
-  if(!locked){
-    alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois falta finalizar o dia anterior.");
+  // ✅ trava global (servidor): se existe draft.json, existe dia aberto
+  const hasDraft = await serverHasOpenDraft();
+  if(hasDraft){
+    alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois existe um rascunho aberto no servidor. Finalize o dia anterior primeiro.");
     return;
   }
-
+    const locked = isLockedFinal();
+    if(!locked){
+      alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO, pois falta finalizar o dia anterior.");
+      return;
+    }
   await withProcessing(async()=>{}, "Preparando novo dia…", "PROCESSANDO DADOS......", 700);
 
   const payload = { usuario: getUser(), rows: [{data: todayStr(), nomes: [], obra:"", carro:"", atividade:"", percentual:"", motivo:""}] };
@@ -2302,6 +2315,12 @@ async function newDay(){
   setLockedFinal(false);
   renderInitial();
   renderHistoryServer();
+	(async ()=>{
+      const hasDraft = await serverHasOpenDraft();
+       // se tem draft aberto: Novo Dia deve ficar "travado" (soft-disabled)
+       // se não tem draft: libera Novo Dia (locked = true no seu modelo)
+       setLockedFinal(!hasDraft);
+    })();
   refreshNameChecklist();
 }
 function renderInitial(){
@@ -2330,7 +2349,14 @@ function renderInitial(){
     if(serverDraft && serverDraft.rows && serverDraft.rows.length){
       localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft));
       renderInitial(); // re-render com o rascunho do servidor
-      refreshNameChecklist();
+      (async ()=>{
+        const serverDraft = await draftServerLoad();
+        if(serverDraft){
+          localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft));
+          renderInitial();
+          refreshNameChecklist();
+        }
+})();
     }
   }catch(e){
     // silencioso (sem atrapalhar a operação)
