@@ -1902,6 +1902,39 @@ function aplicarPlacaNaLinhaByMulti(row, multi){
   return wrap;
 }
 
+const NOME_PLACA_MAP = {
+  "CRISTIANO": "RXO8A58",
+  "SILVIO": "RXL6H17",
+  "FABIO": "IZH2A86",
+  "EMPRESA": "MJM3616",
+  "RENAN RIBEIRO": "QIQ3921",
+  "SELO": "QHQ8009",
+  "VALDECI": "QII5E96",
+  "NICOLAS": "QIE6I52",
+  "CARLOS HENRIQUE": "QJO3249"
+};
+
+function nomeKey(s){ return String(s||"").trim().toUpperCase(); }
+
+// aplica placa com base no ÚLTIMO nome selecionado que tenha placa
+function autoPlacaFromMulti(row){
+  try{
+    const r = row._refs;
+    if(!r || !r.multiNomes || !r.multiNomes._multi || !r.selCarro) return;
+
+    const nomes = r.multiNomes._multi.get();  // ✅ seu componente real
+    if(!Array.isArray(nomes) || nomes.length === 0) return;
+
+    for(let i = nomes.length - 1; i >= 0; i--){
+      const placa = NOME_PLACA_MAP[nomeKey(nomes[i])];
+      if(placa){
+        r.selCarro.value = placa; // só preenche (não desabilita)
+        r.selCarro.dispatchEvent(new Event("change", { bubbles:true }));
+        return;
+      }
+    }
+  }catch(e){}
+}	
 
 function newRow(pref={}){
   const rowId=cryptoRandomId();
@@ -1925,86 +1958,6 @@ function newRow(pref={}){
   const nomesInit = Array.isArray(pref.nomes) ? pref.nomes : (pref.nome ? [pref.nome] : []);
   const multi = buildMultiSelect(LIST_NOME, nomesInit, 'Nome(s)', 'Buscar nome...');
   row.querySelector(".nome-slot").appendChild(multi);
-}
-const nomesInit = Array.isArray(pref.nomes) ? pref.nomes : (pref.nome ? [pref.nome] : []);
-const multi = buildMultiSelect(LIST_NOME, nomesInit, 'Nome(s)', 'Buscar nome...');
-row.querySelector(".nome-slot").appendChild(multi);
-
-// ===== AUTO-PLACA (inline, sem depender de função global) =====
-(function(){
-  const MAP = {
-    "CRISTIANO": "RXO8A58",
-    "SILVIO": "RXL6H17",
-    "FABIO": "IZH2A86",
-    "EMPRESA": "MJM3616",
-    "RENAN RIBEIRO": "QIQ3921",
-    "SELO": "QHQ8009",
-    "VALDECI": "QII5E96",
-    "NICOLAS": "QIE6I52",
-    "CARLOS HENRIQUE": "QJO3249"
-  };
-
-  function key(s){ return String(s||"").trim().toUpperCase(); }
-
-  function getNames(){
-    // tenta métodos do componente
-    try{
-      if(typeof multi.getSelected === "function"){
-        const v = multi.getSelected();
-        if(Array.isArray(v)) return v;
-      }
-    }catch(e){}
-    try{
-      if(typeof multi.value === "function"){
-        const v = multi.value();
-        if(Array.isArray(v)) return v;
-      }
-    }catch(e){}
-
-    // tenta dataset/atributo CSV
-    try{
-      const raw =
-        (multi.dataset && (multi.dataset.value || multi.dataset.selected)) ||
-        (multi.getAttribute && (multi.getAttribute("data-value") || multi.getAttribute("data-selected"))) ||
-        "";
-      if(raw) return String(raw).split(",").map(x=>x.trim()).filter(Boolean);
-    }catch(e){}
-
-    // fallback: select interno
-    try{
-      const sel = multi.querySelector ? multi.querySelector("select") : null;
-      if(sel && sel.selectedOptions){
-        return Array.from(sel.selectedOptions).map(o=>o.value);
-      }
-    }catch(e){}
-
-    return [];
-  }
-
-  function pickPlate(nomes){
-    for(let i = nomes.length - 1; i >= 0; i--){
-      const placa = MAP[key(nomes[i])];
-      if(placa) return placa;
-    }
-    return "";
-  }
-
-  function apply(){
-    const nomes = getNames();
-    const placa = pickPlate(nomes);
-    if(!placa) return;
-
-    const placaSel = row.querySelector(".placa-slot select, .carro-slot select, select[name='carro'], select[name='placa']");
-    if(placaSel){
-      placaSel.value = placa;
-      placaSel.dispatchEvent(new Event("change", { bubbles:true }));
-    }
-  }
-
-  // aplica na carga e em toda mudança
-  setTimeout(apply, 0);
-  multi.addEventListener("change", apply);
-})();	
   // Obra(s) — multi (NxN)
   const obrasInit = Array.isArray(pref.obras) ? pref.obras : (pref.obra ? [pref.obra] : []);
   const multiObra = buildMultiSelect(LIST_OBRA, obrasInit, 'Obra(s)', 'Buscar obra...');
@@ -2111,11 +2064,12 @@ row.querySelector(".nome-slot").appendChild(multi);
     refreshNameChecklist();
   }
  }	  
-  row._refs.multiNomes._multi.onChange(()=>{
+row._refs.multiNomes._multi.onChange(()=>{
   autoPlacaFromMulti(row);
   anyChange();
-});
-  if(row._refs.multiObras && row._refs.multiObras._multi) row._refs.multiObras._multi.onChange(()=>anyChange());
+});  
+	
+if(row._refs.multiObras && row._refs.multiObras._multi) row._refs.multiObras._multi.onChange(()=>anyChange());
   [row._refs.inpDate,row._refs.selCarro,row._refs.selPerc,row._refs.txtAtiv,row._refs.txtMot]
     .filter(Boolean)
     .forEach(el=>{
