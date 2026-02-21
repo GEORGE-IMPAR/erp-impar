@@ -1628,6 +1628,7 @@ function buildMultiSelect(options, selected, labelText, searchPh){
   const list     = wrap.querySelector(".multi-list");
 
   
+// ===== Auto-placa por nome (ERP ÍMPAR) =====
 const NOME_PLACA_MAP = {
   "CRISTIANO": "RXO8A58",
   "SILVIO": "RXL6H17",
@@ -1639,11 +1640,13 @@ const NOME_PLACA_MAP = {
   "NICOLAS": "QIE6I52",
   "CARLOS HENRIQUE": "QJO3249"
 };
-	
-function nomeKey(s){ return String(s||"").trim().toUpperCase(); }
 
+function nomeKey(s){
+  return String(s||"").trim().toUpperCase();
+}
+
+// tenta extrair os nomes selecionados do componente buildMultiSelect (vários formatos)
 function extrairNomesDoMulti(multi){
-  // tenta várias formas sem quebrar nada
   try{
     if(multi && typeof multi.getSelected === "function"){
       const v = multi.getSelected();
@@ -1658,13 +1661,21 @@ function extrairNomesDoMulti(multi){
     }
   }catch(e){}
 
-  // tenta dataset / atributo com CSV
   try{
-    const raw = (multi && (multi.dataset && (multi.dataset.value || multi.dataset.selected))) ||
-                (multi && multi.getAttribute && (multi.getAttribute("data-value") || multi.getAttribute("data-selected"))) ||
-                "";
+    const raw =
+      (multi && multi.dataset && (multi.dataset.value || multi.dataset.selected)) ||
+      (multi && multi.getAttribute && (multi.getAttribute("data-value") || multi.getAttribute("data-selected"))) ||
+      "";
     if(!raw) return [];
     return String(raw).split(",").map(s=>s.trim()).filter(Boolean);
+  }catch(e){}
+
+  // fallback: tenta achar um select interno
+  try{
+    const sel = multi && multi.querySelector ? multi.querySelector("select") : null;
+    if(sel && sel.selectedOptions){
+      return Array.from(sel.selectedOptions).map(o=>o.value);
+    }
   }catch(e){}
 
   return [];
@@ -1679,17 +1690,20 @@ function placaDoUltimoNomeComCarro(nomesArr){
 }
 
 function aplicarPlacaNaLinhaByMulti(row, multi){
-  const nomesSel = extrairNomesDoMulti(multi);
-  const placa = placaDoUltimoNomeComCarro(nomesSel);
-  if(!placa) return;
+  try{
+    const nomesSel = extrairNomesDoMulti(multi);
+    const placa = placaDoUltimoNomeComCarro(nomesSel);
+    if(!placa) return;
 
-  const placaSel = row.querySelector(".placa-slot select, .carro-slot select, select[name='carro'], select[name='placa']");
-  if(placaSel){
-    placaSel.value = placa;
-    placaSel.dispatchEvent(new Event("change", { bubbles:true }));
-  }
-}	
-  // --- Portal para dropdown (evita ficar por trás / ser cortado por overflow/stacking)
+    // seletor "tolerante" pro campo placa/carro
+    const placaSel = row.querySelector(".placa-slot select, .carro-slot select, select[name='carro'], select[name='placa']");
+    if(placaSel){
+      placaSel.value = placa;
+      placaSel.dispatchEvent(new Event("change", { bubbles:true }));
+    }
+  }catch(e){}
+}
+	// --- Portal para dropdown (evita ficar por trás / ser cortado por overflow/stacking)
   const dropEl = wrap.querySelector(".multi-drop");
   const dropParent = wrap;
   let dropIsPortaled = false;
