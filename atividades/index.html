@@ -2466,7 +2466,70 @@ document.addEventListener("input", function(){
     await syncDraftStateFromServerOnLoad();
   }catch(e){}
 })();
+// ===============================
+// SYNC AO VIVO (multi-dispositivo)
+// ===============================
+let __lastServerDraftSig = null;
+let __syncRunning = false;
 
+function draftSignature(d){
+  try{
+    if(!d || !d.rows || !d.rows.length) return "NO_DRAFT";
+    // assinatura simples baseada no conteúdo mínimo
+    const firstDate = (d.rows[0] && d.rows[0].data) ? d.rows[0].data : "";
+    const len = d.rows.length;
+    return firstDate + "|" + len + "|" + JSON.stringify(d.rows).length;
+  }catch(e){
+    return "ERR";
+  }
+}
+
+async function syncNow(){
+  if(__syncRunning) return;
+  __syncRunning = true;
+  try{
+    const d = await draftServerLoad(); // retorna null ou draft
+    const sig = draftSignature(d);
+
+    // mudou no servidor?
+    if(sig !== __lastServerDraftSig){
+      __lastServerDraftSig = sig;
+
+      if(!d || !d.rows || !d.rows.length){
+        // draft sumiu -> zera tela em TODO mundo
+        try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+        rowsEl.innerHTML = "";
+        // libera novo dia (se você usa isso)
+        try{ setLockedFinal(true); }catch(e){}
+        refreshNameChecklist();
+        renderHistoryServer();
+      }else{
+        // draft apareceu/atualizou -> carrega
+        try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(d)); }catch(e){}
+        try{ setLockedFinal(false); }catch(e){}
+        renderInitial();
+        refreshNameChecklist();
+        renderHistoryServer();
+      }
+    }
+  }catch(e){
+    // se cair aqui, só ignora e tenta de novo depois
+  }finally{
+    __syncRunning = false;
+  }
+}
+
+// roda ao carregar
+setTimeout(syncNow, 300);
+
+// roda a cada 5s (ajusta se quiser)
+setInterval(syncNow, 5000);
+
+// quando volta pra aba, sincroniza na hora
+document.addEventListener("visibilitychange", ()=>{
+  if(!document.hidden) syncNow();
+});
+window.addEventListener("focus", syncNow);
 </script>
 
 
