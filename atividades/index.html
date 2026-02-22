@@ -2123,49 +2123,16 @@ function refreshNameChecklist(){
   });
 }
 
-function loadPendencias(){ const raw=localStorage.getItem(STORAGE_PEND); if(!raw) return {schema:"ERPIMPAR_PENDENCIAS",version:1,items:[]}; try{return JSON.parse(raw);}catch(e){return {schema:"ERPIMPAR_PENDENCIAS",version:1,items:[]};} }
-function savePendencias(p){ localStorage.setItem(STORAGE_PEND, JSON.stringify(p)); }
-function pushPendenciasFromFinal(payloadFinal){
-  const pend=loadPendencias();
-  const existing=new Set((pend.items||[]).map(x=>x.pendId));
-  (payloadFinal.rows||[]).forEach(r=>{
-    const pct=pctToNumber(r.percentual);
-    if(pct===null || pct>=100) return;
-    const pendId=payloadFinal.dayKey+'__'+r.id;
-    if(existing.has(pendId)) return;
-    pend.items.push({pendId,origemDayKey:payloadFinal.dayKey,createdAt:payloadFinal.generatedAt,data:r.data,nome:r.nome,nomes:r.nomes,obra:r.obra,carro:r.carro,percentual:r.percentual,atividades:r.atividades,motivo:r.motivo,status:"aberta"});
-  });
-  pend.updatedAt=nowISO(); savePendencias(pend);
-}
+function loadPendencias(){ return {schema:"ERPIMPAR_PENDENCIAS",version:1,items:[]}; }
+function savePendencias(p){}
+function pushPendenciasFromFinal(payloadFinal){}
 
-function loadHist(){ const raw=localStorage.getItem(STORAGE_HIST); if(!raw) return {schema:"ERPIMPAR_ATIVIDADES_HIST",version:1,items:[]}; try{return JSON.parse(raw);}catch(e){return {schema:"ERPIMPAR_ATIVIDADES_HIST",version:1,items:[]};} }
-function saveHist(h){ localStorage.setItem(STORAGE_HIST, JSON.stringify(h)); }
-function pushHistory(payloadFinal){
-  const hist = loadHist();
-  const items = hist.items || [];
-
-  // Evita sobrescrever o historico quando houver mais de um fechamento no mesmo dia (testes).
-  // Cada fechamento ganha um ID unico.
-  if(!payloadFinal.histId){
-    payloadFinal.histId = (payloadFinal.dayKey || todayISO()) + "__" + (payloadFinal.generatedAt || nowISO());
-  }
-
-  // Se ja existir exatamente o mesmo fechamento, nao duplica.
-  if(items.some(x => x.histId === payloadFinal.histId)){
-    return;
-  }
-
-  // Mantem o ultimo fechamento do dia no topo, sem apagar os anteriores
-  items.unshift(payloadFinal);
-
-  hist.items = items.slice(0, 200);
-  hist.updatedAt = nowISO();
-  saveHist(hist);
-}
+function loadHist(){ return {schema:"ERPIMPAR_ATIVIDADES_HIST",version:1,items:[]}; }
+function saveHist(h){}
+function pushHistory(payloadFinal){}
 
 
   async function renderHistoryServer(){
-  const LS_SERVER_CACHE = "ERPIMPAR_ATIVIDADES_SERVER_CACHE_V1";
   const dt = (document.getElementById("histDate")?.value || "").trim();
 
   async function renderIds(ids){
@@ -2221,13 +2188,11 @@ function pushHistory(payloadFinal){
   }
 
   try{
-    const ids = await apiList();
-    localStorage.setItem(LS_SERVER_CACHE, JSON.stringify(ids || []));
-    await renderIds(ids);
+    const ids = await apiList();    await renderIds(ids);
   }catch(e){
     // fallback: cache do servidor (não usa histórico local como fonte principal)
     try{
-      const cached = JSON.parse(localStorage.getItem(LS_SERVER_CACHE) || '[]');
+      const cached = JSON.parse([]
       await renderIds(cached);
     }catch(_){
       histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Servidor indisponível e sem cache.</div>';
@@ -2291,6 +2256,7 @@ async function gerarPDF(){
   await draftServerSave(payload);
   await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
   openPrintWindow(payload);
+try{ localStorage.removeItem(STORAGE_DRAFT);}catch(e){}
 }
 
 async function finalizeDay(){
@@ -2333,26 +2299,28 @@ async function finalizeDay(){
     return;
   }
 
-  // 2) apaga o draft.json (global) — obrigatório
+  // 2) gera/abre o PDF do dia fechado (antes de apagar draft)
+  await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
+  openPrintWindow(payload);
+
+  // 3) apaga o draft.json (global) — obrigatório
   try{
     await draftServerClear();
   }catch(e){
-    alertWarn("Histórico salvo, mas falhou ao apagar o draft.json no servidor.\n\n" + (e && e.message ? e.message : ""), "Servidor (Draft)");
+    alertWarn("Histórico salvo, mas falhou ao apagar o draft.json no servidor.
+
+" + (e && e.message ? e.message : ""), "Servidor (Draft)");
     return;
   }
 
-  // 3) limpa cache local do rascunho (não decide nada, só evita sujeira)
+  // 4) limpa localStorage do rascunho
   try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
 
-  // 4) UI: zera e atualiza histórico
+  // 5) UI: zera e atualiza histórico
   rowsEl.innerHTML = "";
-  setLockedFinal(true); // libera "Novo dia"
+  setLockedFinal(true);
   refreshNameChecklist();
   renderHistoryServer();
-
-  // 5) abre o PDF do dia fechado
-  await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
-  openPrintWindow(payload);
 }
 
 function isLockedFinal(){
@@ -2450,7 +2418,9 @@ async function newDay(){
   try{
     await draftServerSave(payload);
   }catch(e){
-    alertWarn("Não consegui criar o rascunho no servidor." + (e && e.message ? e.message : ""), "Servidor (Draft)");
+    alertWarn("Não consegui criar o rascunho no servidor.
+
+" + (e && e.message ? e.message : ""), "Servidor (Draft)");
     return;
   }
 
