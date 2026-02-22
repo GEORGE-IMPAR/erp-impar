@@ -2101,6 +2101,10 @@ if(row._refs.multiObras && row._refs.multiObras._multi) row._refs.multiObras._mu
     if(rowsEl.querySelectorAll(".row").length<=1){ alertWarn("Deve existir pelo menos 1 linha."); return; }
     row.remove(); refreshNameChecklist();
   });
+
+	  /* 🔥 ATIVA A FUNCIONALIDADE VIAGEM */
+  wireViagemUI(card, r);
+	
   return row;
 }
 
@@ -2636,400 +2640,110 @@ window.addEventListener("focus", syncNow);
    - não altera teu fluxo do PDF/histórico
    - injeta UI por linha via "newRow" (sem você ir mexendo no meio)
    - envia WhatsApp via wa.me (texto + link)
-========================= */
-(function(){
-  "use strict";
+========================= *//* ===== VIAGEM (range bonito + 2 campos) ===== */
 
-  // === AJUSTE AQUI (seu endpoint PHP já existe)
-  const API_VIAGEM_SAVE = "https://api.erpimpar.com.br/atividades/viagem_report_save.php";
+/* util: dd/mm/aaaa -> yyyy-mm-dd (se você precisar salvar assim, ajuste) */
+function brToISO(br){
+  if(!br) return "";
+  const p = String(br).split("/");
+  if(p.length!==3) return "";
+  const dd = p[0].padStart(2,"0");
+  const mm = p[1].padStart(2,"0");
+  const yy = p[2];
+  return `${yy}-${mm}-${dd}`;
+}
 
-  // RH (WhatsApp) - com DDI/DDD/numero (só dígitos)
-  const RH_NUMBERS = [
-    "554830898300", // Fernanda
-    "5548984271870" // Silvana
-  ];
+/* util: Date -> dd/mm/aaaa */
+function dateToBR(d){
+  if(!(d instanceof Date)) return "";
+  const dd = String(d.getDate()).padStart(2,"0");
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const yy = d.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
 
-  // Texto padrão
-  function buildWhatsMsg(url){
-    return (
-      "ERP ÍMPAR — Roteiro de Viagens (colaboradores)\n\n" +
-      "Segue o link do relatório:\n" + url
-    );
+/* Chame isso no final do newRow(row) depois de montar o DOM do card */
+function wireViagemUI(cardEl, rowObj){
+  const chk   = cardEl.querySelector(".chk-viagem");
+  const box   = cardEl.querySelector(".viagem-fields");
+  const idaEl = cardEl.querySelector(".in-ida");
+  const volEl = cardEl.querySelector(".in-volta");
+  const rngEl = cardEl.querySelector(".in-range");
+
+  if(!chk || !box || !idaEl || !volEl || !rngEl) return;
+
+  // estado inicial
+  const has = !!(rowObj && rowObj.viagem);
+  chk.checked = has;
+  box.classList.toggle("on", has);
+
+  if(rowObj){
+    if(rowObj.ida)   idaEl.value = rowObj.ida;
+    if(rowObj.volta) volEl.value = rowObj.volta;
   }
 
-  // Helpers
-  function qs(root, sel){ return (root||document).querySelector(sel); }
-  function qsa(root, sel){ return Array.from((root||document).querySelectorAll(sel)); }
-  function pad2(n){ return String(n).padStart(2,"0"); }
-  function brDateFromISO(iso){ // "2026-02-22" -> "22/02/2026"
-    if(!iso || typeof iso!=="string" || iso.length<10) return "";
-    return iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4);
-  }
-  function isoFromBrDate(br){ // "22/02/2026" -> "2026-02-22"
-    if(!br || typeof br!=="string") return "";
-    const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if(!m) return "";
-    return m[3]+"-"+m[2]+"-"+m[1];
-  }
+  // flatpickr range (um só, controla ida/volta)
+  const fp = flatpickr(rngEl, {
+    mode: "range",
+    dateFormat: "d/m/Y",
+    allowInput: false,
+    locale: "pt",
+    onChange: function(selectedDates){
+      const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
+      const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
 
-  // === RANGE PICKER (flatpickr)
-  let rangeFP = null;
-  function ensureRangePicker(){
-    const el = document.getElementById("viagemRangePicker");
-    if(!el || typeof flatpickr!=="function") return null;
-    if(rangeFP) return rangeFP;
+      idaEl.value = ida;
+      volEl.value = vol;
 
-    rangeFP = flatpickr(el,{
-      mode:"range",
-      dateFormat:"d/m/Y",
-      allowInput:false,
-      clickOpens:true,
-      onChange:(selDates)=>{
-        // o "caller" fica guardado em rangeFP.__ctx
-        const ctx = rangeFP.__ctx;
-        if(!ctx || !ctx.idaInput || !ctx.voltaInput) return;
-
-        const d1 = selDates && selDates[0] ? selDates[0] : null;
-        const d2 = selDates && selDates[1] ? selDates[1] : null;
-
-        if(d1){
-          ctx.idaInput.value = pad2(d1.getDate())+"/"+pad2(d1.getMonth()+1)+"/"+d1.getFullYear();
-          ctx.idaInput.classList.remove("err");
-        }
-        if(d2){
-          ctx.voltaInput.value = pad2(d2.getDate())+"/"+pad2(d2.getMonth()+1)+"/"+d2.getFullYear();
-          ctx.voltaInput.classList.remove("err");
-        }else{
-          // ainda não escolheu a volta
-          ctx.voltaInput.value = "";
-        }
-
-        // marca no dataset da linha (pra payload)
-        if(ctx.rowEl){
-          ctx.rowEl.dataset.viagem = "1";
-          ctx.rowEl.dataset.viagem_ida = isoFromBrDate(ctx.idaInput.value);
-          ctx.rowEl.dataset.viagem_volta = isoFromBrDate(ctx.voltaInput.value);
-        }
+      if(rowObj){
+        rowObj.ida = ida;
+        rowObj.volta = vol;
+        rowObj.viagem = !!chk.checked;
       }
-    });
 
-    return rangeFP;
-  }
-
-  // === INJEÇÃO UI POR LINHA
-  function injectViagemUI(rowEl, rowData){
-    if(!rowEl || rowEl.__hasViagemUI) return;
-    rowEl.__hasViagemUI = true;
-
-    // Tentativa robusta: achar uma área “inferior” da linha; senão, append no final.
-    const host = qs(rowEl, ".row-bottom") || qs(rowEl, ".row-actions") || rowEl;
-
-    const wrap = document.createElement("div");
-    wrap.className = "viagem-wrap";
-    wrap.innerHTML = `
-      <div class="viagem-badge">
-        <input type="checkbox" class="viagemChk" />
-        <div class="lbl">VIAGEM</div>
-      </div>
-
-      <div class="viagem-datas">
-        <div class="viagem-field">
-          <label>IDA</label>
-          <input type="text" class="viagemIda" placeholder="dd/mm/aaaa" readonly />
-        </div>
-        <div class="viagem-field">
-          <label>VOLTA</label>
-          <input type="text" class="viagemVolta" placeholder="dd/mm/aaaa" readonly />
-        </div>
-      </div>
-    `;
-    host.appendChild(wrap);
-
-    const chk = qs(wrap, ".viagemChk");
-    const box = qs(wrap, ".viagem-datas");
-    const ida = qs(wrap, ".viagemIda");
-    const volta = qs(wrap, ".viagemVolta");
-
-    // restaura do draft (se existir)
-    const was = !!(rowData && (rowData.viagem || rowData.isViagem || rowData.travel));
-    const idaISO  = (rowData && (rowData.viagem_ida || rowData.ida || rowData.travel_ida)) || "";
-    const voltaISO= (rowData && (rowData.viagem_volta || rowData.volta || rowData.travel_volta)) || "";
-
-    if(was){
-      chk.checked = true;
-      box.classList.add("on");
-      ida.value = idaISO ? brDateFromISO(idaISO) : "";
-      volta.value = voltaISO ? brDateFromISO(voltaISO) : "";
-      rowEl.dataset.viagem = "1";
-      if(idaISO) rowEl.dataset.viagem_ida = idaISO;
-      if(voltaISO) rowEl.dataset.viagem_volta = voltaISO;
+      // se você já tem alguma rotina de salvar draft ao digitar, pode chamar aqui:
+      try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
     }
-
-    function openRangePicker(){
-      const fp = ensureRangePicker();
-      if(!fp) return;
-
-      // contexto do "caller"
-      fp.__ctx = { rowEl, idaInput: ida, voltaInput: volta };
-
-      // seed do calendário
-      const seed = [];
-      const d1 = ida.value ? ida.value : "";
-      const d2 = volta.value ? volta.value : "";
-      if(d1) seed.push(d1);
-      if(d2) seed.push(d2);
-      try{
-        fp.setDate(seed, false, "d/m/Y");
-      }catch(e){}
-
-      fp.open();
-    }
-
-    chk.addEventListener("change", ()=>{
-      if(chk.checked){
-        box.classList.add("on");
-        rowEl.dataset.viagem = "1";
-        openRangePicker();
-      }else{
-        box.classList.remove("on");
-        ida.value = "";
-        volta.value = "";
-        ida.classList.remove("err");
-        volta.classList.remove("err");
-        delete rowEl.dataset.viagem;
-        delete rowEl.dataset.viagem_ida;
-        delete rowEl.dataset.viagem_volta;
-      }
-    });
-
-    ida.addEventListener("click", openRangePicker);
-    volta.addEventListener("click", openRangePicker);
-  }
-
-  // === CAPTURA DADOS DA UI (sem mexer no seu getPayload original)
-  function collectViagemFromDOM(){
-    // tenta pegar todas as “linhas” já renderizadas
-    // (ajuste o seletor se o seu row tiver um class específico)
-    const possibleRows =
-      qsa(document, ".row") ||
-      qsa(document, ".activity-row") ||
-      qsa(document, "[data-row]") ||
-      [];
-    // fallback: qualquer coisa que tenha os controles de viagem
-    const viagemInputs = qsa(document, ".viagemChk").map(chk => chk.closest(".viagem-wrap")?.parentElement || chk.closest(".row") || chk.closest("[data-row]")).filter(Boolean);
-    const rows = (possibleRows.length ? possibleRows : viagemInputs);
-
-    return rows.map(rowEl=>{
-      const isV = rowEl && rowEl.dataset && rowEl.dataset.viagem === "1";
-      if(!isV) return null;
-
-      const idaISO = rowEl.dataset.viagem_ida || "";
-      const voltaISO = rowEl.dataset.viagem_volta || "";
-
-      // Tenta “adivinhar” os campos do teu layout (sem quebrar nada):
-      // nomes/obra/carro/atividades (pega do value de inputs/textarea dentro da linha)
-      const nomes = (qs(rowEl,'[name="nomes"], .nomes, .names')?.value) || (qs(rowEl,'input[placeholder*="Nome"]')?.value) || "";
-      const obra  = (qs(rowEl,'[name="obra"], .obra')?.value) || (qs(rowEl,'input[placeholder*="Obra"]')?.value) || "";
-      const carro = (qs(rowEl,'[name="carro"], .carro')?.value) || (qs(rowEl,'select[name="carro"]')?.value) || "";
-      const atv   = (qs(rowEl,'[name="atividades"], .atividades')?.value) || (qs(rowEl,'textarea')?.value) || "";
-      const data  = (qs(rowEl,'[name="data"], .data')?.value) || "";
-
-      return { data, nomes, obra, carro, atividades: atv, viagem:true, ida: idaISO, volta: voltaISO, _rowEl: rowEl };
-    }).filter(Boolean);
-  }
-
-  function validateViagemRows(trips){
-    let ok = true;
-    trips.forEach(t=>{
-      const rowEl = t._rowEl;
-      if(!rowEl) return;
-      const idaInput = qs(rowEl, ".viagemIda");
-      const voltaInput = qs(rowEl, ".viagemVolta");
-
-      if(!t.ida){
-        ok=false;
-        if(idaInput) idaInput.classList.add("err");
-      }
-      if(!t.volta){
-        ok=false;
-        if(voltaInput) voltaInput.classList.add("err");
-      }
-    });
-    return ok;
-  }
-
-  // === Monta HTML do relatório
-  function buildViagemReportHTML(trips){
-    const now = new Date();
-    const stamp = pad2(now.getDate())+"/"+pad2(now.getMonth()+1)+"/"+now.getFullYear()+" "+pad2(now.getHours())+":"+pad2(now.getMinutes());
-
-    const items = trips.map(t=>{
-      const nomes = (t.nomes||"").toString().trim();
-      const obra  = (t.obra||"").toString().trim();
-      const carro = (t.carro||"").toString().trim();
-      const atv   = (t.atividades||"").toString().trim();
-      const ida   = brDateFromISO(t.ida);
-      const volta = brDateFromISO(t.volta);
-
-      return `
-        <div class="card">
-          <div class="h">${nomes || "(SEM NOME)"}</div>
-          <div class="b">
-            <div><b>OBRA:</b> ${obra || "-"}</div>
-            <div><b>CARRO:</b> ${carro || "-"}</div>
-            <div><b>ATIVIDADE:</b> ${atv || "-"}</div>
-            <div style="margin-top:6px"><b>IDA:</b> ${ida || "-"} &nbsp;&nbsp; <b>VOLTA:</b> ${volta || "-"}</div>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    return `
-<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-
-<title>ERP ÍMPAR — Roteiro de Viagens</title>
-<style>
-  body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#0b1e4a;color:#e5e7eb}
-  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
-  .t1{font-size:18px;font-weight:900;letter-spacing:.3px}
-  .t2{font-size:12px;opacity:.8;margin-top:4px}
-  .meta{font-size:12px;opacity:.85;text-align:right}
-  .card{background:#102a66;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;margin:10px 0}
-  .h{font-weight:900;margin-bottom:6px}
-  .b{font-size:13px;line-height:1.35}
-  .foot{margin-top:14px;font-size:12px;opacity:.8}
-</style>
-</head>
-<body>
-  <div class="top">
-    <div>
-      <div class="t1">ERP ÍMPAR — Roteiro de Viagens</div>
-      <div class="t2">Relatório automático das linhas marcadas como <b>VIAGEM</b> na Lista de Atividades.</div>
-    </div>
-    <div class="meta">Gerado em<br>${stamp}</div>
-  </div>
-
-  ${items || `<div class="card"><b>Nenhuma viagem marcada.</b></div>`}
-
-  <div class="foot">ERP ÍMPAR • Módulo Atividades</div>
-</body>
-</html>
-    `.trim();
-  }
-
-  // === Salva no servidor (PHP) e retorna URL
-  async function saveViagemReportOnServer(html){
-    const r = await fetch(API_VIAGEM_SAVE,{
-      method:"POST",
-      headers:{ "Content-Type":"text/plain;charset=UTF-8" },
-      body: html
-    });
-    const j = await r.json().catch(()=>null);
-    if(!r.ok || !j || j.ok!==true || !j.url) throw new Error((j && j.error) ? j.error : "Falha ao salvar relatório de viagem.");
-    return j.url;
-  }
-
-  // === Dispara WhatsApp Web (máximo de automação via web)
-  function openWhatsApps(url){
-    const txt = encodeURIComponent(buildWhatsMsg(url));
-    RH_NUMBERS.forEach((n, i)=>{
-      const link = "https://wa.me/" + n + "?text=" + txt;
-      setTimeout(()=>{ window.open(link, "_blank"); }, i*450);
-    });
-  }
-
-  // === HOOK: injeta UI via patch do newRow()
-  function patchNewRow(){
-    if(typeof window.newRow !== "function") return;
-    if(window.newRow.__patchedViagem) return;
-
-    const orig = window.newRow;
-    window.newRow = function(r){
-      const el = orig.apply(this, arguments);
-      try{ injectViagemUI(el, r || {}); }catch(e){}
-      return el;
-    };
-    window.newRow.__patchedViagem = true;
-  }
-
-  // === HOOK: depois de renderizar, garante que todas as linhas tenham a UI
-  function enhanceAllRows(){
-    const rows = qsa(document, ".row, .activity-row, [data-row]");
-    rows.forEach(r=>{
-      // tenta recuperar um "rowData" do seu draft atual se existir
-      injectViagemUI(r, {});
-    });
-  }
-
-  // === Ao gerar PDF: cria relatório das viagens e envia link no Whats
-  async function onAfterGeneratePDF(){
-    const trips = collectViagemFromDOM();
-    if(!trips.length) return; // não tem viagem marcada, vida normal
-
-    if(!validateViagemRows(trips)){
-      alertWarn && alertWarn("VIAGEM: preencha IDA e VOLTA nas linhas marcadas.", "Viagem");
-      return;
-    }
-
-    const html = buildViagemReportHTML(trips);
-
-    try{
-      // se você tiver withProcessing, usamos; senão, vai direto
-      if(typeof window.withProcessing === "function"){
-        const url = await window.withProcessing(async()=> await saveViagemReportOnServer(html),
-          "Gerando relatório de viagem…",
-          "PROCESSANDO DADOS......",
-          900
-        );
-        openWhatsApps(url);
-      }else{
-        const url = await saveViagemReportOnServer(html);
-        openWhatsApps(url);
-      }
-    }catch(e){
-      alertWarn && alertWarn("Falha ao salvar/enviar o relatório de viagem.\n\n" + (e && e.message ? e.message : e), "Viagem");
-    }
-  }
-
-  // Hook no botão "GERAR PDF"
-  function hookBtnSave(){
-    const btn = document.getElementById("btnSave");
-    if(!btn || btn.__hookViagem) return;
-
-    // CAPTURE = roda junto sem precisar mexer no teu handler atual
-    btn.addEventListener("click", ()=>{
-      // espera teu PDF abrir / salvar draft / etc
-      setTimeout(()=>{ onAfterGeneratePDF(); }, 600);
-    }, true);
-
-    btn.__hookViagem = true;
-  }
-
-  // Atualiza check de alocação quando qualquer coisa muda (sem checklist, só o teu refresh existente)
-  document.addEventListener("change", ()=>{
-    try{ window.refreshNameChecklist && window.refreshNameChecklist(); }catch(e){}
   });
 
-  // Boot
-  function boot(){
-    patchNewRow();
-    hookBtnSave();
-    // em caso de render já pronto:
-    setTimeout(enhanceAllRows, 300);
-
-    // se suas linhas são criadas dinamicamente, observa e injeta
-    const mo = new MutationObserver(()=>{ enhanceAllRows(); hookBtnSave(); });
-    mo.observe(document.body, {childList:true, subtree:true});
+  function openRangePicker(){
+    // se já tem ida/volta, pré-carrega no range
+    const cur = [];
+    if(idaEl.value) cur.push(idaEl.value);
+    if(volEl.value) cur.push(volEl.value);
+    if(cur.length){
+      try{ fp.setDate(cur, true, "d/m/Y"); }catch(e){}
+    }
+    fp.open();
   }
 
-  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
-  else boot();
+  idaEl.addEventListener("click", openRangePicker);
+  volEl.addEventListener("click", openRangePicker);
 
-})();
+  chk.addEventListener("change", ()=>{
+    const on = chk.checked;
+    box.classList.toggle("on", on);
+
+    if(rowObj){
+      rowObj.viagem = on;
+      if(!on){
+        rowObj.ida = "";
+        rowObj.volta = "";
+        idaEl.value = "";
+        volEl.value = "";
+        try{ fp.clear(); }catch(e){}
+      }
+    }
+
+    try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
+  });
+}
+
+/* IMPORTANTÍSSIMO:
+   dentro do seu newRow(r) / criação do card, você tem que chamar:
+   wireViagemUI(card, r);
+   onde "card" é o elemento DOM do card e "r" é o objeto daquela linha.
+*/
 	
 </script>
 
