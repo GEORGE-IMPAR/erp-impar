@@ -1957,30 +1957,39 @@ function autoPlacaFromMulti(row){
 }	
 
 function newRow(pref={}){
-  const rowId=cryptoRandomId();
-  const row=document.createElement("div");
-  row.className="row"; row.dataset.rowId=rowId;
+  const rowId = cryptoRandomId();
+  const row = document.createElement("div");
+  row.className = "row";
+  row.dataset.rowId = rowId;
+
   row.innerHTML = `
     <div class="row-line1">
       <div><button class="iconbtn btn-del" type="button" title="Excluir linha">${TRASH_SVG}</button></div>
       <div><input type="date" class="inp-data" value="${escapeHtml(pref.data || nextBusinessDayStr())}"></div>
       <div class="nome-slot"></div>
       <div class="obra-slot"></div>
-      </div>
+    </div>
+
     <div class="row-line2">
       <div></div>
       <div><textarea class="txt-ativ long" placeholder="Descreva a atividade do dia…">${escapeHtml(pref.atividades || "")}</textarea></div>
       <div><select class="sel-perc">${optList(LIST_PERC,"Percentual (%)")}</select></div>
-            <div><select class="sel-carro">${optList(LIST_CARRO,"Placa")}</select></div>
-<div class="motivo-wrap"><textarea class="txt-mot long" placeholder="Obrigatório se percentual < 100%…">${escapeHtml(pref.motivo || "")}</textarea></div>
+      <div><select class="sel-carro">${optList(LIST_CARRO,"Placa")}</select></div>
+
+      <div class="motivo-wrap">
+        <textarea class="txt-mot long" placeholder="Obrigatório se percentual < 100%…">${escapeHtml(pref.motivo || "")}</textarea>
+      </div>
     </div>
   `;
+
+  // Nome(s) — multi
   const nomesInit = Array.isArray(pref.nomes) ? pref.nomes : (pref.nome ? [pref.nome] : []);
-  const multi = buildMultiSelect(LIST_NOME, nomesInit, 'Nome(s)', 'Buscar nome...');
+  const multi = buildMultiSelect(LIST_NOME, nomesInit, "Nome(s)", "Buscar nome...");
   row.querySelector(".nome-slot").appendChild(multi);
-  // Obra(s) — multi (NxN)
+
+  // Obra(s) — multi
   const obrasInit = Array.isArray(pref.obras) ? pref.obras : (pref.obra ? [pref.obra] : []);
-  const multiObra = buildMultiSelect(LIST_OBRA, obrasInit, 'Obra(s)', 'Buscar obra...');
+  const multiObra = buildMultiSelect(LIST_OBRA, obrasInit, "Obra(s)", "Buscar obra...");
   row.querySelector(".obra-slot").appendChild(multiObra);
 
   row._refs = {
@@ -1994,29 +2003,35 @@ function newRow(pref={}){
     txtMot: row.querySelector(".txt-mot"),
     motWrap: row.querySelector(".motivo-wrap"),
   };
-    row._refs.selCarro.value = pref.carro || "";
-  row._refs.selPerc.value = pref.percentual || "";
 
-	
-	function refreshMotivo(){
-    const pct=pctToNumber(row._refs.selPerc.value);
-    const show=(pct!==null && pct<100);
+  // aplica defaults do pref
+  row._refs.selCarro.value = pref.carro || "";
+  row._refs.selPerc.value  = pref.percentual || "";
+
+  function refreshMotivo(){
+    const pct = pctToNumber(row._refs.selPerc.value);
+    const show = (pct !== null && pct < 100);
     row._refs.motWrap.style.display = show ? "block" : "none";
-    if(!show) row._refs.txtMot.value="";
-    setError(row._refs.txtMot,false);
+    if(!show) row._refs.txtMot.value = "";
+    setError(row._refs.txtMot, false);
   }
-  row._refs.selPerc.addEventListener("change", ()=>{ refreshMotivo(); refreshNameChecklist(); });
+
+  row._refs.selPerc.addEventListener("change", ()=>{
+    refreshMotivo();
+    refreshNameChecklist();
+  });
   refreshMotivo();
 
   function anyChange(){
-    // AUTO regras: Obra = FÉRIAS/FALTA => Atividade = mesma, Percentual = 0%, Carro não obrigatório
     try{
-      const vRaw = (row._refs.multiObras._multi.get()[0] || '') .trim();
+      // regra: Obra = FÉRIAS/FALTA => Atividade = mesma, Percentual = 0%, Carro não obrigatório
+      const vRaw = ((row._refs.multiObras && row._refs.multiObras._multi && row._refs.multiObras._multi.get()[0]) || "").trim();
       const v = vRaw.toUpperCase();
-      const isFerias = (v==="FÉRIAS" || v==="FERIAS");
-      const isFalta  = (v==="FALTA" || v==="FATA");
-      const isEmpresa = (v==="EMPRESA");
-      const specialFF  = (isFerias || isFalta);
+
+      const isFerias  = (v === "FÉRIAS" || v === "FERIAS");
+      const isFalta   = (v === "FALTA"  || v === "FATA");
+      const isEmpresa = (v === "EMPRESA");
+      const specialFF = (isFerias || isFalta);
 
       if(specialFF){
         const t = isFerias ? "FÉRIAS" : "FALTA";
@@ -2025,89 +2040,89 @@ function newRow(pref={}){
         row._refs.txtAtiv.value = t;
         row._refs.txtAtiv.dataset.autofill = "1";
         row._refs.txtAtiv.disabled = true;
-        row._refs.txtAtiv.classList.add('disabled');
+        row._refs.txtAtiv.classList.add("disabled");
 
         // Percentual automático 0% + bloqueia
-        if(row._refs.selPerc){
-          row._refs.selPerc.value = "0%";
-          row._refs.selPerc.disabled = true;
-          row._refs.selPerc.classList.add('disabled');
-        }
+        row._refs.selPerc.value = "0%";
+        row._refs.selPerc.disabled = true;
+        row._refs.selPerc.classList.add("disabled");
 
-        // Motivo limpa e bloqueia
-        if(row._refs.txtMot){
-          row._refs.txtMot.value = "";
-          row._refs.txtMot.disabled = true;
-          row._refs.txtMot.classList.add('disabled');
-        }
+        // Motivo limpa + bloqueia
+        row._refs.txtMot.value = "";
+        row._refs.txtMot.disabled = true;
+        row._refs.txtMot.classList.add("disabled");
 
-        // Carro não obrigatório (bloqueia)
-        if(row._refs.selCarro){
-          row._refs.selCarro.value = "";
-          row._refs.selCarro.disabled = true;
-          row._refs.selCarro.classList.add('disabled');
-        }
+        // Carro não obrigatório + bloqueia
+        row._refs.selCarro.value = "";
+        row._refs.selCarro.disabled = true;
+        row._refs.selCarro.classList.add("disabled");
       }else{
-        // libera campos de FF
-        if(row._refs.txtAtiv){
-          row._refs.txtAtiv.disabled = false;
-          row._refs.txtAtiv.classList.remove('disabled');
-          if(row._refs.txtAtiv.dataset.autofill==="1"){
-            row._refs.txtAtiv.value = "";
-            row._refs.txtAtiv.dataset.autofill = "";
-          }
+        // libera campos
+        row._refs.txtAtiv.disabled = false;
+        row._refs.txtAtiv.classList.remove("disabled");
+        if(row._refs.txtAtiv.dataset.autofill === "1"){
+          row._refs.txtAtiv.value = "";
+          row._refs.txtAtiv.dataset.autofill = "";
         }
-        if(row._refs.selPerc){
-          row._refs.selPerc.disabled = false;
-          row._refs.selPerc.classList.remove('disabled');
-        }
-        if(row._refs.txtMot){
-          row._refs.txtMot.disabled = false;
-          row._refs.txtMot.classList.remove('disabled');
-        }
+
+        row._refs.selPerc.disabled = false;
+        row._refs.selPerc.classList.remove("disabled");
+
+        row._refs.txtMot.disabled = false;
+        row._refs.txtMot.classList.remove("disabled");
 
         // regra EMPRESA: não exige carro (bloqueia carro)
-        if(row._refs.selCarro){
-          if(isEmpresa){
-            row._refs.selCarro.value = "";
-            row._refs.selCarro.disabled = true;
-            row._refs.selCarro.classList.add('disabled');
-          }else{
-            row._refs.selCarro.disabled = false;
-            row._refs.selCarro.classList.remove('disabled');
-          }
+        if(isEmpresa){
+          row._refs.selCarro.value = "";
+          row._refs.selCarro.disabled = true;
+          row._refs.selCarro.classList.add("disabled");
+        }else{
+          row._refs.selCarro.disabled = false;
+          row._refs.selCarro.classList.remove("disabled");
         }
       }
-}catch(e){
+    }catch(e){
+      console.warn("anyChange erro:", e);
+    }
 
-    validateRow(row,"draft");
+    // ✅ sempre valida e atualiza checklist (não só no catch)
+    validateRow(row, "draft");
     refreshNameChecklist();
   }
- }	  
-row._refs.multiNomes._multi.onChange(()=>{
-  autoPlacaFromMulti(row);
-  anyChange();
-});  
-	
-if(row._refs.multiObras && row._refs.multiObras._multi) row._refs.multiObras._multi.onChange(()=>anyChange());
-  [row._refs.inpDate,row._refs.selCarro,row._refs.selPerc,row._refs.txtAtiv,row._refs.txtMot]
+
+  // mudanças nos multi-selects
+  row._refs.multiNomes._multi.onChange(()=>{
+    try{ autoPlacaFromMulti(row); }catch(e){}
+    anyChange();
+  });
+
+  if(row._refs.multiObras && row._refs.multiObras._multi){
+    row._refs.multiObras._multi.onChange(()=> anyChange());
+  }
+
+  // eventos gerais
+  [row._refs.inpDate, row._refs.selCarro, row._refs.selPerc, row._refs.txtAtiv, row._refs.txtMot]
     .filter(Boolean)
     .forEach(el=>{
       el.addEventListener("change", anyChange);
       el.addEventListener("blur", anyChange);
       el.addEventListener("input", anyChange);
     });
+
   row._refs.btnDel.addEventListener("click", ()=>{
-    if(rowsEl.querySelectorAll(".row").length<=1){ alertWarn("Deve existir pelo menos 1 linha."); return; }
-    row.remove(); refreshNameChecklist();
+    if(rowsEl.querySelectorAll(".row").length <= 1){
+      alertWarn("Deve existir pelo menos 1 linha.");
+      return;
+    }
+    row.remove();
+    refreshNameChecklist();
   });
 
-	  /* 🔥 ATIVA A FUNCIONALIDADE VIAGEM */
-  wireViagemUI(card, r);
-	
+  // ✅ ativa UI de viagem nesta linha (usa row + pref)
+  try{ wireViagemUI(row, pref); }catch(e){ console.warn("wireViagemUI erro:", e); }
+
   return row;
 }
-
 function getRowData(row){
   const r=row._refs;
   const nomes=r.multiNomes._multi.get();
