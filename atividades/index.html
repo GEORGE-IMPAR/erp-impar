@@ -1958,7 +1958,7 @@ function autoPlacaFromMulti(row){
 
 }
 
-func+tion newRow(pref={}){
+ffunction newRow(pref = {}){
   const rowId = cryptoRandomId();
   const row = document.createElement("div");
   row.className = "row";
@@ -1978,22 +1978,20 @@ func+tion newRow(pref={}){
       <div><select class="sel-perc">${optList(LIST_PERC,"Percentual (%)")}</select></div>
       <div><select class="sel-carro">${optList(LIST_CARRO,"Placa")}</select></div>
 
-  <!-- ✅ NOVA LINHA: VIAGEM (embaixo de Percentual/Placa) -->
-  <div class="row-line3">
-    <div></div>
-    <div></div>
-
-    <!-- slot onde o wireViagemUI vai montar check + datas -->
-    <div class="viagem-slot" style="grid-column: 3 / 5;"></div>
-
-    <div></div>
-  </div>
-`;
-}
-    
-	<div class="motivo-wrap"></div>
+      <div class="motivo-wrap">
         <textarea class="txt-mot long" placeholder="Obrigatório se percentual < 100%…">${escapeHtml(pref.motivo || "")}</textarea>
       </div>
+    </div>
+
+    <!-- ✅ LINHA 3: VIAGEM (embaixo de Percentual/Placa) -->
+    <div class="row-line3">
+      <div></div>
+      <div></div>
+
+      <!-- slot onde o wireViagemUI vai montar check + data -->
+      <div class="viagem-slot" style="grid-column: 3 / 5;"></div>
+
+      <div></div>
     </div>
   `;
 
@@ -2017,9 +2015,12 @@ func+tion newRow(pref={}){
     txtAtiv: row.querySelector(".txt-ativ"),
     txtMot: row.querySelector(".txt-mot"),
     motWrap: row.querySelector(".motivo-wrap"),
+    // ✅ refs de viagem (preenchidas pelo wireViagemUI)
+    viagemChk: null,
+    viagemDate: null,
   };
 
-  // aplica defaults do pref
+  // defaults do pref
   row._refs.selCarro.value = pref.carro || "";
   row._refs.selPerc.value  = pref.percentual || "";
 
@@ -2039,7 +2040,6 @@ func+tion newRow(pref={}){
 
   function anyChange(){
     try{
-      // regra: Obra = FÉRIAS/FALTA => Atividade = mesma, Percentual = 0%, Carro não obrigatório
       const vRaw = ((row._refs.multiObras && row._refs.multiObras._multi && row._refs.multiObras._multi.get()[0]) || "").trim();
       const v = vRaw.toUpperCase();
 
@@ -2051,28 +2051,23 @@ func+tion newRow(pref={}){
       if(specialFF){
         const t = isFerias ? "FÉRIAS" : "FALTA";
 
-        // Atividade automática + bloqueia
         row._refs.txtAtiv.value = t;
         row._refs.txtAtiv.dataset.autofill = "1";
         row._refs.txtAtiv.disabled = true;
         row._refs.txtAtiv.classList.add("disabled");
 
-        // Percentual automático 0% + bloqueia
         row._refs.selPerc.value = "0%";
         row._refs.selPerc.disabled = true;
         row._refs.selPerc.classList.add("disabled");
 
-        // Motivo limpa + bloqueia
         row._refs.txtMot.value = "";
         row._refs.txtMot.disabled = true;
         row._refs.txtMot.classList.add("disabled");
 
-        // Carro não obrigatório + bloqueia
         row._refs.selCarro.value = "";
         row._refs.selCarro.disabled = true;
         row._refs.selCarro.classList.add("disabled");
       }else{
-        // libera campos
         row._refs.txtAtiv.disabled = false;
         row._refs.txtAtiv.classList.remove("disabled");
         if(row._refs.txtAtiv.dataset.autofill === "1"){
@@ -2086,7 +2081,6 @@ func+tion newRow(pref={}){
         row._refs.txtMot.disabled = false;
         row._refs.txtMot.classList.remove("disabled");
 
-        // regra EMPRESA: não exige carro (bloqueia carro)
         if(isEmpresa){
           row._refs.selCarro.value = "";
           row._refs.selCarro.disabled = true;
@@ -2100,6 +2094,41 @@ func+tion newRow(pref={}){
       console.warn("anyChange erro:", e);
     }
 
+    validateRow(row, "draft");
+    refreshNameChecklist();
+  }
+
+  row._refs.multiNomes._multi.onChange(()=>{
+    try{ autoPlacaFromMulti(row); }catch(e){}
+    anyChange();
+  });
+
+  if(row._refs.multiObras && row._refs.multiObras._multi){
+    row._refs.multiObras._multi.onChange(()=> anyChange());
+  }
+
+  [row._refs.inpDate, row._refs.selCarro, row._refs.selPerc, row._refs.txtAtiv, row._refs.txtMot]
+    .filter(Boolean)
+    .forEach(el=>{
+      el.addEventListener("change", anyChange);
+      el.addEventListener("blur", anyChange);
+      el.addEventListener("input", anyChange);
+    });
+
+  row._refs.btnDel.addEventListener("click", ()=>{
+    if(rowsEl.querySelectorAll(".row").length <= 1){
+      alertWarn("Deve existir pelo menos 1 linha.");
+      return;
+    }
+    row.remove();
+    refreshNameChecklist();
+  });
+
+  // ✅ ATIVA A UI DE VIAGEM NA LINHA (check + data)
+  wireViagemUI(row, pref);
+
+  return row;
+}
     // ✅ sempre valida e atualiza checklist (não só no catch)
     validateRow(row, "draft");
     refreshNameChecklist();
@@ -2148,12 +2177,15 @@ function getRowData(row){
     nome: nomes.join(" + "),
     obra: (r.multiObras ? (r.multiObras._multi.get().join(' + ')) : '') || "",
     obras: (r.multiObras ? r.multiObras._multi.get() : []),
-    carro: r.selCarro.value || "",
+    motivo: r.txtMot.value || "",
+    viagem: !!(r.viagemChk && r.viagemChk.checked),
+    viagemData: (r.viagemDate && r.viagemDate.value) ? r.viagemDate.value : ""
+	carro: r.selCarro.value || "",
     atividades: r.txtAtiv.value || "",
     percentual: r.selPerc.value || "",
     motivo: r.txtMot.value || ""
   };
- }
+ }x'
 }
 function validateRow(row, mode="draft"){
   const r=row._refs;
@@ -2694,51 +2726,79 @@ function dateToBR(d){
 
 /* Chame isso no final do newRow(row) depois de montar o DOM do card */
 function wireViagemUI(cardEl, rowObj){
-  // ✅ COLE AQUI — PRIMEIRA COISA DA FUNÇÃO
-  const slot = row.querySelector(".viagem-slot");
+  // ✅ slot onde vamos montar a UI
+  const slot = cardEl.querySelector(".viagem-slot");
   if(!slot) return;
-  const chk   = cardEl.querySelector(".chk-viagem");
-  const box   = cardEl.querySelector(".viagem-fields");
-  const idaEl = cardEl.querySelector(".in-ida");
-  const volEl = cardEl.querySelector(".in-volta");
-  const rngEl = cardEl.querySelector(".in-range");
 
-  if(!chk || !box || !idaEl || !volEl || !rngEl) return;
+  // monta o HTML da viagem dentro do slot
+  slot.innerHTML = `
+    <div class="viagem-wrap">
+      <label class="viagem-badge" style="cursor:pointer;">
+        <input type="checkbox" class="chk-viagem" />
+        <span class="lbl">VIAGEM</span>
+      </label>
 
-  // estado inicial
+      <div class="viagem-datas viagem-fields">
+        <div class="viagem-field">
+          <label>Data</label>
+          <input type="text" class="in-viagem-date" placeholder="dd/mm/aaaa" readonly />
+        </div>
+      </div>
+    </div>
+  `;
+
+  const chk   = slot.querySelector(".chk-viagem");
+  const box   = slot.querySelector(".viagem-fields");
+  const dateEl = slot.querySelector(".in-viagem-date");
+  if(!chk || !box || !dateEl) return;
+
+  // estado inicial (se vier do pref)
   const has = !!(rowObj && rowObj.viagem);
   chk.checked = has;
   box.classList.toggle("on", has);
 
-  if(rowObj){
-    if(rowObj.ida)   idaEl.value = rowObj.ida;
-    if(rowObj.volta) volEl.value = rowObj.volta;
-  }
+  if(rowObj && rowObj.viagemData) dateEl.value = rowObj.viagemData;
 
-  // flatpickr range (um só, controla ida/volta)
-  const fp = flatpickr(rngEl, {
-    mode: "range",
+  // flatpickr (data única)
+  const fp = flatpickr(dateEl, {
     dateFormat: "d/m/Y",
     allowInput: false,
     locale: "pt",
-    onChange: function(selectedDates){
-      const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
-      const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
-
-      idaEl.value = ida;
-      volEl.value = vol;
-
-      if(rowObj){
-        rowObj.ida = ida;
-        rowObj.volta = vol;
-        rowObj.viagem = !!chk.checked;
-      }
-
-      // se você já tem alguma rotina de salvar draft ao digitar, pode chamar aqui:
-      try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
-    }
+    clickOpens: true
   });
 
+  chk.addEventListener("change", ()=>{
+    const on = chk.checked;
+    box.classList.toggle("on", on);
+
+    if(rowObj){
+      rowObj.viagem = on;
+      if(!on){
+        rowObj.viagemData = "";
+        dateEl.value = "";
+        try{ fp.clear(); }catch(e){}
+      }
+    }
+
+    // se você tiver alguma rotina de salvar draft ao mexer, chama aqui
+    try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
+  });
+
+  dateEl.addEventListener("change", ()=>{
+    if(rowObj){
+      rowObj.viagem = !!chk.checked;
+      rowObj.viagemData = dateEl.value || "";
+    }
+    try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
+  });
+
+  // guarda refs (opcional, mas ajuda)
+  try{
+    cardEl._refs = cardEl._refs || {};
+    cardEl._refs.viagemChk = chk;
+    cardEl._refs.viagemDate = dateEl;
+  }catch(e){}
+}
   function openRangePicker(){
     // se já tem ida/volta, pré-carrega no range
     const cur = [];
