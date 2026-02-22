@@ -1147,35 +1147,6 @@ body{opacity:1 !important;}
   /* Toque no celular (evita zoom e melhora usabilidade) */
   select, input, textarea{ font-size:16px !important; }
 }	  
-.audit{
-  margin-top:8px;
-  font-size:12px;
-  opacity:.85;
-  color:#cbd5e1; /* cinza claro */
-  line-height:1.25;
-}
-.audit b{ color:#e5e7eb; font-weight:700; }	  
-
-.btnBlock{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-}
-
-.audit{
-  margin-top:4px;
-  font-size:11px;
-  color:#cbd5e1;
-  opacity:.9;
-  text-align:center;
-  line-height:1.2;
-}
-
-.audit b{
-  color:#ffffff;
-  font-weight:600;
-}
-	  
 </style>
 
 </head>
@@ -1245,31 +1216,13 @@ body{opacity:1 !important;}
 
           <div id="rows" class="rows"></div>
 
-<div class="actions">
+          <div class="actions">
+            <button class="btn btn-secondary" id="btnAdd" type="button">➕ ADICIONAR LINHA</button>
+            <button class="btn btn-primary" id="btnSave" type="button">🖨️ GERAR PDF (IMPRIMIR)</button>
+            <button class="btn btn-primary" id="btnFinalize" type="button">✅ FINALIZAR (HISTÓRICO)</button>
+          <button class="btn btn-secondary" id="btnNewDay" type="button">🗓️ Novo dia</button>
+          </div>
 
-  <button class="btn btn-secondary" id="btnAdd" type="button">
-    ➕ ADICIONAR LINHA
-  </button>
-
-  <div class="btnBlock">
-    <button class="btn btn-primary" id="btnSave" type="button">
-      🖨️ GERAR PDF (IMPRIMIR)
-    </button>
-    <div id="userName" class="audit"></div>
-  </div>
-
-  <div class="btnBlock">
-    <button class="btn btn-primary" id="btnFinalize" type="button">
-      ✅ FINALIZAR (HISTÓRICO)
-    </button>
-    <div id="userName" class="audit"></div>
-  </div>
-
-  <button class="btn btn-secondary" id="btnNewDay" type="button">
-    🗓️ Novo dia
-  </button>
-
-</div>
           <div class="hist card">
             <div class="hist-top">
               <div>
@@ -1305,7 +1258,7 @@ body{opacity:1 !important;}
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Lista de Atividades</div>
-    <div>v6.3 • Draft: <b>ERPIMPAR_ATIVIDADES_DIARIAS_V2</b> • Pendências: <b>ERPIMPAR_PENDENCIAS_V1</b> • Histórico: <b>ERPIMPAR_ATIVIDADES_HIST_V1</b></div>
+    <div>v6.1 • Draft: <b>ERPIMPAR_ATIVIDADES_DIARIAS_V2</b> • Pendências: <b>ERPIMPAR_PENDENCIAS_V1</b> • Histórico: <b>ERPIMPAR_ATIVIDADES_HIST_V1</b></div>
   </div>
 </footer>
 
@@ -1452,7 +1405,7 @@ const API_DRAFT_GET   = "https://api.erpimpar.com.br/atividades/draft_get.php";
 const API_DRAFT_CLEAR = "https://api.erpimpar.com.br/atividades/draft_clear.php";
 	
 async function apiSave(payload){
-  const r = await fetch(API_DRAFT_SAVE, {
+  const r = await fetch(API_SAVE, {
     method: "POST",
     // CORS: request simples (sem preflight) — manda JSON como text/plain
     headers: { "Content-Type":"text/plain;charset=UTF-8" },
@@ -1476,24 +1429,22 @@ async function apiList(){
 }
 
 async function apiGet(id){
-  const url = API_DRAFT_GET + "?id=" + encodeURIComponent(id);
+  const url = API_GET + "?id=" + encodeURIComponent(id);
   const r = await fetch(url, { method:"GET" });
   const j = await r.json().catch(()=>null);
   if(!r.ok || !j || j.ok !== true) throw new Error((j && (j.error||j.message)) || "Falha ao abrir no servidor.");
   return j.data;
 }
 async function draftServerSave(payload){
-  try{
-    const r = await fetch(API_DRAFT_SAVE,{
-      method:"POST",
-      headers:{"Content-Type":"text/plain;charset=UTF-8"},
-      body:JSON.stringify(payload)
-    });
-    // se quiser ver falha no console:
-    if(!r.ok) console.warn("draftServerSave falhou:", r.status);
-  }catch(e){
-    console.warn("draftServerSave erro:", e);
-  }
+  const r = await fetch(API_DRAFT_SAVE + "?t=" + Date.now(),{
+    method:"POST",
+    headers:{"Content-Type":"text/plain;charset=UTF-8"},
+    body:JSON.stringify(payload)
+  });
+  const j = await r.json().catch(()=>null);
+  if(!r.ok) throw new Error((j && (j.error||j.message)) || ("DRAFT_SAVE_HTTP_" + r.status));
+  if(!j || j.ok !== true) throw new Error((j && (j.error||j.message)) || "DRAFT_SAVE_FAIL");
+  return j;
 }
 async function draftServerLoad(){
   try{
@@ -1506,11 +1457,13 @@ async function draftServerLoad(){
 }
 	
 async function draftServerClear(){
-  try{
-    await fetch(API_DRAFT_CLEAR,{method:"POST"});
-  }catch(e){}
+  const r = await fetch(API_DRAFT_CLEAR + "?t=" + Date.now(), { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:"{}" });
+  const j = await r.json().catch(()=>null);
+  if(!r.ok) throw new Error((j && (j.error||j.message)) || ("DRAFT_CLEAR_HTTP_" + r.status));
+  if(!j || j.ok !== true) throw new Error((j && (j.error||j.message)) || "DRAFT_CLEAR_FAIL");
+  return j;
 }
-	
+
 let last = null; // estado carregado (draft/final)
 
 const LIST_NOME = ["CARLOS HENRIQUE", "CRISTIANO", "FABIO", "GLAICON", "HENRIQUE", "IBRAIS", "RENAN RIBEIRO", "NERI", "RODRIGO", "SELO", "jEILSON", "NICOLAS", "VALDECI"];
@@ -1567,7 +1520,6 @@ function escapeHtml(s){ return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&
 function optList(arr, ph){ const o=[`<option value="">${ph}</option>`]; arr.forEach(v=>o.push(`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`)); return o.join(""); }
 function pctToNumber(p){ if(!p) return null; const n=parseInt(String(p).replace("%","").trim(),10); return Number.isFinite(n)?n:null; }
 function setError(el,on){ if(!el) return; on?el.classList.add("input-error"):el.classList.remove("input-error"); }
-async await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
 function openPrintWindow(payload){
   const rows = payload.rows || [];
   const date = (rows[0] && rows[0].data) ? rows[0].data : "";
@@ -1966,25 +1918,6 @@ function newRow(pref={}){
   row._refs.selPerc.addEventListener("change", ()=>{ refreshMotivo(); refreshNameChecklist(); });
   refreshMotivo();
 
-	function userLabel(){
-  try{
-    const u = (typeof getUser === "function") ? getUser() : null;
-
-    if(!u) return "";
-
-    if(typeof u === "string") return u;
-
-    // se vier objeto, tenta os campos mais comuns
-    if(u.nome) return u.nome;
-    if(u.name) return u.name;
-    if(u.email) return u.email;
-
-    return String(u);
-  }catch(e){
-    return "";
-  }
-}
-	
   function anyChange(){
     // AUTO regras: Obra = FÉRIAS/FALTA => Atividade = mesma, Percentual = 0%, Carro não obrigatório
     try{
@@ -2290,8 +2223,7 @@ function pushHistory(payloadFinal){
   try{
     const ids = await apiList();
     localStorage.setItem(LS_SERVER_CACHE, JSON.stringify(ids || []));
-    await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
-	  await renderIds(ids);
+    await renderIds(ids);
   }catch(e){
     // fallback: cache do servidor (não usa histórico local como fonte principal)
     try{
@@ -2356,142 +2288,71 @@ async function gerarPDF(){
     return;
   }
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-  payload.meta = payload.meta || {};
-  payload.meta.last_pdf_by = getUser();
-  payload.meta.last_pdf_at = new Date().toISOString();
-
-// salva o draft atualizado no servidor (pra todo mundo ver)
-payload.meta = payload.meta || {};
-payload.meta.last_pdf_by = getUser();
-payload.meta.last_pdf_at = new Date().toISOString();
-
-try{
-  await draftServerSave(payload); // salva no servidor
-}catch(e){}
   await draftServerSave(payload);
   await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
   openPrintWindow(payload);
 }
 
 async function finalizeDay(){
-  if(isLockedFinal()){
-    alertWarn("Dia já foi fechado. Use o Histórico para abrir o PDF do dia.");
+  // ✅ fonte da verdade: servidor
+  let serverDraft = null;
+  try{
+    serverDraft = await draftServerLoad();
+  }catch(e){
+    alertWarn("Não consegui consultar o rascunho no servidor. Verifique sua conexão.", "Servidor (Draft)");
     return;
   }
+  if(!serverDraft){
+    alertWarn("Não existe rascunho aberto no servidor. Você já pode abrir um Novo Dia.");
+    return;
+  }
+
   if(!validateAll("final")){
     alertWarn("Para finalizar: Percentual obrigatório. Se Percentual < 100%, Motivo obrigatório.");
     return;
   }
 
-  const payload=getPayload("final");
+  const payload = getPayload("final");
   const miss = missingNames(payload.rows);
-  if(miss.length>0){
+  if(miss.length > 0){
     alertWarn("Não pode finalizar.\n\nFaltam atividades para:\n- " + miss.join("\n- ") + "\n\nUse Obra = FALTA, FÉRIAS ou EMPRESA quando necessário.");
     return;
   }
 
-  // grava histórico + trava o dia
-  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-  pushPendenciasFromFinal(payload);
-  
-pushHistory(payload);
-setLockedFinal(true);
-  // Histórico: sempre do servidor (KingHost)
-renderHistoryServer();
-refreshNameChecklist();
-
-  // prepara campos mínimos pro servidor (save.php exige "date")
+  // campos mínimos pro histórico (save.php exige 'date')
   try{
     payload.date = (payload.dayKey || payload.date || (payload.rows && payload.rows[0] && payload.rows[0].data) || todayStr());
   }catch(e){}
-  payload.finalizedAt = payload.finalizedAt || new Date().toISOString();
+  payload.finalizedAt = new Date().toISOString();
 
-  // meta rápida (pra lista do servidor ficar útil)
+  // 1) salva histórico no servidor
   try{
-    const rows = Array.isArray(payload.rows) ? payload.rows : [];
-    payload.total = payload.total ?? rows.length;
-    payload.pend  = payload.pend  ?? rows.filter(r => {
-      const pct = pctToNumber(r.percentual);
-      return pct !== null && pct < 100;
-    }).length;
-  }catch(e){}
-
-  // duplicar userName/userEmail no topo (list.php já tenta ler isso)
-  try{
-    const u = getUser();
-    payload.userName  = payload.userName  || (u && u.nome  ? u.nome  : "");
-    payload.userEmail = payload.userEmail || (u && u.email ? u.email : "");
-  }catch(e){}
-
-// tenta salvar no servidor (KingHost) — se falhar, mantém local e avisa
-try{
-  await withProcessing(async()=>{ await apiSave(payload); }, "Salvando no servidor…", "PROCESSANDO DADOS......", 900);
-}catch(e){
-  alertWarn("Finalizado localmente, mas não consegui salvar no servidor.\n\n" + (e && e.message ? e.message : "Verifique o caminho dos PHPs e permissões."), "Servidor (KingHost)");
-}
-payload.meta = payload.meta || {};
-payload.meta.last_close_by = getUser();
-payload.meta.last_close_at = new Date().toISOString();
-	
-// garante que o histórico recebe isso também
-// (se seu histórico usa outro payload, copie payload.meta junto)	
-await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
-await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");	
-// ✅ força sync (pra desktop refletir na hora)
-await syncDraftStateFromServerOnLoad();
-draftServerClear()
-openPrintWindow(payload);
-
-// ✅ NÃO cria novo dia automaticamente.
-// Depois de fechar, deixa a tela “zerada” esperando clicar em Novo Dia.
-try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-
-// trava como “sem dia aberto”; Novo Dia é quem inicia
-setLockedFinal(true);
-
-// limpa tela e histórico (histórico você mantém)
-rowsEl.innerHTML = "";
-renderHistoryServer();
-
-// opcional: se tiver uma função de “estado vazio”, melhor ainda
-// renderEmptyState && renderEmptyState();
-
-refreshNameChecklist();
-await syncDraftStateFromServerOnLoad(); // vai confirmar que não existe draft no servidor
-
-}
-
-if(btnPdfClose) btnPdfClose.addEventListener("click", ()=>{ if(pdfModal) pdfModal.style.display="none"; });
-if(btnPdfPrint) btnPdfPrint.addEventListener("click", ()=>{
-  try{
-    const w = pdfFrame.contentWindow;
-    if(w) w.print();
+    await withProcessing(async()=>{ await apiSave(payload); }, "Salvando no servidor…", "PROCESSANDO DADOS......", 900);
   }catch(e){
-    alertWarn("Não foi possível imprimir o PDF.");
+    alertWarn("Falhou ao salvar o histórico no servidor.\n\n" + (e && e.message ? e.message : ""), "Servidor (Histórico)");
+    return;
   }
-});
-if(pdfModal){ const bd = pdfModal.querySelector(".modal-backdrop"); if(bd) bd.addEventListener("click", ()=>{ pdfModal.style.display="none"; }); }
 
-document.addEventListener("keydown", (e)=>{ if(e.key==="Escape" && pdfModal && pdfModal.style.display==="block"){ pdfModal.style.display="none"; }});
+  // 2) apaga o draft.json (global) — obrigatório
+  try{
+    await draftServerClear();
+  }catch(e){
+    alertWarn("Histórico salvo, mas falhou ao apagar o draft.json no servidor.\n\n" + (e && e.message ? e.message : ""), "Servidor (Draft)");
+    return;
+  }
 
+  // 3) limpa cache local do rascunho (não decide nada, só evita sujeira)
+  try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
 
-function lockRows(isLocked){
-  document.querySelectorAll(".rows .row").forEach(r=>{
-    r.querySelectorAll("input,select,textarea,button").forEach(el=>{
-      // allow viewing (no typing) after final; keep modal/historico working
-      if(el.classList.contains("btn-del")) el.disabled = !!isLocked;
-      if(el.classList.contains("iconbtn")) el.disabled = !!isLocked;
-      if(el.closest(".modal")) return;
-      // keep top-right menu principal clickable
-      if(el.id==="btnBack") return;
-      // keep historico items clickable
-      if(el.classList.contains("hist-item")) return;
-      // keep pdf modal buttons
-      if(el.id==="btnPdfClose" || el.id==="btnPdfPrint") return;
-      // lock all form controls in rows
-      if(r.contains(el)) el.disabled = !!isLocked;
-    });
-  });
+  // 4) UI: zera e atualiza histórico
+  rowsEl.innerHTML = "";
+  setLockedFinal(true); // libera "Novo dia"
+  refreshNameChecklist();
+  renderHistoryServer();
+
+  // 5) abre o PDF do dia fechado
+  await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
+  openPrintWindow(payload);
 }
 
 function isLockedFinal(){
@@ -2530,69 +2391,48 @@ function setLockedFinal(isLocked){
   }catch(e){}
 }
 async function serverHasOpenDraft(){
-  try{
-    const r = await fetch(API_DRAFT_GET, { cache:"no-store" });
-    const j = await r.json().catch(()=>null);
-    return !!(j && j.ok === true && j.data);
-  }catch(e){
-    // Se der erro de rede, melhor não liberar "Novo dia" por segurança
-    return true;
-  }
+  const d = await draftServerLoad();
+  return !!(d && d.rows && d.rows.length);
 }
 
 async function syncDraftStateFromServerOnLoad(){
-  // ✅ Sempre tenta puxar o rascunho do servidor (KingHost) primeiro
-  const serverDraft = await draftServerLoad();
+  let serverDraft = null;
+  try{
+    serverDraft = await draftServerLoad();
+  }catch(e){
+    // não trava tudo por erro momentâneo de rede
+    console.warn("syncDraftStateFromServerOnLoad:", e && e.message ? e.message : e);
+    return;
+  }
 
   if(serverDraft && serverDraft.rows && serverDraft.rows.length){
     try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft)); }catch(e){}
-    setLockedFinal(false); // existe draft -> trava "Novo dia"
+    setLockedFinal(false); // existe draft -> bloqueia "Novo dia"
     renderInitial();
-	renderAuditInfo(serverDraft || loadLast());  
     refreshNameChecklist();
     renderHistoryServer();
     return;
   }
 
-// ✅ servidor sem rascunho → NÃO cria nada automaticamente
-await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
-	try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-
-// estado correto: nenhum dia aberto
-setLockedFinal(true);
-
-// limpa tela (Novo Dia será responsável por criar)
-rowsEl.innerHTML = "";
-
-refreshNameChecklist();
-renderHistoryServer();
+  // sem draft no servidor -> sem dia aberto
+  try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+  setLockedFinal(true); // libera "Novo dia"
+  try{ rowsEl.innerHTML = ""; }catch(e){}
+  refreshNameChecklist();
+  renderHistoryServer();
 }
 
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
 
 async function newDay(){
-  // 1) Se existe draft aberto no servidor, não pode abrir novo dia
   const hasDraft = await serverHasOpenDraft();
   if(hasDraft){
     alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO: existe rascunho aberto no servidor.");
     return;
   }
 
-// valida direto no servidor (fonte da verdade)
-const hasDraftServer = await serverHasOpenDraft();
+  await withProcessing(async()=>{}, "Preparando novo dia…", "PROCESSANDO DADOS......", 700);
 
-if(hasDraftServer){
-  alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO: existe rascunho aberto no servidor.");
-  return;
-}
-	
-    // 3) Servidor sem draft -> garante que local não vai travar
-  try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-  setLockedFinal(true);
-  
-  await withProcessing(async()=>{}, "Preparando novo dia...", "PROCESSANDO DADOS.......", 700);
-
-  // 4) Cria um draft novo com PRÓXIMO DIA ÚTIL
   const payload = {
     usuario: getUser(),
     rows: [{
@@ -2606,154 +2446,63 @@ if(hasDraftServer){
     }]
   };
 
-localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-setLockedFinal(false);
+  // salva no servidor (cria draft.json global)
+  try{
+    await draftServerSave(payload);
+  }catch(e){
+    alertWarn("Não consegui criar o rascunho no servidor.
 
-// ✅ cria o draft.json no servidor (fonte da verdade)
-try{
-  await withProcessing(async()=>{ await draftServerSave(payload); }, "Abrindo novo dia…", "SALVANDO RASCUNHO......", 800);
-}catch(e){
-  alertWarn("Não consegui criar o rascunho no servidor.\n\nVerifique conexão/permissões.\n\n" + (e && e.message ? e.message : ""));
-  return;
-}
-
-renderInitial();
-renderHistoryServer();
-
-// agora sim: servidor já tem draft, então o sync NÃO vai apagar
-await syncDraftStateFromServerOnLoad();
-
-refreshNameChecklist();
-}
-
-function renderAuditInfo(draft){
-  var el = document.getElementById("auditInfo");
-  if(!el) return;
-
-  var m = (draft && draft.meta) ? draft.meta : null;
-  if(!m){
-    el.innerHTML = "";
+" + (e && e.message ? e.message : ""), "Servidor (Draft)");
     return;
   }
 
-  function fmt(iso){
-    if(!iso) return "";
-    try{
-      var d = new Date(iso);
-      return d.toLocaleString("pt-BR");
-    }catch(e){ return iso; }
-  }
+  // cache local só pra UI (rascunho)
+  try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload)); }catch(e){}
+  setLockedFinal(false);
 
-  var linhas = [];
+  renderInitial();
+  renderHistoryServer();
+  refreshNameChecklist();
+}
 
-  if(m.last_pdf_by || m.last_pdf_at){
-    linhas.push(
-      "Último PDF: <b>" +
-      (m.last_pdf_by || "—") +
-      "</b>" +
-      (m.last_pdf_at ? " • " + fmt(m.last_pdf_at) : "")
-    );
-  }
-
-  if(m.last_close_by || m.last_close_at){
-    linhas.push(
-      "Último fechamento: <b>" +
-      (m.last_close_by || "—") +
-      "</b>" +
-      (m.last_close_at ? " • " + fmt(m.last_close_at) : "")
-    );
-  }
-
-  el.innerHTML = linhas.join("<br>");
-}	
-	
 function renderInitial(){
   rowsEl.innerHTML="";
   last = loadLast();
+  if(last && Array.isArray(last.rows) && last.rows.length){ last.rows.forEach(r=>rowsEl.appendChild(newRow(r))); }
+  else { /* sem rascunho: tela vazia */ }
 
-  if(last && Array.isArray(last.rows) && last.rows.length){
-    last.rows.forEach(r=>rowsEl.appendChild(newRow(r)));
-  }
-
-  renderAuditInfo(last); // ✅ adiciona esta linha
-}
-
-/* =========================================================
-   AUDITORIA — PDF e FECHAMENTO
-========================================================= */
-await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
-function formatAuditDate(iso){
-  if(!iso) return "";
-  try{
-    return new Date(iso).toLocaleString("pt-BR");
-  }catch(e){
-    return iso;
-  }
-}
-
-function renderAuditInfo(draft){
-
-  const pdfEl   = document.getElementById("auditPdfInfo");
-  const closeEl = document.getElementById("auditCloseInfo");
-
-  if(!pdfEl || !closeEl) return;
-
-  const meta = draft && draft.meta ? draft.meta : {};
-
-  // PDF
-  if(meta.last_pdf_by){
-    pdfEl.innerHTML =
-      "Último PDF: <b>" +
-      meta.last_pdf_by +
-      "</b><br>" +
-      formatAuditDate(meta.last_pdf_at);
-  }else{
-    pdfEl.innerHTML = "";
-  }
-
-  // FECHAMENTO
-  if(meta.last_close_by){
-    closeEl.innerHTML =
-      "Último fechamento: <b>" +
-      meta.last_close_by +
-      "</b><br>" +
-      formatAuditDate(meta.last_close_at);
-  }else{
-    closeEl.innerHTML = "";
-  }
-	
   refreshNameChecklist();
   // Histórico: sempre do servidor (KingHost)
 
-  // só permite "Novo dia" se o dia anterior estiver FINALIZADO
-  
-	const locked = !!(last && last.status==='final');
-  setLockedFinal(locked);
-  if(btnNewDay) btnNewDay.disabled = false;
 }
 	
-await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
-	
+
 btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); refreshNameChecklist(); });
 btnSave.addEventListener("click", gerarPDF);
 btnFinalize.addEventListener("click", finalizeDay);
-
 document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{ window.location.href="/menu.html"; });
 const histDateEl = document.getElementById("histDate");
 if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
-(async ()=>{ await syncDraftStateFromServerOnLoad(); })();
-renderAuditInfo(loadLast());	
 if(btnNewDay) btnNewDay.addEventListener("click", newDay);
 
-/* ===============================
-   Atualiza checklist automaticamente
-================================ */
+// ✅ checklist sempre atualiza quando mudar qualquer campo
 document.addEventListener("change", function(){
+  try{ refreshNameChecklist(); }catch(e){}
+});
+
+// ✅ checklist também atualiza enquanto digita
+document.addEventListener("input", function(){
+  try{ refreshNameChecklist(); }catch(e){}
+});
+
+
+// ✅ ao carregar: servidor decide (draft.json)
+(async ()=>{
   try{
-    refreshNameChecklist();
+    await syncDraftStateFromServerOnLoad();
   }catch(e){}
-});	
-	
+})();
+
 </script>
 
 
@@ -2772,9 +2521,6 @@ document.addEventListener("change", function(){
     </div>
   </div>
 </div>
- 
-</style>
-
 
 </body>
 </html>
