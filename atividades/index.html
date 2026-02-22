@@ -1452,7 +1452,7 @@ const API_DRAFT_GET   = "https://api.erpimpar.com.br/atividades/draft_get.php";
 const API_DRAFT_CLEAR = "https://api.erpimpar.com.br/atividades/draft_clear.php";
 	
 async function apiSave(payload){
-  const r = await fetch(API_SAVE, {
+  const r = await fetch(API_DRAFT_SAVE, {
     method: "POST",
     // CORS: request simples (sem preflight) — manda JSON como text/plain
     headers: { "Content-Type":"text/plain;charset=UTF-8" },
@@ -1476,7 +1476,7 @@ async function apiList(){
 }
 
 async function apiGet(id){
-  const url = API_GET + "?id=" + encodeURIComponent(id);
+  const url = API_DRAFT_GET + "?id=" + encodeURIComponent(id);
   const r = await fetch(url, { method:"GET" });
   const j = await r.json().catch(()=>null);
   if(!r.ok || !j || j.ok !== true) throw new Error((j && (j.error||j.message)) || "Falha ao abrir no servidor.");
@@ -1567,6 +1567,7 @@ function escapeHtml(s){ return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&
 function optList(arr, ph){ const o=[`<option value="">${ph}</option>`]; arr.forEach(v=>o.push(`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`)); return o.join(""); }
 function pctToNumber(p){ if(!p) return null; const n=parseInt(String(p).replace("%","").trim(),10); return Number.isFinite(n)?n:null; }
 function setError(el,on){ if(!el) return; on?el.classList.add("input-error"):el.classList.remove("input-error"); }
+await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
 function openPrintWindow(payload){
   const rows = payload.rows || [];
   const date = (rows[0] && rows[0].data) ? rows[0].data : "";
@@ -2289,7 +2290,8 @@ function pushHistory(payloadFinal){
   try{
     const ids = await apiList();
     localStorage.setItem(LS_SERVER_CACHE, JSON.stringify(ids || []));
-    await renderIds(ids);
+    await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
+	  await renderIds(ids);
   }catch(e){
     // fallback: cache do servidor (não usa histórico local como fonte principal)
     try{
@@ -2434,7 +2436,7 @@ payload.meta.last_close_at = new Date().toISOString();
 // garante que o histórico recebe isso também
 // (se seu histórico usa outro payload, copie payload.meta junto)	
 await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
-	
+await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");	
 // ✅ força sync (pra desktop refletir na hora)
 await syncDraftStateFromServerOnLoad();
 draftServerClear()
@@ -2553,7 +2555,8 @@ async function syncDraftStateFromServerOnLoad(){
   }
 
 // ✅ servidor sem rascunho → NÃO cria nada automaticamente
-try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
+	try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
 
 // estado correto: nenhum dia aberto
 setLockedFinal(true);
@@ -2577,7 +2580,7 @@ async function newDay(){
 
 // valida direto no servidor (fonte da verdade)
 const hasDraftServer = await serverHasOpenDraft();
-await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
+
 if(hasDraftServer){
   alertWarn("ABERTURA DE NOVO DIA NÃO PERMITIDO: existe rascunho aberto no servidor.");
   return;
@@ -2586,7 +2589,7 @@ if(hasDraftServer){
     // 3) Servidor sem draft -> garante que local não vai travar
   try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
   setLockedFinal(true);
-
+  
   await withProcessing(async()=>{}, "Preparando novo dia...", "PROCESSANDO DADOS.......", 700);
 
   // 4) Cria um draft novo com PRÓXIMO DIA ÚTIL
@@ -2678,7 +2681,7 @@ function renderInitial(){
 /* =========================================================
    AUDITORIA — PDF e FECHAMENTO
 ========================================================= */
-
+await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
 function formatAuditDate(iso){
   if(!iso) return "";
   try{
@@ -2729,12 +2732,12 @@ function renderAuditInfo(draft){
   if(btnNewDay) btnNewDay.disabled = false;
 }
 	
-
+await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");
 	
 btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); refreshNameChecklist(); });
 btnSave.addEventListener("click", gerarPDF);
 btnFinalize.addEventListener("click", finalizeDay);
-await fetch("https://api.erpimpar.com.bratividades/draft_clear.php");	
+
 document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{ window.location.href="/menu.html"; });
 const histDateEl = document.getElementById("histDate");
 if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
