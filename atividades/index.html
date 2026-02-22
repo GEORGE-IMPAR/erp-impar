@@ -1146,6 +1146,94 @@ body{opacity:1 !important;}
 
   /* Toque no celular (evita zoom e melhora usabilidade) */
   select, input, textarea{ font-size:16px !important; }
+
+/* ===== VIAGEM (UI) ===== */
+.viagem-wrap{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-top:8px;
+  flex-wrap:wrap;
+}
+.viagem-badge{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 10px;
+  border-radius:12px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+}
+.viagem-badge input{ transform:scale(1.15); }
+.viagem-badge .lbl{
+  font-weight:800;
+  letter-spacing:.4px;
+  font-size:12px;
+  opacity:.95;
+}
+
+.viagem-datas{
+  display:none;
+  align-items:center;
+  gap:10px;
+}
+.viagem-datas.on{ display:flex; }
+
+.viagem-field{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.viagem-field label{
+  font-size:11px;
+  opacity:.75;
+  font-weight:800;
+  letter-spacing:.3px;
+}
+.viagem-field input{
+  width:140px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.20);
+  color:#e5e7eb;
+  outline:none;
+}
+.viagem-field input.err{
+  border-color:#ef4444 !important;
+  box-shadow:0 0 0 2px rgba(239,68,68,.25);
+  animation:viagemShake .25s linear 2;
+}
+@keyframes viagemShake{
+  0%{transform:translateX(0)}
+  25%{transform:translateX(-3px)}
+  50%{transform:translateX(3px)}
+  75%{transform:translateX(-2px)}
+  100%{transform:translateX(0)}
+}
+
+/* Flatpickr combina com teu tema escuro */
+.flatpickr-calendar{
+  background:#071a2b;
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 20px 60px rgba(0,0,0,.55);
+}
+.flatpickr-day{
+  color:#e5e7eb;
+}
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange{
+  background:#22c55e !important;
+  border-color:#22c55e !important;
+  color:#05121f !important;
+  font-weight:900;
+}
+.flatpickr-day.inRange{
+  background:rgba(34,197,94,.25) !important;
+  border-color:transparent !important;
+}
+	
 }	  
 </style>
 
@@ -2541,6 +2629,409 @@ document.addEventListener("visibilitychange", ()=>{
   if(!document.hidden) syncNow();
 });
 window.addEventListener("focus", syncNow);
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+/* =========================
+   VIAGEM (ROOT PATCH SAFE)
+   - não altera teu fluxo do PDF/histórico
+   - injeta UI por linha via "newRow" (sem você ir mexendo no meio)
+   - envia WhatsApp via wa.me (texto + link)
+========================= */
+(function(){
+  "use strict";
+
+  // === AJUSTE AQUI (seu endpoint PHP já existe)
+  const API_VIAGEM_SAVE = "https://api.erpimpar.com.br/atividades/viagem_report_save.php";
+
+  // RH (WhatsApp) - com DDI/DDD/numero (só dígitos)
+  const RH_NUMBERS = [
+    "554830898300", // Fernanda
+    "5548984271870" // Silvana
+  ];
+
+  // Texto padrão
+  function buildWhatsMsg(url){
+    return (
+      "ERP ÍMPAR — Roteiro de Viagens (colaboradores)\n\n" +
+      "Segue o link do relatório:\n" + url
+    );
+  }
+
+  // Helpers
+  function qs(root, sel){ return (root||document).querySelector(sel); }
+  function qsa(root, sel){ return Array.from((root||document).querySelectorAll(sel)); }
+  function pad2(n){ return String(n).padStart(2,"0"); }
+  function brDateFromISO(iso){ // "2026-02-22" -> "22/02/2026"
+    if(!iso || typeof iso!=="string" || iso.length<10) return "";
+    return iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4);
+  }
+  function isoFromBrDate(br){ // "22/02/2026" -> "2026-02-22"
+    if(!br || typeof br!=="string") return "";
+    const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(!m) return "";
+    return m[3]+"-"+m[2]+"-"+m[1];
+  }
+
+  // === RANGE PICKER (flatpickr)
+  let rangeFP = null;
+  function ensureRangePicker(){
+    const el = document.getElementById("viagemRangePicker");
+    if(!el || typeof flatpickr!=="function") return null;
+    if(rangeFP) return rangeFP;
+
+    rangeFP = flatpickr(el,{
+      mode:"range",
+      dateFormat:"d/m/Y",
+      allowInput:false,
+      clickOpens:true,
+      onChange:(selDates)=>{
+        // o "caller" fica guardado em rangeFP.__ctx
+        const ctx = rangeFP.__ctx;
+        if(!ctx || !ctx.idaInput || !ctx.voltaInput) return;
+
+        const d1 = selDates && selDates[0] ? selDates[0] : null;
+        const d2 = selDates && selDates[1] ? selDates[1] : null;
+
+        if(d1){
+          ctx.idaInput.value = pad2(d1.getDate())+"/"+pad2(d1.getMonth()+1)+"/"+d1.getFullYear();
+          ctx.idaInput.classList.remove("err");
+        }
+        if(d2){
+          ctx.voltaInput.value = pad2(d2.getDate())+"/"+pad2(d2.getMonth()+1)+"/"+d2.getFullYear();
+          ctx.voltaInput.classList.remove("err");
+        }else{
+          // ainda não escolheu a volta
+          ctx.voltaInput.value = "";
+        }
+
+        // marca no dataset da linha (pra payload)
+        if(ctx.rowEl){
+          ctx.rowEl.dataset.viagem = "1";
+          ctx.rowEl.dataset.viagem_ida = isoFromBrDate(ctx.idaInput.value);
+          ctx.rowEl.dataset.viagem_volta = isoFromBrDate(ctx.voltaInput.value);
+        }
+      }
+    });
+
+    return rangeFP;
+  }
+
+  // === INJEÇÃO UI POR LINHA
+  function injectViagemUI(rowEl, rowData){
+    if(!rowEl || rowEl.__hasViagemUI) return;
+    rowEl.__hasViagemUI = true;
+
+    // Tentativa robusta: achar uma área “inferior” da linha; senão, append no final.
+    const host = qs(rowEl, ".row-bottom") || qs(rowEl, ".row-actions") || rowEl;
+
+    const wrap = document.createElement("div");
+    wrap.className = "viagem-wrap";
+    wrap.innerHTML = `
+      <div class="viagem-badge">
+        <input type="checkbox" class="viagemChk" />
+        <div class="lbl">VIAGEM</div>
+      </div>
+
+      <div class="viagem-datas">
+        <div class="viagem-field">
+          <label>IDA</label>
+          <input type="text" class="viagemIda" placeholder="dd/mm/aaaa" readonly />
+        </div>
+        <div class="viagem-field">
+          <label>VOLTA</label>
+          <input type="text" class="viagemVolta" placeholder="dd/mm/aaaa" readonly />
+        </div>
+      </div>
+    `;
+    host.appendChild(wrap);
+
+    const chk = qs(wrap, ".viagemChk");
+    const box = qs(wrap, ".viagem-datas");
+    const ida = qs(wrap, ".viagemIda");
+    const volta = qs(wrap, ".viagemVolta");
+
+    // restaura do draft (se existir)
+    const was = !!(rowData && (rowData.viagem || rowData.isViagem || rowData.travel));
+    const idaISO  = (rowData && (rowData.viagem_ida || rowData.ida || rowData.travel_ida)) || "";
+    const voltaISO= (rowData && (rowData.viagem_volta || rowData.volta || rowData.travel_volta)) || "";
+
+    if(was){
+      chk.checked = true;
+      box.classList.add("on");
+      ida.value = idaISO ? brDateFromISO(idaISO) : "";
+      volta.value = voltaISO ? brDateFromISO(voltaISO) : "";
+      rowEl.dataset.viagem = "1";
+      if(idaISO) rowEl.dataset.viagem_ida = idaISO;
+      if(voltaISO) rowEl.dataset.viagem_volta = voltaISO;
+    }
+
+    function openRangePicker(){
+      const fp = ensureRangePicker();
+      if(!fp) return;
+
+      // contexto do "caller"
+      fp.__ctx = { rowEl, idaInput: ida, voltaInput: volta };
+
+      // seed do calendário
+      const seed = [];
+      const d1 = ida.value ? ida.value : "";
+      const d2 = volta.value ? volta.value : "";
+      if(d1) seed.push(d1);
+      if(d2) seed.push(d2);
+      try{
+        fp.setDate(seed, false, "d/m/Y");
+      }catch(e){}
+
+      fp.open();
+    }
+
+    chk.addEventListener("change", ()=>{
+      if(chk.checked){
+        box.classList.add("on");
+        rowEl.dataset.viagem = "1";
+        openRangePicker();
+      }else{
+        box.classList.remove("on");
+        ida.value = "";
+        volta.value = "";
+        ida.classList.remove("err");
+        volta.classList.remove("err");
+        delete rowEl.dataset.viagem;
+        delete rowEl.dataset.viagem_ida;
+        delete rowEl.dataset.viagem_volta;
+      }
+    });
+
+    ida.addEventListener("click", openRangePicker);
+    volta.addEventListener("click", openRangePicker);
+  }
+
+  // === CAPTURA DADOS DA UI (sem mexer no seu getPayload original)
+  function collectViagemFromDOM(){
+    // tenta pegar todas as “linhas” já renderizadas
+    // (ajuste o seletor se o seu row tiver um class específico)
+    const possibleRows =
+      qsa(document, ".row") ||
+      qsa(document, ".activity-row") ||
+      qsa(document, "[data-row]") ||
+      [];
+    // fallback: qualquer coisa que tenha os controles de viagem
+    const viagemInputs = qsa(document, ".viagemChk").map(chk => chk.closest(".viagem-wrap")?.parentElement || chk.closest(".row") || chk.closest("[data-row]")).filter(Boolean);
+    const rows = (possibleRows.length ? possibleRows : viagemInputs);
+
+    return rows.map(rowEl=>{
+      const isV = rowEl && rowEl.dataset && rowEl.dataset.viagem === "1";
+      if(!isV) return null;
+
+      const idaISO = rowEl.dataset.viagem_ida || "";
+      const voltaISO = rowEl.dataset.viagem_volta || "";
+
+      // Tenta “adivinhar” os campos do teu layout (sem quebrar nada):
+      // nomes/obra/carro/atividades (pega do value de inputs/textarea dentro da linha)
+      const nomes = (qs(rowEl,'[name="nomes"], .nomes, .names')?.value) || (qs(rowEl,'input[placeholder*="Nome"]')?.value) || "";
+      const obra  = (qs(rowEl,'[name="obra"], .obra')?.value) || (qs(rowEl,'input[placeholder*="Obra"]')?.value) || "";
+      const carro = (qs(rowEl,'[name="carro"], .carro')?.value) || (qs(rowEl,'select[name="carro"]')?.value) || "";
+      const atv   = (qs(rowEl,'[name="atividades"], .atividades')?.value) || (qs(rowEl,'textarea')?.value) || "";
+      const data  = (qs(rowEl,'[name="data"], .data')?.value) || "";
+
+      return { data, nomes, obra, carro, atividades: atv, viagem:true, ida: idaISO, volta: voltaISO, _rowEl: rowEl };
+    }).filter(Boolean);
+  }
+
+  function validateViagemRows(trips){
+    let ok = true;
+    trips.forEach(t=>{
+      const rowEl = t._rowEl;
+      if(!rowEl) return;
+      const idaInput = qs(rowEl, ".viagemIda");
+      const voltaInput = qs(rowEl, ".viagemVolta");
+
+      if(!t.ida){
+        ok=false;
+        if(idaInput) idaInput.classList.add("err");
+      }
+      if(!t.volta){
+        ok=false;
+        if(voltaInput) voltaInput.classList.add("err");
+      }
+    });
+    return ok;
+  }
+
+  // === Monta HTML do relatório
+  function buildViagemReportHTML(trips){
+    const now = new Date();
+    const stamp = pad2(now.getDate())+"/"+pad2(now.getMonth()+1)+"/"+now.getFullYear()+" "+pad2(now.getHours())+":"+pad2(now.getMinutes());
+
+    const items = trips.map(t=>{
+      const nomes = (t.nomes||"").toString().trim();
+      const obra  = (t.obra||"").toString().trim();
+      const carro = (t.carro||"").toString().trim();
+      const atv   = (t.atividades||"").toString().trim();
+      const ida   = brDateFromISO(t.ida);
+      const volta = brDateFromISO(t.volta);
+
+      return `
+        <div class="card">
+          <div class="h">${nomes || "(SEM NOME)"}</div>
+          <div class="b">
+            <div><b>OBRA:</b> ${obra || "-"}</div>
+            <div><b>CARRO:</b> ${carro || "-"}</div>
+            <div><b>ATIVIDADE:</b> ${atv || "-"}</div>
+            <div style="margin-top:6px"><b>IDA:</b> ${ida || "-"} &nbsp;&nbsp; <b>VOLTA:</b> ${volta || "-"}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ERP ÍMPAR — Roteiro de Viagens</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:18px;background:#0b1e4a;color:#e5e7eb}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .t1{font-size:18px;font-weight:900;letter-spacing:.3px}
+  .t2{font-size:12px;opacity:.8;margin-top:4px}
+  .meta{font-size:12px;opacity:.85;text-align:right}
+  .card{background:#102a66;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;margin:10px 0}
+  .h{font-weight:900;margin-bottom:6px}
+  .b{font-size:13px;line-height:1.35}
+  .foot{margin-top:14px;font-size:12px;opacity:.8}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="t1">ERP ÍMPAR — Roteiro de Viagens</div>
+      <div class="t2">Relatório automático das linhas marcadas como <b>VIAGEM</b> na Lista de Atividades.</div>
+    </div>
+    <div class="meta">Gerado em<br>${stamp}</div>
+  </div>
+
+  ${items || `<div class="card"><b>Nenhuma viagem marcada.</b></div>`}
+
+  <div class="foot">ERP ÍMPAR • Módulo Atividades</div>
+</body>
+</html>
+    `.trim();
+  }
+
+  // === Salva no servidor (PHP) e retorna URL
+  async function saveViagemReportOnServer(html){
+    const r = await fetch(API_VIAGEM_SAVE,{
+      method:"POST",
+      headers:{ "Content-Type":"text/plain;charset=UTF-8" },
+      body: html
+    });
+    const j = await r.json().catch(()=>null);
+    if(!r.ok || !j || j.ok!==true || !j.url) throw new Error((j && j.error) ? j.error : "Falha ao salvar relatório de viagem.");
+    return j.url;
+  }
+
+  // === Dispara WhatsApp Web (máximo de automação via web)
+  function openWhatsApps(url){
+    const txt = encodeURIComponent(buildWhatsMsg(url));
+    RH_NUMBERS.forEach((n, i)=>{
+      const link = "https://wa.me/" + n + "?text=" + txt;
+      setTimeout(()=>{ window.open(link, "_blank"); }, i*450);
+    });
+  }
+
+  // === HOOK: injeta UI via patch do newRow()
+  function patchNewRow(){
+    if(typeof window.newRow !== "function") return;
+    if(window.newRow.__patchedViagem) return;
+
+    const orig = window.newRow;
+    window.newRow = function(r){
+      const el = orig.apply(this, arguments);
+      try{ injectViagemUI(el, r || {}); }catch(e){}
+      return el;
+    };
+    window.newRow.__patchedViagem = true;
+  }
+
+  // === HOOK: depois de renderizar, garante que todas as linhas tenham a UI
+  function enhanceAllRows(){
+    const rows = qsa(document, ".row, .activity-row, [data-row]");
+    rows.forEach(r=>{
+      // tenta recuperar um "rowData" do seu draft atual se existir
+      injectViagemUI(r, {});
+    });
+  }
+
+  // === Ao gerar PDF: cria relatório das viagens e envia link no Whats
+  async function onAfterGeneratePDF(){
+    const trips = collectViagemFromDOM();
+    if(!trips.length) return; // não tem viagem marcada, vida normal
+
+    if(!validateViagemRows(trips)){
+      alertWarn && alertWarn("VIAGEM: preencha IDA e VOLTA nas linhas marcadas.", "Viagem");
+      return;
+    }
+
+    const html = buildViagemReportHTML(trips);
+
+    try{
+      // se você tiver withProcessing, usamos; senão, vai direto
+      if(typeof window.withProcessing === "function"){
+        const url = await window.withProcessing(async()=> await saveViagemReportOnServer(html),
+          "Gerando relatório de viagem…",
+          "PROCESSANDO DADOS......",
+          900
+        );
+        openWhatsApps(url);
+      }else{
+        const url = await saveViagemReportOnServer(html);
+        openWhatsApps(url);
+      }
+    }catch(e){
+      alertWarn && alertWarn("Falha ao salvar/enviar o relatório de viagem.\n\n" + (e && e.message ? e.message : e), "Viagem");
+    }
+  }
+
+  // Hook no botão "GERAR PDF"
+  function hookBtnSave(){
+    const btn = document.getElementById("btnSave");
+    if(!btn || btn.__hookViagem) return;
+
+    // CAPTURE = roda junto sem precisar mexer no teu handler atual
+    btn.addEventListener("click", ()=>{
+      // espera teu PDF abrir / salvar draft / etc
+      setTimeout(()=>{ onAfterGeneratePDF(); }, 600);
+    }, true);
+
+    btn.__hookViagem = true;
+  }
+
+  // Atualiza check de alocação quando qualquer coisa muda (sem checklist, só o teu refresh existente)
+  document.addEventListener("change", ()=>{
+    try{ window.refreshNameChecklist && window.refreshNameChecklist(); }catch(e){}
+  });
+
+  // Boot
+  function boot(){
+    patchNewRow();
+    hookBtnSave();
+    // em caso de render já pronto:
+    setTimeout(enhanceAllRows, 300);
+
+    // se suas linhas são criadas dinamicamente, observa e injeta
+    const mo = new MutationObserver(()=>{ enhanceAllRows(); hookBtnSave(); });
+    mo.observe(document.body, {childList:true, subtree:true});
+  }
+
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+
+})();
+	
 </script>
 
 
@@ -2559,7 +3050,8 @@ window.addEventListener("focus", syncNow);
     </div>
   </div>
 </div>
-
+<!-- ===== VIAGEM: input invisível para range (Flatpickr mode: range) ===== -->
+<input id="viagemRangePicker" type="text" style="position:fixed;left:-9999px;top:-9999px;opacity:0;height:0;width:0;pointer-events:none;" />
 </body>
 </html>
 
