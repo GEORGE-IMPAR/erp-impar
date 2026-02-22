@@ -2580,16 +2580,24 @@ if(hasDraftServer){
     }]
   };
 
-  try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload)); }catch(e){}
-  setLockedFinal(false);
+localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+setLockedFinal(false);
 
-  renderInitial();
-  renderHistoryServer();
+// ✅ cria o draft.json no servidor (fonte da verdade)
+try{
+  await withProcessing(async()=>{ await apiSave(payload); }, "Abrindo novo dia…", "SALVANDO RASCUNHO......", 800);
+}catch(e){
+  alertWarn("Não consegui criar o rascunho no servidor.\n\nVerifique conexão/permissões.\n\n" + (e && e.message ? e.message : ""));
+  return;
+}
 
-  // 5) Atualiza estado conforme servidor (se aparecer draft no servidor, ele puxa e renderiza)
-  await syncDraftStateFromServerOnLoad();
+renderInitial();
+renderHistoryServer();
 
-  refreshNameChecklist();
+// agora sim: servidor já tem draft, então o sync NÃO vai apagar
+await syncDraftStateFromServerOnLoad();
+
+refreshNameChecklist();
 }
 
 function renderAuditInfo(draft){
