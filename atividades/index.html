@@ -1965,6 +1965,25 @@ function newRow(pref={}){
   row._refs.selPerc.addEventListener("change", ()=>{ refreshMotivo(); refreshNameChecklist(); });
   refreshMotivo();
 
+	function userLabel(){
+  try{
+    const u = (typeof getUser === "function") ? getUser() : null;
+
+    if(!u) return "";
+
+    if(typeof u === "string") return u;
+
+    // se vier objeto, tenta os campos mais comuns
+    if(u.nome) return u.nome;
+    if(u.name) return u.name;
+    if(u.email) return u.email;
+
+    return String(u);
+  }catch(e){
+    return "";
+  }
+}
+	
   function anyChange(){
     // AUTO regras: Obra = FÉRIAS/FALTA => Atividade = mesma, Percentual = 0%, Carro não obrigatório
     try{
@@ -2336,12 +2355,12 @@ async function gerarPDF(){
   }
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
   payload.meta = payload.meta || {};
-  payload.meta.last_pdf_by = (getUser && getUser()) ? getUser() : (payload.usuario || "");
+  payload.meta.last_pdf_by = userLabel();
   payload.meta.last_pdf_at = new Date().toISOString();
 
 // salva o draft atualizado no servidor (pra todo mundo ver)
 payload.meta = payload.meta || {};
-payload.meta.last_pdf_by = getUser();
+payload.meta.last_pdf_by = userLabel();
 payload.meta.last_pdf_at = new Date().toISOString();
 
 try{
@@ -2409,13 +2428,35 @@ try{
   alertWarn("Finalizado localmente, mas não consegui salvar no servidor.\n\n" + (e && e.message ? e.message : "Verifique o caminho dos PHPs e permissões."), "Servidor (KingHost)");
 }
 payload.meta = payload.meta || {};
-payload.meta.last_close_by = getUser();
+payload.meta.last_close_by = userLabel();
 payload.meta.last_close_at = new Date().toISOString();
 	
 // garante que o histórico recebe isso também
 // (se seu histórico usa outro payload, copie payload.meta junto)	
-await draftServerClear();
 await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
+// ✅ salva histórico (você já faz isso acima)
+// ...
+
+// ✅ tenta apagar draft no servidor e CONFIRMA
+let clearResp = null;
+try{
+  clearResp = await draftServerClear();
+}catch(e){
+  alertWarn("Histórico salvo, mas FALHOU ao apagar o draft.json no servidor.\n\n" + (e.message || e), "ERRO (Draft)");
+  return; // 🔥 para aqui para não criar bagunça
+}
+
+if(!clearResp || clearResp.ok !== true){
+  alertWarn("Histórico salvo, mas o servidor NÃO confirmou a remoção do draft.json.", "ERRO (Draft)");
+  return;
+}
+
+// ✅ limpa local também (sempre)
+try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
+
+// ✅ força sync (pra desktop refletir na hora)
+await syncDraftStateFromServerOnLoad();
+
 openPrintWindow(payload);
 
 // ✅ NÃO cria novo dia automaticamente.
@@ -2524,6 +2565,7 @@ async function syncDraftStateFromServerOnLoad(){
     try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft)); }catch(e){}
     setLockedFinal(false); // existe draft -> trava "Novo dia"
     renderInitial();
+	renderAuditInfo(serverDraft || loadLast());  
     refreshNameChecklist();
     renderHistoryServer();
     return;
@@ -2714,6 +2756,7 @@ document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{ window.
 const histDateEl = document.getElementById("histDate");
 if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
 (async ()=>{ await syncDraftStateFromServerOnLoad(); })();
+renderAuditInfo(loadLast());	
 if(btnNewDay) btnNewDay.addEventListener("click", newDay);
 
 </script>
