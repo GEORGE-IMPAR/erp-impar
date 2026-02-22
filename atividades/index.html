@@ -1147,6 +1147,35 @@ body{opacity:1 !important;}
   /* Toque no celular (evita zoom e melhora usabilidade) */
   select, input, textarea{ font-size:16px !important; }
 }	  
+.audit{
+  margin-top:8px;
+  font-size:12px;
+  opacity:.85;
+  color:#cbd5e1; /* cinza claro */
+  line-height:1.25;
+}
+.audit b{ color:#e5e7eb; font-weight:700; }	  
+
+.btnBlock{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+.audit{
+  margin-top:4px;
+  font-size:11px;
+  color:#cbd5e1;
+  opacity:.9;
+  text-align:center;
+  line-height:1.2;
+}
+
+.audit b{
+  color:#ffffff;
+  font-weight:600;
+}
+	  
 </style>
 
 </head>
@@ -1216,13 +1245,31 @@ body{opacity:1 !important;}
 
           <div id="rows" class="rows"></div>
 
-          <div class="actions">
-            <button class="btn btn-secondary" id="btnAdd" type="button">➕ ADICIONAR LINHA</button>
-            <button class="btn btn-primary" id="btnSave" type="button">🖨️ GERAR PDF (IMPRIMIR)</button>
-            <button class="btn btn-primary" id="btnFinalize" type="button">✅ FINALIZAR (HISTÓRICO)</button>
-          <button class="btn btn-secondary" id="btnNewDay" type="button">🗓️ Novo dia</button>
-          </div>
+<div class="actions">
 
+  <button class="btn btn-secondary" id="btnAdd" type="button">
+    ➕ ADICIONAR LINHA
+  </button>
+
+  <div class="btnBlock">
+    <button class="btn btn-primary" id="btnSave" type="button">
+      🖨️ GERAR PDF (IMPRIMIR)
+    </button>
+    <div id="auditPdfInfo" class="audit"></div>
+  </div>
+
+  <div class="btnBlock">
+    <button class="btn btn-primary" id="btnFinalize" type="button">
+      ✅ FINALIZAR (HISTÓRICO)
+    </button>
+    <div id="auditCloseInfo" class="audit"></div>
+  </div>
+
+  <button class="btn btn-secondary" id="btnNewDay" type="button">
+    🗓️ Novo dia
+  </button>
+
+</div>
           <div class="hist card">
             <div class="hist-top">
               <div>
@@ -2288,6 +2335,18 @@ async function gerarPDF(){
     return;
   }
   localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+  payload.meta = payload.meta || {};
+  payload.meta.last_pdf_by = (getUser && getUser()) ? getUser() : (payload.usuario || "");
+  payload.meta.last_pdf_at = new Date().toISOString();
+
+// salva o draft atualizado no servidor (pra todo mundo ver)
+payload.meta = payload.meta || {};
+payload.meta.last_pdf_by = getUser();
+payload.meta.last_pdf_at = new Date().toISOString();
+
+try{
+  await apiSave(payload); // salva no servidor
+}catch(e){}
   await draftServerSave(payload);
   await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
   openPrintWindow(payload);
@@ -2349,6 +2408,12 @@ try{
 }catch(e){
   alertWarn("Finalizado localmente, mas não consegui salvar no servidor.\n\n" + (e && e.message ? e.message : "Verifique o caminho dos PHPs e permissões."), "Servidor (KingHost)");
 }
+payload.meta = payload.meta || {};
+payload.meta.last_close_by = getUser();
+payload.meta.last_close_at = new Date().toISOString();
+	
+// garante que o histórico recebe isso também
+// (se seu histórico usa outro payload, copie payload.meta junto)	
 await draftServerClear();
 await withProcessing(async()=>{}, "Gerando relatório e fechando o dia…", "PROCESSANDO DADOS......", 1200);
 openPrintWindow(payload);
@@ -2464,15 +2529,17 @@ async function syncDraftStateFromServerOnLoad(){
     return;
   }
 
-  // ❌ servidor sem rascunho (ou erro): recria rascunho local com PRÓXIMO DIA ÚTIL
-  try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-  const payload = makeDefaultDraft();
-  try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload)); }catch(e){}
+// ✅ servidor sem rascunho → NÃO cria nada automaticamente
+try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
 
-  setLockedFinal(true); // sem draft -> libera "Novo dia"
-  renderInitial();
-  refreshNameChecklist();
-  renderHistoryServer();
+// estado correto: nenhum dia aberto
+setLockedFinal(true);
+
+// limpa tela (Novo Dia será responsável por criar)
+rowsEl.innerHTML = "";
+
+refreshNameChecklist();
+renderHistoryServer();
 }
 
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
@@ -2522,16 +2589,104 @@ async function newDay(){
 
   refreshNameChecklist();
 }
+
+function renderAuditInfo(draft){
+  var el = document.getElementById("auditInfo");
+  if(!el) return;
+
+  var m = (draft && draft.meta) ? draft.meta : null;
+  if(!m){
+    el.innerHTML = "";
+    return;
+  }
+
+  function fmt(iso){
+    if(!iso) return "";
+    try{
+      var d = new Date(iso);
+      return d.toLocaleString("pt-BR");
+    }catch(e){ return iso; }
+  }
+
+  var linhas = [];
+
+  if(m.last_pdf_by || m.last_pdf_at){
+    linhas.push(
+      "Último PDF: <b>" +
+      (m.last_pdf_by || "—") +
+      "</b>" +
+      (m.last_pdf_at ? " • " + fmt(m.last_pdf_at) : "")
+    );
+  }
+
+  if(m.last_close_by || m.last_close_at){
+    linhas.push(
+      "Último fechamento: <b>" +
+      (m.last_close_by || "—") +
+      "</b>" +
+      (m.last_close_at ? " • " + fmt(m.last_close_at) : "")
+    );
+  }
+
+  el.innerHTML = linhas.join("<br>");
+}	
+	
 function renderInitial(){
   rowsEl.innerHTML="";
   last = loadLast();
+
   if(last && Array.isArray(last.rows) && last.rows.length){
     last.rows.forEach(r=>rowsEl.appendChild(newRow(r)));
-  }else{
-    // ✅ sem rascunho: deixa vazio (Novo Dia é quem cria)
-    // (se quiser, aqui você pode mostrar um texto “Clique em Novo Dia”)
   }
 
+  renderAuditInfo(last); // ✅ adiciona esta linha
+}
+
+/* =========================================================
+   AUDITORIA — PDF e FECHAMENTO
+========================================================= */
+
+function formatAuditDate(iso){
+  if(!iso) return "";
+  try{
+    return new Date(iso).toLocaleString("pt-BR");
+  }catch(e){
+    return iso;
+  }
+}
+
+function renderAuditInfo(draft){
+
+  const pdfEl   = document.getElementById("auditPdfInfo");
+  const closeEl = document.getElementById("auditCloseInfo");
+
+  if(!pdfEl || !closeEl) return;
+
+  const meta = draft && draft.meta ? draft.meta : {};
+
+  // PDF
+  if(meta.last_pdf_by){
+    pdfEl.innerHTML =
+      "Último PDF: <b>" +
+      meta.last_pdf_by +
+      "</b><br>" +
+      formatAuditDate(meta.last_pdf_at);
+  }else{
+    pdfEl.innerHTML = "";
+  }
+
+  // FECHAMENTO
+  if(meta.last_close_by){
+    closeEl.innerHTML =
+      "Último fechamento: <b>" +
+      meta.last_close_by +
+      "</b><br>" +
+      formatAuditDate(meta.last_close_at);
+  }else{
+    closeEl.innerHTML = "";
+  }
+}
+	
   refreshNameChecklist();
   // Histórico: sempre do servidor (KingHost)
 
