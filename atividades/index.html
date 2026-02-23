@@ -1370,6 +1370,13 @@ body{opacity:1 !important;}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+window.onerror = function(msg, src, line, col, err){
+  alert("ERRO JS: " + msg + "\nlinha: " + line + ":" + col);
+};
+window.onunhandledrejection = function(ev){
+  alert("PROMISE ERRO: " + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason));
+};
+console.log("SCRIPT OK: carregou");	
 window.addEventListener("error", function(ev){
   try{
     const msg = (ev && ev.message) ? ev.message : "Erro JS";
@@ -2168,7 +2175,11 @@ row.innerHTML = `
   });
 
   // ✅ ativa UI de viagem nesta linha
-  wireViagemUI(row, pref);
+  try{
+  if(typeof wireViagemUI === "function") wireViagemUI(row, pref);
+     }catch(e){
+     console.warn("VIAGEM travou wireViagemUI:", e);
+  }
 
   return row;
 }
@@ -2776,39 +2787,46 @@ function wireViagemUI(cardEl, rowObj){
     if(rowObj.volta) volEl.value = rowObj.volta;
   }
 
-  const pt = (window.flatpickr && flatpickr.l10ns && flatpickr.l10ns.pt) ? flatpickr.l10ns.pt : undefined;
+let fp = null;
+try{
+  const loc = (window.flatpickr && flatpickr.l10ns && (flatpickr.l10ns.pt || flatpickr.l10ns["pt"] || flatpickr.l10ns.default)) || undefined;
 
-  const fp = flatpickr(rngEl, {
+  fp = flatpickr(rngEl, {
     mode: "range",
     dateFormat: "d/m/Y",
     allowInput: false,
-    locale: pt,
+    locale: loc, // ✅ seguro
     onChange: function(selectedDates){
       const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
       const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
-
       idaEl.value = ida;
       volEl.value = vol;
 
+      // salva no objeto da linha
       if(rowObj){
         rowObj.ida = ida;
         rowObj.volta = vol;
         rowObj.viagem = !!chk.checked;
       }
-
+    }
+  });
+}catch(e){
+  console.warn("flatpickr falhou (segue sem range):", e);
+}
       try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
     }
   });
 
-  function openRangePicker(){
-    const cur = [];
-    if(idaEl.value) cur.push(idaEl.value);
-    if(volEl.value) cur.push(volEl.value);
-    if(cur.length){
-      try{ fp.setDate(cur, true, "d/m/Y"); }catch(e){}
-    }
-    fp.open();
+function openRangePicker(){
+  if(!fp) return; // ✅ se flatpickr não existe, não quebra
+  const cur = [];
+  if(idaEl.value) cur.push(idaEl.value);
+  if(volEl.value) cur.push(volEl.value);
+  if(cur.length){
+    try{ fp.setDate(cur, true, "d/m/Y"); }catch(e){}
   }
+  fp.open();
+}
 
   idaEl.addEventListener("click", openRangePicker);
   volEl.addEventListener("click", openRangePicker);
