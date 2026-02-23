@@ -1974,7 +1974,9 @@ function newRow(pref = {}){
 
     <div class="row-line2">
       <div></div>
-      <div><textarea class="txt-ativ long" placeholder="Descreva a atividade do dia…">${escapeHtml(pref.atividades || "")}</textarea></div>
+      <div>
+        <textarea class="txt-ativ long" placeholder="Descreva a atividade do dia…">${escapeHtml(pref.atividades || "")}</textarea>
+      </div>
       <div><select class="sel-perc">${optList(LIST_PERC,"Percentual (%)")}</select></div>
       <div><select class="sel-carro">${optList(LIST_CARRO,"Placa")}</select></div>
 
@@ -1983,13 +1985,37 @@ function newRow(pref = {}){
       </div>
     </div>
 
-    <!-- ✅ LINHA 3: VIAGEM (embaixo de Percentual/Placa) -->
+    <!-- ✅ NOVA LINHA: VIAGEM (embaixo de Percentual/Placa) -->
     <div class="row-line3">
       <div></div>
       <div></div>
 
-      <!-- slot onde o wireViagemUI vai montar check + data -->
-      <div class="viagem-slot" style="grid-column: 3 / 5;"></div>
+      <!-- slot onde a UI de viagem fica -->
+      <div class="viagem-slot" style="grid-column: 3 / 5;">
+        <div class="viagem-wrap">
+          <div class="viagem-badge">
+            <input type="checkbox" class="chk-viagem">
+            <span class="lbl">VIAGEM</span>
+          </div>
+
+          <div class="viagem-datas viagem-fields">
+            <div class="viagem-field" style="display:none;">
+              <label>Range</label>
+              <input type="text" class="in-range" readonly placeholder="Selecionar datas">
+            </div>
+
+            <div class="viagem-field">
+              <label>Ida</label>
+              <input type="text" class="in-ida" readonly placeholder="dd/mm/aaaa">
+            </div>
+
+            <div class="viagem-field">
+              <label>Volta</label>
+              <input type="text" class="in-volta" readonly placeholder="dd/mm/aaaa">
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div></div>
     </div>
@@ -2015,12 +2041,9 @@ function newRow(pref = {}){
     txtAtiv: row.querySelector(".txt-ativ"),
     txtMot: row.querySelector(".txt-mot"),
     motWrap: row.querySelector(".motivo-wrap"),
-    // ✅ refs de viagem (preenchidas pelo wireViagemUI)
-    viagemChk: null,
-    viagemDate: null,
   };
 
-  // defaults do pref
+  // aplica defaults do pref
   row._refs.selCarro.value = pref.carro || "";
   row._refs.selPerc.value  = pref.percentual || "";
 
@@ -2037,7 +2060,7 @@ function newRow(pref = {}){
     refreshNameChecklist();
   });
   refreshMotivo();
-}
+
   function anyChange(){
     try{
       const vRaw = ((row._refs.multiObras && row._refs.multiObras._multi && row._refs.multiObras._multi.get()[0]) || "").trim();
@@ -2124,68 +2147,43 @@ function newRow(pref = {}){
     refreshNameChecklist();
   });
 
-  // ✅ ATIVA A UI DE VIAGEM NA LINHA (check + data)
-  wireViagemUI(row, pref);
-
-  return row;
-
-    // ✅ sempre valida e atualiza checklist (não só no catch)
-    validateRow(row, "draft");
-    refreshNameChecklist();
-  }
-
-  // mudanças nos multi-selects
-  row._refs.multiNomes._multi.onChange(()=>{
-    try{ autoPlacaFromMulti(row); }catch(e){}
-    anyChange();
-  });
-
-  if(row._refs.multiObras && row._refs.multiObras._multi){
-    row._refs.multiObras._multi.onChange(()=> anyChange());
-  }
-
-  // eventos gerais
-  [row._refs.inpDate, row._refs.selCarro, row._refs.selPerc, row._refs.txtAtiv, row._refs.txtMot]
-    .filter(Boolean)
-    .forEach(el=>{
-      el.addEventListener("change", anyChange);
-      el.addEventListener("blur", anyChange);
-      el.addEventListener("input", anyChange);
-    });
-
-  row._refs.btnDel.addEventListener("click", ()=>{
-    if(rowsEl.querySelectorAll(".row").length <= 1){
-      alertWarn("Deve existir pelo menos 1 linha.");
-      return;
-    }
-    row.remove();
-    refreshNameChecklist();
-  });
-
-  // ✅ ativa UI de viagem nesta linha (usa row + pref)
+  // ✅ ativa UI de viagem nesta linha
   wireViagemUI(row, pref);
 
   return row;
 }
-function getRowData(row){
-  const r=row._refs;
-  const nomes=r.multiNomes._multi.get();
+  function getRowData(row){
+  const r = row._refs;
+  const nomes = r.multiNomes._multi.get();
+
+  // obra(s)
+  const obrasArr = r.multiObras ? r.multiObras._multi.get() : [];
+  const obraStr = (obrasArr && obrasArr.length) ? obrasArr.join(" + ") : "";
+
+  // viagem (se existir)
+  const chk = row.querySelector(".chk-viagem");
+  const ida = row.querySelector(".in-ida");
+  const vol = row.querySelector(".in-volta");
+
   return {
     id: row.dataset.rowId,
     data: r.inpDate.value || "",
     nomes,
     nome: nomes.join(" + "),
-    obra: (r.multiObras ? (r.multiObras._multi.get().join(' + ')) : '') || "",
-    obras: (r.multiObras ? r.multiObras._multi.get() : []),
-    motivo: r.txtMot.value || "",
-    viagem: !!(r.viagemChk && r.viagemChk.checked),
-    viagemData: (r.viagemDate && r.viagemDate.value) ? r.viagemDate.value : "",
-	carro: r.selCarro.value || "",
+    obra: obraStr,
+    obras: obrasArr,
+
+    carro: r.selCarro.value || "",
     atividades: r.txtAtiv.value || "",
     percentual: r.selPerc.value || "",
-    motivo: r.txtMot.value || ""
+    motivo: r.txtMot.value || "",
+
+    // ✅ viagem
+    viagem: chk ? !!chk.checked : false,
+    ida: ida ? (ida.value || "") : "",
+    volta: vol ? (vol.value || "") : ""
   };
- 
+} 
 
 function validateRow(row, mode="draft"){
   const r=row._refs;
