@@ -1370,6 +1370,22 @@ body{opacity:1 !important;}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+window.addEventListener("error", function(ev){
+  try{
+    const msg = (ev && ev.message) ? ev.message : "Erro JS";
+    const src = (ev && ev.filename) ? ev.filename.split("/").pop() : "";
+    const line = (ev && ev.lineno) ? ev.lineno : "";
+    alert("ERRO NA TELA:\n" + msg + "\n" + src + ":" + line);
+  }catch(e){}
+});
+
+window.addEventListener("unhandledrejection", function(ev){
+  try{
+    const msg = (ev && ev.reason && ev.reason.message) ? ev.reason.message : String(ev.reason || "Promise rejeitada");
+    alert("ERRO (Promise):\n" + msg);
+  }catch(e){}
+});
+	
 function showPageLoader(title, sub){
   const el=document.getElementById("pageLoader"); if(!el) return;
   el.querySelector(".loader-title").textContent = title || "Processando…";
@@ -1512,13 +1528,17 @@ async function apiSave(payload){
 }
 
 async function apiList(){
-  const r = await fetch(API_LIST, { method:"GET" });
-  const j = await r.json().catch(()=>null);
-  if(!r.ok || !j || j.ok !== true) return [];
-  const data = j.items || j.data || [];
-  return Array.isArray(data) ? data : [];
+  try{
+    const r = await fetch(API_LIST, { method:"GET" });
+    if(!r.ok) return [];
+    const j = await r.json().catch(()=>null);
+    if(!j || j.ok !== true) return [];
+    const data = j.items || j.data || [];
+    return Array.isArray(data) ? data : [];
+  }catch(e){
+    return [];
+  }
 }
-
 async function apiGet(id){
   const url = API_GET + "?id=" + encodeURIComponent(id);
   const r = await fetch(url, { method:"GET" });
@@ -1539,13 +1559,14 @@ async function draftServerSave(payload){
 }
 async function draftServerLoad(){
   try{
-    const url = API_DRAFT_GET + "?t=" + Date.now();   // cache-buster
-    const r = await fetch(url, { cache: "no-store" }); // sem cache
+    const url = API_DRAFT_GET + "?t=" + Date.now();
+    const r = await fetch(url, { cache:"no-store" });
+    if(!r.ok) return null;
     const j = await r.json().catch(()=>null);
     if(j && j.ok && j.data) return j.data;
   }catch(e){}
   return null;
-}
+}	
 	
 async function draftServerClear(){
   const r = await fetch(API_DRAFT_CLEAR + "?t=" + Date.now(), { method:"POST", headers:{"Content-Type":"text/plain;charset=UTF-8"}, body:"{}" });
@@ -2608,11 +2629,21 @@ function renderInitial(){
 }
 	
 
-btnAdd.addEventListener("click", ()=>{ rowsEl.appendChild(newRow({data:nextBusinessDayStr()})); refreshNameChecklist(); });
-btnSave.addEventListener("click", gerarPDF);
-btnFinalize.addEventListener("click", finalizeDay);
-document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{ window.location.href="/menu.html"; });
+if(btnAdd) btnAdd.addEventListener("click", ()=>{
+  rowsEl.appendChild(newRow({data:nextBusinessDayStr()}));
+  refreshNameChecklist();
+});
+
+if(btnSave) btnSave.addEventListener("click", gerarPDF);
+if(btnFinalize) btnFinalize.addEventListener("click", finalizeDay);
+
+const btnVoltar = document.getElementById("btnVoltarMenu");
+if(btnVoltar) btnVoltar.addEventListener("click", ()=>{ window.location.href="/menu.html"; });
+
 const histDateEl = document.getElementById("histDate");
+if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
+
+if(btnNewDay) btnNewDay.addEventListener("click", newDay);const histDateEl = document.getElementById("histDate");
 if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
 if(btnNewDay) btnNewDay.addEventListener("click", newDay);
 
