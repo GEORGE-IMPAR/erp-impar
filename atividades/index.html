@@ -1,4 +1,64 @@
-<!DOCTYPE html>
+let fp = null;
+
+try{
+  const loc = (window.flatpickr && flatpickr.l10ns && (flatpickr.l10ns.pt || flatpickr.l10ns["pt"] || flatpickr.l10ns.default)) || undefined;
+
+  fp = flatpickr(rngEl, {
+    mode: "range",
+    dateFormat: "d/m/Y",
+    allowInput: false,
+    locale: loc, // ✅ seguro
+    onChange: function(selectedDates){
+      const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
+      const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
+
+      idaEl.value = ida;
+      volEl.value = vol;
+
+      if(rowObj){
+        rowObj.ida = ida;
+        rowObj.volta = vol;
+        rowObj.viagem = !!chk.checked;
+      }
+
+      try{ if(typeof scheduleDraftSave === "function") scheduleDraftSave(); }catch(e){}
+    }
+  });
+}catch(e){
+  console.warn("flatpickr falhou (segue sem range):", e);
+}
+
+function openRangePicker(){
+  if(!fp) return; // ✅ se flatpickr não existe, não quebra
+  const cur = [];
+  if(idaEl.value) cur.push(idaEl.value);
+  if(volEl.value) cur.push(volEl.value);
+  if(cur.length){
+    try{ fp.setDate(cur, true, "d/m/Y"); }catch(e){}
+  }
+  fp.open();
+}
+
+idaEl.addEventListener("click", openRangePicker);
+volEl.addEventListener("click", openRangePicker);
+
+chk.addEventListener("change", function(){
+  const on = chk.checked;
+  box.classList.toggle("on", on);
+
+  if(rowObj){
+    rowObj.viagem = on;
+    if(!on){
+      rowObj.ida = "";
+      rowObj.volta = "";
+      idaEl.value = "";
+      volEl.value = "";
+      try{ if(fp) fp.clear(); }catch(e){}
+    }
+  }
+
+  try{ if(typeof scheduleDraftSave === "function") scheduleDraftSave(); }catch(e){}
+});<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"/>
@@ -2766,18 +2826,20 @@ function dateToBR(d){
 
 /* Chame isso no final do newRow(row) depois de montar o DOM do card */
 function wireViagemUI(cardEl, rowObj){
-  // ✅ PRIMEIRA COISA DA FUNÇÃO
+
+  // pega os elementos DENTRO do slot da linha
   const slot = cardEl.querySelector(".viagem-slot");
   if(!slot) return;
 
-  const chk   = cardEl.querySelector(".chk-viagem");
-  const box   = cardEl.querySelector(".viagem-fields");
-  const idaEl = cardEl.querySelector(".in-ida");
-  const volEl = cardEl.querySelector(".in-volta");
-  const rngEl = cardEl.querySelector(".in-range");
+  const chk   = slot.querySelector(".chk-viagem");
+  const box   = slot.querySelector(".viagem-fields");
+  const idaEl = slot.querySelector(".in-ida");
+  const volEl = slot.querySelector(".in-volta");
+  const rngEl = slot.querySelector(".in-range");
 
   if(!chk || !box || !idaEl || !volEl || !rngEl) return;
 
+  // estado inicial
   const has = !!(rowObj && rowObj.viagem);
   chk.checked = has;
   box.classList.toggle("on", has);
@@ -2787,77 +2849,36 @@ function wireViagemUI(cardEl, rowObj){
     if(rowObj.volta) volEl.value = rowObj.volta;
   }
 
-let fp = null;
-try{
-  const loc = (window.flatpickr && flatpickr.l10ns && (flatpickr.l10ns.pt || flatpickr.l10ns["pt"] || flatpickr.l10ns.default)) || undefined;
+  // locale pt-BR seguro (se não tiver, não quebra)
+  const loc = (flatpickr && flatpickr.l10ns && flatpickr.l10ns.pt) ? flatpickr.l10ns.pt : undefined;
 
-  fp = flatpickr(rngEl, {
-    mode: "range",
-    dateFormat: "d/m/Y",
-    allowInput: false,
-    locale: loc, // ✅ seguro
-    onChange: function(selectedDates){
-      const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
-      const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
-      idaEl.value = ida;
-      volEl.value = vol;
-
-      // salva no objeto da linha
-      if(rowObj){
-        rowObj.ida = ida;
-        rowObj.volta = vol;
-        rowObj.viagem = !!chk.checked;
-      }
-    }
-  });
-}catch(e){
-  console.warn("flatpickr falhou (segue sem range):", e);
-}
-      try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
-    }
-  });
-
-function openRangePicker(){
-  if(!fp) return; // ✅ se flatpickr não existe, não quebra
-  const cur = [];
-  if(idaEl.value) cur.push(idaEl.value);
-  if(volEl.value) cur.push(volEl.value);
-  if(cur.length){
-    try{ fp.setDate(cur, true, "d/m/Y"); }catch(e){}
-  }
-  fp.open();
-}
-
-  idaEl.addEventListener("click", openRangePicker);
-  volEl.addEventListener("click", openRangePicker);
-
-  chk.addEventListener("change", ()=>{
-    const on = chk.checked;
-    box.classList.toggle("on", on);
-
-    if(rowObj){
-      rowObj.viagem = on;
-      if(!on){
-        rowObj.ida = "";
-        rowObj.volta = "";
-        idaEl.value = "";
-        volEl.value = "";
-        try{ fp.clear(); }catch(e){}
-      }
-    }
-
-    try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
-  });
-}
-  // guarda refs (opcional, mas ajuda)
+  let fp = null;
   try{
-    cardEl._refs = cardEl._refs || {};
-    cardEl._refs.viagemChk = chk;
-    cardEl._refs.viagemDate = dateEl;
-  }catch(e){}
+    fp = flatpickr(rngEl, {
+      mode: "range",
+      dateFormat: "d/m/Y",
+      allowInput: false,
+      locale: loc,
+      onChange: function(selectedDates){
+        const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
+        const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
+
+        idaEl.value = ida;
+        volEl.value = vol;
+
+        if(rowObj){
+          rowObj.ida = ida;
+          rowObj.volta = vol;
+          rowObj.viagem = !!chk.checked;
+        }
+      }
+    });
+  }catch(e){
+    fp = null; // segue sem range
+  }
 
   function openRangePicker(){
-    // se já tem ida/volta, pré-carrega no range
+    if(!fp) return;
     const cur = [];
     if(idaEl.value) cur.push(idaEl.value);
     if(volEl.value) cur.push(volEl.value);
@@ -2881,14 +2902,12 @@ function openRangePicker(){
         rowObj.volta = "";
         idaEl.value = "";
         volEl.value = "";
-        try{ fp.clear(); }catch(e){}
+        try{ fp && fp.clear(); }catch(e){}
       }
     }
-
-    try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
   });
 }
-
+ 
 /* IMPORTANTÍSSIMO:
    dentro do seu newRow(r) / criação do card, você tem que chamar:
    wireViagemUI(card, r);
