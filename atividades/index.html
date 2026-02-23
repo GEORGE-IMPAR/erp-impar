@@ -2729,46 +2729,63 @@ function dateToBR(d){
 
 /* Chame isso no final do newRow(row) depois de montar o DOM do card */
 function wireViagemUI(cardEl, rowObj){
-  // ✅ slot onde vamos montar a UI
+  // ✅ PRIMEIRA COISA DA FUNÇÃO
   const slot = cardEl.querySelector(".viagem-slot");
   if(!slot) return;
 
-  // monta o HTML da viagem dentro do slot
-  slot.innerHTML = `
-    <div class="viagem-wrap">
-      <label class="viagem-badge" style="cursor:pointer;">
-        <input type="checkbox" class="chk-viagem" />
-        <span class="lbl">VIAGEM</span>
-      </label>
+  const chk   = cardEl.querySelector(".chk-viagem");
+  const box   = cardEl.querySelector(".viagem-fields");
+  const idaEl = cardEl.querySelector(".in-ida");
+  const volEl = cardEl.querySelector(".in-volta");
+  const rngEl = cardEl.querySelector(".in-range");
 
-      <div class="viagem-datas viagem-fields">
-        <div class="viagem-field">
-          <label>Data</label>
-          <input type="text" class="in-viagem-date" placeholder="dd/mm/aaaa" readonly />
-        </div>
-      </div>
-    </div>
-  `;
+  if(!chk || !box || !idaEl || !volEl || !rngEl) return;
 
-  const chk   = slot.querySelector(".chk-viagem");
-  const box   = slot.querySelector(".viagem-fields");
-  const dateEl = slot.querySelector(".in-viagem-date");
-  if(!chk || !box || !dateEl) return;
-
-  // estado inicial (se vier do pref)
   const has = !!(rowObj && rowObj.viagem);
   chk.checked = has;
   box.classList.toggle("on", has);
 
-  if(rowObj && rowObj.viagemData) dateEl.value = rowObj.viagemData;
+  if(rowObj){
+    if(rowObj.ida)   idaEl.value = rowObj.ida;
+    if(rowObj.volta) volEl.value = rowObj.volta;
+  }
 
-  // flatpickr (data única)
-  const fp = flatpickr(dateEl, {
+  const pt = (window.flatpickr && flatpickr.l10ns && flatpickr.l10ns.pt) ? flatpickr.l10ns.pt : undefined;
+
+  const fp = flatpickr(rngEl, {
+    mode: "range",
     dateFormat: "d/m/Y",
     allowInput: false,
-    locale: "pt",
-    clickOpens: true
+    locale: pt,
+    onChange: function(selectedDates){
+      const ida = selectedDates && selectedDates[0] ? dateToBR(selectedDates[0]) : "";
+      const vol = selectedDates && selectedDates[1] ? dateToBR(selectedDates[1]) : "";
+
+      idaEl.value = ida;
+      volEl.value = vol;
+
+      if(rowObj){
+        rowObj.ida = ida;
+        rowObj.volta = vol;
+        rowObj.viagem = !!chk.checked;
+      }
+
+      try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
+    }
   });
+
+  function openRangePicker(){
+    const cur = [];
+    if(idaEl.value) cur.push(idaEl.value);
+    if(volEl.value) cur.push(volEl.value);
+    if(cur.length){
+      try{ fp.setDate(cur, true, "d/m/Y"); }catch(e){}
+    }
+    fp.open();
+  }
+
+  idaEl.addEventListener("click", openRangePicker);
+  volEl.addEventListener("click", openRangePicker);
 
   chk.addEventListener("change", ()=>{
     const on = chk.checked;
@@ -2777,16 +2794,17 @@ function wireViagemUI(cardEl, rowObj){
     if(rowObj){
       rowObj.viagem = on;
       if(!on){
-        rowObj.viagemData = "";
-        dateEl.value = "";
+        rowObj.ida = "";
+        rowObj.volta = "";
+        idaEl.value = "";
+        volEl.value = "";
         try{ fp.clear(); }catch(e){}
       }
     }
 
-    // se você tiver alguma rotina de salvar draft ao mexer, chama aqui
     try{ scheduleDraftSave && scheduleDraftSave(); }catch(e){}
   });
-
+}
   dateEl.addEventListener("change", ()=>{
     if(rowObj){
       rowObj.viagem = !!chk.checked;
