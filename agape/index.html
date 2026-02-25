@@ -752,10 +752,10 @@
 
 .msgBadge.hidden{ display:none !important; }
 
-/* ==========================
+// ==========================
    ADMIN (tela completa) - CSS
    Cole no FINAL do seu <style>
-   ========================== */
+// ==========================
 #scr_admin .cardTitleRow{
   display:flex;
   align-items:center;
@@ -919,10 +919,10 @@
   overflow:auto;
 }
 
- /* ==========================
+// ==========================
    ADMIN ONLINE (UI PREMIUM)
    cole no FINAL do <style>
-   ========================== */
+// ==========================
 .adminWrap{
   width:100%;
   max-width:420px;
@@ -1092,7 +1092,7 @@
 .sheetRow:last-child{border-bottom:none;}
    
 
-/* ===================================================================
+// ==========================
    🎨 ADMIN PANEL - DESIGN MODERNO (teste.html + v16)
    =================================================================== */
 
@@ -1688,12 +1688,14 @@ button.adminBtnConfirm:hover {
 </section>
  
 <script>
-/* ==========================
-   CONFIG / HELPERS
+// ==========================
+// CONFIG / HELPERS
 
   const CONFIG_URL_BASE = "https://api.erpimpar.com.br/agape/consumo/agape_config.json";
+const CONFIG_STATIC_URL = "./agape_config.json"; // só imagens (GitHub/WWW)
+
   function configUrlNoCache(){ return CONFIG_URL_BASE + "?v=" + Date.now(); }
-========================== */
+// ==========================
 const LS_CART  = "agape_cart_v14";
 const LS_USER  = "agape_user_v14";
 const LS_CASH = "agape_cash_v1";
@@ -1770,18 +1772,64 @@ function showScreen(id, dir="forward"){
 }
 
 async function loadConfig(){
-  const r=await fetch(configUrlNoCache(), { cache: "no-store",  cache: "no-store" });
-  if(!r.ok) throw new Error("config");
-  return await r.json();
+  // 1) DADOS DINÂMICOS (KingHost) — sessão, pix, irmãos, push, valores etc.
+  const url = configUrlNoCache(); // KingHost + cache-buster
+  let cfgDynamic = null;
+
+  const r = await fetch(url, { cache: "no-store" });
+  if(!r.ok) throw new Error("Falha ao carregar config dinâmico: HTTP " + r.status);
+  cfgDynamic = await r.json();
+
+  // 2) IMAGENS/ASSETS (WWW/GitHub) — somente paths estáticos
+  //    Se falhar, seguimos só com o dinâmico.
+  let cfgStatic = null;
+  try{
+    const rs = await fetch(CONFIG_STATIC_URL + "?v=" + Date.now(), { cache: "no-store" });
+    if(rs.ok) cfgStatic = await rs.json();
+  }catch(e){ /* ignore */ }
+
+  if(cfgStatic){
+    // Loja / Pix (imagens)
+    if(cfgStatic.loja){
+      cfgDynamic.loja = cfgDynamic.loja || {};
+      if(cfgStatic.loja.logo) cfgDynamic.loja.logo = cfgStatic.loja.logo;
+      if(cfgStatic.loja.logo_url) cfgDynamic.loja.logo_url = cfgStatic.loja.logo_url;
+      if(cfgStatic.loja.pix_logo_url) cfgDynamic.loja.pix_logo_url = cfgStatic.loja.pix_logo_url;
+    }
+
+    // UI (se existir)
+    if(cfgStatic.ui){
+      cfgDynamic.ui = cfgDynamic.ui || {};
+      // merge raso
+      for(const k in cfgStatic.ui){
+        if(cfgStatic.ui[k] != null) cfgDynamic.ui[k] = cfgStatic.ui[k];
+      }
+    }
+
+    // Produtos (ícones/imagens)
+    if(Array.isArray(cfgStatic.produtos) && Array.isArray(cfgDynamic.produtos)){
+      const map = {};
+      cfgStatic.produtos.forEach(p => { if(p && p.id) map[p.id] = p; });
+      cfgDynamic.produtos.forEach(p => {
+        const s = (p && p.id) ? map[p.id] : null;
+        if(s){
+          if(s.icon) p.icon = s.icon;
+          if(s.img) p.img = s.img;
+        }
+      });
+    }
+  }
+
+  return cfgDynamic;
 }
 
 function sessionIsOpen(){
   return (CFG?.sessao?.status||"").toLowerCase()==="aberta";
 }
 
-/* ==========================
+// ==========================
    STORAGE: CART / USER / CASH
-========================== */
+// ==========================
 
 /* ✅ FIX mínimo: sua função tinha recursão (chamava ela mesma) */
 function resetPresencaState(){
@@ -1833,9 +1881,9 @@ function renderCash(){
   if(el) el.textContent = fmtBRL(getCash());
 }
 
-/* ==========================
+// ==========================
    ===== PRESENÇA (ÚNICA) =====
-========================== */
+// ==========================
 const LS_PRESENCA_ANS  = "agape_presenca_ans_v1";
 const LS_PRESENCA_READ = "agape_presenca_read_v1";
 
@@ -2154,9 +2202,9 @@ function bindPresencaUI(){
   }
 }
 
-/* ==========================
+// ==========================
    BRAND / UI
-========================== */
+// ==========================
 function applyBrand(){
   const setTextId = (id, val) => { const el=document.getElementById(id); if(el) el.textContent = val; };
   const setSrc  = (id, src) => { const el=document.getElementById(id); if(el && src) el.src = src; };
@@ -2210,9 +2258,9 @@ function applyBrand(){
 applyBrand();
 updateConvocacaoBadge();
 
-/* ==========================
+// ==========================
    PRODUCTS / TOTAL
-========================== */
+// ==========================
 function animateTotal(to){
   const el1 = $("#totalValue");
   const el2 = $("#payTotal");
@@ -2339,9 +2387,9 @@ function setupAdminTap(){
   }
 }
 
-/* ==========================
+// ==========================
    WAIT POLLING
-========================== */
+// ==========================
 function nowDT(){ return new Date().toLocaleString("pt-BR"); }
 
 function stopWaitPolling(){
@@ -2391,9 +2439,9 @@ async function startWaitPolling(){
   }, 15000);
 }
 
-/* ==========================
+// ==========================
    PAY FLOW
-========================== */
+// ==========================
 function buildPayScreen(){
   payReady = false;
   setTimeout(()=>{ payReady = true; }, 350);
@@ -2518,9 +2566,9 @@ function finalizePayment(tipo, msg){
   }, 2200);
 }
 
-/* ==========================
+// ==========================
    EXIT
-========================== */
+// ==========================
 function sairDoAplicativo(){
   //try{ localStorage.removeItem(LS_USER); }catch(_){}
   try{ localStorage.removeItem(LS_CART); }catch(_){}
@@ -2531,9 +2579,9 @@ function sairDoAplicativo(){
   }, 80);
 }
 
-/* ==========================
+// ==========================
    PUSH HELPERS (✅ agora no lugar certo)
-========================== */
+// ==========================
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -2546,9 +2594,9 @@ function urlBase64ToUint8Array(base64String) {
 const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
 const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
 
-/* ==========================
+// ==========================
    REGISTER PUSH (✅ mínimo + sem duplicar inscrição)
-========================== */
+// ==========================
 async function registerPush() {
   if (!("serviceWorker" in navigator)) return;
 
@@ -2581,9 +2629,9 @@ async function registerPush() {
   console.log("Push registrado com sucesso");
 }
 
-/* ==========================
+// ==========================
    BOOT
-========================== */
+// ==========================
 async function boot(){
   // 1) Service Worker
   if("serviceWorker" in navigator){
