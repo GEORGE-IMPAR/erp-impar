@@ -1363,7 +1363,7 @@ body{opacity:1 !important;}
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Lista de Atividades</div>
-    <div>v6.3 • Draft: <b>ERPIMPAR_ATIVIDADES_DIARIAS_V2</b> • Pendências: <b>ERPIMPAR_PENDENCIAS_V1</b> • Histórico: <b>ERPIMPAR_ATIVIDADES_HIST_V1</b></div>
+    <div>v6.7 • Draft: <b>ERPIMPAR_ATIVIDADES_DIARIAS_V2</b> • Pendências: <b>ERPIMPAR_PENDENCIAS_V1</b> • Histórico: <b>ERPIMPAR_ATIVIDADES_HIST_V1</b></div>
   </div>
 </footer>
 
@@ -2624,12 +2624,17 @@ async function gerarPDF(){
     alertWarn("NÃO PODE GERAR/IMPRIMIR.\n\nFaltam atividades para:\n- " + miss.join("\n- ") + "\n\nUse Obra = FALTA, FÉRIAS ou EMPRESA quando necessário.");
     return;
   }
-  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-  await draftServerSave(payload);
-  await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
-  await sendViagensToRH(payload);
-  openPrintWindow(payload);
-try{ localStorage.removeItem(STORAGE_DRAFT);}catch(e){}
+	  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+	  await draftServerSave(payload);
+await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
+
+// ✅ 1) abre o PDF primeiro
+openPrintWindow(payload);
+
+// ✅ 2) guarda o payload para enviar depois do fechamento do PDF
+window.__IMPAR_LAST_PDF_PAYLOAD__ = payload;
+	
+	try{ localStorage.removeItem(STORAGE_DRAFT);}catch(e){}
 }
 
 async function finalizeDay(){
@@ -2673,9 +2678,14 @@ async function finalizeDay(){
   }
 
   // 2) gera/abre o PDF do dia fechado (antes de apagar draft)
-  await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
-  await sendViagensToRH(payload);
-  openPrintWindow(payload);
+await withProcessing(async()=>{}, "Gerando relatório…", "PROCESSANDO DADOS......", 900);
+
+// ✅ 1) abre o PDF primeiro
+openPrintWindow(payload);
+
+// ✅ 2) guarda o payload para enviar depois do fechamento do PDF
+window.__IMPAR_LAST_PDF_PAYLOAD__ = payload;
+ 
 
   // 3) apaga o draft.json (global) — obrigatório
   try{
@@ -2763,7 +2773,24 @@ async function syncDraftStateFromServerOnLoad(){
 }
 
 function loadLast(){ const raw=localStorage.getItem(STORAGE_DRAFT); if(!raw) return null; try{return JSON.parse(raw);}catch(e){return null;} }
-if(btnPdfClose) btnPdfClose.addEventListener("click", ()=>{ if(pdfModal) pdfModal.style.display="none"; });
+if(btnPdfClose) btnPdfClose.addEventListener("click", async ()=>{
+
+  // fecha o PDF
+  if(pdfModal) pdfModal.style.display = "none";
+
+  // ✅ depois de fechar, abre WhatsApp (envio das viagens)
+  try{
+    const payload = window.__IMPAR_LAST_PDF_PAYLOAD__;
+    window.__IMPAR_LAST_PDF_PAYLOAD__ = null;
+
+    if(payload){
+      await sendViagensToRH(payload);
+    }
+  }catch(e){
+    console.warn("Erro ao enviar viagens:", e);
+  }
+
+});
 if(btnPdfPrint) btnPdfPrint.addEventListener("click", ()=>{
   try{
     const w = pdfFrame.contentWindow;
