@@ -714,6 +714,75 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
       color:#e5e7eb !important;
     }
 
+	/* ===== SHARE PREMIUM (Swal) ===== */
+.impar-share{
+  text-align:left;
+}
+.impar-share .box{
+  background: rgba(2,6,23,.55);
+  border: 1px solid rgba(148,163,184,.22);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 0 18px rgba(34,197,94,.10);
+}
+.impar-share .head{
+  display:flex; gap:12px; align-items:center; margin-bottom:10px;
+}
+.impar-share .badge{
+  width:46px;height:46px;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  background: linear-gradient(135deg, rgba(34,197,94,.22), rgba(59,130,246,.18));
+  border: 1px solid rgba(34,197,94,.35);
+  font-size:22px;
+}
+.impar-share .ttl{
+  font-weight:900; letter-spacing:.2px; font-size:14px; color:#e5e7eb;
+}
+.impar-share .sub{
+  font-size:12px; color: rgba(203,213,225,.85); margin-top:2px;
+}
+.impar-share .card{
+  margin-top:10px;
+  border: 1px solid rgba(148,163,184,.18);
+  background: rgba(255,255,255,.04);
+  border-radius: 16px;
+  padding: 10px 12px;
+}
+.impar-share .k{
+  font-size:11px; text-transform:uppercase; letter-spacing:.45px;
+  color: rgba(203,213,225,.75);
+  margin-bottom:6px;
+}
+.impar-share .v{
+  font-size:12px; color:#e5e7eb; white-space:pre-wrap; word-break:break-word;
+}
+.impar-share .actions{
+  display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;
+  margin-top:12px;
+}
+@media (max-width:520px){
+  .impar-share .actions{ grid-template-columns:1fr; }
+}
+.impar-share .btnx{
+  border: 1px solid rgba(148,163,184,.18);
+  background: rgba(2,6,23,.35);
+  color:#e5e7eb;
+  border-radius: 16px;
+  padding: 10px 12px;
+  font-weight:850;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  cursor:pointer;
+  transition: transform .08s ease, background .12s ease, border-color .12s ease;
+}
+.impar-share .btnx:hover{
+  transform: translateY(-1px);
+  background: rgba(255,255,255,.06);
+  border-color: rgba(34,197,94,.35);
+}
+.impar-share .btnx.wa{ box-shadow: 0 0 16px rgba(34,197,94,.10); }
+.impar-share .btnx.mail{ box-shadow: 0 0 16px rgba(59,130,246,.10); }
+.impar-share .btnx.copy{ box-shadow: 0 0 16px rgba(250,204,21,.10); }
+	
     /* =========================================================
        PAGE LOADER — padrão ERP (spinner pequeno + texto)
        ========================================================= */
@@ -1550,43 +1619,97 @@ async function apiSave(payload){
   return j.id || j.data?.id || payload.id || null;
 }
 async function shareReport(text, url){
+  const title = "ERP ÍMPAR — Relatório de Viagens";
+  const msg = (text || "").trim();
+  const link = (url || "").trim();
+  const final = (msg + (link ? "\n" + link : "")).trim();
 
-  const shareData = {
-    title: "ERP ÍMPAR — Relatório de Viagens",
-    text: text || "",
-    url: url || ""
-  };
-
-  // ✅ usa menu nativo (celular + desktop moderno)
+  // ✅ Mobile / browsers com share nativo
   if(navigator.share){
     try{
-      await navigator.share(shareData);
+      await navigator.share({ title, text: msg, url: link });
       return;
     }catch(e){
-      console.log("Compartilhamento cancelado");
+      // cancelou -> abre menu premium
     }
   }
 
-  // ✅ fallback (PC antigo)
-  const final = (text || "") + " " + (url || "");
-  window.open(
-    "https://wa.me/?text=" + encodeURIComponent(final),
-    "_blank"
-  );
-}
-async function apiList(){
-  try{
-    const r = await fetch(API_LIST, { method:"GET" });
-    if(!r.ok) return [];
-    const j = await r.json().catch(()=>null);
-    if(!j || j.ok !== true) return [];
-    const data = j.items || j.data || [];
-    return Array.isArray(data) ? data : [];
-  }catch(e){
-    return [];
+  // ✅ Desktop: menu premium (não abre Whats sozinho)
+  if(window.Swal){
+    return Swal.fire(Object.assign(swalBase(),{
+      icon: undefined,
+      title: "Compartilhar relatório",
+      html:
+        '<div class="impar-share">' +
+          '<div class="box">' +
+            '<div class="head">' +
+              '<div class="badge">📤</div>' +
+              '<div>' +
+                '<div class="ttl">ERP ÍMPAR — Envio para RH</div>' +
+                '<div class="sub">Escolha como compartilhar (WhatsApp, e-mail ou copiar)</div>' +
+              '</div>' +
+            '</div>' +
+
+            '<div class="card">' +
+              '<div class="k">Mensagem</div>' +
+              '<div class="v">' + escapeHtml(msg || "(sem mensagem)") + '</div>' +
+            '</div>' +
+
+            (link ? (
+              '<div class="card">' +
+                '<div class="k">Link do relatório</div>' +
+                '<div class="v">' + escapeHtml(link) + '</div>' +
+              '</div>'
+            ) : '') +
+
+            '<div class="actions">' +
+              '<button type="button" class="btnx wa" id="sh_whats">💬 WhatsApp</button>' +
+              '<button type="button" class="btnx mail" id="sh_email">✉️ E-mail</button>' +
+              '<button type="button" class="btnx copy" id="sh_copy">📋 Copiar</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>',
+      showConfirmButton: false,
+      showCloseButton: true,
+      didOpen: ()=>{
+        const bW = document.getElementById("sh_whats");
+        const bE = document.getElementById("sh_email");
+        const bC = document.getElementById("sh_copy");
+
+        if(bW) bW.onclick = ()=> window.open("https://wa.me/?text=" + encodeURIComponent(final), "_blank");
+
+        if(bE) bE.onclick = ()=> {
+          const subject = encodeURIComponent(title);
+          const body = encodeURIComponent(final);
+          window.location.href = "mailto:?subject=" + subject + "&body=" + body;
+        };
+
+        if(bC) bC.onclick = async ()=> {
+          try{
+            await navigator.clipboard.writeText(final);
+            Swal.close();
+            alertOk("Copiado para a área de transferência.");
+          }catch(e){
+            try{
+              const ta=document.createElement("textarea");
+              ta.value=final; document.body.appendChild(ta);
+              ta.select(); document.execCommand("copy");
+              ta.remove();
+              Swal.close();
+              alertOk("Copiado para a área de transferência.");
+            }catch(_){
+              alertWarn("Não consegui copiar automaticamente. Selecione e copie manualmente.");
+            }
+          }
+        };
+      }
+    }));
   }
+
+  // fallback sem Swal
+  prompt("Copie e compartilhe:", final);
 }
-async function apiGet(id){
+	async function apiGet(id){
   const url = API_GET + "?id=" + encodeURIComponent(id);
   const r = await fetch(url, { method:"GET" });
   const j = await r.json().catch(()=>null);
@@ -3069,7 +3192,7 @@ function wireViagemUI(cardEl, rowObj){
       <div class="modal-title" id="pdfTitle">PDF</div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btnPdfPrint" type="button">🖨️ Imprimir</button>
-        <button class="btn btn-secondary" id="btnPdfClose" type="button">✖ Fechar</button>
+        <button class="btn btn-secondary" id="btnPdfClose" type="button">📤 Compartilhar</button>
       </div>
     </div>
     <div class="modal-body">
