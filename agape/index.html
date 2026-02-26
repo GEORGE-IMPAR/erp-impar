@@ -1233,7 +1233,46 @@ button.adminBtnConfirm:hover {
 .adminTable tr:hover {
   background: rgba(255,255,255,0.03) !important;
 }
-  </style>
+  /* ===== WAIT0 (Sem convocação) — capricho visual ===== */
+#scr_wait0 .waitCard{ position:relative; overflow:hidden; }
+#scr_wait0 .waitCard:before{
+  content:"";
+  position:absolute; inset:-2px;
+  background: radial-gradient(600px 220px at 20% 10%, rgba(34,197,94,.20), transparent 60%),
+              radial-gradient(520px 240px at 80% 0%, rgba(59,130,246,.18), transparent 58%),
+              radial-gradient(520px 260px at 50% 120%, rgba(14,59,110,.35), transparent 60%);
+  filter: blur(0px);
+  pointer-events:none;
+}
+#scr_wait0 .infoCard{ border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.25); }
+#scr_wait0 .infoTitle{
+  font-size:18px; font-weight:900; letter-spacing:.2px;
+  display:flex; align-items:center; gap:10px;
+}
+#scr_wait0 .pulseDot{
+  width:10px; height:10px; border-radius:999px;
+  background: rgba(245,158,11,.95);
+  box-shadow: 0 0 0 rgba(245,158,11,.55);
+  animation: agPulse 1.2s infinite;
+}
+@keyframes agPulse{
+  0%{ box-shadow:0 0 0 0 rgba(245,158,11,.55); transform:scale(1); }
+  70%{ box-shadow:0 0 0 14px rgba(245,158,11,0); transform:scale(1.08); }
+  100%{ box-shadow:0 0 0 0 rgba(245,158,11,0); transform:scale(1); }
+}
+#scr_wait0 .infoText{ font-size:13.5px; line-height:1.55; opacity:.92; }
+#scr_wait0 .miniHint{
+  margin-top:14px;
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px dashed rgba(255,255,255,.22);
+  background:rgba(0,0,0,.16);
+  font-size:12px;
+  opacity:.82;
+}
+
+</style>
 </head>
 
 <body>
@@ -1273,15 +1312,15 @@ button.adminBtnConfirm:hover {
         </div>
 
         <div class="infoCard" style="margin-top:14px;">
-          <div class="infoTitle">Nenhuma sessão foi convocada ainda 🕯️</div>
+          <div class="infoTitle"><span class="pulseDot"></span> Nenhuma sessão foi convocada ainda</div>
           <div class="infoText">
             Nenhuma sessão foi convocada pelo Venerável. Assim que houver convocação, você será notificado
             e o envelope aparecerá aqui para confirmar a presença.
           </div>
         </div>
 
-        <div style="margin-top:12px;display:flex;justify-content:space-between;gap:10px;opacity:.7;font-size:12px;">
-          <div>Última verificação:</div>
+        <div class="miniHint">
+          <div>Assim que o Venerável enviar a convocação, o envelope aparece para confirmar.</div>
           <div><span id="lastCheck0">—</span></div>
         </div>
       </div>
@@ -1867,6 +1906,10 @@ const LS_PRESENCA_ANS  = "agape_presenca_ans_v1";
 const LS_PRESENCA_READ = "agape_presenca_read_v1";
 
 function sessaoKey(){
+  // ID único da convocação (preferencial). Fallback: sessao.data (compatibilidade)
+  const c = getConvocacaoObj();
+  const id = String(c?.id || "").trim();
+  if(id) return id;
   return String(CFG?.sessao?.data || "").trim();
 }
 function getPresencaMap(){
@@ -2407,7 +2450,7 @@ function startWaitPolling(){
       }
 
       // Estágio 0 vs Estágio 1
-      const hasConv = isConvocacaoAtiva() && !!getConvocacaoId();
+      const hasConv = isConvocacaoAtiva() && !!sessaoKey();
       if(hasConv){
         if(currentScreen !== "scr_wait") showScreen("scr_wait","forward");
       }else{
@@ -2586,6 +2629,7 @@ function urlBase64ToUint8Array(base64String) {
 
 const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
 const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
+const PUSH_SEND_URL = "https://api.erpimpar.com.br/agape/push/push_send.php";
 
 /* ==========================
    REGISTER PUSH (✅ mínimo + sem duplicar inscrição)
@@ -2676,7 +2720,7 @@ try{
     if(sessionIsOpen()){
       showScreen("scr_login","forward");
     }else{
-      const hasConv = isConvocacaoAtiva() && !!getConvocacaoId();
+      const hasConv = isConvocacaoAtiva() && !!sessaoKey();
       showScreen(hasConv ? "scr_wait" : "scr_wait0","forward");
       startWaitPolling();
     }
@@ -3115,19 +3159,33 @@ function adminSyncSessaoTab() {
 
 function adminSyncIrmaosTab() {
   if(!ADMIN_CFG) return;
+
   const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
   const tbody = document.querySelector("#adminTableIrmaos tbody");
   if(!tbody) { console.warn("⚠️ Tabela irmãos não encontrada"); return; }
+
+  // tenta ler presenças online do próprio config (se existir)
+  const presMap = (ADMIN_CFG && (ADMIN_CFG.presencas || ADMIN_CFG.presenca || ADMIN_CFG.confirmacoes)) || null;
+
   tbody.innerHTML = "";
   if(irmaos.length === 0) {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;opacity:0.6;">Nenhum irmão cadastrado</td></tr>';
     return;
   }
+
   irmaos.forEach((irmao, idx) => {
+    const tel = String(irmao.telefone || "").replace(/\D/g,"");
+    const status = String((irmao.status_presenca || irmao.status || (presMap && presMap[tel]) ) || "PENDENTE");
+    const pagou = String(irmao.pagou || irmao.pgto || "—");
+
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${idx + 1}</td><td>${irmao.nome || "—"}</td><td>${irmao.cim || "—"}</td><td>${irmao.telefone || "—"}</td>`;
+    tr.innerHTML = `<td>${idx + 1}</td>
+      <td>${irmao.nome || "—"}</td>
+      <td>${adminStatusPill(status)}</td>
+      <td>${pagou}</td>`;
     tbody.appendChild(tr);
   });
+
   console.log("[OK] Aba IRMAOS carregada - Total: " + irmaos.length);
 }
 
@@ -3384,10 +3442,10 @@ function adminApplyCurrentTabToCfg(){
 async function adminLoadFromServer(){
   try{
     // lê o MESMO JSON cru que o app já lê
-    const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
+    const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json?t="+Date.now());
     if(!r.ok){
       console.warn("admin_get_config fail", r.status);
-      adminToastErr("Não carregou config do servidor" + a_conv_id + ADMIN_CFG?.convocacao?.id);
+      adminToastErr("Não carregou config do servidor");
       return;
     }
     const j = await r.json().catch(()=> ({}));
@@ -3397,7 +3455,7 @@ async function adminLoadFromServer(){
     ADMIN_TAB = "cfg";
     adminSetActiveTab("cfg");
 
-    adminToastOk("Admin pronto ✅" + a_conv_id + ADMIN_CFG?.convocacao?.id);
+    adminToastOk("Admin pronto ✅");
   }catch(e){
     console.warn(e);
     adminToastErr("Erro carregando Admin");
@@ -3406,11 +3464,58 @@ async function adminLoadFromServer(){
 }
 
 // ---- Save (seguro) ----
+async function adminSendConvocacaoPush(){
+  try{
+    if(!ADMIN_CFG) return;
+    // só envia se push estiver habilitado e tiver convocação ativa com id
+    const convAtiva = ADMIN_CFG?.convocacao?.ativa === true;
+    const convId = String(ADMIN_CFG?.convocacao?.id || "").trim();
+    if(!convAtiva || !convId) return;
+
+    if(!(ADMIN_CFG?.push?.habilitado === true)){
+      console.log("[push] habilitado=false (não enviou)");
+      return;
+    }
+
+    const title = String(ADMIN_CFG?.push?.titulo || ADMIN_CFG?.convocacao?.titulo || "Nova convocação").trim();
+    const message = String(ADMIN_CFG?.push?.mensagem || ADMIN_CFG?.convocacao?.texto || "Confirme sua presença no Ágape.").trim();
+    const url = String(ADMIN_CFG?.push?.url || "./").trim();
+
+    // payload compatível (backend pode ignorar campos extras)
+    const payload = {
+      title, message, url,
+      sessao_id: convId,
+      convocacao: { id: convId, titulo: ADMIN_CFG?.convocacao?.titulo || "", texto: ADMIN_CFG?.convocacao?.texto || "" }
+    };
+
+    const rr = await fetch(PUSH_SEND_URL, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+    if(!rr.ok) throw new Error("HTTP " + rr.status);
+    console.log("[OK] push_send", convId);
+    adminToastOk("Convocação enviada (push) ✅");
+  }catch(e){
+    console.warn("push_send falhou", e);
+    adminToastErr("Falha ao enviar push da convocação");
+  }
+}
+
 async function adminSave(){
   if(!ADMIN_CFG) return;
 
+  // snapshot (para detectar nova convocação)
+  const prevConvAtiva = !!(ADMIN_CFG?.convocacao?.ativa);
+  const prevConvId = String(ADMIN_CFG?.convocacao?.id || "").trim();
+
   // aplica alterações
   adminApplyCurrentTabToCfg();
+
+  const nextConvAtiva = !!(ADMIN_CFG?.convocacao?.ativa);
+  const nextConvId = String(ADMIN_CFG?.convocacao?.id || "").trim();
+  const shouldSendPush = nextConvAtiva && !!nextConvId && (!prevConvAtiva || prevConvId !== nextConvId);
+
 
   // sempre guarda draft local (pra não perder nada ao sair)
   localStorage.setItem("AGAPE_ADMIN_DRAFT", adminJsonPretty(ADMIN_CFG));
@@ -3432,6 +3537,10 @@ async function adminSave(){
       });
       if(!rr.ok) throw new Error("HTTP " + rr.status);
       adminToastOk("Salvo no servidor ✅");
+      // se acabou de criar/ativar convocação, dispara push
+      if(shouldSendPush){ await adminSendConvocacaoPush(); }
+      // recarrega CFG do app para refletir estado imediatamente
+      try{ CFG = await loadConfig(); updateConvocacaoBadge(); }catch(_){ }
       return;
     }catch(e){
       console.warn("ADMIN_SAVE_URL falhou, mantendo rascunho local", e);
