@@ -1908,6 +1908,86 @@ function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
 function clearCart(){ localStorage.removeItem(LS_CART); }
 
 function getUser(){ try { return JSON.parse(localStorage.getItem(LS_USER) || "null"); } catch(e){ return null; } }
+  async function ensureUserForPresenca(){
+    let u = getUser();
+    if(u && (u.tel || u.telefone) && u.nome) return u;
+
+    // carrega lista de nomes (já vem do GitHub: /agape/irmaos.json)
+    let lista = [];
+    try{ lista = await loadIrmaosLista(); }catch(e){}
+
+    const modalId = "presencaLoginModal";
+    let modal = document.getElementById(modalId);
+    if(!modal){
+      modal = document.createElement("div");
+      modal.id = modalId;
+      modal.className = "modal-overlay";
+      modal.innerHTML = `
+        <div class="modal-card" style="max-width:420px;width:92%;padding:18px 18px 14px;">
+          <div class="modal-h">
+            <div class="modal-title">Identificação</div>
+            <div class="modal-sub">Informe seu nome e seu CIM (apenas 1x).</div>
+          </div>
+
+          <div style="margin-top:12px;display:grid;gap:10px;">
+            <label style="display:block;font-size:12px;opacity:.85;">Seu nome</label>
+            <select id="presencaNomeSel" class="inp" style="height:44px;">
+              ${(lista||[]).map(i=>`<option value="${escapeHtml(i.nome)}">${escapeHtml(i.nome)}</option>`).join("")}
+            </select>
+
+            <label style="display:block;font-size:12px;opacity:.85;margin-top:6px;">CIM</label>
+            <input id="presencaCimInp" class="inp" type="password" inputmode="numeric" placeholder="Digite seu CIM" style="height:44px;"/>
+            <div id="presencaLoginErr" style="display:none;color:#ffb4b4;font-size:12px;margin-top:2px;"></div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+            <button id="presencaLoginCancel" class="btn btn-ghost" type="button">Cancelar</button>
+            <button id="presencaLoginOk" class="btn btn-primary" type="button">OK</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    const err = modal.querySelector("#presencaLoginErr");
+    const showErr = (msg)=>{ err.textContent=msg; err.style.display="block"; };
+
+    return await new Promise((resolve)=>{
+      const close = ()=>{ modal.classList.remove("on"); resolve(null); };
+      modal.classList.add("on");
+
+      modal.querySelector("#presencaLoginCancel").onclick = close;
+
+      modal.querySelector("#presencaLoginOk").onclick = async ()=>{
+        try{
+          err.style.display="none";
+          const nome = (modal.querySelector("#presencaNomeSel").value || "").trim();
+          const cim  = (modal.querySelector("#presencaCimInp").value || "").trim();
+
+          if(!nome) return showErr("Selecione seu nome.");
+          if(!cim)  return showErr("Digite seu CIM.");
+
+          // valida usando a configuração dinâmica (KingHost)
+          const cfg = window.CFG || null;
+          const irmaos = (cfg && cfg.irmaos) ? cfg.irmaos : [];
+          const found = irmaos.find(x => String(x.nome||"").trim().toLowerCase() === nome.toLowerCase());
+
+          if(!found) return showErr("Nome não encontrado na configuração.");
+          if(String(found.cim||"").trim() !== cim) return showErr("CIM inválido.");
+
+          const user = { nome: String(found.nome||nome), tel: String(found.telefone||found.tel||"").trim(), cim: String(found.cim||cim).trim() };
+          if(!user.tel) return showErr("Telefone não encontrado para este usuário.");
+
+          setUser(user);
+          modal.classList.remove("on");
+          resolve(user);
+        }catch(e){
+          showErr("Erro ao validar. Tente novamente.");
+        }
+      };
+    });
+  }
+
 function setUser(u){ localStorage.setItem(LS_USER, JSON.stringify(u)); }
 //function clearUser(){ localStorage.removeItem(LS_USER); }
 
@@ -1980,30 +2060,11 @@ async function setPresencaAns(ans){
     if(!response.ok) throw new Error("HTTP " + response.status);
     const result = await response.json();
     console.log("[OK] Presenca confirmada:", result);
-    
-    // Enviar push notification
-    try {
-      if('serviceWorker' in navigator && 'PushManager' in window) {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if(subscription) {
-          await fetch("https://api.erpimpar.com.br/agape/push/send_push.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              title: "Presença Confirmada ✅", 
-              body: `${userName} confirmou presença`,
-              icon: "./assets/icon-192.png"
-            })
-          });
-          console.log("[OK] Push enviado");
-        }
-      }
-    } catch(pushErr) {
-      console.warn("[WARN] Erro ao enviar push:", pushErr);
-    }
+    // (Push) não envia aqui — push é disparado pelo Venerável no ADM.
     if(typeof showPresSuccess === "function"){ showPresSuccess(); setTimeout(() => { if(typeof hidePresSuccess === "function") hidePresSuccess(); }, PRES_SUCCESS_MS || 6000); }
     if(typeof toast === "function") toast("Presença confirmada!");
+    // Recarrega ADM (se estiver aberto) para refletir a confirmação
+    try{ if(typeof adminLoadFromServer==="function"){ await adminLoadFromServer(); if(typeof adminRenderIrmaos==="function") adminRenderIrmaos(); } }catch(_e){}
   } catch(e) {
     console.warn("[ERRO] Erro ao enviar presenca:", e);
     if(typeof offEnqueue === "function"){ offEnqueue(payload); if(typeof toast === "function") toast("Sem rede: presença salva localmente"); }
@@ -3034,10 +3095,13 @@ const bd = pick([
   _waitPresFxTimer = setInterval(applyOnce, pick([1200, 1500, 1800, 2200, 2600]));
 }
 
-function confirmPresenca(ans){
+async function confirmPresenca(ans){
+  const u = await ensureUserForPresenca();
+  if(!u) return;
+
   setPresencaRespondida();
 
-  if(typeof setPresencaAns === "function") setPresencaAns(ans);
+  if(typeof setPresencaAns === "function") await setPresencaAns(ans);
 
   refreshPresenceUI();            // retângulo / texto atualiza na hora
   updateEnvelopeUI();
@@ -3515,7 +3579,7 @@ async function adminLoadFromServer(){
 
 // ---- Save (seguro) ----
 async function adminSave(){
-  if(!ADMIN_CFG) return;
+  if(!ADMIN_CFG) return false;
 
   // aplica alterações
   adminApplyCurrentTabToCfg();
@@ -3544,12 +3608,13 @@ async function adminSave(){
     }catch(e){
       console.warn("ADMIN_SAVE_URL falhou, mantendo rascunho local", e);
       adminToastErr("Não salvou no servidor (mantido rascunho local)");
-      return;
+      return false;
     }
   }
 
   // sem endpoint: oferece download
   adminToastOk("Rascunho salvo ✅ (local) — JSON pronto para copiar/baixar");
+  return true;
 }
 
 // ---- Bind UI (apenas 1x) ----
@@ -3568,7 +3633,29 @@ function adminBindUI(){
   });
 
   adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
-    await adminSave();
+    const ok = await adminSave();
+    if(!ok) return;
+
+    // Dispara PUSH para avisar os irmãos (usando o diretório /agape/push/)
+    try{
+      const title = "Sessão convocada";
+      const body = (adminEl("a_sessao_chamado")?.value || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
+      await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
+        method:"POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+          title: title,
+          body: body,
+          icon: "https://erpimpar.com.br/agape/logo.jpeg",
+          badge: "https://erpimpar.com.br/agape/logo.jpeg",
+          url: location.href
+        })
+      });
+      adminToastOk("PUSH enviado ✅");
+    }catch(e){
+      console.warn("Falha ao enviar PUSH:", e);
+      adminToastErr("Não foi possível enviar o PUSH");
+    }
   });
 
   // duplo clique no JSON abre download
