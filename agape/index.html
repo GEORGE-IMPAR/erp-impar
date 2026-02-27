@@ -851,6 +851,22 @@
   border:1px solid rgba(255,255,255,.12);
   margin-top:8px;
 }
+.adminTableScroll{max-height:260px;overflow:auto;border-radius:14px;}
+@media (max-width: 520px){
+  .adminTableScroll{max-height:220px;}
+}
+.adminStatusSel{
+  width:100%;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(148,163,184,.25);
+  color:#e5e7eb;
+  border-radius:10px;
+  padding:8px 10px;
+  font-weight:700;
+  outline:none;
+}
+.adminStatusSel option{color:#0b1220;}
+
 #scr_admin .adminTable th,
 #scr_admin .adminTable td{
   padding:8px 10px;
@@ -1695,7 +1711,8 @@ button.adminBtnConfirm:hover {
         <!-- ABA IRMAOS (ONLINE) -->
         <div id="adminViewIrmaos" class="hidden">
           <div class="aLabel">Status: Não confirmado • Somente sessão • Somente ágape • Sessão e ágape</div>
-          <table class="adminTable" id="adminTableIrmaos">
+          <div class="adminTableScroll">
+<table class="adminTable" id="adminTableIrmaos">
             <thead>
               <tr>
                 <th style="width:40px;">#</th>
@@ -1706,6 +1723,7 @@ button.adminBtnConfirm:hover {
             </thead>
             <tbody id="adminIrmaosBody"></tbody>
           </table>
+</div>
 
           <div class="adminResumo" id="adminResumoBox">
             <div class="rTitle">Resumo (online)</div>
@@ -3150,22 +3168,65 @@ function adminSyncSessaoTab() {
   console.log("[OK] Aba SESSAO carregada");
 }
 
-function adminSyncIrmaosTab() {
-  if(!ADMIN_CFG) return;
-  const irmaos = Array.isArray(ADMIN_CFG.irmaos) ? ADMIN_CFG.irmaos : [];
-  const tbody = document.querySelector("#adminTableIrmaos tbody");
-  if(!tbody) { console.warn("⚠️ Tabela irmãos não encontrada"); return; }
-  tbody.innerHTML = "";
-  if(irmaos.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;opacity:0.6;">Nenhum irmão cadastrado</td></tr>';
-    return;
-  }
-  irmaos.forEach((irmao, idx) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${idx + 1}</td><td>${irmao.nome || "—"}</td><td>${irmao.cim || "—"}</td><td>${irmao.telefone || "—"}</td>`;
-    tbody.appendChild(tr);
+function adminSyncIrmaosTab(){
+  var body = document.getElementById("adminIrmaosBody");
+  if(!body) return;
+
+  var irmaos = (window.ADMIN_CFG && Array.isArray(window.ADMIN_CFG.irmaos)) ? window.ADMIN_CFG.irmaos : [];
+
+  // opções de status (seguindo a legenda do topo)
+  var opts = [
+    {v:"", t:"—"},
+    {v:"nao", t:"Não confirmado"},
+    {v:"sessao", t:"Somente sessão"},
+    {v:"agape", t:"Somente ágape"},
+    {v:"ambos", t:"Sessão e ágape"}
+  ];
+
+  body.innerHTML = irmaos.map(function(i, idx){
+    var nome = (i && i.nome) ? i.nome : "";
+    var status = (i && i.status) ? i.status : "";
+    var pagou = !!(i && i.pagou);
+
+    var optionsHtml = opts.map(function(o){
+      return '<option value="'+o.v+'"'+(o.v===status?' selected':'')+'>'+o.t+'</option>';
+    }).join("");
+
+    return (
+      "<tr>" +
+        "<td style='width:44px;'>" + (idx+1) + "</td>" +
+        "<td>" + escapeHtml(nome) + "</td>" +
+        "<td style='width:160px;'>" +
+          "<select class='adminStatusSel' data-idx='"+idx+"'>" + optionsHtml + "</select>" +
+        "</td>" +
+        "<td style='width:84px;text-align:center;'>" +
+          "<input type='checkbox' class='adminPagoChk' data-idx='"+idx+"' "+(pagou?'checked':'')+" />" +
+        "</td>" +
+      "</tr>"
+    );
+  }).join("");
+
+  // listeners
+  Array.prototype.slice.call(document.querySelectorAll(".adminStatusSel")).forEach(function(sel){
+    sel.addEventListener("change", function(){
+      var k = parseInt(this.getAttribute("data-idx"),10);
+      if(!isNaN(k) && window.ADMIN_CFG && window.ADMIN_CFG.irmaos && window.ADMIN_CFG.irmaos[k]){
+        window.ADMIN_CFG.irmaos[k].status = this.value || "";
+        if(typeof adminUpdateResumo === "function") adminUpdateResumo();
+      }
+    });
   });
-  console.log("[OK] Aba IRMAOS carregada - Total: " + irmaos.length);
+  Array.prototype.slice.call(document.querySelectorAll(".adminPagoChk")).forEach(function(chk){
+    chk.addEventListener("change", function(){
+      var k = parseInt(this.getAttribute("data-idx"),10);
+      if(!isNaN(k) && window.ADMIN_CFG && window.ADMIN_CFG.irmaos && window.ADMIN_CFG.irmaos[k]){
+        window.ADMIN_CFG.irmaos[k].pagou = !!this.checked;
+        if(typeof adminUpdateResumo === "function") adminUpdateResumo();
+      }
+    });
+  });
+
+  if(typeof adminUpdateResumo === "function") adminUpdateResumo();
 }
 
 
@@ -3507,28 +3568,42 @@ function adminBindUI(){
   });
 }
 
+const IRMAOS_URL = new URL("irmaos.json", window.location.href).href;
+// (isso vira https://www.erpimpar.com.br/agape/irmaos.json automaticamente)
+  
 // ===== CARREGAR IRMÃOS (GITHUB) =====
 async function loadIrmaosLista(){
   try{
-    const r = await fetch("./irmaos.json", { cache: "no-store" })
+    const r = await fetch(IRMAOS_URL, { cache: "no-store" });
+    if(!r.ok) throw new Error("HTTP " + r.status);
 
-    const lista = await r.json();
-    renderIrmaos(lista);
+    const data = await r.json();
 
-  }catch(e){
-    console.error("Erro ao carregar irmãos:", e);
+    // seu arquivo é [{ "nome": "..." }, ...]
+    const nomes = Array.isArray(data)
+      ? data.map(x => (typeof x === "string" ? x : (x.nome || x.name || ""))).filter(Boolean)
+      : [];
+
+    renderIrmaos(nomes); // sua função que desenha a lista na tela
+  }catch(err){
+    console.error("Erro ao carregar irmãos:", err);
   }
 }
-
 function renderIrmaos(lista){
-  const box = document.getElementById("adminIrmaosList");
-  if(!box) return;
+  // lista pode vir como ["Nome", ...] ou [{nome:"Nome"}, ...]
+  var nomes = (Array.isArray(lista) ? lista : []).map(function(i){
+    if(typeof i === "string") return { nome: i };
+    if(i && typeof i === "object") return { nome: (i.nome || i.name || "") };
+    return { nome: "" };
+  }).filter(function(i){ return (i.nome||"").trim() !== ""; });
 
-  box.innerHTML = lista.map(i => `
-    <div class="irmao-item">
-      ${i.nome}
-    </div>
-  `).join("");
+  if(!window.ADMIN_CFG) window.ADMIN_CFG = {};
+  window.ADMIN_CFG.irmaos = nomes.map(function(i){
+    return { nome: i.nome, status: "", pagou: false };
+  });
+
+  // Se o tab já existe, renderiza nele
+  if(typeof adminSyncIrmaosTab === "function") adminSyncIrmaosTab();
 }
   
 // ---- Entrar no Admin (senha antes) ----
@@ -3604,7 +3679,7 @@ boot();
       Fique tranquilo, assim que a convocação for realizada,
       você será notificado pelo aplicativo.
     </div>
-    <button id="btnV0Ok" class="v0-btn">OK!</button>
+    <button id="btnV0Ok" class="v0-btn">OK</button>
   </div>
 </div>
 
