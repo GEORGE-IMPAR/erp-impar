@@ -1416,6 +1416,15 @@ body{opacity:1 !important;}
     margin-top: -4px !important;
   }
 }
+
+/* ===== SALVAR RASCUNHO — MOBILE ===== */
+@media (max-width:560px){
+  #btnDraft{
+    width:100%;
+    order:99; /* força ficar abaixo */
+  }
+}
+	
 </style>
 
 </head>
@@ -1485,13 +1494,26 @@ body{opacity:1 !important;}
 
           <div id="rows" class="rows"></div>
 
-          <div class="actions">
-            <button class="btn btn-secondary" id="btnAdd" type="button">➕ ADICIONAR LINHA</button>
-            <button class="btn btn-primary" id="btnSave" type="button">🖨️ GERAR PDF (IMPRIMIR)</button>
-            <button class="btn btn-primary" id="btnFinalize" type="button">✅ FINALIZAR (HISTÓRICO)</button>
-          <button class="btn btn-secondary" id="btnNewDay" type="button">🗓️ Novo dia</button>
-          </div>
+<div class="actions">
+  <button class="btn btn-secondary" id="btnAdd" type="button">➕ ADICIONAR LINHA</button>
 
+  <button class="btn btn-primary" id="btnSave" type="button">
+    🖨️ GERAR PDF (IMPRIMIR)
+  </button>
+
+  <!-- ✅ NOVO BOTÃO -->
+  <button class="btn btn-primary" id="btnDraft" type="button">
+    💾 SALVAR RASCUNHO
+  </button>
+
+  <button class="btn btn-primary" id="btnFinalize" type="button">
+    ✅ FINALIZAR (HISTÓRICO)
+  </button>
+
+  <button class="btn btn-secondary" id="btnNewDay" type="button">
+    🗓️ Novo dia
+  </button>
+</div>
           <div class="hist card">
             <div class="hist-top">
               <div>
@@ -1865,6 +1887,7 @@ const TRASH_SVG = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"
 const rowsEl = document.getElementById("rows");
 const btnAdd = document.getElementById("btnAdd");
 const btnSave = document.getElementById("btnSave");
+const btnDraft = document.getElementById("btnDraft");   // ✅ NOVO	
 const btnFinalize = document.getElementById("btnFinalize");
 const btnNewDay = document.getElementById("btnNewDay");
 const nameListEl = document.getElementById("nameList");
@@ -2894,6 +2917,42 @@ async function gerarPDF(){
 	try{ localStorage.removeItem(STORAGE_DRAFT);}catch(e){}
 }
 
+// ======================================================
+// SALVAR RASCUNHO (clone do gerarPDF sem validação escala)
+// ======================================================
+async function salvarRascunho(){
+
+  if(isLockedFinal()){
+    alertWarn("Dia já foi fechado.");
+    return;
+  }
+
+  // mesma validação básica do PDF
+  if(!validateAll("draft")){
+    alertWarn("Preencha: Data, Nome(s), Obra, Atividade do dia e Carro.");
+    return;
+  }
+
+  // mesmo payload
+  const payload = getPayload("draft");
+
+  // ✅ NÃO verifica missingNames()
+  // permite salvar parcial
+
+  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
+
+  await draftServerSave(payload);
+
+  await withProcessing(
+    async()=>{},
+    "Salvando rascunho…",
+    "PROCESSANDO DADOS......",
+    600
+  );
+
+  alertOk("Rascunho salvo ✔");
+}	
+	
 async function finalizeDay(){
   // ✅ fonte da verdade: servidor
   let serverDraft = null;
@@ -3121,6 +3180,10 @@ if(btnAdd) btnAdd.addEventListener("click", ()=>{
 });
 
 if(btnSave) btnSave.addEventListener("click", gerarPDF);
+
+// ✅ NOVO BOTÃO RASCUNHO
+if(btnDraft) btnDraft.addEventListener("click", salvarRascunho);
+	
 if(btnFinalize) btnFinalize.addEventListener("click", finalizeDay);
 
 const btnVoltar = document.getElementById("btnVoltarMenu");
