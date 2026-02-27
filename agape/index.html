@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVRIx2NgGAWjYBSMglEwCkbBSAcACBAAAeaR9cIAAAAASUVORK5CYII=">
-  <title>Sistema Ágape</title>
+  <title>Sistema Agape</title>
 
   <style>
     :root{
@@ -1260,56 +1260,32 @@ button.adminBtnConfirm:hover {
   from{opacity:0; transform:scale(.9);}
   to{opacity:1; transform:scale(1);}
 }
-/* ===== HEADER V0 PREMIUM ===== */
-/* ===== HEADER V0 AJUSTADO ===== */
 .v0-header{
   display:flex;
   align-items:center;
-  gap:14px;
-
-  background:rgba(15,40,80,.65);
-  border:2px solid #2be38c;
+  gap:12px;
+  /* sobe um pouco e aumenta respiro pro ícone pulsante */
+  margin:-10px 0 28px;
+  justify-content:flex-start;
+  width:100%;
+  padding:10px 14px;
+  border:2px solid rgba(34,197,94,.95);
   border-radius:14px;
-
-  padding:12px 16px;
-
-  /* largura quase igual ao texto */
-  width:92%;
-  max-width:360px;
-
-  /* centralização */
-  margin-left:auto;
-  margin-right:auto;
-
-  /* SUBIR O BLOCO */
-  margin-top:-6px;
-  margin-bottom:28px;
-
-  box-shadow:
-    0 0 0 1px rgba(43,227,140,.25),
-    0 8px 20px rgba(0,0,0,.35);
+  background:rgba(2,6,23,.18);
+  cursor:pointer;
+  user-select:none;
 }
 .v0-logo{
-  width:48px;
-  height:48px;
+  width:42px;
+  height:42px;
   border-radius:50%;
   object-fit:cover;
-  flex-shrink:0;
-  cursor:pointer;
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.25);
 }
-  .v0-loja{
-  font-weight:700;
-  font-size:15px;
-  line-height:1.2;
-}
-
-.v0-sub{
-  font-size:12px;
-  opacity:.85;
-  margin-top:2px;
-}
-  .v0-icon{
-  transform:scale(1.08);
+.v0-loja{font-weight:600;font-size:15px;}
+.v0-sub{font-size:12px;opacity:.7;}
+.v0-icon{
   font-size:48px;
   width:90px;
   height:90px;
@@ -1321,7 +1297,6 @@ button.adminBtnConfirm:hover {
   margin:0 auto 20px;
   color:#ffcc66;
   animation:pulse 1.8s infinite;
-  margin-top:6px;  
 }
 @keyframes pulse{
   0%{box-shadow:0 0 0 0 rgba(255,204,102,.5);}
@@ -1361,7 +1336,7 @@ button.adminBtnConfirm:hover {
       <div class="logoWrap">
         <img id="splashLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
       </div>
-      <div class="brandText">Sistema Ágape</div>
+      <div class="brandText">Sistema Agape</div>
     </div>
   </section>
 
@@ -2466,20 +2441,6 @@ function startWaitPolling(){
       updateConvocacaoBadge();
       initCashFromConfig();
       applyBrand();
-
-      // ===== V0 STATE =====
-const sessaoAberta =
-  typeof sessionIsOpen === "function"
-    ? sessionIsOpen()
-    : false;
-
-const convocada = CFG?.sessao?.convocada === true;
-
-if(!sessaoAberta && !convocada){
-  showV0();
-}else{
-  hideV0();
-}
       
       try{ updatePresenceConfirmedWait(); }catch(_){}
       try{ if(typeof startWaitPresencaFX==="function") startWaitPresencaFX(); }catch(_){}
@@ -3548,6 +3509,9 @@ function adminBindUI(){
 
 // ---- Entrar no Admin (senha antes) ----
 async function openAdmin(){
+  // ao entrar no ADM, suprime o V0 (sessão fechada) para não bloquear o venerável
+  window.__AGAPE_ADMIN_MODE = true;
+  try{ if(typeof hideV0 === "function") hideV0(); }catch(e){}
   // garante binds
   adminBindUI();
 
@@ -3567,12 +3531,14 @@ async function openAdmin(){
   const telTes = adminSanTel(cfgLocal?.loja?.tesoureiro_whatsapp || "");
   if(!telTes){
     adminToastErr("Falta loja.tesoureiro_whatsapp no JSON");
+    window.__AGAPE_ADMIN_MODE = false;
     return;
   }
 
   const typed = adminSanTel(prompt("Senha do Admin (telefone do tesoureiro):") || "");
   if(!typed || typed !== telTes){
     adminToastErr("Senha inválida");
+    window.__AGAPE_ADMIN_MODE = false;
     return;
   }
 
@@ -3598,7 +3564,7 @@ boot();
 <!-- ===== V0 MODAL ===== -->
 <div id="modalV0" class="modal-overlay hidden">
   <div class="modal-card v0-card">
-    <div class="v0-header">
+    <div class="v0-header" id="v0HeaderBtn" title="Duplo clique para entrar no ADM">
       <img id="v0Logo" class="v0-logo" src="" alt="Logo">
       <div>
         <div id="v0LojaNome" class="v0-loja"></div>
@@ -3617,40 +3583,72 @@ boot();
 </div>
 
 <script>
+// ===== V0 (sessão fechada) =====
+// - Sempre mostra o modal quando a convocação ainda não está ativa
+// - Usuário comum: OK = sai do app
+// - Venerável: duplo clique no cabeçalho abre ADM e suprime o V0
+
+// Logo padrão (GitHub/pages)
+const DEFAULT_V0_LOGO = "https://erpimpar.com.br/agape/logo.jpeg";
+
+// Flag global: se o ADM estiver ativo, o V0 não pode reaparecer por cima
+window.__AGAPE_ADMIN_MODE = window.__AGAPE_ADMIN_MODE || false;
+
 function showV0(){
   const modal = document.getElementById("modalV0");
   if(!modal) return;
-
-  document.getElementById("v0LojaNome").textContent =
-    CFG?.loja?.nome || "Loja Prof. Clementino Brito";
-
-  document.getElementById("v0Logo").src =
-    "https://erpimpar.com.br/agape/logo.jpeg";
-
+  if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+  if(window.CFG){
+    const lojaNome = (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "";
+    const logoSrc  = (CFG && CFG.loja && (CFG.loja.logo_url || CFG.loja.logo)) ? (CFG.loja.logo_url || CFG.loja.logo) : "";
+    document.getElementById("v0LojaNome").textContent = lojaNome;
+    const img = document.getElementById("v0Logo");
+    img.src = (logoSrc || DEFAULT_V0_LOGO);
+    img.onerror = function(){
+      if(img.src !== DEFAULT_V0_LOGO) img.src = DEFAULT_V0_LOGO;
+    };
+  }
   modal.classList.remove("hidden");
-}function hideV0(){
+}
+function hideV0(){
   document.getElementById("modalV0")?.classList.add("hidden");
 }
 document.addEventListener("DOMContentLoaded", ()=>{
-  document.getElementById("btnV0Ok")?.addEventListener("click", hideV0);
-  document.getElementById("v0Logo")?.addEventListener("click", ()=>{
+  // Usuário comum: OK = sai do aplicativo
+  document.getElementById("btnV0Ok")?.addEventListener("click", ()=>{
+    hideV0();
+    if(typeof sairDoAplicativo === "function"){
+      sairDoAplicativo();
+    }else{
+      try{ window.open("about:blank","_self"); window.close(); }catch(e){}
+    }
+  });
+
+  // Venerável: duplo clique no cabeçalho (logo + nome) abre o ADM
+  document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+    window.__AGAPE_ADMIN_MODE = true;
+    hideV0();
     if(typeof openAdmin === "function") openAdmin();
   });
+
   setTimeout(()=>{
     try{
-      if(window.CFG){
-  const sessaoAberta = typeof sessionIsOpen === "function"
-      ? sessionIsOpen()
-      : false;
-
-  const convocada = CFG?.sessao?.convocada === true;
-
-  if(!sessaoAberta && !convocada){
-      showV0();
-  }
-}
+      if(window.CFG && !CFG?.convocacao?.ativa){
+        showV0();
+      }
     }catch(e){}
   },800);
+
+  // Monitor: se a sessão for aberta, some; se fechar de novo e não estiver no ADM, volta.
+  setInterval(()=>{
+    try{
+      if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+      if(window.CFG && CFG?.convocacao?.ativa){ hideV0(); }
+      else { showV0(); }
+    }catch(e){}
+  }, 1500);
 });
 </script>
 
