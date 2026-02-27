@@ -1488,7 +1488,6 @@ body{opacity:1 !important;}
           <div class="actions">
             <button class="btn btn-secondary" id="btnAdd" type="button">➕ ADICIONAR LINHA</button>
             <button class="btn btn-primary" id="btnSave" type="button">🖨️ GERAR PDF (IMPRIMIR)</button>
-        <button class="btn btn-primary" id="btnDraftSave" type="button">💾 SALVAR RASCUNHO</button>
             <button class="btn btn-primary" id="btnFinalize" type="button">✅ FINALIZAR (HISTÓRICO)</button>
           <button class="btn btn-secondary" id="btnNewDay" type="button">🗓️ Novo dia</button>
           </div>
@@ -1866,8 +1865,6 @@ const TRASH_SVG = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"
 const rowsEl = document.getElementById("rows");
 const btnAdd = document.getElementById("btnAdd");
 const btnSave = document.getElementById("btnSave");
-const btnDraftSave = document.getElementById("btnDraftSave");
-updateDraftSaveButtonState();
 const btnFinalize = document.getElementById("btnFinalize");
 const btnNewDay = document.getElementById("btnNewDay");
 const nameListEl = document.getElementById("nameList");
@@ -2888,9 +2885,7 @@ async function gerarPDF(){
     return;
   }
 	  localStorage.setItem(STORAGE_DRAFT, JSON.stringify(payload));
-	  payload.__pdfLocked = true;
-      payload.__pdfLockedAt = new Date().toISOString();
-      await draftServerSave(payload);
+	  await draftServerSave(payload);
       console.log("[PDF] clique gerar - inicio");
 	  await withProcessing(async()=>{
       openPrintWindow(payload);
@@ -2967,23 +2962,6 @@ window.__IMPAR_LAST_PDF_PAYLOAD__ = payload;
   renderHistoryServer();
 }
 
-
-// ===== Controle de rascunho (Salvar rascunho) =====
-let __FINAL_LOCKED = true;   // travamento do dia (após FINALIZAR)
-let __PDF_LOCKED   = false;  // travamento do rascunho (após GERAR PDF)
-
-function updateDraftSaveButtonState(){
-  if(!btnDraftSave) return;
-  const disabled = (__FINAL_LOCKED === true) || (__PDF_LOCKED === true);
-  btnDraftSave.disabled = disabled;
-  btnDraftSave.classList.toggle("soft-disabled", disabled);
-}
-
-function setPdfLocked(v){
-  __PDF_LOCKED = !!v;
-  updateDraftSaveButtonState();
-}
-
 function isLockedFinal(){
   try{
     const last = loadLast();
@@ -2995,9 +2973,7 @@ function isLockedFinal(){
 
 function setLockedFinal(isLocked){
   const locked = !!isLocked;
-  
-  __FINAL_LOCKED = locked;
-// top buttons
+  // top buttons
   if(btnAdd) btnAdd.disabled = locked;
   // Não usamos "disabled" em Gerar PDF/Finalizar para poder mostrar modal explicando.
   if(btnSave) btnSave.classList.toggle("soft-disabled", locked);
@@ -3020,8 +2996,6 @@ function setLockedFinal(isLocked){
       if(dotF) dotF.classList.remove("is-final");
     }
   }catch(e){}
-
-  updateDraftSaveButtonState();
 }
 async function serverHasOpenDraft(){
   const d = await draftServerLoad();
@@ -3040,9 +3014,7 @@ async function syncDraftStateFromServerOnLoad(){
 
   if(serverDraft && serverDraft.rows && serverDraft.rows.length){
     try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(serverDraft)); }catch(e){}
-    setLockedFinal(false);
-    setPdfLocked(!!(serverDraft && serverDraft.__pdfLocked));
-    // existe draft -> bloqueia "Novo dia"
+    setLockedFinal(false); // existe draft -> bloqueia "Novo dia"
     renderInitial();
     refreshNameChecklist();
     renderHistoryServer();
@@ -3051,9 +3023,7 @@ async function syncDraftStateFromServerOnLoad(){
 
   // sem draft no servidor -> sem dia aberto
   try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
-  setLockedFinal(true);
-  setPdfLocked(false);
-  // libera "Novo dia"
+  setLockedFinal(true); // libera "Novo dia"
   try{ rowsEl.innerHTML = ""; }catch(e){}
   refreshNameChecklist();
   renderHistoryServer();
@@ -3156,20 +3126,6 @@ if(btnFinalize) btnFinalize.addEventListener("click", finalizeDay);
 const btnVoltar = document.getElementById("btnVoltarMenu");
 if(btnVoltar) btnVoltar.addEventListener("click", ()=>{ window.location.href="/menu.html"; });
 
-if(btnDraftSave){
-  btnDraftSave.addEventListener("click", async () => {
-    if(__PDF_LOCKED || __FINAL_LOCKED) return;
-    await withProcessing(async ()=>{
-      const payload = getPayload();
-      // salvar parcial: NÃO valida se todos os colaboradores foram alocados
-      await draftServerSave(payload);
-      showToast("Rascunho salvo no servidor ✅", "success");
-      await syncNow(); // mantém todos sincronizados
-    });
-  });
-}
-
-
 const histDateEl = document.getElementById("histDate");
 if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
 
@@ -3226,17 +3182,13 @@ async function syncNow(){
         try{ localStorage.removeItem(STORAGE_DRAFT); }catch(e){}
         rowsEl.innerHTML = "";
         // libera novo dia (se você usa isso)
-        try{ setLockedFinal(true);
-  setPdfLocked(false);
-  }catch(e){}
+        try{ setLockedFinal(true); }catch(e){}
         refreshNameChecklist();
         renderHistoryServer();
       }else{
         // draft apareceu/atualizou -> carrega
         try{ localStorage.setItem(STORAGE_DRAFT, JSON.stringify(d)); }catch(e){}
-        try{ setLockedFinal(false);
-    setPdfLocked(!!(serverDraft && serverDraft.__pdfLocked));
-    }catch(e){}
+        try{ setLockedFinal(false); }catch(e){}
         renderInitial();
         refreshNameChecklist();
         renderHistoryServer();
