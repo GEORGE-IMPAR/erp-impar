@@ -1905,7 +1905,34 @@ function showScreen(id, dir="forward"){
   }, 460);
 }
 
-async function loadConfig(){
+
+// ===== NORMALIZAÇÃO DO CFG (evita "remendos" espalhados) =====
+// Canonical: CFG.config.loja / CFG.config.sessao (KingHost)
+// Compat:    CFG.loja / CFG.sessao apontam para os mesmos objetos (para telas antigas)
+function normalizeCFG(cfg){
+  if(!cfg || typeof cfg!=="object") return cfg;
+
+  if(!cfg.config || typeof cfg.config!=="object") cfg.config = {};
+
+  // move loja/sessao antigos (se vierem no root) para dentro de config
+  if(cfg.loja && !cfg.config.loja) cfg.config.loja = cfg.loja;
+  if(cfg.sessao && !cfg.config.sessao) cfg.config.sessao = cfg.sessao;
+
+  if(!cfg.config.loja || typeof cfg.config.loja!=="object") cfg.config.loja = {};
+  if(!cfg.config.sessao || typeof cfg.config.sessao!=="object") cfg.config.sessao = {};
+
+  // atalhos compatíveis (sem duplicar dados)
+  cfg.loja = cfg.config.loja;
+  cfg.sessao = cfg.config.sessao;
+
+  // garante push/convocacao (root)
+  if(!cfg.push || typeof cfg.push!=="object") cfg.push = {};
+  if(!cfg.convocacao || typeof cfg.convocacao!=="object") cfg.convocacao = {};
+
+  return cfg;
+}
+
+$1){
   const r=await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json");
   if(!r.ok) throw new Error("config");
   return await r.json();
@@ -3597,7 +3624,8 @@ async function adminLoadFromServer(){
     const j = await r.json().catch(()=> ({}));
     ADMIN_CFG = j;
 
-    // default tab
+    CFG = normalizeCFG(CFG);
+// default tab
     ADMIN_TAB = "cfg";
     adminSetActiveTab("cfg");
 
@@ -3627,22 +3655,23 @@ async function adminSave(){
   }
 
   // se tiver endpoint, tenta postar
-if(typeof ADMIN_SAVE_URL === "string" && ADMIN_SAVE_URL){
-  try{
-    const rr = await fetch(ADMIN_SAVE_URL, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify(ADMIN_CFG) // <- recomendo assim
-    });
-    if(!rr.ok) throw new Error("HTTP " + rr.status);
-    adminToastOk("Salvo no servidor ✅");
-    return true; // <- ESSENCIAL
-  }catch(e){
-    console.warn("ADMIN_SAVE_URL falhou, mantendo rascunho local", e);
-    adminToastErr("Não salvou no servidor (mantido rascunho local)");
-    return false;
+  if(typeof ADMIN_SAVE_URL === "string" && ADMIN_SAVE_URL){
+    try{
+      const rr = await fetch(ADMIN_SAVE_URL, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(ADMIN_CFG)
+      });
+      if(!rr.ok) throw new Error("HTTP " + rr.status);
+      adminToastOk("Salvo no servidor ✅");
+      return true;
+}catch(e){
+      console.warn("ADMIN_SAVE_URL falhou, mantendo rascunho local", e);
+      adminToastErr("Não salvou no servidor (mantido rascunho local)");
+      return false;
+    }
   }
-}
+
   // sem endpoint: oferece download
   adminToastOk("Rascunho salvo ✅ (local) — JSON pronto para copiar/baixar");
   return true;
@@ -3803,19 +3832,14 @@ async function openAdmin(){
     }catch(_){}
   }
 
-const lojaCfg =
-  cfgLocal?.config?.loja ||
-  cfgLocal?.loja ||
-  null;
-
-const telTes = adminSanTel(lojaCfg?.tesoureiro_whatsapp || "");
-
-if(!telTes){
-  adminToastErr("Falta config.loja.tesoureiro_whatsapp no JSON");
-  // ⚠️ Se você NÃO quiser travar o ADM, comente a linha abaixo:
-  // window.__AGAPE_ADMIN_MODE = false;
-  // return;
-}
+  const lojaCfg = (cfgLocal && cfgLocal.config && cfgLocal.config.loja) ? cfgLocal.config.loja : (cfgLocal && cfgLocal.loja ? cfgLocal.loja : null);
+  const telTes = adminSanTel((lojaCfg && lojaCfg.tesoureiro_whatsapp) ? lojaCfg.tesoureiro_whatsapp : "");
+  if(!telTes){
+    adminToastErr("Falta config.loja.tesoureiro_whatsapp no JSON");
+    // Não bloqueia o ADM por causa disso (evita voltar pra tela anterior)
+    // window.__AGAPE_ADMIN_MODE = false;
+    // return;
+  }
 
   const typed = adminSanTel(prompt("Senha do Admin (telefone do tesoureiro):") || "");
   if(!typed || typed !== telTes){
