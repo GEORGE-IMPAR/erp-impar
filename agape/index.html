@@ -1277,6 +1277,38 @@ button.adminBtnConfirm:hover {
   box-shadow:0 25px 60px rgba(0,0,0,.6);
   animation:fadeInScale .35s ease;
 }
+
+/* ===== V0: borda animada premium (efeito neon) ===== */
+.v0-card{ position:relative; overflow:hidden; }
+.v0-card::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background: conic-gradient(from 0deg,
+    rgba(45,140,255,0) 0deg,
+    rgba(45,140,255,.95) 40deg,
+    rgba(51,208,122,.45) 90deg,
+    rgba(45,140,255,.95) 140deg,
+    rgba(45,140,255,0) 220deg,
+    rgba(255,255,255,.0) 360deg
+  );
+  animation: v0BorderSpin 3.5s linear infinite;
+  filter: blur(0px);
+  opacity:.95;
+}
+.v0-card::after{
+  content:"";
+  position:absolute;
+  inset:2px;
+  background:linear-gradient(180deg,#071c3b,#0b2a5e);
+  border-radius:20px;
+  z-index:0;
+}
+.v0-card > *{ position:relative; z-index:1; }
+@keyframes v0BorderSpin{
+  to{ transform: rotate(360deg); }
+}
+
 @keyframes fadeInScale{
   from{opacity:0; transform:scale(.9);}
   to{opacity:1; transform:scale(1);}
@@ -2780,7 +2812,7 @@ try{
       await registerPush();
     }
   }catch(e){
-    await registerPush()
+    console.warn("Push não registrado", e);
   }
 
   setTimeout(()=>{
@@ -3235,7 +3267,7 @@ function adminSyncSessaoTab() {
   adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
   adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
   adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
-  adminSetVal("a_push_on", String(!!ADMIN_CFG?.push?.habilitado));
+  adminSetVal("a_push_on", "true");
   adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
   adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
   adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
@@ -3353,7 +3385,7 @@ function adminRenderSessao(){
   adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
   adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
 
-  adminSetVal("a_push_on", String(!!ADMIN_CFG?.push?.habilitado));
+  adminSetVal("a_push_on", "true");
   adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
   adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
   adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
@@ -3633,13 +3665,39 @@ function adminBindUI(){
   });
 
   adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
+    // snapshot do estado ANTES de salvar (pra detectar mudança)
+    const prevConvAtiva = !!(window.ADMIN_CFG && window.ADMIN_CFG.convocacao && window.ADMIN_CFG.convocacao.ativa);
+    const prevConvId    = (window.ADMIN_CFG && window.ADMIN_CFG.convocacao && window.ADMIN_CFG.convocacao.id) ? String(window.ADMIN_CFG.convocacao.id) : "";
+    const prevStatus    = (window.ADMIN_CFG && window.ADMIN_CFG.sessao && window.ADMIN_CFG.sessao.status) ? String(window.ADMIN_CFG.sessao.status).toLowerCase() : "";
+
     const ok = await adminSave();
     if(!ok) return;
 
-    // Dispara PUSH para avisar os irmãos (usando o diretório /agape/push/)
-    try{
-      const title = "Sessão convocada";
-      const body = (adminEl("a_sessao_chamado")?.value || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
+    // ✅ BLINDAGEM: push SEMPRE habilitado (não depende de config/checkbox fantasma)
+    window.ADMIN_CFG = window.ADMIN_CFG || {};
+    window.ADMIN_CFG.push = window.ADMIN_CFG.push || {};
+    window.ADMIN_CFG.push.habilitado = true;
+
+    // ✅ Se tem dados de convocação, ela NÃO pode voltar pra false sozinha
+    window.ADMIN_CFG.convocacao = window.ADMIN_CFG.convocacao || {};
+    const convId    = (window.ADMIN_CFG.convocacao.id || "").toString().trim();
+    const convTit   = (window.ADMIN_CFG.convocacao.titulo || "").toString().trim();
+    const convTxt   = (window.ADMIN_CFG.convocacao.texto || "").toString().trim();
+    const chamado   = (window.ADMIN_CFG.sessao && window.ADMIN_CFG.sessao.chamado) ? String(window.ADMIN_CFG.sessao.chamado).trim() : "";
+
+    if(convId || convTit || convTxt || chamado){
+      window.ADMIN_CFG.convocacao.ativa = true;
+    }
+
+    // Detecta transições
+    const nowConvAtiva = !!window.ADMIN_CFG.convocacao.ativa;
+    const nowConvId    = (window.ADMIN_CFG.convocacao.id ? String(window.ADMIN_CFG.convocacao.id) : "");
+    const nowStatus    = (window.ADMIN_CFG.sessao && window.ADMIN_CFG.sessao.status) ? String(window.ADMIN_CFG.sessao.status).toLowerCase() : "";
+
+    const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
+    const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
+
+    async function sendPush(title, body){
       await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
         method:"POST",
         headers: { "Content-Type":"application/json" },
@@ -3651,6 +3709,34 @@ function adminBindUI(){
           url: location.href
         })
       });
+    }
+
+    // 1) PUSH: Convocação (V0 -> V1)
+    if(virouConvocada){
+      try{
+        const title = "Sessão convocada";
+        const body  = (chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
+        await sendPush(title, body);
+        adminToastOk("PUSH de convocação enviado ✅");
+      }catch(e){
+        console.warn("Falha ao enviar PUSH de convocação:", e);
+        adminToastErr("Não foi possível enviar o PUSH de convocação");
+      }
+    }
+
+    // 2) PUSH: Sessão aberta para consumo (V1 -> V2)
+    if(virouAberta){
+      try{
+        const title = "Sessão aberta para consumo";
+        const body  = "Consumo liberado no Ágape. Abra o app para registrar seus itens.";
+        await sendPush(title, body);
+        adminToastOk("PUSH de sessão aberta enviado ✅");
+      }catch(e){
+        console.warn("Falha ao enviar PUSH de sessão aberta:", e);
+        adminToastErr("Não foi possível enviar o PUSH de sessão aberta");
+      }
+    }
+  });
       adminToastOk("PUSH enviado ✅");
     }catch(e){
       console.warn("Falha ao enviar PUSH:", e);
