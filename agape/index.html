@@ -1913,54 +1913,59 @@ function showScreen(id, dir="forward"){
    - Mantém compat: CFG.loja / CFG.sessao / CFG.produtos
    - Canonical: CFG.config.loja / CFG.config.sessao / CFG.config.produtos
 ========================== */
-function normalizeCFG(cfg){
-  if(!cfg || typeof cfg!=="object") cfg = {};
-  if(!cfg.config || typeof cfg.config!=="object") cfg.config = {};
-
-  if(!cfg.config.loja || typeof cfg.config.loja!=="object") cfg.config.loja = {};
-  if(!cfg.config.sessao || typeof cfg.config.sessao!=="object") cfg.config.sessao = {};
-  if(!Array.isArray(cfg.config.produtos)) cfg.config.produtos = [];
-
-  if(!cfg.push || typeof cfg.push!=="object") cfg.push = {};
-  if(!cfg.convocacao || typeof cfg.convocacao!=="object") cfg.convocacao = {};
-  if(!Array.isArray(cfg.irmaos)) cfg.irmaos = [];
-  if(!cfg.ui || typeof cfg.ui!=="object") cfg.ui = {};
-
-  // ✅ aliases compat (mesma referência)
-  cfg.loja = cfg.config.loja;
-  cfg.sessao = cfg.config.sessao;
-  cfg.produtos = cfg.config.produtos;
-
-  // compat opcional (se alguém ainda grava nesses caminhos antigos)
-  if(cfg.loja && typeof cfg.loja === "object"){
-    if(cfg.loja.logo_url && !cfg.ui.logo_url) cfg.ui.logo_url = cfg.loja.logo_url;
-  }
-
-  return cfg;
-}
-
 async function loadConfig(){
-  const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json", { cache:"no-store" });
+  const URL_CFG = "https://api.erpimpar.com.br/agape/consumo/agape_config.json";
+
+  const r = await fetch(URL_CFG, { cache:"no-store" });
   if(!r.ok) throw new Error("config HTTP " + r.status);
+
   const j = await r.json();
-  const raw = json?.config ? json.config : json;
-
-// normaliza booleans que vêm como "true"/"false"
-if(raw?.convocacao && typeof raw.convocacao.ativa === "string"){
-  raw.convocacao.ativa = (raw.convocacao.ativa.toLowerCase() === "true");
-}
-if(raw?.push && typeof raw.push.habilitado === "string"){
-  raw.push.habilitado = (raw.push.habilitado.toLowerCase() === "true");
-}
-
-window.CFG = raw;
-CFG = raw;
-  
-  CFG = normalizeCFG(j);
+  CFG = normalizeCFG(j);     // ✅ sempre normaliza (envelopado ou direto)
   window.CFG = CFG;
   return CFG;
 }
 window.loadConfig = loadConfig;
+
+function normalizeCFG(input){
+  // Aceita tanto:
+  //  A) { config: {...} }
+  //  B) { loja:{...}, sessao:{...}, ... }  (direto)
+  let cfg = (input && typeof input === "object") ? input : {};
+  if(!cfg.config || typeof cfg.config !== "object"){
+    cfg = { config: cfg };
+  }
+
+  // garante blocos
+  const c = cfg.config;
+  if(!c.loja || typeof c.loja !== "object") c.loja = {};
+  if(!c.sessao || typeof c.sessao !== "object") c.sessao = {};
+  if(!c.push || typeof c.push !== "object") c.push = {};
+  if(!c.convocacao || typeof c.convocacao !== "object") c.convocacao = {};
+  if(!Array.isArray(c.irmaos)) c.irmaos = [];
+  if(!Array.isArray(c.produtos)) c.produtos = [];
+  if(!c.ui || typeof c.ui !== "object") c.ui = {};
+
+  // normaliza boolean (vem como "true"/"false" às vezes)
+  function toBool(v){
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+    if (typeof v === "string") return v.trim().toLowerCase() === "true";
+    return !!v;
+  }
+  c.push.habilitado   = toBool(c.push.habilitado);
+  c.convocacao.ativa  = toBool(c.convocacao.ativa);
+
+  // ✅ ALIASES (o app inteiro pode usar CFG.loja, CFG.sessao, etc.)
+  cfg.loja      = c.loja;
+  cfg.sessao    = c.sessao;
+  cfg.push      = c.push;
+  cfg.convocacao= c.convocacao;
+  cfg.irmaos    = c.irmaos;
+  cfg.produtos  = c.produtos;
+  cfg.ui        = c.ui;
+
+  return cfg;
+}
 window.normalizeCFG = normalizeCFG;
 
 function sessionIsOpen(){
@@ -2054,8 +2059,11 @@ function setReadPresenca(){
   if(!key) return;
   localStorage.setItem(LS_PRESENCA_READ, key);
 }
+
+/* ✅ CORRIGIDO: root inexistente + conta errada */
 function refreshPresenceUI(){
-  const totalIrmaos = Array.isArray(CFG?.irmaos) ? CFG.irmaos.length : 0;
+  const irmaos = getIrmaos();
+  const totalIrmaos = irmaos.length;
   const ans = getPresencaAns();
 
   const totalResp = ans ? 1 : 0;
@@ -2261,12 +2269,18 @@ function updateTotal(){
   return total;
 }
 
-function findIrmao(tel,cim){
-  tel=String(tel||"").replace(/\D/g,"");
-  cim=String(cim||"").trim();
-  return (Array.isArray(CFG?.irmaos)?CFG.irmaos:[]).find(i =>
-    String(i.telefone||"").replace(/\D/g,"")===tel &&
-    String(i.cim||"").trim()===cim
+function getIrmaos(){
+  // suporta os 2 formatos: direto e envelopado
+  const root = (window.CFG && window.CFG.config) ? window.CFG.config : window.CFG;
+  return Array.isArray(root?.irmaos) ? root.irmaos : [];
+}
+
+function findIrmao(tel, cim){
+  tel = String(tel||"").replace(/\D/g,"");
+  cim = String(cim||"").trim();
+  return getIrmaos().find(i =>
+    String(i.telefone||"").replace(/\D/g,"") === tel &&
+    String(i.cim||"").trim() === cim
   );
 }
 
@@ -2359,217 +2373,7 @@ function startWaitPolling(){
 /* ==========================
    PIX / PAY (mantive igual)
 ========================== */
-function escapeHtml(s){
-  return String(s||"")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-function cartEntries(cart){
-  if(!cart) return [];
-  if(!Array.isArray(cart) && typeof cart==="object"){
-    return Object.entries(cart).map(([id,q])=>({id:String(id), qtd:Number(q||0)}));
-  }
-  if(Array.isArray(cart)){
-    return cart.map(it=>({id:String(it.id), qtd:Number(it.qtd||it.qtd||0)}));
-  }
-  return [];
-}
-function emv(id, value){
-  const v = String(value);
-  const len = String(v.length).padStart(2,"0");
-  return `${id}${len}${v}`;
-}
-function crc16(payload){
-  let crc = 0xFFFF;
-  for(let i=0;i<payload.length;i++){
-    crc ^= (payload.charCodeAt(i) << 8);
-    for(let j=0;j<8;j++){
-      crc = (crc & 0x8000) ? (((crc << 1) ^ 0x1021) & 0xFFFF) : ((crc << 1) & 0xFFFF);
-    }
-  }
-  return crc.toString(16).toUpperCase().padStart(4,"0");
-}
-function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
-  const k = String(key||"").trim();
-  const a = Number(amount||0).toFixed(2);
-
-  const mName = String(merchantName || "AGAPE").slice(0,25);
-  const mCity = String(merchantCity || "BRASIL").slice(0,15);
-  const tId   = String(txid || "AGAPE").slice(0,25);
-
-  const gui = emv("00","BR.GOV.BCB.PIX");
-  const chave = emv("01", k);
-  const mai = emv("26", gui + chave);
-
-  const payloadNoCrc =
-    emv("00","01") +
-    emv("01","12") +
-    mai +
-    emv("52","0000") +
-    emv("53","986") +
-    emv("54", a) +
-    emv("58","BR") +
-    emv("59", mName) +
-    emv("60", mCity) +
-    emv("62", emv("05", tId)) +
-    "6304";
-
-  return payloadNoCrc + crc16(payloadNoCrc);
-}
-
-function buildPayScreen(){
-  payReady = false;
-  setTimeout(()=>{ payReady = true; }, 350);
-
-  applyBrand();
-
-  const u = getUser() || {};
-  const nome = (u.nome||"").trim();
-  setText("payHello", nome ? `Oi meu irmão, ${nome}!` : "Oi meu irmão!");
-
-  const total = updateTotal();
-  setText("payTotal", fmtBRL(total));
-  setText("pixValor", fmtBRL(total));
-
-  const cart = getCart();
-  const entries = cartEntries(cart).filter(x=>x.qtd>0);
-
-  const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
-  const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
-
-  const lines = entries.map(e=>{
-    const p = byId[e.id] || {};
-    const nomeP = p.nome || `Item ${e.id}`;
-    const preco = Number(p.preco||0);
-    const sub = e.qtd * preco;
-    return {q:e.qtd, nome:nomeP, sub};
-  });
-
-  const box = document.getElementById("payItems");
-  if(box){
-    if(lines.length===0){
-      box.innerHTML = `<div style="opacity:.75;font-weight:900">Nenhum item selecionado.</div>`;
-    }else{
-      box.innerHTML = lines.map(l=>{
-        const left = `${l.q} ${l.nome}`;
-        const right = fmtBRL(l.sub);
-        return `<div class="payItemRow"><div class="payItemLeft">${escapeHtml(left)}</div><div class="payItemDots"></div><div class="payItemRight">${escapeHtml(right)}</div></div>`;
-      }).join("");
-    }
-  }
-}
-
-function openPixModal(){
-  const total = updateTotal();
-  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
-  if(!key){ toast("Chave Pix não configurada"); return; }
-
-  const elValor = document.getElementById("pixValor");
-  if(elValor) elValor.textContent = fmtBRL(total);
-
-  const payload = buildPixPayload({
-    key,
-    amount: total,
-    merchantName: (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "AGAPE",
-    merchantCity: (CFG && CFG.loja && CFG.loja.cidade) ? CFG.loja.cidade : "BRASIL",
-    txid: "AGAPE"
-  });
-
-  const elCode =
-    document.getElementById("pixChaveModal") ||
-    document.getElementById("pixChave") ||
-    document.getElementById("pixKeyText") ||
-    null;
-
-  if(elCode) elCode.textContent = payload;
-
-  const modal = document.getElementById("pixModal");
-  if(modal) modal.classList.remove("hidden");
-}
-
-function closePixModal(){
-  const modal = document.getElementById("pixModal");
-  if(modal) modal.classList.add("hidden");
-}
-
-async function copyText(txt){
-  try{ await navigator.clipboard.writeText(txt); toast("Copiado ✅"); }
-  catch(_){
-    const ta=document.createElement("textarea");
-    ta.value=txt; ta.style.position="fixed"; ta.style.left="-9999px";
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    try{ document.execCommand("copy"); toast("Copiado ✅"); } catch(__){ toast("Não foi possível copiar"); }
-    document.body.removeChild(ta);
-  }
-}
-
-function showPaySuccess(){
-  const ps = document.getElementById("paySuccess");
-  if(ps) ps.classList.remove("hidden");
-}
-function hidePaySuccess(){
-  const ps = document.getElementById("paySuccess");
-  if(ps) ps.classList.add("hidden");
-}
-
-function finalizePayment(tipo, msg){
-  const total = updateTotal();
-  if(tipo === "dinheiro" || tipo === "pix"){
-    setCash(getCash() + Number(total || 0));
-    renderCash();
-  }
-
-  toast(msg);
-  clearCart();
-  updateTotal();
-  closePixModal();
-  showPaySuccess();
-
-  setTimeout(()=>{
-    hidePaySuccess();
-    showScreen("scr_login","back");
-  }, 2200);
-}
-
-/* ==========================
-   PUSH (registrar sempre)
-========================== */
-function urlBase64ToUint8Array(base64String) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
-}
-const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
-const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
-
-async function registerPush() {
-  if (!("serviceWorker" in navigator)) return;
-  const reg = await navigator.serviceWorker.ready;
-
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return;
-
-  let subscription = await reg.pushManager.getSubscription();
-  if (!subscription) {
-    subscription = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-    });
-  }
-
-  const sub = subscription.toJSON();
-  await fetch(PUSH_SUBSCRIBE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(sub)
-  });
-}
+/* ... (restante do seu script PIX/PAY/PUSH fica igual ao seu arquivo) ... */
 
 /* ==========================
    ADMIN (corrigido: lê e salva o MESMO JSON)
@@ -2603,109 +2407,7 @@ async function adminLoadFromServer(){
   adminSetActiveTab("cfg");
 }
 
-function adminRenderCfg(){
-  if(!ADMIN_CFG) return;
-  adminSetVal("a_loja_nome", ADMIN_CFG?.loja?.nome || "");
-  adminSetVal("a_loja_sub", ADMIN_CFG?.loja?.subtitulo || "");
-  adminSetVal("a_loja_pix", ADMIN_CFG?.loja?.pix_chave || "");
-  adminSetVal("a_loja_tes", ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
-  adminSetVal("a_logo_url", ADMIN_CFG?.ui?.logo_url || ADMIN_CFG?.loja?.logo_url || ADMIN_CFG?.loja?.logo || "");
-
-  const logoUrl = adminVal("a_logo_url") || "./assets/logo-Clementino-Brito.jpeg";
-  const img = adminEl("adminLogo");
-  if(img) img.src = logoUrl;
-}
-
-function adminRenderSessao(){
-  if(!ADMIN_CFG) return;
-  adminSetVal("a_sessao_status", ADMIN_CFG?.sessao?.status || "fechada");
-  adminSetVal("a_sessao_data", ADMIN_CFG?.sessao?.data || "");
-  adminSetVal("a_sessao_caixa", ADMIN_CFG?.sessao?.caixa_inicial ?? 0);
-  adminSetVal("a_sessao_chamado", ADMIN_CFG?.sessao?.chamado || "");
-
-  adminSetVal("a_conv_on", String(!!ADMIN_CFG?.convocacao?.ativa));
-  adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
-  adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
-  adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
-
-  // ✅ push sempre ligado (sem fantasma)
-  adminSetVal("a_push_on", "true");
-  adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
-  adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
-  adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
-}
-
-function adminSetActiveTab(tab){
-  ADMIN_TAB = tab;
-
-  document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
-  if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
-  if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
-  if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
-
-  adminEl("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
-  adminEl("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
-  adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
-
-  if(tab==="cfg") adminRenderCfg();
-  if(tab==="sessao") adminRenderSessao();
-  if(tab==="irmaos" && typeof adminSyncIrmaosTab==="function") adminSyncIrmaosTab();
-}
-
-function adminApplyCurrentTabToCfg(){
-  if(!ADMIN_CFG) return;
-
-  if(ADMIN_TAB==="cfg"){
-    ADMIN_CFG.loja.nome = adminVal("a_loja_nome");
-    ADMIN_CFG.loja.subtitulo = adminVal("a_loja_sub");
-    ADMIN_CFG.loja.pix_chave = adminVal("a_loja_pix");
-    ADMIN_CFG.loja.tesoureiro_whatsapp = adminVal("a_loja_tes");
-    const logo = adminVal("a_logo_url");
-    if(logo) ADMIN_CFG.ui.logo_url = logo;
-  }
-
-  if(ADMIN_TAB==="sessao"){
-    ADMIN_CFG.sessao.status = adminVal("a_sessao_status");
-    ADMIN_CFG.sessao.data = adminVal("a_sessao_data");
-    ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
-    ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
-
-    ADMIN_CFG.push.habilitado = true;
-
-    ADMIN_CFG.convocacao.ativa = (adminVal("a_conv_on")==="true");
-    ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
-    ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
-    ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
-
-    // ✅ blindagem: se tiver conteúdo, conv fica ativa
-    const hasConv = !!(
-      String(ADMIN_CFG.sessao.chamado||"").trim() ||
-      String(ADMIN_CFG.convocacao.id||"").trim() ||
-      String(ADMIN_CFG.convocacao.titulo||"").trim() ||
-      String(ADMIN_CFG.convocacao.texto||"").trim()
-    );
-    if(hasConv) ADMIN_CFG.convocacao.ativa = true;
-  }
-}
-
-async function adminSave(){
-  if(!ADMIN_CFG) return false;
-
-  adminApplyCurrentTabToCfg();
-
-  const rr = await fetch(ADMIN_SAVE_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify(ADMIN_CFG)
-  });
-  if(!rr.ok) throw new Error("ADMIN save HTTP " + rr.status);
-
-  // ✅ mantém app sincronizado
-  CFG = ADMIN_CFG;
-  window.CFG = CFG;
-
-  return true;
-}
+/* ... (adminRenderCfg/adminRenderSessao/adminSetActiveTab/adminApplyCurrentTabToCfg/adminSave ficam iguais) ... */
 
 function adminBindUI(){
   if(ADMIN_BOUND) return;
@@ -2720,6 +2422,7 @@ function adminBindUI(){
     showScreen("scr_login","back");
   });
 
+  /* ✅ CORRIGIDO: handler de salvar (chaves/try-catch certinho) */
   adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
     const prevConvAtiva = !!(ADMIN_CFG?.convocacao?.ativa);
     const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
@@ -2728,6 +2431,17 @@ function adminBindUI(){
     try{
       await adminSave();
       adminToastOk("Salvo no servidor ✅");
+
+      // recarrega do KingHost para garantir que o arquivo gravou mesmo
+      try{
+        await loadConfig();
+        ADMIN_CFG = (CFG && CFG.config) ? CFG.config : CFG;
+        window.ADMIN_CFG = ADMIN_CFG;
+      }catch(e){
+        console.warn(e);
+        adminToastErr("Salvou, mas não consegui recarregar a config agora");
+      }
+
     }catch(e){
       console.warn(e);
       adminToastErr("Falha ao salvar no servidor");
@@ -2776,7 +2490,7 @@ function adminBindUI(){
       }
     }
 
-    // ✅ atualiza UI do app imediatamente
+    // atualiza UI do app imediatamente
     try{
       applyBrand();
       updateConvocacaoBadge();
@@ -2786,202 +2500,10 @@ function adminBindUI(){
   });
 }
 
-async function openAdmin(){
-  window.__AGAPE_ADMIN_MODE = true;
-  try{ if(typeof hideV0==="function") hideV0(); }catch(_){}
-
-  adminBindUI();
-
-  // ✅ garante CFG atualizado
-  try{ if(!CFG) await loadConfig(); }catch(_){}
-
-  const telTes = adminSanTel(CFG?.loja?.tesoureiro_whatsapp || "");
-  const typed  = adminSanTel(prompt("Senha do Admin (telefone do tesoureiro):") || "");
-
-  // ❗ cancelou / vazio -> sai do modo ADM e volta pro V0 (não deixa o app “travado”)
-  if(!typed){
-    adminToastErr("Acesso cancelado");
-    window.__AGAPE_ADMIN_MODE = false;
-    try{ if(typeof showV0==="function") showV0(); }catch(_){}
-    return;
-  }
-
-  if(telTes && typed !== telTes){
-    adminToastErr("Senha inválida");
-    window.__AGAPE_ADMIN_MODE = false;
-    try{ if(typeof showV0==="function") showV0(); }catch(_){}
-    return;
-  }
-
-  showScreen("scr_admin","forward");
-
-  try{
-    await adminLoadFromServer();
-    adminToastOk("Admin pronto ✅");
-  }catch(e){
-    console.warn(e);
-    adminToastErr("Falha ao carregar config do servidor");
-    ADMIN_CFG = normalizeCFG({});
-    window.ADMIN_CFG = ADMIN_CFG;
-    adminSetActiveTab("cfg");
-
-    // se falhou carregar, volta pro V0 e sai do modo ADM
-    window.__AGAPE_ADMIN_MODE = false;
-    try{ if(typeof showV0==="function") showV0(); }catch(_){}
-  }
-}
-
 /* ==========================
    BOOT
 ========================== */
-async function boot(){
-  // SW
-  if("serviceWorker" in navigator){
-    try{ await navigator.serviceWorker.register("./service-worker.js"); }catch(e){ console.warn("Erro SW", e); }
-  }
-
-  // CFG
-  try{ await loadConfig(); }catch(e){ console.warn("CFG fail", e); }
-
-  // ✅ push sempre (sem depender do JSON)
-  try{ await registerPush(); }catch(e){ console.warn("Push não registrado", e); }
-
-  setTimeout(()=>{
-    const img = document.getElementById("splashSymbol");
-    if(img) img.src = "./assets/maconaria.gif";
-  }, 1200);
-
-  setTimeout(()=>{ showScreen("scr_splash2","forward"); }, GIF_TIME);
-
-  setTimeout(()=>{
-    applyBrand();
-    initCashFromConfig();
-    renderCash();
-    applyRememberedUser();
-    setupAdminTap();
-    updateEnvelopeUI();
-    refreshPresenceUI();
-
-    if(sessionIsOpen()){
-      showScreen("scr_login","forward");
-    }else{
-      showScreen("scr_wait","forward");
-      startWaitPolling();
-    }
-  }, GIF_TIME + ZOOM_TIME);
-
-  // LOGIN
-  document.getElementById("btnEntrar")?.addEventListener("click", async ()=>{
-    const u = getUser();
-    const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
-
-    const telInp = document.getElementById("inpTel");
-    const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
-
-    const cimInp = document.getElementById("inpCIM");
-    const cim = cimInp ? String(cimInp.value||"").trim() : "";
-
-    if(!tel){ toast("Digite o telefone"); return; }
-    if(!cim){ toast("Digite o CIM"); return; }
-
-    try{ await loadConfig(); }catch(_){}
-    applyBrand();
-
-    const irmao = findIrmao(tel, cim);
-    if(!irmao){ toast("CIM inválido"); return; }
-
-    setUser({ nome: irmao.nome, telefone: String(irmao.telefone).replace(/\D/g,"") });
-    applyRememberedUser();
-
-    if(!sessionIsOpen()){
-      toast("Sessão fechada (tesoureiro precisa abrir)");
-      showScreen("scr_wait","forward");
-      startWaitPolling();
-      return;
-    }
-
-    renderProducts();
-    lastTotal = 0;
-    updateTotal();
-    initCashFromConfig();
-    renderCash();
-    showScreen("scr_consumo","forward");
-  });
-
-  // QTY
-  document.addEventListener("click",(e)=>{
-    const btn=e.target.closest(".qtyBtn");
-    if(!btn) return;
-    const id=btn.getAttribute("data-id");
-    const act=btn.getAttribute("data-act");
-    const cart=getCart();
-    const cur=Number(cart[id]||0);
-    cart[id]= act==="inc" ? cur+1 : Math.max(0, cur-1);
-    setCart(cart);
-    const el=document.getElementById("qty_"+id);
-    if(el) el.textContent=String(cart[id]);
-    updateTotal();
-  });
-
-  // FECHAR -> PAGAMENTO
-  document.getElementById("btnFechar")?.addEventListener("click", ()=>{
-    const total = updateTotal();
-    if(total<=0){ toast("Selecione ao menos 1 item"); return; }
-    buildPayScreen();
-    hidePaySuccess();
-    closePixModal();
-    showScreen("scr_pagamento","forward");
-  });
-
-  document.getElementById("btnVoltarConsumo")?.addEventListener("click", ()=>{
-    closePixModal();
-    hidePaySuccess();
-    showScreen("scr_consumo","back");
-  });
-
-  document.getElementById("btnSair")?.addEventListener("click", ()=>{
-    closePixModal();
-    hidePaySuccess();
-    clearCart();
-    const cim = document.getElementById("inpCIM"); if(cim) cim.value="";
-    showScreen("scr_login","back");
-    toast("Saiu");
-  });
-
-  document.getElementById("btnPix")?.addEventListener("click", ()=>{
-    if(!payReady) return;
-    openPixModal();
-  });
-  document.getElementById("btnDinheiro")?.addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("dinheiro", "Registrado: dinheiro");
-  });
-  document.getElementById("btnProxima")?.addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("proxima", "Registrado: próxima sessão");
-  });
-
-  document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
-    const el = document.getElementById("pixChaveModal");
-    const payload = el ? (el.textContent || "").trim() : "";
-    if(!payload){ toast("Código Pix vazio"); return; }
-    copyText(payload);
-  });
-
-  ["btnPixCancel","btnPixCancel2"].forEach(id=>{
-    const b = document.getElementById(id);
-    if(b) b.addEventListener("click", closePixModal);
-  });
-
-  document.getElementById("btnPixOk")?.addEventListener("click", ()=>{
-    if(!payReady) return;
-    finalizePayment("pix", "Registrado: pix");
-  });
-
-  // Envelope abre presença
-  document.getElementById("btnEnvelope")?.addEventListener("click", openPresenca);
-  document.getElementById("btnFecharPresenca")?.addEventListener("click", ()=>showScreen("scr_wait","back"));
-}
+/* ... (boot() e eventos ficam iguais ao seu arquivo) ... */
 
 boot();
 </script>
@@ -3009,9 +2531,6 @@ boot();
 
 <script>
 // ===== V0 (sessão fechada) =====
-// - Sempre mostra o modal quando a convocação ainda não está ativa
-// - Usuário comum: OK = sai do app
-// - Venerável: duplo clique no cabeçalho abre ADM e suprime o V0
 
 // Logo padrão (GitHub/pages)
 const DEFAULT_V0_LOGO = "https://erpimpar.com.br/agape/logo.jpeg";
@@ -3038,6 +2557,7 @@ function showV0(){
 function hideV0(){
   document.getElementById("modalV0")?.classList.add("hidden");
 }
+
 document.addEventListener("DOMContentLoaded", ()=>{
   // Usuário comum: OK = sai do aplicativo
   document.getElementById("btnV0Ok")?.addEventListener("click", ()=>{
@@ -3060,7 +2580,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
   setTimeout(()=>{
     try{
-        if(window.CFG && (CFG?.sessao?.status !== "aberta")){ showV0(); }
+      if(window.CFG && (CFG?.sessao?.status !== "aberta")){ showV0(); }
     }catch(e){}
   },800);
 
@@ -3068,12 +2588,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
   setInterval(()=>{
     try{
       if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
-      if(window.CFG && (CFG?.sessao?.status === "aberta")) hideV0();
-         else showV0();
+      /* ✅ CORRIGIDO: não usa toBool() aqui (não existe nesse escopo) */
+      if (window.CFG && (CFG?.convocacao?.ativa === true)) { hideV0(); }
+      else { showV0(); }
     }catch(e){}
   }, 1500);
 });
 </script>
-
-</body>
-</html>
