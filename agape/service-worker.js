@@ -85,6 +85,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // sempre buscar config atualizado (não cachear)
+if(url.pathname.endsWith("/agape_config.json")){
+  event.respondWith(
+    fetch(req, { cache: "no-store" })
+      .then(resp => resp)
+      .catch(() => caches.match(req))
+  );
+  return;
+}
+  
   // cache-first simples
   event.respondWith(
     caches.match(req).then((cached) => {
