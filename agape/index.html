@@ -2960,67 +2960,115 @@ async function boot(){
 boot();
 </script>
 
+<!-- ===== V0 MODAL (sessão fechada) ===== -->
+<div id="modalV0" class="modal-overlay hidden">
+  <div class="modal-card v0-card">
+    <div class="v0-header" id="v0HeaderBtn" title="Duplo clique para entrar no ADM">
+      <img id="v0Logo" class="v0-logo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo">
+      <div>
+        <div id="v0LojaNome" class="v0-loja"></div>
+        <div class="v0-sub">App Ágape • Consumo & Pagamento</div>
+      </div>
+    </div>
+    <div class="v0-icon">!</div>
+    <div class="v0-title">Atenção</div>
+    <div class="v0-text">
+      O Venerável ainda não abriu a próxima sessão.<br><br>
+      Fique tranquilo, assim que a sessão for liberada,
+      você será notificado pelo aplicativo.
+    </div>
+    <button id="btnV0Ok" class="v0-btn">OK</button>
+  </div>
+</div>
+
 <script>
-// Logo padrão (GitHub/pages)
+/**
+ * V0: aparece SEMPRE que a sessão estiver FECHADA.
+ * - Sessão fechada => V0 aparece
+ * - Sessão aberta   => V0 some
+ * - Se estiver no ADM => V0 nunca cobre a tela
+ */
+
+// Logo fallback
 const DEFAULT_V0_LOGO = "https://erpimpar.com.br/agape/logo.jpeg";
 
-// Flag global: se o ADM estiver ativo, o V0 não pode reaparecer por cima
-window.__AGAPE_ADMIN_MODE = window.__AGAPE_ADMIN_MODE || false;
+// Garanta que existe e começa falso
+window.__AGAPE_ADMIN_MODE = !!window.__AGAPE_ADMIN_MODE;
+
+function v0SessionIsOpen(){
+  try{
+    const st = String(window.CFG?.sessao?.status || "").toLowerCase();
+    return st === "aberta";
+  }catch(_){ return false; }
+}
+
+function v0ApplyBrand(){
+  try{
+    const lojaNome = (window.CFG?.loja?.nome || "").trim();
+    const logoSrc  = (window.CFG?.ui?.logo_url || window.CFG?.loja?.logo_url || window.CFG?.loja?.logo || "").trim();
+
+    const nameEl = document.getElementById("v0LojaNome");
+    if(nameEl) nameEl.textContent = lojaNome || "";
+
+    const img = document.getElementById("v0Logo");
+    if(img){
+      img.src = (logoSrc || DEFAULT_V0_LOGO);
+      img.onerror = function(){
+        if(img.src !== DEFAULT_V0_LOGO) img.src = DEFAULT_V0_LOGO;
+      };
+    }
+  }catch(_){}
+}
 
 function showV0(){
   const modal = document.getElementById("modalV0");
   if(!modal) return;
+
+  // se estiver no ADM, não mostra
   if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
-  if(window.CFG){
-    const lojaNome = (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "";
-    const logoSrc  = (CFG && CFG.loja && (CFG.loja.logo_url || CFG.loja.logo)) ? (CFG.loja.logo_url || CFG.loja.logo) : "";
-    document.getElementById("v0LojaNome").textContent = lojaNome;
-    const img = document.getElementById("v0Logo");
-    img.src = (logoSrc || DEFAULT_V0_LOGO);
-    img.onerror = function(){
-      if(img.src !== DEFAULT_V0_LOGO) img.src = DEFAULT_V0_LOGO;
-    };
-  }
+
+  v0ApplyBrand();
   modal.classList.remove("hidden");
 }
+
 function hideV0(){
   document.getElementById("modalV0")?.classList.add("hidden");
 }
 
+// Controle: sessão fechada => mostra; aberta => esconde
+function v0Tick(){
+  try{
+    if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+    if(v0SessionIsOpen()) hideV0();
+    else showV0();
+  }catch(_){}
+}
+
 document.addEventListener("DOMContentLoaded", ()=>{
-  // Usuário comum: OK = sai do aplicativo
+  // OK: fecha (no desktop tenta fechar aba; no PWA só esconde)
   document.getElementById("btnV0Ok")?.addEventListener("click", ()=>{
     hideV0();
-    if(typeof sairDoAplicativo === "function"){
-      sairDoAplicativo();
-    }else{
-      try{ window.open("about:blank","_self"); window.close(); }catch(e){}
-    }
+    try{
+      // se você tiver função própria, usa
+      if(typeof sairDoAplicativo === "function"){ sairDoAplicativo(); return; }
+      // fallback desktop
+      window.open("about:blank","_self");
+      window.close();
+    }catch(_){}
   });
 
-  // Venerável: duplo clique no cabeçalho (logo + nome) abre o ADM
+  // Duplo clique no header abre ADM (se existir openAdmin)
   document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     window.__AGAPE_ADMIN_MODE = true;
     hideV0();
-    if(typeof openAdmin === "function") openAdmin();
+    try{ if(typeof openAdmin === "function") openAdmin(); }catch(_){}
   });
 
-  setTimeout(()=>{
-    try{
-      if(window.CFG && (CFG?.sessao?.status !== "aberta")){ showV0(); }
-    }catch(e){}
-  },800);
-
-  // Monitor: se a sessão for aberta, some; se fechar de novo e não estiver no ADM, volta.
-  setInterval(()=>{
-    try{
-      if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
-      /* ✅ CORRIGIDO: não usa toBool() aqui (não existe nesse escopo) */
-      if (window.CFG && (CFG?.convocacao?.ativa === true)) { hideV0(); }
-      else { showV0(); }
-    }catch(e){}
-  }, 1500);
+  // Primeira checagem (curta) e depois monitora
+  setTimeout(v0Tick, 600);
+  setInterval(v0Tick, 1200);
 });
 </script>
+</body>
+</html>
