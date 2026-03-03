@@ -3035,12 +3035,80 @@ function hideV0(){
   document.getElementById("modalV0")?.classList.add("hidden");
 }
 
-// Controle: sessão fechada => mostra; aberta => esconde
-function v0Tick(){
+/* ====== V0/V1/V2 STATE MACHINE (CIRÚRGICO) ======
+   V0: sem convocação ativa (mensagem azul)
+   V1: convocação ativa + sessão fechada (mostra scr_wait com envelope/badge)
+   V2: sessão aberta (consumo)
+================================================== */
+
+function v0ToBool(v){
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") return v.trim().toLowerCase() === "true";
+  return !!v;
+}
+
+function v0ConvocacaoAtiva(){
+  try{
+    // compat: CFG.convocacao OU CFG.sessao.convocacao
+    const c = (window.CFG && (CFG.convocacao || (CFG.sessao && CFG.sessao.convocacao))) || null;
+    if(!c) return false;
+    return v0ToBool(c.ativa);
+  }catch(_){
+    return false;
+  }
+}
+
+// Você já tem v0SessionIsOpen() aí em cima (ou sessionIsOpen). Se não tiver, use esta:
+function v0SessionIsOpen(){
+  try{ return String(CFG?.sessao?.status||"").toLowerCase()==="aberta"; }
+  catch(_){ return false; }
+}
+
+function v0GetStage(){
+  // V2 ganha sempre
+  if(v0SessionIsOpen()) return "V2";
+  // Se foi convocada: V1
+  if(v0ConvocacaoAtiva()) return "V1";
+  // Se não foi convocada: V0
+  return "V0";
+}
+
+// Controle: V0 só quando NÃO convocado; V1 quando convocado; V2 quando aberto
+async function v0Tick(){
   try{
     if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
-    if(v0SessionIsOpen()) hideV0();
-    else showV0();
+
+    const stage = v0GetStage();
+
+    if(stage === "V0"){
+      showV0();
+      return;
+    }
+
+    // stage V1 ou V2 => não pode existir V0 por cima
+    hideV0();
+
+    if(stage === "V1"){
+      // garante que o usuário cai na tela “sessão fechada ativa” (scr_wait)
+      try{
+        if(typeof showScreen === "function"){
+          if(typeof currentScreen !== "undefined" && currentScreen !== "scr_wait"){
+            showScreen("scr_wait", "forward");
+          }else if(typeof currentScreen === "undefined"){
+            showScreen("scr_wait", "forward");
+          }
+        }
+      }catch(_){}
+
+      // garante badge do envelope (bolinha vermelha)
+      try{
+        if(typeof updateConvocacaoBadge === "function") updateConvocacaoBadge();
+        if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+      }catch(_){}
+    }
+
+    // stage V2: só garante V0 fora e segue fluxo normal do app
   }catch(_){}
 }
 
@@ -3049,9 +3117,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
   document.getElementById("btnV0Ok")?.addEventListener("click", ()=>{
     hideV0();
     try{
-      // se você tiver função própria, usa
       if(typeof sairDoAplicativo === "function"){ sairDoAplicativo(); return; }
-      // fallback desktop
       window.open("about:blank","_self");
       window.close();
     }catch(_){}
