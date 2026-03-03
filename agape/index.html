@@ -2961,58 +2961,44 @@ boot();
 </script>
 
 <script>
-// ===== V0 (sessão fechada) =====
-// - Sempre mostra o modal quando a convocação ainda não está ativa
-// - Usuário comum: OK = sai do app
-// - Admin: duplo clique no cabeçalho abre ADM e suprime o V0
-
+// Logo padrão (GitHub/pages)
 const DEFAULT_V0_LOGO = "https://erpimpar.com.br/agape/logo.jpeg";
 
-// flag única (SEM underscore no fim)
+// Flag global: se o ADM estiver ativo, o V0 não pode reaparecer por cima
 window.__AGAPE_ADMIN_MODE = window.__AGAPE_ADMIN_MODE || false;
 
 function showV0(){
   const modal = document.getElementById("modalV0");
   if(!modal) return;
-
-  if(window.__AGAPE_ADMIN_MODE){
-    hideV0();
-    return;
+  if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+  if(window.CFG){
+    const lojaNome = (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "";
+    const logoSrc  = (CFG && CFG.loja && (CFG.loja.logo_url || CFG.loja.logo)) ? (CFG.loja.logo_url || CFG.loja.logo) : "";
+    document.getElementById("v0LojaNome").textContent = lojaNome;
+    const img = document.getElementById("v0Logo");
+    img.src = (logoSrc || DEFAULT_V0_LOGO);
+    img.onerror = function(){
+      if(img.src !== DEFAULT_V0_LOGO) img.src = DEFAULT_V0_LOGO;
+    };
   }
-
-  try{
-    if(window.CFG){
-      const lojaNome = (window.CFG.loja && window.CFG.loja.nome) ? window.CFG.loja.nome : "";
-      const logoSrc  = (window.CFG.loja && (window.CFG.loja.logo_url || window.CFG.loja.logo))
-        ? (window.CFG.loja.logo_url || window.CFG.loja.logo)
-        : "";
-
-      const nomeEl = document.getElementById("v0LojaNome");
-      if(nomeEl) nomeEl.textContent = lojaNome;
-
-      const img = document.getElementById("v0Logo");
-      if(img){
-        img.src = (logoSrc || DEFAULT_V0_LOGO);
-        img.onerror = function(){
-          if(img.src !== DEFAULT_V0_LOGO) img.src = DEFAULT_V0_LOGO;
-        };
-      }
-    }
-  }catch(e){}
-
   modal.classList.remove("hidden");
 }
-
 function hideV0(){
   document.getElementById("modalV0")?.classList.add("hidden");
 }
 
 document.addEventListener("DOMContentLoaded", ()=>{
+  // Usuário comum: OK = sai do aplicativo
   document.getElementById("btnV0Ok")?.addEventListener("click", ()=>{
     hideV0();
-    if(typeof sairDoAplicativo === "function") sairDoAplicativo();
+    if(typeof sairDoAplicativo === "function"){
+      sairDoAplicativo();
+    }else{
+      try{ window.open("about:blank","_self"); window.close(); }catch(e){}
+    }
   });
 
+  // Venerável: duplo clique no cabeçalho (logo + nome) abre o ADM
   document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
     e.preventDefault();
     e.stopPropagation();
@@ -3023,23 +3009,17 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
   setTimeout(()=>{
     try{
-      if(window.CFG && !(window.CFG.convocacao && window.CFG.convocacao.ativa)){
-        showV0();
-      }
+      if(window.CFG && (CFG?.sessao?.status !== "aberta")){ showV0(); }
     }catch(e){}
-  }, 800);
+  },800);
 
+  // Monitor: se a sessão for aberta, some; se fechar de novo e não estiver no ADM, volta.
   setInterval(()=>{
     try{
-      if(window.__AGAPE_ADMIN_MODE){
-        hideV0();
-        return;
-      }
-      if(window.CFG && window.CFG.convocacao && window.CFG.convocacao.ativa){
-        hideV0();
-      }else{
-        showV0();
-      }
+      if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+      /* ✅ CORRIGIDO: não usa toBool() aqui (não existe nesse escopo) */
+      if (window.CFG && (CFG?.convocacao?.ativa === true)) { hideV0(); }
+      else { showV0(); }
     }catch(e){}
   }, 1500);
 });
