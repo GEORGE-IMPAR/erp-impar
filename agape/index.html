@@ -1926,14 +1926,6 @@ async function loadConfig(){
 }
 window.loadConfig = loadConfig;
 
-// ✅ helper global (usado em normalizeCFG e no V0)
-function toBool(v){
-  if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v === 1;
-  if (typeof v === "string") return v.trim().toLowerCase() === "true";
-  return !!v;
-}
-
 function normalizeCFG(input){
   // Aceita tanto:
   //  A) { config: {...} }
@@ -1952,9 +1944,16 @@ function normalizeCFG(input){
   if(!Array.isArray(c.irmaos)) c.irmaos = [];
   if(!Array.isArray(c.produtos)) c.produtos = [];
   if(!c.ui || typeof c.ui !== "object") c.ui = {};
+
   // normaliza boolean (vem como "true"/"false" às vezes)
-  c.push.habilitado   = toBool(c.push.habilitado);
-  c.convocacao.ativa  = toBool(c.convocacao.ativa);
+  function _toBool(v){
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+    if (typeof v === "string") return v.trim().toLowerCase() === "true";
+    return !!v;
+  }
+  c.push.habilitado   = _toBool(c.push.habilitado);
+  c.convocacao.ativa  = _toBool(c.convocacao.ativa);
 
   // ✅ ALIASES (o app inteiro pode usar CFG.loja, CFG.sessao, etc.)
   cfg.loja      = c.loja;
@@ -2066,13 +2065,18 @@ function refreshPresenceUI(){
   const totalNao  = Math.max(0, totalIrmaos - totalResp);
 
   const setNum = (id, v)=>{ const el=document.getElementById(id); if(el) el.textContent = String(v); };
-  setNum("rT", totalResp);
-  setNum("rN", totalNao);
+  // contadores (se existirem)
+  setNum("rSA", ans==="sessao_agape" ? 1 : 0);
+  setNum("rS",  ans==="somente_sessao" ? 1 : 0);
+  setNum("rA",  ans==="somente_agape" ? 1 : 0);
+  setNum("rNV", ans==="nao_vou" ? 1 : 0);
+  setNum("rT",  totalResp);
+  setNum("rN",  totalNao);
 
   const line = document.getElementById("presStatusLine");
   if(line){
     const label =
-      ans === "sessao_agape" ? "Sessão e Ágape" :
+      ans === "sessao_agape" ? "Sessão e Agape" :
       ans === "somente_sessao" ? "Somente sessão" :
       ans === "somente_agape" ? "Somente ágape" :
       ans === "nao_vou" ? "Não vou" : "";
@@ -2746,8 +2750,8 @@ function adminBindUI(){
         console.warn(e);
         adminToastErr("Falha ao salvar no servidor");
        return;
-     }
     }
+
     const nowConvAtiva = !!(ADMIN_CFG?.convocacao?.ativa);
     const nowConvId    = String(ADMIN_CFG?.convocacao?.id || "");
     const nowStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
@@ -2797,6 +2801,12 @@ function adminBindUI(){
       initCashFromConfig();
       renderCash();
     }catch(_){}
+
+    }catch(e){
+      console.warn(e);
+      adminToastErr("Falha ao salvar no servidor");
+    }
+  });
 }
 
 async function openAdmin(){
@@ -2991,19 +3001,24 @@ async function boot(){
     finalizePayment("pix", "Registrado: pix");
   });
 
-  
-  // PRESENÇA: 4 opções (liga os botões)
+    // PRESENÇA (4 opções)
   document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=>choosePresenca("sessao_agape"));
-  document.getElementById("btnRespSomenteSessao")?.addEventListener("click", ()=>choosePresenca("somente_sessao"));
-  document.getElementById("btnRespSomenteAgape")?.addEventListener("click", ()=>choosePresenca("somente_agape"));
+  document.getElementById("btnRespSessao")?.addEventListener("click", ()=>choosePresenca("somente_sessao"));
+  document.getElementById("btnRespAgape")?.addEventListener("click", ()=>choosePresenca("somente_agape"));
   document.getElementById("btnRespNaoVou")?.addEventListener("click", ()=>choosePresenca("nao_vou"));
 
 // Envelope abre presença
   document.getElementById("btnEnvelope")?.addEventListener("click", openPresenca);
+
+  // Presença: 4 opções
+  document.getElementById("btnRespSessaoAgape")?.addEventListener("click", ()=>choosePresenca("sessao_agape"));
+  document.getElementById("btnRespSessao")?.addEventListener("click", ()=>choosePresenca("somente_sessao"));
+  document.getElementById("btnRespAgape")?.addEventListener("click", ()=>choosePresenca("somente_agape"));
+  document.getElementById("btnRespNaoVou")?.addEventListener("click", ()=>choosePresenca("nao_vou"));
   document.getElementById("btnFecharPresenca")?.addEventListener("click", ()=>showScreen("scr_wait","back"));
 }
 
-boot();
+document.addEventListener('DOMContentLoaded', boot);
 </script>
 
 <!-- ===== V0 MODAL ===== -->
