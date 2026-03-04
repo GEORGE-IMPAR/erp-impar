@@ -2707,104 +2707,102 @@ function adminBindUI(){
     showScreen("scr_login","back");
   });
 
-adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
-  const prevConvAtiva = (ADMIN_CFG?.convocacao?.ativa === true || ADMIN_CFG?.convocacao?.ativa === 1 || ADMIN_CFG?.convocacao?.ativa === "1");
-  const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
-  const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
+  adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
+    const prevConvAtiva = (ADMIN_CFG?.convocacao?.ativa === true || ADMIN_CFG?.convocacao?.ativa === 1 || ADMIN_CFG?.convocacao?.ativa === "1");
+    const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
+    const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
-  try{
-    await adminSave();
-    adminToastOk("Salvo no servidor ✅");
-  }catch(e){
-    console.warn(e);
-    adminToastErr("Falha ao salvar no servidor");
-    return;
-  }
-
-  const nowConvAtiva = (ADMIN_CFG?.convocacao?.ativa === true || ADMIN_CFG?.convocacao?.ativa === 1 || ADMIN_CFG?.convocacao?.ativa === "1");
-  const nowConvId    = String(ADMIN_CFG?.convocacao?.id || "");
-  const nowStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
-
-  const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
-  const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
-
-  async function sendPush(title, body){
-    await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
-      method:"POST",
-      headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({
-        title,
-        body,
-        icon: "https://erpimpar.com.br/agape/logo.jpeg",
-        badge: "https://erpimpar.com.br/agape/logo.jpeg",
-        url: location.href
-      })
-    });
-  }
-
-  // ✅ SALVA no agape_config.json via salvar_config.php (depois do push)
-  async function salvarConfigPhp(){
-    // ajuste a URL se seu PHP estiver em outro caminho:
-    const url = "https://api.erpimpar.com.br/agape/consumo/salvar_config.php";
-
-    // garante formato {config:{...}} se necessário
-    const payload = (ADMIN_CFG && ADMIN_CFG.config) ? ADMIN_CFG : { config: ADMIN_CFG };
-
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type":"application/json;charset=UTF-8" },
-      body: JSON.stringify(payload)
-    });
-
-    if(!r.ok){
-      const t = await r.text().catch(()=> "");
-      throw new Error("salvar_config.php falhou: HTTP " + r.status + " " + t);
-    }
-    return r;
-  }
-
-  if(virouConvocada){
     try{
-      const body = (ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
-      await sendPush("Sessão convocada", body);
-      adminToastOk("PUSH de convocação enviado ✅");
-
-      // ✅ aqui é o que você pediu:
-      // 1) força convocação ativa = 1
-      if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
-      ADMIN_CFG.convocacao.ativa = 1; // <- fica 1 no JSON
-      // opcional: garante um id/ts pra diferenciar convocações
-      if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
-      ADMIN_CFG.convocacao.ts = new Date().toISOString();
-
-      // 2) grava no agape_config.json chamando o PHP
-      await salvarConfigPhp();
-      adminToastOk("Config gravado (convocação=1) ✅");
-
+      await adminSave();
+      adminToastOk("Salvo no servidor ✅");
     }catch(e){
       console.warn(e);
-      adminToastErr("Falha no PUSH e/ou salvar_config.php");
+      adminToastErr("Falha ao salvar no servidor");
+      return;
     }
-  }
 
-  if(virouAberta){
+    const nowConvAtiva = (ADMIN_CFG?.convocacao?.ativa === true || ADMIN_CFG?.convocacao?.ativa === 1 || ADMIN_CFG?.convocacao?.ativa === "1");
+    const nowConvId    = String(ADMIN_CFG?.convocacao?.id || "");
+    const nowStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
+
+    const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
+    const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
+
+    async function sendPush(title, body){
+      await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
+        method:"POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+          title,
+          body,
+          icon: "https://erpimpar.com.br/agape/logo.jpeg",
+          badge: "https://erpimpar.com.br/agape/logo.jpeg",
+          url: location.href
+        })
+      });
+    }
+
+    // ✅ SALVA no agape_config.json via salvar_config.php (depois do push)
+    async function salvarConfigPhp(){
+      const url = "https://api.erpimpar.com.br/agape/consumo/salvar_config.php";
+
+      // garante formato {config:{...}} se necessário
+      const payload = (ADMIN_CFG && ADMIN_CFG.config) ? ADMIN_CFG : { config: ADMIN_CFG };
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type":"application/json;charset=UTF-8" },
+        body: JSON.stringify(payload)
+      });
+
+      if(!r.ok){
+        const t = await r.text().catch(()=> "");
+        throw new Error("salvar_config.php falhou: HTTP " + r.status + " " + t);
+      }
+      return r;
+    }
+
+    if(virouConvocada){
+      try{
+        const body = (ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
+        await sendPush("Sessão convocada", body);
+        adminToastOk("PUSH de convocação enviado ✅");
+
+        // ✅ 1) força convocação ativa = 1
+        if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
+        ADMIN_CFG.convocacao.ativa = 1;
+        if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
+        ADMIN_CFG.convocacao.ts = new Date().toISOString();
+
+        // ✅ 2) grava no agape_config.json chamando o PHP
+        await salvarConfigPhp();
+        adminToastOk("Config gravado (convocação=1) ✅");
+
+      }catch(e){
+        console.warn(e);
+        adminToastErr("Falha no PUSH e/ou salvar_config.php");
+      }
+    }
+
+    if(virouAberta){
+      try{
+        await sendPush("Sessão aberta para consumo", "Consumo liberado no Ágape. Abra o app para registrar seus itens.");
+        adminToastOk("PUSH de sessão aberta enviado ✅");
+      }catch(e){
+        console.warn(e);
+        adminToastErr("Falha ao enviar PUSH de sessão aberta");
+      }
+    }
+
+    // ✅ atualiza UI do app imediatamente
     try{
-      await sendPush("Sessão aberta para consumo", "Consumo liberado no Ágape. Abra o app para registrar seus itens.");
-      adminToastOk("PUSH de sessão aberta enviado ✅");
-    }catch(e){
-      console.warn(e);
-      adminToastErr("Falha ao enviar PUSH de sessão aberta");
-    }
-  }
-
-  // ✅ atualiza UI do app imediatamente
-  try{
-    applyBrand();
-    updateConvocacaoBadge();
-    initCashFromConfig();
-    renderCash();
-  }catch(_){}
- });
+      applyBrand();
+      updateConvocacaoBadge();
+      initCashFromConfig();
+      renderCash();
+    }catch(_){}
+  });
+} // ✅ FECHA adminBindUI() (ISSO ESTAVA FALTANDO)
 
 
 async function openAdmin(){
@@ -2838,7 +2836,6 @@ async function openAdmin(){
     adminSetActiveTab("cfg");
   }
 }
-
 /* ==========================
    BOOT
 ========================== */
