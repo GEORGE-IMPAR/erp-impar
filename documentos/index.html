@@ -412,15 +412,15 @@ const payload = buildPayload();
 
       showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
 
-      const resp = await postJson(API_SAVE_JSON, payload);
+const resp = await postJson(API_SAVE_JSON, payload);
 
-      hidePageLoader();
-      Swal.fire({
-        icon:"success",
-        title:"Sucesso!",
-        html:"Dados salvos com sucesso.",
-        confirmButtonText:"OK"
-      });
+hidePageLoader();
+
+const tipo = await imparAskDocToGenerate("afterSave");
+
+if(!tipo) return;
+
+await gerarDocumento(tipo);
 
       return resp;
     }catch(err){
@@ -3103,61 +3103,49 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
 }
   
 async function gerarDocumento(tipo){
+
   const {codigo} = getProjetoMetaForFilename();
 
-  if(!codigo){
-    Swal.fire({
-      icon:"warning",
-      title:"Informe o código do projeto",
-      html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."
-    });
-    return false;
-  }
-
-  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} no servidor e abrindo no Word 365.`);
+  showImparLoading("Gerando documento no servidor...");
 
   try{
-    const resp = await fetch("https://api.erpimpar.com.br/word365/gerar_documento_word365.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ codigo, tipo }),
-      cache: "no-store"
+
+    const endpoint = tipo === "contrato"
+      ? "https://api.erpimpar.com.br/storage/docs/onedrive/gerar_contrato_onedrive.php"
+      : "https://api.erpimpar.com.br/storage/docs/onedrive/gerar_os_onedrive.php";
+
+    const resp = await fetch(endpoint,{
+      method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({codigo})
     });
 
     const data = await resp.json();
 
-    if(!resp.ok || !data?.ok){
-      throw new Error(data?.message || `Falha ao gerar documento (HTTP ${resp.status}).`);
-    }
+    if(!data.ok) throw new Error(data.error);
 
-    if(!data.webUrl){
-      throw new Error("A API não retornou a URL do Word.");
-    }
-
-    window.open(data.webUrl, "_blank", "noopener");
+    window.open(data.url, "_blank");
 
     Swal.fire({
-      icon: "success",
-      title: "Documento pronto",
-      html: `${nomeDoc} enviado para o Word 365 com sucesso.`
+      icon:"success",
+      title:"Documento aberto no Word Web",
+      html:"Você pode editar e salvar.<br><br>Deseja gerar link de compartilhamento?",
+      showCancelButton:true,
+      confirmButtonText:"Gerar link",
+      cancelButtonText:"Fechar"
+    }).then(async(result)=>{
+      if(result.isConfirmed){
+        await gerarLinkCompartilhamento(codigo, tipo);
+      }
     });
 
-    return true;
-  } catch(err){
-    Swal.fire({
-      icon:"error",
-      title:"Erro ao gerar documento",
-      html: err?.message || String(err)
-    });
-    return false;
-  } finally {
+  }catch(err){
+    Swal.fire({icon:"error",title:"Erro",text:err.message});
+  }finally{
     hideImparLoading();
   }
-}
-/* ===== Disparos =====
+  
+}/* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
    2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
 */
