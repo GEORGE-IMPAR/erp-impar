@@ -412,15 +412,22 @@ const payload = buildPayload();
 
       showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
 
-const resp = await postJson(API_SAVE_JSON, payload);
+      const resp = await postJson(API_SAVE_JSON, payload);
 
-hidePageLoader();
+      hidePageLoader();
 
-const tipo = await imparAskDocToGenerate("afterSave");
+      const tipo = await imparAskDocToGenerate("afterSave");
+      if(!tipo) return resp;
 
-if(!tipo) return;
-
-await gerarDocumento(tipo);
+      try{
+        await gerarDocumento(tipo, { preferExisting: true });
+      }catch(err){
+        Swal.fire({
+          icon:"error",
+          title:"Erro ao gerar documento",
+          html: err?.message || String(err)
+        });
+      }
 
       return resp;
     }catch(err){
@@ -2992,6 +2999,109 @@ $("#btnFinalizar").addEventListener("click", async () => {
    - Gera DOCX via API (make_contract.php / make_os.php)
    ================================ */
 
+const WORD365_API_BASE = "https://api.erpimpar.com.br/word365";
+const WORD365_ENDPOINT_CHECK = WORD365_API_BASE + "/consultar_documento_word365.php";
+const WORD365_ENDPOINT_UPLOAD = WORD365_API_BASE + "/subir_documento_word365.php";
+const WORD365_ENDPOINT_SHARE = WORD365_API_BASE + "/compartilhar_documento_word365.php";
+
+async function fetchJsonSafe(url, options){
+  const resp = await fetch(url, options);
+  let data = null;
+  try{ data = await resp.json(); }catch(e){}
+  if(!resp.ok){
+    throw new Error(data?.message || data?.error || `Falha na API (${resp.status}).`);
+  }
+  return data || {};
+}
+
+async function consultarDocumentoWord365(codigo, tipo){
+  return await fetchJsonSafe(WORD365_ENDPOINT_CHECK, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ codigo, tipo }),
+    cache: "no-store"
+  });
+}
+
+async function subirDocumentoWord365({ codigo, tipo, filename, blob }){
+  const fd = new FormData();
+  fd.append("codigo", codigo);
+  fd.append("tipo", tipo);
+  fd.append("filename", filename);
+  fd.append("docx", blob, filename);
+
+  return await fetchJsonSafe(WORD365_ENDPOINT_UPLOAD, {
+    method: "POST",
+    body: fd,
+    cache: "no-store"
+  });
+}
+
+async function compartilharDocumentoWord365(codigo, tipo){
+  return await fetchJsonSafe(WORD365_ENDPOINT_SHARE, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ codigo, tipo }),
+    cache: "no-store"
+  });
+}
+
+async function oferecerCompartilhamentoDocumento(meta){
+  if(!meta?.codigo || !meta?.tipo) return;
+
+  const res = await Swal.fire({
+    title: "Documento aberto no Word 365",
+    html: "Quando terminar os ajustes, você pode gerar um link de compartilhamento do mesmo arquivo.",
+    icon: "success",
+    showCancelButton: true,
+    confirmButtonText: "Gerar link de compartilhamento",
+    cancelButtonText: "Fechar",
+    buttonsStyling: false,
+    customClass: {
+      popup: "impar-swal",
+      confirmButton: "impar-swal-confirm",
+      cancelButton: "impar-swal-cancel",
+      actions: "impar-swal-actions"
+    }
+  });
+
+  if(!res.isConfirmed) return;
+
+  try{
+    showImparLoading("Gerando link de compartilhamento…", "Preparando o link do documento no OneDrive.");
+    const share = await compartilharDocumentoWord365(meta.codigo, meta.tipo);
+    hideImparLoading();
+
+    const link = share?.shareUrl || share?.webUrl || "";
+    if(!link){
+      throw new Error("A API não retornou um link de compartilhamento.");
+    }
+
+    const copied = !!(navigator.clipboard && navigator.clipboard.writeText && await navigator.clipboard.writeText(link).then(()=>true).catch(()=>false));
+
+    await Swal.fire({
+      icon: "success",
+      title: copied ? "Link copiado" : "Link gerado",
+      html: copied
+        ? "O link de compartilhamento foi copiado para a área de transferência."
+        : `Link gerado:<br><br><a href="${link}" target="_blank" rel="noopener">${link}</a>`,
+      confirmButtonText: "OK",
+      buttonsStyling: false,
+      customClass: {
+        popup: "impar-swal",
+        confirmButton: "impar-swal-confirm"
+      }
+    });
+  }catch(err){
+    hideImparLoading();
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao compartilhar",
+      html: err?.message || String(err)
+    });
+  }
+}
+
 function getProjetoMetaForFilename(){
   const codigo = (document.getElementById("codigoProjeto")?.value || "").trim();
   const nomeObra = (document.getElementById("nomeObra")?.value || "").trim();
@@ -3102,50 +3212,74 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
   setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
 }
   
-async function gerarDocumento(tipo){
+async function gerarDocumento(tipo, options={}){
+  const {codigo, nomeObra} = getProjetoMetaForFilename();
+  const preferExisting = options.preferExisting !== false;
 
-  const {codigo} = getProjetoMetaForFilename();
+  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
+  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const fallbackFilename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
 
-  showImparLoading("Gerando documento no servidor...");
+  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
 
-  try{
-
-    const endpoint = tipo === "contrato"
-      ? "https://api.erpimpar.com.br/storage/docs/onedrive/gerar_contrato_onedrive.php"
-      : "https://api.erpimpar.com.br/storage/docs/onedrive/gerar_os_onedrive.php";
-
-    const resp = await fetch(endpoint,{
-      method:"POST",
-      headers:{"Content-Type":"application/x-www-form-urlencoded"},
-      body:new URLSearchParams({codigo})
-    });
-
-    const data = await resp.json();
-
-    if(!data.ok) throw new Error(data.error);
-
-    window.open(data.url, "_blank");
-
-    Swal.fire({
-      icon:"success",
-      title:"Documento aberto no Word Web",
-      html:"Você pode editar e salvar.<br><br>Deseja gerar link de compartilhamento?",
-      showCancelButton:true,
-      confirmButtonText:"Gerar link",
-      cancelButtonText:"Fechar"
-    }).then(async(result)=>{
-      if(result.isConfirmed){
-        await gerarLinkCompartilhamento(codigo, tipo);
+  try {
+    if(preferExisting){
+      const existing = await consultarDocumentoWord365(codigo, tipo);
+      if(existing?.ok && existing?.exists && existing?.webUrl){
+        hideImparLoading();
+        window.open(existing.webUrl, "_blank", "noopener");
+        await oferecerCompartilhamentoDocumento({ codigo, tipo, webUrl: existing.webUrl, shareUrl: existing.shareUrl || "" });
+        return true;
       }
+    }
+
+    let result = null;
+
+    if (tipo === "contrato") {
+      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContratoBlob !== "function") {
+        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
+      }
+      result = await window.ERP_DOCX.gerarContratoBlob(codigo);
+    } else if (tipo === "os") {
+      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSBlob !== "function") {
+        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
+      }
+      result = await window.ERP_DOCX.gerarOSBlob(codigo);
+    } else {
+      throw new Error("Tipo de documento inválido.");
+    }
+
+    if(!result?.blob){
+      throw new Error("O DOCX não foi gerado corretamente.");
+    }
+
+    showImparLoading("Enviando ao Word 365…", `Salvando ${filenameBase} no OneDrive corporativo.`);
+    const upload = await subirDocumentoWord365({
+      codigo,
+      tipo,
+      filename: result.filename || fallbackFilename,
+      blob: result.blob
     });
 
-  }catch(err){
-    Swal.fire({icon:"error",title:"Erro",text:err.message});
-  }finally{
+    if(!upload?.webUrl){
+      throw new Error("A API não retornou a URL do Word.");
+    }
+
+    hideImparLoading();
+    window.open(upload.webUrl, "_blank", "noopener");
+    await oferecerCompartilhamentoDocumento({
+      codigo,
+      tipo,
+      webUrl: upload.webUrl,
+      shareUrl: upload.shareUrl || ""
+    });
+
+    return true;
+  } finally {
     hideImparLoading();
   }
-  
-}/* ===== Disparos =====
+}  
+/* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
    2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
 */
