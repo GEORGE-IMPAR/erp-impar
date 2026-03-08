@@ -2,7 +2,7 @@
    Gera DOCX no browser a partir de:
    - JSON:  https://api.erpimpar.com.br/storage/docs/data/{CODIGO}.json
    - DOCX:  https://api.erpimpar.com.br/storage/docs/template-contrato-PLACEHOLDERS.docx
-   - Injeta hyperlinks reais nos anexos após o render do docxtemplater
+   - Pós-processa o DOCX para transformar a coluna LINK em hyperlink clicável "Abrir anexo"
 */
 
 (function () {
@@ -36,13 +36,17 @@
     return String(v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim();
   }
 
-  function xmlEscape(str) {
+  function escapeXml(str) {
     return String(str || "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&apos;");
+  }
+
+  function escapeRegex(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function enderecoCompleto(d, tipo) {
@@ -132,59 +136,70 @@
         numero: String(i + 1),
         nomeArquivo: nome,
         descricaoAutomatica: descricaoAutomaticaAnexo(nome),
-        linkTexto: link ? `__LINKMARK_${i + 1}__` : "",
-        _linkUrl: link
+        // token técnico, substituído por hyperlink real no pós-processamento
+        linkTexto: link ? `__HYPERLINK_${i + 1}__` : ""
       };
     });
   }
 
-  function injectHyperlinks(zip, anexosLoop) {
-    const linkItems = (anexosLoop || []).filter(a => a && a._linkUrl && a.linkTexto);
-    if (!linkItems.length) return;
+  function buildHyperlinkMaps(anexos) {
+    if (!anexos || !anexos.length) return [];
 
-    const docPath = "word/document.xml";
-    const relsPath = "word/_rels/document.xml.rels";
+    return anexos
+      .map((a, i) => ({
+        token: `__HYPERLINK_${i + 1}__`,
+        url: safeStr(a.webUrl || a.link || ""),
+        label: "Abrir anexo"
+      }))
+      .filter(x => x.url);
+  }
 
-    let documentXml = zip.file(docPath).asText();
-    let relsXml = zip.file(relsPath).asText();
+  function injectHyperlinksIntoZip(zip, hyperlinkMap) {
+    if (!hyperlinkMap || !hyperlinkMap.length) return;
 
-    let nextId = 900;
-    while (relsXml.includes(`Id="rIdHyper${nextId}"`)) {
-      nextId += 1;
-    }
+    let documentXml = zip.file("word/document.xml").asText();
+    let relsXml = zip.file("word/_rels/document.xml.rels").asText();
 
-    linkItems.forEach((item) => {
-      const relId = `rIdHyper${nextId++}`;
-      const escapedUrl = xmlEscape(item._linkUrl);
-      const marker = item.linkTexto;
+    const existingIds = [...relsXml.matchAll(/Id="(rId[^"]+)"/g)].map(m => m[1]);
+    let relCounter = existingIds
+      .map(id => {
+        const m = id.match(/^rId(\d+)$/);
+        return m ? parseInt(m[1], 10) : 0;
+      })
+      .reduce((max, n) => Math.max(max, n), 0) + 1;
 
-      relsXml = relsXml.replace(
-        /<\/Relationships>\s*$/,
-        `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapedUrl}" TargetMode="External"/></Relationships>`
+    hyperlinkMap.forEach((item) => {
+      const relId = `rId${relCounter++}`;
+
+      const relation = `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapeXml(item.url)}" TargetMode="External"/>`;
+      relsXml = relsXml.replace("</Relationships>", relation + "</Relationships>");
+
+      const hyperlinkXml =
+        `<w:hyperlink r:id="${relId}" w:history="1">` +
+          `<w:r>` +
+            `<w:rPr>` +
+              `<w:rStyle w:val="Hyperlink"/>` +
+            `</w:rPr>` +
+            `<w:t>${escapeXml(item.label)}</w:t>` +
+          `</w:r>` +
+        `</w:hyperlink>`;
+
+      const tokenEsc = escapeRegex(item.token);
+      const runRegex = new RegExp(
+        `<w:r\\b[^>]*>[\\s\\S]*?<w:t[^>]*>${tokenEsc}<\\/w:t>[\\s\\S]*?<\\/w:r>`,
+        "m"
       );
 
-      const hyperlinkXml = [
-        `<w:hyperlink r:id="${relId}" w:history="1">`,
-        `<w:r>`,
-        `<w:rPr>`,
-        `<w:rStyle w:val="Hyperlink"/>`,
-        `<w:u w:val="single"/>`,
-        `<w:color w:val="0563C1"/>`,
-        `</w:rPr>`,
-        `<w:t xml:space="preserve">Abrir anexo</w:t>`,
-        `</w:r>`,
-        `</w:hyperlink>`
-      ].join("");
-
-      const markerRegex = new RegExp(
-        `<w:r[^>]*>[\\s\\S]*?<w:t[^>]*>${marker}<\\/w:t>[\\s\\S]*?<\\/w:r>`
-      );
-
-      documentXml = documentXml.replace(markerRegex, hyperlinkXml);
+      if (runRegex.test(documentXml)) {
+        documentXml = documentXml.replace(runRegex, hyperlinkXml);
+      } else {
+        // fallback bruto: se o token vier em texto puro, troca ao menos pelo label
+        documentXml = documentXml.replace(new RegExp(tokenEsc, "g"), escapeXml(item.label));
+      }
     });
 
-    zip.file(docPath, documentXml);
-    zip.file(relsPath, relsXml);
+    zip.file("word/document.xml", documentXml);
+    zip.file("word/_rels/document.xml.rels", relsXml);
   }
 
   async function gerarContratoBlob(codigo) {
@@ -229,9 +244,10 @@
       throw new Error(msg);
     }
 
-    injectHyperlinks(zip, data.anexos);
+    // pós-processa hyperlinks reais no XML do DOCX
+    injectHyperlinksIntoZip(doc.getZip(), buildHyperlinkMaps(anexos));
 
-    const out = zip.generate({
+    const out = doc.getZip().generate({
       type: "blob",
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     });
@@ -253,5 +269,4 @@
   window.ERP_DOCX = window.ERP_DOCX || {};
   window.ERP_DOCX.gerarContrato = gerarContrato;
   window.ERP_DOCX.gerarContratoBlob = gerarContratoBlob;
-
 })();
