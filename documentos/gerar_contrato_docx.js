@@ -76,51 +76,15 @@
     return await r.arrayBuffer();
   }
 
-  async function gerarContratoBlob(codigo) {
-    codigo = safeStr(codigo);
-    if (!codigo) throw new Error("Código vazio.");
-
-    await ensureLibs();
-
-    const [data, templateBuf] = await Promise.all([
-      fetchJson(codigo),
-      fetchArrayBuffer(TEMPLATE_URL)
-    ]);
-
-    // Campos compostos que seu template já espera
-    data.codigo = safeStr(data.codigo || codigo);
-    data.enderecoContratanteCompleto = enderecoCompleto(data, "Contratante");
-    data.enderecoContratadaCompleto  = enderecoCompleto(data, "Contratada");
-
-    const zip = new window.PizZip(templateBuf);
-
-    const doc = new window.docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true,
-      delimiters: { start: "{{", end: "}}" } // seu template é {{chave}}
-    });
-
-    doc.setData(data);
-
-    try {
-      doc.render();
-    } catch (e) {
-      // Mostra erro “legível” quando faltar placeholder
-      console.error(e);
-      const msg = (e.properties && e.properties.errors && e.properties.errors[0])
-        ? e.properties.errors[0].properties.explanation
-        : (e.message || "Erro ao renderizar template");
-      throw new Error(msg);
-    }
-
-    const out = doc.getZip().generate({
-      type: "blob",
-      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    });
-
-    const filename = data.codigo + "_CONTRATO.docx";
-    return { ok: true, filename, blob: out, data };
-  }
+ async function gerarContrato(codigo) {
+  const result = await gerarContratoBlob(codigo);
+  return {
+    ok: true,
+    filename: result.filename,
+    blob: result.blob,
+    data: result.data
+  };
+}
 
   function descricaoAutomaticaAnexo(nomeArquivo) {
   const ext = String(nomeArquivo || "").split(".").pop().toLowerCase();
