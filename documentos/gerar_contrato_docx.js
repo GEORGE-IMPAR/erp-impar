@@ -28,9 +28,6 @@
     if (!window.docxtemplater) {
       await loadScript("https://cdn.jsdelivr.net/npm/docxtemplater@3.53.0/build/docxtemplater.js");
     }
-    if (!window.saveAs) {
-      await loadScript("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
-    }
   }
 
   function safeStr(v) {
@@ -100,25 +97,32 @@
   }
 
   function montarResumoAnexos(anexos) {
-    if (!anexos || !anexos.length) return "Sem anexos.";
+    if (!anexos || !anexos.length) return "";
 
     return anexos.map((a, i) => {
-      const nome = a.name || a.nomeArquivo || "";
+      const nome = safeStr(a.name || a.nomeArquivo || "");
       return `ANEXO ${i + 1} – ${nome}\n${descricaoAutomaticaAnexo(nome)}`;
     }).join("\n\n");
   }
 
   function montarLoopAnexos(anexos) {
-    if (!anexos || !anexos.length) return [];
+    if (!anexos || !anexos.length) {
+      return [{
+        numero: "",
+        nomeArquivo: "Sem anexos.",
+        descricaoAutomatica: "",
+        linkTexto: ""
+      }];
+    }
 
     return anexos.map((a, i) => {
-      const nome = a.name || a.nomeArquivo || "";
-      const link = a.webUrl || a.link || "";
+      const nome = safeStr(a.name || a.nomeArquivo || "");
+      const link = safeStr(a.webUrl || a.link || "");
       return {
         numero: String(i + 1),
         nomeArquivo: nome,
         descricaoAutomatica: descricaoAutomaticaAnexo(nome),
-        linkTexto: link || "Link não disponível"
+        linkTexto: link
       };
     });
   }
