@@ -122,6 +122,56 @@
     return { ok: true, filename, blob: out, data };
   }
 
+  function descricaoAutomaticaAnexo(nomeArquivo) {
+  const ext = String(nomeArquivo || "").split(".").pop().toLowerCase();
+
+  switch (ext) {
+    case "pdf":
+      return "Documento complementar em formato PDF.";
+    case "xls":
+    case "xlsx":
+      return "Planilha complementar contendo informações técnicas.";
+    case "csv":
+      return "Arquivo de dados complementar.";
+    case "ppt":
+    case "pptx":
+      return "Apresentação complementar.";
+    case "doc":
+    case "docx":
+      return "Documento complementar integrante deste instrumento.";
+    case "png":
+    case "jpg":
+    case "jpeg":
+      return "Imagem complementar integrante deste instrumento.";
+    default:
+      return "Documento complementar integrante deste instrumento.";
+  }
+}
+
+function montarResumoAnexos(anexos) {
+  if (!anexos || !anexos.length) return "Sem anexos.";
+
+  return anexos.map((a, i) => {
+    const nome = a.name || a.nomeArquivo || "";
+    return `ANEXO ${i + 1} – ${nome}\n${descricaoAutomaticaAnexo(nome)}`;
+  }).join("\n\n");
+}
+
+function montarLoopAnexos(anexos) {
+  if (!anexos || !anexos.length) return [];
+
+  return anexos.map((a, i) => {
+    const nome = a.name || a.nomeArquivo || "";
+    const link = a.webUrl || a.link || "";
+    return {
+      numero: String(i + 1),
+      nomeArquivo: nome,
+      descricaoAutomatica: descricaoAutomaticaAnexo(nome),
+      linkTexto: link || "Link não disponível"
+    };
+  });
+} 
+   
   async function gerarContrato(codigo) {
     const result = await gerarContratoBlob(codigo);
     window.saveAs(result.blob, result.filename);
