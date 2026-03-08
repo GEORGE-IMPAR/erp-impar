@@ -3339,64 +3339,64 @@ function getAnexosSelecionados(tipo){
 }  
   
 async function gerarDocumento(tipo){
-  const {codigo, nomeObra} = getProjetoMetaForFilename();
-  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
-  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  const filename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
+  const {codigo} = getProjetoMetaForFilename();
 
-  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
+  if(!codigo){
+    Swal.fire({
+      icon:"warning",
+      title:"Informe o código do projeto",
+      html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."
+    });
+    return false;
+  }
 
-  try {
-    if (tipo === "contrato") {
-      const anexos = getAnexosSelecionados("contrato");
+  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
 
-      const uploadResult = await uploadAnexosWord365({
-        codigo,
-        tipo: "contrato",
-        arquivos: anexos
-      });
+  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
 
-      window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+  try{
+    // 1) sobe os anexos do tipo escolhido
+const uploadResult = await uploadAnexosWord365({
+  codigo,
+  tipo,
+  arquivos
+});
 
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
-      }
+if (tipo === "contrato") {
+  window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+} else {
+  window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
+}
+    // 2) segue o fluxo que já funciona
+    const resp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ codigo, tipo }),
+      cache: "no-store"
+    });
 
-      const ret = await window.ERP_DOCX.gerarContrato(codigo);
+    const data = await resp.json();
 
-      if (!ret?.blob) {
-        throw new Error("O contrato foi gerado sem blob.");
-      }
-
-      const salvo = await subirDocumentoWord365({
-        codigo,
-        tipo: "contrato",
-        filename: ret.filename || filename,
-        blob: ret.blob
-      });
-
-      const wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
-
-      if(!wordUrl){
-        throw new Error("A API não retornou a URL do Word.");
-      }
-
-      window.open(wordUrl, "_blank", "noopener");
-
-      Swal.fire({
-        icon: "success",
-        title: "Documento pronto",
-        html: "Contrato aberto no Word 365 com sucesso."
-      });
-
-      return true;
+    if(!resp.ok || !data?.ok){
+      throw new Error(data?.message || `Falha ao gerar documento (HTTP ${resp.status}).`);
     }
 
-    if (tipo === "os") {
-      throw new Error("Fluxo da OS será ligado no próximo passo.");
+    if(!data.webUrl){
+      throw new Error("A API não retornou a URL do Word.");
     }
 
-    throw new Error("Tipo de documento inválido.");
+    window.open(data.webUrl, "_blank", "noopener");
+
+    Swal.fire({
+      icon: "success",
+      title: "Documento pronto",
+      html: `${nomeDoc} aberto no Word 365 com sucesso.`
+    });
+
+    return true;
   } catch(err){
     Swal.fire({
       icon:"error",
@@ -3407,7 +3407,38 @@ async function gerarDocumento(tipo){
   } finally {
     hideImparLoading();
   }
-}
+  
+}/* ===== Disparos =====
+   1) Botão "GERAR DOCUMENTOS" (Etapa 1)
+   2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
+*/
+(function bindGerarDocumentos(){
+  function bindBtnGerar(){
+    const btn = document.getElementById("btnGerar");
+    if(!btn) return;
+
+    // remove listeners antigos
+    const clean = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clean, btn);
+
+    clean.addEventListener("click", async (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+
+      // se existir validação da etapa 1, respeita
+      if (typeof validateStep1 === "function" && !validateStep1()) return;
+
+      const tipo = await imparAskDocToGenerate("step1");
+      if(!tipo) return;
+
+      try{
+        await gerarDocumento(tipo);
+      }catch(err){
+        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
+      }
+    });
+  }
+
   function bindGerarDepoisSalvar(){
     const okBtn = document.getElementById("btnModalSalvarOk");
     if(!okBtn) return;
