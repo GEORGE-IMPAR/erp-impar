@@ -1940,7 +1940,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v11 • validação limpa por etapa</div>
+    <div>v11000 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -3339,74 +3339,51 @@ function getAnexosSelecionados(tipo){
 }  
   
 async function gerarDocumento(tipo){
-  const {codigo} = getProjetoMetaForFilename();
+  const {codigo, nomeObra} = getProjetoMetaForFilename();
+  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
+  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const filename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
 
-  if(!codigo){
-    Swal.fire({
-      icon:"warning",
-      title:"Informe o código do projeto",
-      html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."
-    });
-    return false;
-  }
+  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
 
-  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
+  try {
+    const anexos = getAnexosSelecionados(tipo);
 
-  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
-
-  try{
-    // 1) sobe os anexos do tipo escolhido
-const uploadResult = await uploadAnexosWord365({
-  codigo,
-  tipo,
-  arquivos
-});
-
-if (tipo === "contrato") {
-  window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
-} else {
-  window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
-}
-    // 2) segue o fluxo que já funciona
-    const resp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ codigo, tipo }),
-      cache: "no-store"
-    });
-
-    const data = await resp.json();
-
-    if(!resp.ok || !data?.ok){
-      throw new Error(data?.message || `Falha ao gerar documento (HTTP ${resp.status}).`);
+    if (tipo === "contrato") {
+      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function") {
+        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
+      }
+      const ret = await window.ERP_DOCX.gerarContrato(codigo);
+      await abrirOuGerarDocumentoWord365({
+        codigo,
+        tipo,
+        docxBlob: ret.blob,
+        filename: ret.filename || filename,
+        anexos
+      });
+      return true;
     }
 
-    if(!data.webUrl){
-      throw new Error("A API não retornou a URL do Word.");
+    if (tipo === "os") {
+      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSDocx !== "function") {
+        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
+      }
+      const ret = await window.ERP_DOCX.gerarOSDocx(codigo);
+      await abrirOuGerarDocumentoWord365({
+        codigo,
+        tipo,
+        docxBlob: ret.blob,
+        filename: ret.filename || filename,
+        anexos
+      });
+      return true;
     }
 
-    window.open(data.webUrl, "_blank", "noopener");
-
-    Swal.fire({
-      icon: "success",
-      title: "Documento pronto",
-      html: `${nomeDoc} aberto no Word 365 com sucesso.`
-    });
-
-    return true;
-  } catch(err){
-    Swal.fire({
-      icon:"error",
-      title:"Erro ao gerar documento",
-      html: err?.message || String(err)
-    });
-    return false;
+    throw new Error("Tipo de documento inválido.");
   } finally {
     hideImparLoading();
   }
+}
   
 }/* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
