@@ -1940,7 +1940,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v11000 • validação limpa por etapa</div>
+    <div>v10 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -3333,10 +3333,14 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
 }
 
 function getAnexosSelecionados(tipo){
-  if (tipo === "contrato") return Array.isArray(anexosContrato) ? anexosContrato : [];
-  if (tipo === "os") return Array.isArray(anexosOS) ? anexosOS : [];
+  if (tipo === "contrato") {
+    return Array.isArray(anexosContrato) ? anexosContrato : [];
+  }
+  if (tipo === "os") {
+    return Array.isArray(anexosOS) ? anexosOS : [];
+  }
   return [];
-}  
+}
   
 async function gerarDocumento(tipo){
   const {codigo, nomeObra} = getProjetoMetaForFilename();
@@ -3347,39 +3351,63 @@ async function gerarDocumento(tipo){
   showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
 
   try {
-    const anexos = getAnexosSelecionados(tipo);
-
     if (tipo === "contrato") {
+      const anexos = getAnexosSelecionados("contrato");
+
+      const uploadResult = await uploadAnexosWord365({
+        codigo,
+        tipo: "contrato",
+        arquivos: anexos
+      });
+
+      window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+
       if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function") {
         throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
       }
+
       const ret = await window.ERP_DOCX.gerarContrato(codigo);
-      await abrirOuGerarDocumentoWord365({
+
+      if (!ret?.blob) {
+        throw new Error("O contrato foi gerado sem blob.");
+      }
+
+      const salvo = await subirDocumentoWord365({
         codigo,
-        tipo,
-        docxBlob: ret.blob,
+        tipo: "contrato",
         filename: ret.filename || filename,
-        anexos
+        blob: ret.blob
       });
+
+      const wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
+
+      if(!wordUrl){
+        throw new Error("A API não retornou a URL do Word.");
+      }
+
+      window.open(wordUrl, "_blank", "noopener");
+
+      Swal.fire({
+        icon: "success",
+        title: "Documento pronto",
+        html: "Contrato aberto no Word 365 com sucesso."
+      });
+
       return true;
     }
 
     if (tipo === "os") {
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSDocx !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
-      }
-      const ret = await window.ERP_DOCX.gerarOSDocx(codigo);
-      await abrirOuGerarDocumentoWord365({
-        codigo,
-        tipo,
-        docxBlob: ret.blob,
-        filename: ret.filename || filename,
-        anexos
-      });
-      return true;
+      throw new Error("Fluxo da OS será ligado no próximo passo.");
     }
 
     throw new Error("Tipo de documento inválido.");
+  } catch(err){
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao gerar documento",
+      html: err?.message || String(err)
+    });
+    return false;
   } finally {
     hideImparLoading();
   }
