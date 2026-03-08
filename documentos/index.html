@@ -1328,7 +1328,62 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
     font-size:14px !important;
   }
 
-}  
+}
+
+.lista-anexos{
+  margin-top:10px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.item-anexo{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(2,6,23,.55);
+  color:rgba(231,236,255,.92);
+  box-shadow:0 10px 24px rgba(0,0,0,.18);
+}
+
+.item-anexo-nome{
+  font-size:13px;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.item-anexo-remover{
+  border:none;
+  width:28px;
+  height:28px;
+  min-width:28px;
+  border-radius:999px;
+  cursor:pointer;
+  font-size:16px;
+  font-weight:900;
+  line-height:1;
+  color:#fff;
+  background:linear-gradient(135deg,#ef4444,#b91c1c);
+  box-shadow:0 8px 20px rgba(185,28,28,.35);
+}
+
+.item-anexo-remover:hover{
+  transform:scale(1.06);
+  filter:brightness(1.05);
+}
+
+.item-anexo-vazio{
+  font-size:12px;
+  color:rgba(148,163,184,.85);
+  padding:8px 2px 0;
+}    
+
   </style>
 </head>
 <body>
@@ -1781,17 +1836,28 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
                 <input id="prazoDias" type="text" placeholder="Ex.: 30" inputmode="numeric"/>
               </div>
               <div class="c12">
-                <label for="logoEmpresa">IMPORTE O LOGO DA EMPRESA</label>
-                <input id="logoEmpresa" type="file" accept="image/*"/>
-              </div>
-              <div class="c8">
-                <label>PRÉVIA</label>
-                <div class="logo-preview">
-                  <img id="logoPreview" alt="Prévia da logo" />
-                  <div class="logo-empty" id="logoEmpty">Nenhuma logo importada</div>
-                </div>
-              </div>
+                  <label>ANEXOS DO CONTRATO</label>
+                       <input
+                          id="anexosContrato"
+                          type="file"
+                          multiple
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg"
+                      />
+                  <div id="listaAnexosContrato" class="lista-anexos"></div>
+             </div>
+
+             <div class="c12" style="margin-top:15px;">
+                 <label>ANEXOS DA ORDEM DE SERVIÇO</label>
+                      <input
+                         id="anexosOS"
+                         type="file"
+                         multiple
+                         accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg"
+                     />
+                  <div id="listaAnexosOS" class="lista-anexos"></div>
             </div>
+            
+     </div>
 
           </form>
 
@@ -3344,6 +3410,92 @@ async function gerarDocumento(tipo, options={}){
     bindGerarDepoisSalvar();
   }
 })();
+
+let anexosContrato = [];
+let anexosOS = [];
+
+function renderListaAnexos(tipo){
+  const lista = tipo === "contrato"
+    ? document.getElementById("listaAnexosContrato")
+    : document.getElementById("listaAnexosOS");
+
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
+
+  if(!lista) return;
+
+  lista.innerHTML = "";
+
+  if(!arquivos.length){
+    const vazio = document.createElement("div");
+    vazio.className = "item-anexo-vazio";
+    vazio.textContent = "Nenhum anexo selecionado.";
+    lista.appendChild(vazio);
+    return;
+  }
+
+  arquivos.forEach((file, index) => {
+    const row = document.createElement("div");
+    row.className = "item-anexo";
+
+    const nome = document.createElement("div");
+    nome.className = "item-anexo-nome";
+    nome.textContent = file.name;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "item-anexo-remover";
+    btn.textContent = "×";
+    btn.addEventListener("click", () => removerAnexo(tipo, index));
+
+    row.appendChild(nome);
+    row.appendChild(btn);
+    lista.appendChild(row);
+  });
+}
+
+function removerAnexo(tipo, index){
+  if(tipo === "contrato"){
+    anexosContrato.splice(index, 1);
+    renderListaAnexos("contrato");
+    return;
+  }
+
+  anexosOS.splice(index, 1);
+  renderListaAnexos("os");
+}
+
+function bindAnexosVisual(){
+  const inputContrato = document.getElementById("anexosContrato");
+  const inputOS = document.getElementById("anexosOS");
+
+  if(inputContrato){
+    inputContrato.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      anexosContrato = [...anexosContrato, ...files];
+      renderListaAnexos("contrato");
+      e.target.value = "";
+    });
+  }
+
+  if(inputOS){
+    inputOS.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      anexosOS = [...anexosOS, ...files];
+      renderListaAnexos("os");
+      e.target.value = "";
+    });
+  }
+
+  renderListaAnexos("contrato");
+  renderListaAnexos("os");
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", bindAnexosVisual);
+} else {
+  bindAnexosVisual();
+}
+  
 </script>
 
 <script src="./gerar_contrato_docx.js"></script>
