@@ -3332,74 +3332,72 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
   setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
 }
   
-async function gerarDocumento(tipo, options={}){
-  const {codigo, nomeObra} = getProjetoMetaForFilename();
-  const preferExisting = options.preferExisting !== false;
+async function gerarDocumento(tipo){
+  const {codigo} = getProjetoMetaForFilename();
 
-  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
-  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  const fallbackFilename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
+  if(!codigo){
+    Swal.fire({
+      icon:"warning",
+      title:"Informe o código do projeto",
+      html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."
+    });
+    return false;
+  }
 
-  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
+  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
 
-  try {
-    if(preferExisting){
-      const existing = await consultarDocumentoWord365(codigo, tipo);
-      if(existing?.ok && existing?.exists && existing?.webUrl){
-        hideImparLoading();
-        window.open(existing.webUrl, "_blank", "noopener");
-        await oferecerCompartilhamentoDocumento({ codigo, tipo, webUrl: existing.webUrl, shareUrl: existing.shareUrl || "" });
-        return true;
-      }
-    }
+  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
 
-    let result = null;
-
-    if (tipo === "contrato") {
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContratoBlob !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
-      }
-      result = await window.ERP_DOCX.gerarContratoBlob(codigo);
-    } else if (tipo === "os") {
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSBlob !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
-      }
-      result = await window.ERP_DOCX.gerarOSBlob(codigo);
-    } else {
-      throw new Error("Tipo de documento inválido.");
-    }
-
-    if(!result?.blob){
-      throw new Error("O DOCX não foi gerado corretamente.");
-    }
-
-    showImparLoading("Enviando ao Word 365…", `Salvando ${filenameBase} no OneDrive corporativo.`);
-    const upload = await subirDocumentoWord365({
+  try{
+    // 1) sobe os anexos do tipo escolhido
+    await uploadAnexosWord365({
       codigo,
       tipo,
-      filename: result.filename || fallbackFilename,
-      blob: result.blob
+      arquivos
     });
 
-    if(!upload?.webUrl){
+    // 2) segue o fluxo que já funciona
+    const resp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ codigo, tipo }),
+      cache: "no-store"
+    });
+
+    const data = await resp.json();
+
+    if(!resp.ok || !data?.ok){
+      throw new Error(data?.message || `Falha ao gerar documento (HTTP ${resp.status}).`);
+    }
+
+    if(!data.webUrl){
       throw new Error("A API não retornou a URL do Word.");
     }
 
-    hideImparLoading();
-    window.open(upload.webUrl, "_blank", "noopener");
-    await oferecerCompartilhamentoDocumento({
-      codigo,
-      tipo,
-      webUrl: upload.webUrl,
-      shareUrl: upload.shareUrl || ""
+    window.open(data.webUrl, "_blank", "noopener");
+
+    Swal.fire({
+      icon: "success",
+      title: "Documento pronto",
+      html: `${nomeDoc} aberto no Word 365 com sucesso.`
     });
 
     return true;
+  } catch(err){
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao gerar documento",
+      html: err?.message || String(err)
+    });
+    return false;
   } finally {
     hideImparLoading();
   }
-}  
-/* ===== Disparos =====
+  
+}/* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
    2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
 */
@@ -3547,6 +3545,34 @@ if(document.readyState === "loading"){
   document.addEventListener("DOMContentLoaded", bindAnexosVisual);
 } else {
   bindAnexosVisual();
+}
+
+async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
+  if (!arquivos || !arquivos.length) {
+    return { ok: true, enviados: [] };
+  }
+
+  const formData = new FormData();
+  formData.append("codigo", codigo);
+  formData.append("tipo", tipo);
+
+  arquivos.forEach((file) => {
+    formData.append("anexos[]", file, file.name);
+  });
+
+  const resp = await fetch("https://api.erpimpar.com.br/word365/upload_anexos_word365.php", {
+    method: "POST",
+    body: formData,
+    cache: "no-store"
+  });
+
+  const data = await resp.json();
+
+  if (!resp.ok || !data?.ok) {
+    throw new Error(data?.message || "Falha ao enviar anexos.");
+  }
+
+  return data;
 }
   
 </script>
