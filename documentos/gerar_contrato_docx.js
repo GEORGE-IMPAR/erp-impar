@@ -2,7 +2,7 @@
    Gera DOCX no browser a partir de:
    - JSON:  https://api.erpimpar.com.br/storage/docs/data/{CODIGO}.json
    - DOCX:  https://api.erpimpar.com.br/storage/docs/template-contrato-PLACEHOLDERS.docx
-   - Pós-processa o DOCX para transformar a coluna LINK em hyperlink clicável "Abrir anexo"
+   - Anexos: links individuais servidos por anexo_view.php no KingHost
 */
 
 (function () {
@@ -34,19 +34,6 @@
   function safeStr(v) {
     if (v === null || v === undefined) return "";
     return String(v).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim();
-  }
-
-  function escapeXml(str) {
-    return String(str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
-  }
-
-  function escapeRegex(str) {
-    return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function enderecoCompleto(d, tipo) {
@@ -105,6 +92,8 @@
       case "jpg":
       case "jpeg":
         return "Imagem complementar integrante deste instrumento.";
+      case "txt":
+        return "Arquivo de texto complementar.";
       default:
         return "Documento complementar integrante deste instrumento.";
     }
@@ -115,7 +104,7 @@
 
     return anexos.map((a, i) => {
       const nome = safeStr(a.name || a.nomeArquivo || "");
-      return `ANEXO ${i + 1} – ${nome}\n${descricaoAutomaticaAnexo(nome)}`;
+      return `ANEXO ${i + 1} – ${nome}\n${descricaoAutomaticaAnexo(nome)}\nDisponível para visualização no sistema.`;
     }).join("\n\n");
   }
 
@@ -131,75 +120,14 @@
 
     return anexos.map((a, i) => {
       const nome = safeStr(a.name || a.nomeArquivo || "");
-      const link = safeStr(a.webUrl || a.link || "");
+      const viewUrl = safeStr(a.viewUrl || a.link || a.webUrl || "");
       return {
         numero: String(i + 1),
         nomeArquivo: nome,
         descricaoAutomatica: descricaoAutomaticaAnexo(nome),
-        // token técnico, substituído por hyperlink real no pós-processamento
-        linkTexto: link ? `__HYPERLINK_${i + 1}__` : ""
+        linkTexto: viewUrl
       };
     });
-  }
-
-  function buildHyperlinkMaps(anexos) {
-    if (!anexos || !anexos.length) return [];
-
-    return anexos
-      .map((a, i) => ({
-        token: `__HYPERLINK_${i + 1}__`,
-        url: safeStr(a.webUrl || a.link || ""),
-        label: "Abrir anexo"
-      }))
-      .filter(x => x.url);
-  }
-
-  function injectHyperlinksIntoZip(zip, hyperlinkMap) {
-    if (!hyperlinkMap || !hyperlinkMap.length) return;
-
-    let documentXml = zip.file("word/document.xml").asText();
-    let relsXml = zip.file("word/_rels/document.xml.rels").asText();
-
-    const existingIds = [...relsXml.matchAll(/Id="(rId[^"]+)"/g)].map(m => m[1]);
-    let relCounter = existingIds
-      .map(id => {
-        const m = id.match(/^rId(\d+)$/);
-        return m ? parseInt(m[1], 10) : 0;
-      })
-      .reduce((max, n) => Math.max(max, n), 0) + 1;
-
-    hyperlinkMap.forEach((item) => {
-      const relId = `rId${relCounter++}`;
-
-      const relation = `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapeXml(item.url)}" TargetMode="External"/>`;
-      relsXml = relsXml.replace("</Relationships>", relation + "</Relationships>");
-
-      const hyperlinkXml =
-        `<w:hyperlink r:id="${relId}" w:history="1">` +
-          `<w:r>` +
-            `<w:rPr>` +
-              `<w:rStyle w:val="Hyperlink"/>` +
-            `</w:rPr>` +
-            `<w:t>${escapeXml(item.label)}</w:t>` +
-          `</w:r>` +
-        `</w:hyperlink>`;
-
-      const tokenEsc = escapeRegex(item.token);
-      const runRegex = new RegExp(
-        `<w:r\\b[^>]*>[\\s\\S]*?<w:t[^>]*>${tokenEsc}<\\/w:t>[\\s\\S]*?<\\/w:r>`,
-        "m"
-      );
-
-      if (runRegex.test(documentXml)) {
-        documentXml = documentXml.replace(runRegex, hyperlinkXml);
-      } else {
-        // fallback bruto: se o token vier em texto puro, troca ao menos pelo label
-        documentXml = documentXml.replace(new RegExp(tokenEsc, "g"), escapeXml(item.label));
-      }
-    });
-
-    zip.file("word/document.xml", documentXml);
-    zip.file("word/_rels/document.xml.rels", relsXml);
   }
 
   async function gerarContratoBlob(codigo) {
@@ -244,9 +172,6 @@
       throw new Error(msg);
     }
 
-    // pós-processa hyperlinks reais no XML do DOCX
-    injectHyperlinksIntoZip(doc.getZip(), buildHyperlinkMaps(anexos));
-
     const out = doc.getZip().generate({
       type: "blob",
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -269,4 +194,5 @@
   window.ERP_DOCX = window.ERP_DOCX || {};
   window.ERP_DOCX.gerarContrato = gerarContrato;
   window.ERP_DOCX.gerarContratoBlob = gerarContratoBlob;
+
 })();
