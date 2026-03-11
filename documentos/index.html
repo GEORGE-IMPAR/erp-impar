@@ -417,14 +417,15 @@ const payload = buildPayload();
       hidePageLoader();
 
       const tipo = await imparAskDocToGenerate("afterSave");
-      if(tipo){
-        await gerarDocumento(tipo);
-      } else {
+      if(!tipo) return resp;
+
+      try{
+        await gerarDocumento(tipo, { preferExisting: true });
+      }catch(err){
         Swal.fire({
-          icon:"success",
-          title:"Sucesso!",
-          html:"Dados salvos com sucesso.",
-          confirmButtonText:"OK"
+          icon:"error",
+          title:"Erro ao gerar documento",
+          html: err?.message || String(err)
         });
       }
 
@@ -1117,51 +1118,6 @@ body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
       color: rgba(229,231,235,.65);
     }
 
-    .anexos-preview{
-      height:auto;
-      min-height:54px;
-      padding:10px;
-      justify-content:flex-start;
-      align-items:flex-start;
-    }
-    .anexos-list{
-      display:none;
-      width:100%;
-      gap:8px;
-      flex-direction:column;
-    }
-    .anexo-chip{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      width:100%;
-      padding:8px 10px;
-      border-radius:10px;
-      background:rgba(15,23,42,.72);
-      border:1px solid rgba(148,163,184,.18);
-      color:#e5e7eb;
-      font-size:12px;
-    }
-    .anexo-chip-name{
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
-      flex:1 1 auto;
-    }
-    .anexo-chip-remove{
-      border:none;
-      border-radius:999px;
-      width:24px;
-      height:24px;
-      background:linear-gradient(135deg,#ef4444,#b91c1c);
-      color:#fff;
-      cursor:pointer;
-      font-weight:900;
-      flex:0 0 auto;
-    }
-
-
 
 #step5 textarea:focus,
 #step5 input:focus{
@@ -1372,7 +1328,116 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
     font-size:14px !important;
   }
 
-}  
+}
+
+.lista-anexos{
+  margin-top:10px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.item-anexo{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(2,6,23,.55);
+  color:rgba(231,236,255,.92);
+  box-shadow:0 10px 24px rgba(0,0,0,.18);
+}
+
+.item-anexo-nome{
+  font-size:13px;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.item-anexo-remover{
+  border:none;
+  width:28px;
+  height:28px;
+  min-width:28px;
+  border-radius:999px;
+  cursor:pointer;
+  font-size:16px;
+  font-weight:900;
+  line-height:1;
+  color:#fff;
+  background:linear-gradient(135deg,#ef4444,#b91c1c);
+  box-shadow:0 8px 20px rgba(185,28,28,.35);
+}
+
+.item-anexo-remover:hover{
+  transform:scale(1.06);
+  filter:brightness(1.05);
+}
+
+.item-anexo-vazio{
+  font-size:12px;
+  color:rgba(148,163,184,.85);
+  padding:8px 2px 0;
+}    
+.upload-box {
+  margin-top: 6px;
+}
+
+.btn-upload {
+  background: #0b1e4a;
+  border: 1px solid rgba(0,255,150,.4);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .2s ease;
+}
+
+.btn-upload:hover {
+  background: #0f2f6e;
+  border-color: #00ff95;
+}
+
+.lista-anexos {
+  margin-top: 8px;
+}
+
+.anexo-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #081a38;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.anexo-remove {
+  background: #ef4444;
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+}
+.anexos-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px; /* mais respiro entre as colunas */
+  align-items: start;
+}
+
+.anexo-box {
+  width: 100%;
+  max-width: 100%;
+}
   </style>
 </head>
 <body>
@@ -1440,7 +1505,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
               <div class="actions-left">
                 <button class="btn btn-primary" id="btnAtualizar" type="button">ATUALIZAR DOCUMENTOS</button>
                 <button class="btn btn-primary" id="btnGerar" type="button">GERAR DOCUMENTOS</button>
-                <button class="btn btn-secondary" id="btnGerarPdfEnvio" type="button">GERAR PDF PARA ENVIO</button>
               </div>
               <div class="actions-right">
                 <button class="btn btn-primary" id="btnContinuar1" type="button">
@@ -1826,18 +1890,28 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
                 <input id="prazoDias" type="text" placeholder="Ex.: 30" inputmode="numeric"/>
               </div>
               <div class="c12">
-                <label for="anexosDocumento">ANEXOS DO DOCUMENTO</label>
-                <input id="anexosDocumento" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg" multiple/>
-                <div class="hint">Selecione um ou mais arquivos. Eles serão enviados para a pasta <b>ANEXOS</b> do projeto no OneDrive.</div>
-              </div>
-              <div class="c8">
-                <label>ANEXOS SELECIONADOS</label>
-                <div class="logo-preview anexos-preview" id="anexosPreview">
-                  <div class="logo-empty" id="anexosEmpty">Nenhum anexo selecionado</div>
-                  <div class="anexos-list" id="anexosList"></div>
-                </div>
-              </div>
+                 <label>ANEXOS DO CONTRATO</label>
+                   <div class="upload-box">
+                       <button type="button" class="btn-upload" onclick="document.getElementById('anexoContrato').click()">
+                          + Anexar
+                       </button>
+                       <input id="anexoContrato" type="file" multiple style="display:none" />
+                 </div>
+                 <div id="listaAnexosContrato" class="lista-anexos"></div>
+             </div>
+
+             <div class="c8">
+                <label>ANEXOS DA ORDEM DE SERVIÇO</label>
+                   <div class="upload-box">
+                       <button type="button" class="btn-upload" onclick="document.getElementById('anexoOS').click()">
+                           + Anexar
+                       </button>
+                       <input id="anexoOS" type="file" multiple style="display:none" />
+                   </div>
+                   <div id="listaAnexosOS" class="lista-anexos"></div>
             </div>
+            
+     </div>
 
           </form>
 
@@ -1930,13 +2004,13 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
         const dext = document.getElementById("dataExtenso");
         if(data && dext) dext.value = dateToExtensoPt(data.value);
       }catch(e){}
-      try{ if(typeof wireStep5Logo === "function") wireStep5Attachments(); }catch(e){}
+      try{ if(typeof wireStep5Logo === "function") wireStep5Logo(); }catch(e){}
     }
 
   
     // Hook: ao entrar na Etapa 5, garante listeners + sincronização (máscara/por extenso/prévia)
     if(step===5){
-      try{ wireStep5Attachments(); }catch(e){}
+      try{ wireStep5Logo(); }catch(e){}
       try{ wireStep5(); }catch(e){}
     }
 
@@ -2595,54 +2669,43 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
   
   // Etapa 5 — Importar logo (prévia)
-  function wireStep5Attachments(){
-    const input = document.getElementById("anexosDocumento");
-    const list = document.getElementById("anexosList");
-    const empty = document.getElementById("anexosEmpty");
-    if(!input || !list || !empty) return;
-    if(input.dataset.wiredAnexos === "1") return;
-    input.dataset.wiredAnexos = "1";
+  function wireStep5Logo(){
+    const input = document.getElementById("logoEmpresa");
+    const img = document.getElementById("logoPreview");
+    const empty = document.getElementById("logoEmpty");
+    if(!input || !img) return;
 
-    window.__anexosSelecionados = window.__anexosSelecionados || [];
 
-    function renderAnexos(){
-      const anexos = window.__anexosSelecionados || [];
-      list.innerHTML = "";
-      if(!anexos.length){
-        list.style.display = "none";
-        empty.style.display = "block";
+    if(input.dataset.wiredLogo === "1") return;
+    input.dataset.wiredLogo = "1";
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if(!file){
+        img.src = "";
+        img.style.display = "none";
+        if(empty) empty.style.display = "block";
+        window.__logoDataUrl = null;
         return;
       }
-      list.style.display = "flex";
-      empty.style.display = "none";
-      anexos.forEach((file, idx)=>{
-        const row = document.createElement("div");
-        row.className = "anexo-chip";
-        row.innerHTML = `
-          <div class="anexo-chip-name">📎 ${file.name}</div>
-          <button type="button" class="anexo-chip-remove" data-idx="${idx}" title="Remover">×</button>
-        `;
-        list.appendChild(row);
-      });
-      list.querySelectorAll(".anexo-chip-remove").forEach(btn=>{
-        btn.addEventListener("click", ()=>{
-          const idx = Number(btn.getAttribute("data-idx"));
-          window.__anexosSelecionados.splice(idx,1);
-          renderAnexos();
-        });
-      });
-    }
-
-    input.addEventListener("change", ()=>{
-      const novos = Array.from(input.files || []);
-      if(!novos.length) return;
-      window.__anexosSelecionados = [...(window.__anexosSelecionados || []), ...novos];
-      input.value = "";
-      renderAnexos();
+      if(!file.type.startsWith("image/")){
+        input.value = "";
+        img.src = "";
+        img.style.display = "none";
+        if(empty) empty.style.display = "block";
+        window.__logoDataUrl = null;
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        window.__logoDataUrl = String(reader.result || "");
+        img.src = window.__logoDataUrl;
+        img.style.display = "block";
+        if(empty) empty.style.display = "none";
+      };
+      reader.readAsDataURL(file);
     });
-
-    renderAnexos();
   }
+
 
 function wire(){
     // Entrada
@@ -2654,7 +2717,7 @@ function wire(){
     window.addEventListener("DOMContentLoaded", () => {
       document.body.classList.add("impar-enter");
       wireStep4MasksAndRules();
-      wireStep5Attachments();
+      wireStep5Logo();
       wireStep5(); 
     });
 
@@ -3056,119 +3119,106 @@ $("#btnFinalizar").addEventListener("click", async () => {
    - Gera DOCX via API (make_contract.php / make_os.php)
    ================================ */
 
-
 const WORD365_API_BASE = "https://api.erpimpar.com.br/word365";
+const WORD365_ENDPOINT_CHECK = WORD365_API_BASE + "/consultar_documento_word365.php";
+const WORD365_ENDPOINT_UPLOAD = WORD365_API_BASE + "/subir_documento_word365.php";
+const WORD365_ENDPOINT_SHARE = WORD365_API_BASE + "/compartilhar_documento_word365.php";
 
-function getAnexosSelecionados(){
-  return Array.isArray(window.__anexosSelecionados) ? window.__anexosSelecionados : [];
-}
-
-async function blobToBase64(blob){
-  return await new Promise((resolve, reject)=>{
-    const reader = new FileReader();
-    reader.onload = ()=> {
-      const result = String(reader.result || "");
-      const base64 = result.includes(",") ? result.split(",")[1] : result;
-      resolve(base64);
-    };
-    reader.onerror = ()=> reject(new Error("Falha ao converter arquivo para base64."));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function filesToPayload(files){
-  const out = [];
-  for (const file of (files || [])) {
-    const base64 = await blobToBase64(file);
-    out.push({
-      name: file.name,
-      type: file.type || "application/octet-stream",
-      size: file.size || 0,
-      base64
-    });
-  }
-  return out;
-}
-
-async function apiPostJson(url, payload){
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify(payload),
-    mode: "cors",
-    cache: "no-store"
-  });
+async function fetchJsonSafe(url, options){
+  const resp = await fetch(url, options);
   let data = null;
-  try { data = await resp.json(); } catch(e) {}
+  try{ data = await resp.json(); }catch(e){}
   if(!resp.ok){
     throw new Error(data?.message || data?.error || `Falha na API (${resp.status}).`);
   }
-  if(data?.ok === false){
-    throw new Error(data?.message || data?.error || "Falha na API.");
-  }
-  return data;
+  return data || {};
 }
 
-async function abrirOuGerarDocumentoWord365({codigo, tipo, docxBlob, filename, anexos=[]}){
-  const existente = await apiPostJson(`${WORD365_API_BASE}/consultar_documento_word365.php`, { codigo, tipo });
-  if (existente?.found && existente?.webUrl) {
-    window.open(existente.webUrl, "_blank", "noopener");
-    return { reopened:true, webUrl: existente.webUrl };
-  }
+async function consultarDocumentoWord365(codigo, tipo){
+  return await fetchJsonSafe(WORD365_ENDPOINT_CHECK, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ codigo, tipo }),
+    cache: "no-store"
+  });
+}
 
-  const docxBase64 = await blobToBase64(docxBlob);
-  const anexosPayload = await filesToPayload(anexos);
+async function subirDocumentoWord365({ codigo, tipo, filename, blob }){
+  const fd = new FormData();
+  fd.append("codigo", codigo);
+  fd.append("tipo", tipo);
+  fd.append("filename", filename);
+  fd.append("docx", blob, filename);
 
-  const salvo = await apiPostJson(`${WORD365_API_BASE}/subir_documento_word365.php`, {
-    codigo,
-    tipo,
-    filename,
-    docx_base64: docxBase64,
-    anexos: anexosPayload
+  return await fetchJsonSafe(WORD365_ENDPOINT_UPLOAD, {
+    method: "POST",
+    body: fd,
+    cache: "no-store"
+  });
+}
+
+async function compartilharDocumentoWord365(codigo, tipo){
+  return await fetchJsonSafe(WORD365_ENDPOINT_SHARE, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ codigo, tipo }),
+    cache: "no-store"
+  });
+}
+
+async function oferecerCompartilhamentoDocumento(meta){
+  if(!meta?.codigo || !meta?.tipo) return;
+
+  const res = await Swal.fire({
+    title: "Documento aberto no Word 365",
+    html: "Quando terminar os ajustes, você pode gerar um link de compartilhamento do mesmo arquivo.",
+    icon: "success",
+    showCancelButton: true,
+    confirmButtonText: "Gerar link de compartilhamento",
+    cancelButtonText: "Fechar",
+    buttonsStyling: false,
+    customClass: {
+      popup: "impar-swal",
+      confirmButton: "impar-swal-confirm",
+      cancelButton: "impar-swal-cancel",
+      actions: "impar-swal-actions"
+    }
   });
 
-  if (salvo?.webUrl) {
-    window.open(salvo.webUrl, "_blank", "noopener");
-  }
+  if(!res.isConfirmed) return;
 
-  if (salvo?.shareUrl) {
-    setTimeout(()=>{
-      Swal.fire({
-        icon: "success",
-        title: "Documento aberto no Word",
-        html: `Documento salvo no OneDrive com sucesso.<br><br><b>Link de compartilhamento:</b><br><a href="${salvo.shareUrl}" target="_blank" rel="noopener">${salvo.shareUrl}</a>`,
-        confirmButtonText: "OK"
-      });
-    }, 300);
-  }
-
-  return salvo;
-}
-
-async function gerarPdfParaEnvio(){
-  const {codigo} = getProjetoMetaForFilename();
-  if(!codigo){
-    Swal.fire({ icon:"warning", title:"Informe o código do projeto" });
-    return;
-  }
-
-  showImparLoading("Gerando PDF para envio…", `Preparando PDF final do projeto ${codigo}.`);
   try{
-    const data = await apiPostJson(`${WORD365_API_BASE}/gerar_pdf_envio_word365.php`, { codigo, tipo: "contrato" });
-    if (data?.pdfUrl) {
-      window.open(data.pdfUrl, "_blank", "noopener");
+    showImparLoading("Gerando link de compartilhamento…", "Preparando o link do documento no OneDrive.");
+    const share = await compartilharDocumentoWord365(meta.codigo, meta.tipo);
+    hideImparLoading();
+
+    const link = share?.shareUrl || share?.webUrl || "";
+    if(!link){
+      throw new Error("A API não retornou um link de compartilhamento.");
     }
-    Swal.fire({
-      icon:"success",
-      title:"PDF pronto",
-      html: data?.shareUrl
-        ? `PDF gerado com sucesso.<br><br><a href="${data.shareUrl}" target="_blank" rel="noopener">Abrir / compartilhar PDF</a>`
-        : "PDF gerado com sucesso."
+
+    const copied = !!(navigator.clipboard && navigator.clipboard.writeText && await navigator.clipboard.writeText(link).then(()=>true).catch(()=>false));
+
+    await Swal.fire({
+      icon: "success",
+      title: copied ? "Link copiado" : "Link gerado",
+      html: copied
+        ? "O link de compartilhamento foi copiado para a área de transferência."
+        : `Link gerado:<br><br><a href="${link}" target="_blank" rel="noopener">${link}</a>`,
+      confirmButtonText: "OK",
+      buttonsStyling: false,
+      customClass: {
+        popup: "impar-swal",
+        confirmButton: "impar-swal-confirm"
+      }
     });
   }catch(err){
-    Swal.fire({ icon:"error", title:"Erro ao gerar PDF", html: err?.message || String(err) });
-  }finally{
     hideImparLoading();
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao compartilhar",
+      html: err?.message || String(err)
+    });
   }
 }
 
@@ -3283,52 +3333,76 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
 }
   
 async function gerarDocumento(tipo){
-  const {codigo, nomeObra} = getProjetoMetaForFilename();
-  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
-  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  const filename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
+  const {codigo} = getProjetoMetaForFilename();
 
-  showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
+  if(!codigo){
+    Swal.fire({
+      icon:"warning",
+      title:"Informe o código do projeto",
+      html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."
+    });
+    return false;
+  }
 
-  try {
-    const anexos = getAnexosSelecionados();
+  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
 
-    if (tipo === "contrato") {
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
-      }
-      const ret = await window.ERP_DOCX.gerarContrato(codigo);
-      await abrirOuGerarDocumentoWord365({
-        codigo,
-        tipo,
-        docxBlob: ret.blob,
-        filename: ret.filename || filename,
-        anexos
-      });
-      return true;
+  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
+
+  try{
+    // 1) sobe os anexos do tipo escolhido
+const uploadResult = await uploadAnexosWord365({
+  codigo,
+  tipo,
+  arquivos
+});
+
+if (tipo === "contrato") {
+  window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+} else {
+  window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
+}
+    // 2) segue o fluxo que já funciona
+    const resp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ codigo, tipo }),
+      cache: "no-store"
+    });
+
+    const data = await resp.json();
+
+    if(!resp.ok || !data?.ok){
+      throw new Error(data?.message || `Falha ao gerar documento (HTTP ${resp.status}).`);
     }
 
-    if (tipo === "os") {
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSDocx !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
-      }
-      const ret = await window.ERP_DOCX.gerarOSDocx(codigo);
-      await abrirOuGerarDocumentoWord365({
-        codigo,
-        tipo,
-        docxBlob: ret.blob,
-        filename: ret.filename || filename,
-        anexos
-      });
-      return true;
+    if(!data.webUrl){
+      throw new Error("A API não retornou a URL do Word.");
     }
 
-    throw new Error("Tipo de documento inválido.");
+    window.open(data.webUrl, "_blank", "noopener");
+
+    Swal.fire({
+      icon: "success",
+      title: "Documento pronto",
+      html: `${nomeDoc} aberto no Word 365 com sucesso.`
+    });
+
+    return true;
+  } catch(err){
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao gerar documento",
+      html: err?.message || String(err)
+    });
+    return false;
   } finally {
     hideImparLoading();
   }
-}
-/* ===== Disparos =====
+  
+}/* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
    2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
 */
@@ -3359,18 +3433,26 @@ async function gerarDocumento(tipo){
     });
   }
 
-  function bindBtnGerarPdfEnvio(){
-    const btn = document.getElementById("btnGerarPdfEnvio");
-    if(!btn) return;
-    const clean = btn.cloneNode(true);
-    btn.parentNode.replaceChild(clean, btn);
-    clean.addEventListener("click", async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
+  function bindGerarDepoisSalvar(){
+    const okBtn = document.getElementById("btnModalSalvarOk");
+    if(!okBtn) return;
+
+    // não clona aqui (pode quebrar o modal existente); só adiciona listener "extra"
+    okBtn.addEventListener("click", async ()=>{
+      // heurística: só pergunta se o modal estiver em "sucesso"
+      const titulo = (document.getElementById("modalSalvarTitulo")?.textContent || "").toLowerCase();
+      const msg = (document.getElementById("modalSalvarMsg")?.textContent || "").toLowerCase();
+
+      const isSuccess = titulo.includes("sucesso") || msg.includes("sucesso") || msg.includes("salvo");
+      if(!isSuccess) return;
+
+      const tipo = await imparAskDocToGenerate("afterSave");
+      if(!tipo) return;
+
       try{
-        await gerarPdfParaEnvio();
+        await gerarDocumento(tipo);
       }catch(err){
-        Swal.fire({ icon:"error", title:"Erro ao gerar PDF", html: err?.message || String(err) });
+        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
       }
     });
   }
@@ -3378,13 +3460,126 @@ async function gerarDocumento(tipo){
   if(document.readyState === "loading"){
     document.addEventListener("DOMContentLoaded", ()=>{
       bindBtnGerar();
-      bindBtnGerarPdfEnvio();
+      bindGerarDepoisSalvar();
     });
   } else {
     bindBtnGerar();
-    bindBtnGerarPdfEnvio();
+    bindGerarDepoisSalvar();
   }
 })();
+  
+let anexosContrato = [];
+let anexosOS = [];
+
+function renderListaAnexos(tipo){
+  const lista = tipo === "contrato"
+    ? document.getElementById("listaAnexosContrato")
+    : document.getElementById("listaAnexosOS");
+
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
+
+  if(!lista) return;
+
+  lista.innerHTML = "";
+
+  if(!arquivos.length){
+    const vazio = document.createElement("div");
+    vazio.className = "item-anexo-vazio";
+    vazio.textContent = "Nenhum anexo selecionado.";
+    lista.appendChild(vazio);
+    return;
+  }
+
+  arquivos.forEach((file, index) => {
+    const row = document.createElement("div");
+    row.className = "anexo-item";
+
+    const nome = document.createElement("span");
+    nome.textContent = file.name;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "anexo-remove";
+    btn.textContent = "×";
+    btn.addEventListener("click", () => removerAnexo(tipo, index));
+
+    row.appendChild(nome);
+    row.appendChild(btn);
+    lista.appendChild(row);
+  });
+}
+
+function removerAnexo(tipo, index){
+  if(tipo === "contrato"){
+    anexosContrato.splice(index, 1);
+    renderListaAnexos("contrato");
+    return;
+  }
+
+  anexosOS.splice(index, 1);
+  renderListaAnexos("os");
+}
+
+function bindAnexosVisual(){
+  const inputContrato = document.getElementById("anexoContrato");
+  const inputOS = document.getElementById("anexoOS");
+
+  if(inputContrato){
+    inputContrato.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      anexosContrato = [...anexosContrato, ...files];
+      renderListaAnexos("contrato");
+      e.target.value = "";
+    });
+  }
+
+  if(inputOS){
+    inputOS.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      anexosOS = [...anexosOS, ...files];
+      renderListaAnexos("os");
+      e.target.value = "";
+    });
+  }
+
+  renderListaAnexos("contrato");
+  renderListaAnexos("os");
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", bindAnexosVisual);
+} else {
+  bindAnexosVisual();
+}
+
+async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
+  if (!arquivos || !arquivos.length) {
+    return { ok: true, enviados: [] };
+  }
+
+  const formData = new FormData();
+  formData.append("codigo", codigo);
+  formData.append("tipo", tipo);
+
+  arquivos.forEach((file) => {
+    formData.append("anexos[]", file, file.name);
+  });
+
+  const resp = await fetch("https://api.erpimpar.com.br/word365/upload_anexos_word365.php", {
+    method: "POST",
+    body: formData,
+    cache: "no-store"
+  });
+
+  const data = await resp.json();
+
+  if (!resp.ok || !data?.ok) {
+    throw new Error(data?.message || "Falha ao enviar anexos.");
+  }
+
+  return data;
+}
+  
 </script>
 
 <script src="./gerar_contrato_docx.js"></script>
