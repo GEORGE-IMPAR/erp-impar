@@ -1940,7 +1940,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v5.4 • validação limpa por etapa</div>
+    <div>v10.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -3347,74 +3347,67 @@ async function gerarDocumento(tipo){
   showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
 
   try {
-    const anexos = getAnexosSelecionados(tipo);
-
     if (tipo === "contrato") {
+      const anexos = getAnexosSelecionados("contrato");
+
+      const uploadResult = await uploadAnexosWord365({
+        codigo,
+        tipo: "contrato",
+        arquivos: anexos
+      });
+
+      window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+
       if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function") {
         throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
       }
+
       const ret = await window.ERP_DOCX.gerarContrato(codigo);
-      await abrirOuGerarDocumentoWord365({
+
+      if (!ret?.blob) {
+        throw new Error("O contrato foi gerado sem blob.");
+      }
+
+      const salvo = await subirDocumentoWord365({
         codigo,
-        tipo,
-        docxBlob: ret.blob,
+        tipo: "contrato",
         filename: ret.filename || filename,
-        anexos
+        blob: ret.blob
       });
+
+      const wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
+
+      if(!wordUrl){
+        throw new Error("A API não retornou a URL do Word.");
+      }
+
+      window.open(wordUrl, "_blank", "noopener");
+
+      Swal.fire({
+        icon: "success",
+        title: "Documento pronto",
+        html: "Contrato aberto no Word 365 com sucesso."
+      });
+
       return true;
     }
 
     if (tipo === "os") {
-      if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSDocx !== "function") {
-        throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
-      }
-      const ret = await window.ERP_DOCX.gerarOSDocx(codigo);
-      await abrirOuGerarDocumentoWord365({
-        codigo,
-        tipo,
-        docxBlob: ret.blob,
-        filename: ret.filename || filename,
-        anexos
-      });
-      return true;
+      throw new Error("Fluxo da OS será ligado no próximo passo.");
     }
 
     throw new Error("Tipo de documento inválido.");
+  } catch(err){
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao gerar documento",
+      html: err?.message || String(err)
+    });
+    return false;
   } finally {
     hideImparLoading();
   }
 }
-  /* ===== Disparos =====
-   1) Botão "GERAR DOCUMENTOS" (Etapa 1)
-   2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
-*/
-(function bindGerarDocumentos(){
-  function bindBtnGerar(){
-    const btn = document.getElementById("btnGerar");
-    if(!btn) return;
-
-    // remove listeners antigos
-    const clean = btn.cloneNode(true);
-    btn.parentNode.replaceChild(clean, btn);
-
-    clean.addEventListener("click", async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-
-      // se existir validação da etapa 1, respeita
-      if (typeof validateStep1 === "function" && !validateStep1()) return;
-
-      const tipo = await imparAskDocToGenerate("step1");
-      if(!tipo) return;
-
-      try{
-        await gerarDocumento(tipo);
-      }catch(err){
-        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
-      }
-    });
-  }
-
   function bindGerarDepoisSalvar(){
     const okBtn = document.getElementById("btnModalSalvarOk");
     if(!okBtn) return;
