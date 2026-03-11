@@ -1,16 +1,16 @@
-/* gerar_os_docx.js
+/* gerar_contrato_docx.js
    Gera DOCX no browser a partir de:
    - JSON:  https://api.erpimpar.com.br/storage/docs/data/{CODIGO}.json
-   - DOCX:  https://api.erpimpar.com.br/storage/docs/template-os-PLACEHOLDERS.docx
+   - DOCX:  https://api.erpimpar.com.br/storage/docs/template-contrato-PLACEHOLDERS.docx
+   - Anexos: links individuais servidos por anexo_view.php no KingHost
 */
 
 (function () {
   "use strict";
 
   const API_BASE = "https://api.erpimpar.com.br/storage/docs";
-  const TEMPLATE_URL = API_BASE + "/template-os-PLACEHOLDERS.docx";
+  const TEMPLATE_URL = API_BASE + "/template-contrato-PLACEHOLDERS.docx";
 
-  // --- loader simples de libs via CDN (sem build, sem npm) ---
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
@@ -23,15 +23,11 @@
   }
 
   async function ensureLibs() {
-    // PizZip + docxtemplater + FileSaver
     if (!window.PizZip) {
       await loadScript("https://cdn.jsdelivr.net/npm/pizzip@3.1.7/dist/pizzip.min.js");
     }
     if (!window.docxtemplater) {
       await loadScript("https://cdn.jsdelivr.net/npm/docxtemplater@3.53.0/build/docxtemplater.js");
-    }
-    if (!window.saveAs) {
-      await loadScript("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
     }
   }
 
@@ -41,7 +37,6 @@
   }
 
   function enderecoCompleto(d, tipo) {
-    // tipo: 'Contratante' | 'Contratada'
     const log = safeStr(d["logradouro" + tipo]);
     const num = safeStr(d["numero" + tipo]);
     const com = safeStr(d["complemento" + tipo]);
@@ -76,7 +71,66 @@
     return await r.arrayBuffer();
   }
 
-  async function gerarOSDocx(codigo) {
+  function descricaoAutomaticaAnexo(nomeArquivo) {
+    const ext = String(nomeArquivo || "").split(".").pop().toLowerCase();
+
+    switch (ext) {
+      case "pdf":
+        return "Documento complementar em formato PDF.";
+      case "xls":
+      case "xlsx":
+        return "Planilha complementar contendo informações técnicas.";
+      case "csv":
+        return "Arquivo de dados complementar.";
+      case "ppt":
+      case "pptx":
+        return "Apresentação complementar.";
+      case "doc":
+      case "docx":
+        return "Documento complementar integrante deste instrumento.";
+      case "png":
+      case "jpg":
+      case "jpeg":
+        return "Imagem complementar integrante deste instrumento.";
+      case "txt":
+        return "Arquivo de texto complementar.";
+      default:
+        return "Documento complementar integrante deste instrumento.";
+    }
+  }
+
+  function montarResumoAnexos(anexos) {
+    if (!anexos || !anexos.length) return "";
+
+    return anexos.map((a, i) => {
+      const nome = safeStr(a.name || a.nomeArquivo || "");
+      return `ANEXO ${i + 1} – ${nome}\n${descricaoAutomaticaAnexo(nome)}\nDisponível para visualização no sistema.`;
+    }).join("\n\n");
+  }
+
+  function montarLoopAnexos(anexos) {
+    if (!anexos || !anexos.length) {
+      return [{
+        numero: "",
+        nomeArquivo: "Sem anexos.",
+        descricaoAutomatica: "",
+        linkTexto: ""
+      }];
+    }
+
+    return anexos.map((a, i) => {
+      const nome = safeStr(a.name || a.nomeArquivo || "");
+      const viewUrl = safeStr(a.viewUrl || a.link || a.webUrl || "");
+      return {
+        numero: String(i + 1),
+        nomeArquivo: nome,
+        descricaoAutomatica: descricaoAutomaticaAnexo(nome),
+        linkTexto: viewUrl
+      };
+    });
+  }
+
+  async function gerarContratoBlob(codigo) {
     codigo = safeStr(codigo);
     if (!codigo) throw new Error("Código vazio.");
 
@@ -87,17 +141,23 @@
       fetchArrayBuffer(TEMPLATE_URL)
     ]);
 
-    // Campos compostos que seu template já espera
     data.codigo = safeStr(data.codigo || codigo);
     data.enderecoContratanteCompleto = enderecoCompleto(data, "Contratante");
     data.enderecoContratadaCompleto  = enderecoCompleto(data, "Contratada");
+
+    const anexos = Array.isArray(window.__ANEXOS_CONTRATO_UPLOADADOS__)
+      ? window.__ANEXOS_CONTRATO_UPLOADADOS__
+      : [];
+
+    data.anexos = montarLoopAnexos(anexos);
+    data.anexosResumo = montarResumoAnexos(anexos);
 
     const zip = new window.PizZip(templateBuf);
 
     const doc = new window.docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
-      delimiters: { start: "{{", end: "}}" } // seu template é {{chave}}
+      delimiters: { start: "{{", end: "}}" }
     });
 
     doc.setData(data);
@@ -105,7 +165,6 @@
     try {
       doc.render();
     } catch (e) {
-      // Mostra erro “legível” quando faltar placeholder
       console.error(e);
       const msg = (e.properties && e.properties.errors && e.properties.errors[0])
         ? e.properties.errors[0].properties.explanation
@@ -118,16 +177,22 @@
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     });
 
-    const filename = data.codigo + "_OS.docx";
-    window.saveAs(out, filename);
-    return { ok: true, filename };
+    const filename = data.codigo + "_CONTRATO.docx";
+    return { ok: true, filename, blob: out, data };
   }
 
-  // API pública para você chamar do seu código atual
-window.ERP_DOCX = window.ERP_DOCX || {};
-window.ERP_DOCX.gerarOSDocx = gerarOSDocx;
+  async function gerarContrato(codigo) {
+    const result = await gerarContratoBlob(codigo);
+    return {
+      ok: true,
+      filename: result.filename,
+      blob: result.blob,
+      data: result.data
+    };
+  }
+
+  window.ERP_DOCX = window.ERP_DOCX || {};
+  window.ERP_DOCX.gerarContrato = gerarContrato;
+  window.ERP_DOCX.gerarContratoBlob = gerarContratoBlob;
 
 })();
-
-
-
