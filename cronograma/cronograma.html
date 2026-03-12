@@ -883,7 +883,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Cronograma</div>
-    <div>v5 • Receita do zero • Fonte da verdade = servidor</div>
+    <div>v10 • Receita do zero • Fonte da verdade = servidor</div>
   </div>
 </footer>
 
@@ -901,7 +901,10 @@ const state = {
   saving: false,
   saveTimer: null,
   responsaveis: [],
-  coordenadores: []
+  coordenadores: [],
+  isRendering: false,
+  isLoading: true,
+  lastSavedHash: ""
 };
 
   const tbody = document.getElementById("tbodyCrono");
@@ -913,6 +916,32 @@ const state = {
     try { return JSON.parse(raw); } catch { return null; }
   }
 
+  function buildStableHash(){
+  return JSON.stringify({
+    id: state.id,
+    nome: state.nome,
+    coordenador: state.coordenador,
+    atividades: state.atividades.map(a => ({
+      id: a.id,
+      ordem: a.ordem,
+      ordemHier: a.ordemHier || "",
+      nivel: a.nivel,
+      nome: a.nome,
+      responsavel: a.responsavel,
+      inicio: a.inicio,
+      fim: a.fim,
+      duracao: a.duracao,
+      previsto: a.previsto,
+      real: a.real,
+      status: a.status,
+      collapsed: !!a.collapsed,
+      comentario: a.comentario || "",
+      predecessora: a.predecessora || ""
+    })),
+    baselines: state.baselines || []
+  });
+}
+  
   function loadUser(){
     const u = getSessaoERP();
     if(!u){
@@ -1411,9 +1440,10 @@ function isHiddenByParent(index){
   }
 
 function renderTabela(){
+  state.isRendering = true;
   recomputeRollups();
   tbody.innerHTML = "";
-
+  
   state.atividades.forEach((item, index) => {
     if(isHiddenByParent(index)) return;
 
@@ -1553,43 +1583,61 @@ function renderTabela(){
   });
 
   updateSummary();
+  state.isRendering = false;
 }
   
-  async function saveCronograma(){
-    if(state.saving) return;
-    state.saving = true;
-    setSaveStatus("Salvando no servidor...", "info");
+async function saveCronograma(){
+  if(state.saving || state.isRendering || state.isLoading) return;
 
-    try{
-      const payload = buildPayload();
+  const nowHash = buildStableHash();
+  if(nowHash === state.lastSavedHash){
+    setSaveStatus("Sem alterações para salvar.", "info");
+    return;
+  }
 
-      const j = await fetchJsonSafe(API + "salvar_cronograma.php", {
-        method: "POST",
-        headers: { "Content-Type":"text/plain;charset=UTF-8" },
-        body: JSON.stringify(payload)
-      });
+  state.saving = true;
+  setSaveStatus("Salvando no servidor...", "info");
 
-      if(!j || j.ok !== true){
-        throw new Error((j && (j.error || j.message)) || "Falha ao salvar");
-      }
+  try{
+    const payload = buildPayload();
 
-      setSaveStatus("Salvo no servidor.", "ok");
-    }catch(e){
-      console.error(e);
-      setSaveStatus("Erro ao salvar.", "err");
-      msgErr("Erro ao salvar no servidor.\n\n" + (e.message || e));
-    }finally{
-      state.saving = false;
+    const j = await fetchJsonSafe(API + "salvar_cronograma.php", {
+      method: "POST",
+      headers: { "Content-Type":"text/plain;charset=UTF-8" },
+      body: JSON.stringify(payload)
+    });
+
+    if(!j || j.ok !== true){
+      throw new Error((j && (j.error || j.message)) || "Falha ao salvar");
     }
-  }
 
-  function saveDebounced(){
-    clearTimeout(state.saveTimer);
-    setSaveStatus("Aguardando autosave...", "info");
-    state.saveTimer = setTimeout(saveCronograma, 700);
-    renderTabelaLight();
+    state.lastSavedHash = buildStableHash();
+    setSaveStatus("Salvo no servidor.", "ok");
+  }catch(e){
+    console.error(e);
+    setSaveStatus("Erro ao salvar.", "err");
+    msgErr("Erro ao salvar no servidor.\n\n" + (e.message || e));
+  }finally{
+    state.saving = false;
   }
+}
+function saveDebounced(){
+  if(state.isRendering || state.isLoading) return;
 
+  clearTimeout(state.saveTimer);
+  setSaveStatus("Aguardando autosave...", "info");
+
+  state.saveTimer = setTimeout(() => {
+    const nowHash = buildStableHash();
+
+    if(nowHash === state.lastSavedHash){
+      setSaveStatus("Sem alterações para salvar.", "info");
+      return;
+    }
+
+    saveCronograma();
+  }, 700);
+}
   async function carregarResponsaveis(){
   try{
     const j = await fetchJsonSafe(API + "listar_responsaveis.php");
@@ -1617,10 +1665,12 @@ async function carregarCoordenadores(){
 
     sel.value = state.coordenador || "";
 
-    sel.addEventListener("change", () => {
-      state.coordenador = sel.value || "";
-      saveDebounced();
-    });
+    sel.onchange = () => {
+      if(state.isRendering || state.isLoading) return;
+       state.coordenador = sel.value || "";
+       saveDebounced();
+    };
+    
   }catch(e){
     console.warn("Falha ao carregar coordenadores:", e);
   }
@@ -1644,8 +1694,8 @@ function renderResponsavelOptions(valorAtual, disabled){
     }
 
     const d = j.data;
-document.body.classList.add("impar-enter");
-loadUser();
+    document.body.classList.add("impar-enter");
+    loadUser();
 
 Promise.all([
   carregarTemplates(),
@@ -1682,8 +1732,9 @@ Promise.all([
       renderTabela();
       return;
     }
-
     renderTabela();
+    state.isLoading = false;
+    state.lastSavedHash = buildStableHash();
   }
 
   async function carregarTemplates(){
