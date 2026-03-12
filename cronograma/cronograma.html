@@ -319,7 +319,7 @@
 
     table{
       width:100%;
-      min-width:1320px;
+      min-width:1440px;
       border-collapse:separate;
       border-spacing:0;
     }
@@ -370,11 +370,18 @@
       white-space:nowrap;
     }
     .cell-order{
-      width:50px;
+      width:76px;
       text-align:center;
       font-weight:900;
       color:#e5e7eb;
       white-space:nowrap;
+    }
+    .group-mark{
+      display:inline-block;
+      min-width:14px;
+      margin-right:4px;
+      color:#22c55e;
+      font-weight:1000;
     }
 
     .btn-mini{
@@ -459,8 +466,25 @@
 
     .cell-pct{ width:84px; }
     .cell-pct input{
+      width:58px;
+      text-align:center;
+    }
+
+    .cell-pred{ width:92px; }
+    .inp-pred{
       width:72px;
       text-align:center;
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px solid #111827;
+      background:#020617;
+      color:var(--text);
+      font-size:13px;
+      outline:none;
+    }
+    .inp-pred:focus{
+      border-color: rgba(59,130,246,.95);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 0 18px rgba(59,130,246,.45);
     }
 
     .cell-comment{ width:54px; text-align:center; }
@@ -677,6 +701,7 @@
                 <th>Duração</th>
                 <th>% Prev.</th>
                 <th>% Real</th>
+                <th>Predec.</th>
                 <th>Coment.</th>
                 <th>Status</th>
               </tr>
@@ -694,7 +719,7 @@
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Cronograma</div>
-    <div>v4 • Receita do zero • Fonte da verdade = servidor</div>
+    <div>v5 • Receita do zero • Fonte da verdade = servidor</div>
   </div>
 </footer>
 
@@ -789,7 +814,6 @@
 
   function getStatusMeta(status){
     const s = String(status || "").toLowerCase();
-
     if (s.indexOf("conclu") >= 0) return { cls:"status-concluido", label:"Concluído" };
     if (s.indexOf("atras") >= 0) return { cls:"status-atrasado", label:"Atrasado" };
     if (s.indexOf("andamento") >= 0) return { cls:"status-em-andamento", label:"Em andamento" };
@@ -810,6 +834,12 @@
     const v = Number(n || 0);
     if(!Number.isFinite(v)) return 0;
     return Math.max(0, Math.min(100, v));
+  }
+
+  function clamp(n, min, max){
+    n = Number(n);
+    if(!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
   }
 
   function normalizePctInput(el){
@@ -839,6 +869,27 @@
     return Number.isFinite(t) ? t : null;
   }
 
+  function parseDateISO(s){
+    if(!s || !/^\d{4}-\d{2}-\d{2}$/.test(String(s))) return null;
+    const [y,m,d] = String(s).split("-").map(Number);
+    const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+
+  function formatDateISO(dt){
+    if(!(dt instanceof Date) || Number.isNaN(dt.getTime())) return "";
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth()+1).padStart(2,"0");
+    const d = String(dt.getDate()).padStart(2,"0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function addDays(dt, n){
+    const d = new Date(dt.getTime());
+    d.setDate(d.getDate() + Number(n || 0));
+    return d;
+  }
+
   function daysDiffInclusive(a, b){
     const ta = dateToTs(a);
     const tb = dateToTs(b);
@@ -846,11 +897,51 @@
     return Math.round((tb - ta) / 86400000) + 1;
   }
 
+  function computeEndFromStartAndDuration(startIso, duracao){
+    const start = parseDateISO(startIso);
+    if(!start) return "";
+    const dur = Math.max(0.1, Number(duracao || 1));
+    const diasVisiveis = Math.max(1, Math.ceil(dur));
+    const fim = addDays(start, diasVisiveis - 1);
+    return formatDateISO(fim);
+  }
+
+  function computeStartFromPredEnd(predEndIso){
+    const predEnd = parseDateISO(predEndIso);
+    if(!predEnd) return "";
+    return formatDateISO(addDays(predEnd, 1));
+  }
+
   function calcStatus(prev, real){
     if(real >= 100) return "Concluído";
     if(real <= 0 && prev <= 0) return "Não iniciado";
     if(real + 0.01 < prev) return "Atrasado";
     return "Em andamento";
+  }
+
+  function cryptoRandomId(){
+    try { return crypto.randomUUID(); }
+    catch(e){ return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16); }
+  }
+
+  function novaAtividadeBase(){
+    return {
+      id: cryptoRandomId(),
+      ordem: 1,
+      ordemHier: "1",
+      nivel: 0,
+      nome: "Nome da atividade",
+      responsavel: "",
+      inicio: "",
+      fim: "",
+      duracao: 1,
+      previsto: 0,
+      real: 0,
+      status: "Não iniciado",
+      collapsed: false,
+      comentario: "",
+      predecessora: ""
+    };
   }
 
   function rootIndexes(){
@@ -872,8 +963,60 @@
     return out;
   }
 
+  function isGroupRow(idx){
+    return directChildrenIndexes(idx).length > 0;
+  }
+
+  function rebuildHierarchicalOrder(){
+    const counters = [0,0,0,0,0];
+
+    state.atividades.forEach((item) => {
+      let lvl = clamp(item.nivel || 0, 0, 4);
+      item.nivel = lvl;
+
+      counters[lvl] += 1;
+      for(let i = lvl + 1; i < counters.length; i++) counters[i] = 0;
+
+      if(lvl === 0){
+        item.ordemHier = String(counters[0]);
+      }else{
+        item.ordemHier = counters.slice(0, lvl + 1).filter(n => n > 0).join(".");
+      }
+      item.ordem = item.ordemHier;
+    });
+  }
+
+  function findByOrdem(ordemHier){
+    const key = String(ordemHier || "").trim();
+    if(!key) return null;
+    return state.atividades.find(a => String(a.ordemHier || a.ordem || "").trim() === key) || null;
+  }
+
   function recomputeRollups(){
-    // de baixo para cima
+    rebuildHierarchicalOrder();
+
+    for(let i = 0; i < state.atividades.length; i++){
+      const item = state.atividades[i];
+      const pred = String(item.predecessora || "").trim();
+
+      item.previsto = pct(item.previsto);
+      item.real = pct(item.real);
+      item.duracao = Math.max(0, Number(item.duracao || 0));
+
+      if(pred){
+        const predItem = findByOrdem(pred);
+        if(predItem && predItem.fim){
+          const novoInicio = computeStartFromPredEnd(predItem.fim);
+          if(novoInicio){
+            item.inicio = novoInicio;
+            item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
+          }
+        }
+      }else if(item.inicio){
+        item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
+      }
+    }
+
     for(let i = state.atividades.length - 1; i >= 0; i--){
       const item = state.atividades[i];
       const childIdx = directChildrenIndexes(i);
@@ -901,16 +1044,11 @@
         item.previsto = pesoPrev > 0 ? Math.round((somaPrev / pesoPrev) * 10) / 10 : 0;
         item.real = pesoReal > 0 ? Math.round((somaReal / pesoReal) * 10) / 10 : 0;
         item.status = calcStatus(item.previsto, item.real);
+        item.responsavel = "";
       } else {
-        item.previsto = pct(item.previsto);
-        item.real = pct(item.real);
-        item.duracao = Math.max(0, Number(item.duracao || 0));
         item.status = calcStatus(item.previsto, item.real);
       }
     }
-
-    // reordena ordem
-    state.atividades.forEach((a, i) => a.ordem = i + 1);
   }
 
   function buildPayload(){
@@ -922,6 +1060,7 @@
       atividades: state.atividades.map(a => ({
         id: a.id,
         ordem: a.ordem,
+        ordemHier: a.ordemHier || a.ordem,
         nivel: a.nivel,
         nome: a.nome,
         responsavel: a.responsavel,
@@ -932,7 +1071,8 @@
         real: a.real,
         status: a.status,
         collapsed: !!a.collapsed,
-        comentario: a.comentario || ""
+        comentario: a.comentario || "",
+        predecessora: a.predecessora || ""
       })),
       baselines: state.baselines || []
     };
@@ -980,27 +1120,8 @@
     document.getElementById("sumStatusWrap").innerHTML = renderStatusPill(status);
   }
 
-  function cryptoRandomId(){
-    try { return crypto.randomUUID(); }
-    catch(e){ return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16); }
-  }
-
   function novaLinha(){
-    state.atividades.push({
-      id: cryptoRandomId(),
-      ordem: state.atividades.length + 1,
-      nivel: 0,
-      nome: "Nome da atividade",
-      responsavel: "",
-      inicio: "",
-      fim: "",
-      duracao: 1,
-      previsto: 0,
-      real: 0,
-      status: "Não iniciado",
-      collapsed: false,
-      comentario: ""
-    });
+    state.atividades.push(novaAtividadeBase());
     renderTabela();
     saveDebounced();
   }
@@ -1084,6 +1205,24 @@
     });
   }
 
+  function renderTabelaLight(){
+    recomputeRollups();
+    updateSummary();
+
+    const rows = document.querySelectorAll("#tbodyCrono .crono-row");
+    rows.forEach((row, i) => {
+      const item = state.atividades[i];
+      if(!item) return;
+      row.dataset.level = String(item.nivel || 0);
+
+      const statusCell = row.querySelector(".cell-status");
+      if(statusCell) statusCell.innerHTML = renderStatusPill(item.status);
+
+      const ordemCell = row.querySelector(".cell-order");
+      if(ordemCell) ordemCell.innerHTML = `${isGroupRow(i) ? '<span class="group-mark">+</span>' : ''}${escapeHtml(item.ordemHier || String(i+1))}`;
+    });
+  }
+
   function renderTabela(){
     recomputeRollups();
     tbody.innerHTML = "";
@@ -1101,14 +1240,14 @@
           <button class="btn-mini green btn-indent" type="button" title="Indentar">→</button>
         </td>
 
-        <td class="cell-order">${item.ordem || (index + 1)}</td>
+        <td class="cell-order">${isGroupRow(index) ? '<span class="group-mark">+</span>' : ''}${escapeHtml(item.ordemHier || (index + 1))}</td>
 
         <td class="cell-atividade">
           <input type="text" class="inp-atividade" value="${escapeHtml(item.nome || "")}" placeholder="Nome da atividade">
         </td>
 
         <td class="cell-responsavel">
-          <input type="text" class="inp-responsavel" value="${escapeHtml(item.responsavel || "")}" placeholder="Responsável">
+          <input type="text" class="inp-responsavel" value="${escapeHtml(item.responsavel || "")}" placeholder="Responsável" ${isGroupRow(index) ? "disabled" : ""}>
         </td>
 
         <td class="cell-date">
@@ -1116,7 +1255,7 @@
         </td>
 
         <td class="cell-date">
-          <input type="date" class="inp-date inp-fim" value="${escapeHtml(item.fim || "")}">
+          <input type="date" class="inp-date inp-fim" value="${escapeHtml(item.fim || "")}" ${String(item.predecessora || "").trim() ? "disabled" : ""}>
         </td>
 
         <td class="cell-dur">
@@ -1132,6 +1271,10 @@
 
         <td class="cell-pct">
           <input type="number" min="0" max="100" step="1" class="inp-real" value="${parseInt(item.real || 0, 10)}">
+        </td>
+
+        <td class="cell-pred">
+          <input type="text" class="inp-pred" value="${escapeHtml(item.predecessora || "")}" placeholder="1 ou 1.1">
         </td>
 
         <td class="cell-comment">
@@ -1161,6 +1304,9 @@
 
       tr.querySelector(".inp-inicio").addEventListener("change", (e) => {
         item.inicio = e.target.value || "";
+        if(item.inicio){
+          item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
+        }
         saveDebounced();
       });
 
@@ -1172,6 +1318,9 @@
       tr.querySelector(".inp-duracao").addEventListener("input", (e) => {
         normalizeDurationInput(e.target);
         item.duracao = Number(e.target.value || 0);
+        if(item.inicio){
+          item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
+        }
         saveDebounced();
       });
 
@@ -1184,6 +1333,11 @@
       tr.querySelector(".inp-real").addEventListener("input", (e) => {
         normalizePctInput(e.target);
         item.real = Number(e.target.value || 0);
+        saveDebounced();
+      });
+
+      tr.querySelector(".inp-pred").addEventListener("input", (e) => {
+        item.predecessora = (e.target.value || "").trim();
         saveDebounced();
       });
 
@@ -1228,17 +1382,6 @@
     renderTabelaLight();
   }
 
-  function renderTabelaLight(){
-    updateSummary();
-    document.querySelectorAll("#tbodyCrono .crono-row").forEach((row, i) => {
-      const item = state.atividades[i];
-      if(!item) return;
-      const statusCell = row.querySelector(".cell-status");
-      if(statusCell) statusCell.innerHTML = renderStatusPill(item.status);
-      row.dataset.level = String(item.nivel || 0);
-    });
-  }
-
   async function carregarCronograma(){
     const id = getQueryId();
     const j = await fetchJsonSafe(API + "carregar_cronograma.php?id=" + encodeURIComponent(id));
@@ -1253,39 +1396,63 @@
     state.atividades = Array.isArray(d.atividades) ? d.atividades : [];
     state.baselines = Array.isArray(d.baselines) ? d.baselines : [];
 
+    state.atividades = state.atividades.map((a, idx) => ({
+      id: a.id || cryptoRandomId(),
+      ordem: a.ordem || (idx + 1),
+      ordemHier: a.ordemHier || String(a.ordem || (idx + 1)),
+      nivel: Number(a.nivel || 0),
+      nome: a.nome || a.atividade || "Nome da atividade",
+      responsavel: a.responsavel || "",
+      inicio: a.inicio || "",
+      fim: a.fim || "",
+      duracao: Number(a.duracao || a.duracaoDias || 1),
+      previsto: Number(a.previsto || 0),
+      real: Number(a.real || 0),
+      status: a.status || "Não iniciado",
+      collapsed: !!a.collapsed,
+      comentario: a.comentario || a.observacao || "",
+      predecessora: a.predecessora || ""
+    }));
+
     if(!state.atividades.length){
-      novaLinha();
+      state.atividades.push(novaAtividadeBase());
+      renderTabela();
       return;
     }
 
     renderTabela();
   }
 
-  async function carregarTemplate(nomeTemplate){
+  async function carregarTemplates(){
+    const sel = document.getElementById("templateSelect");
+    sel.innerHTML = `<option value="">Importar template...</option>`;
 
-  const r = await fetch(`https://api.erpimpar.com.br/cronograma/teste-vrf.php?template=${nomeTemplate}`);
-  const j = await r.json();
+    try{
+      const j = await fetchJsonSafe(API + "listar_templates.php");
+      const lista = Array.isArray(j.data) ? j.data : [];
 
-  if(!j.ok){
-     modalErro("Erro ao carregar template");
-     return;
+      lista.forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t.id || t.codigo || t.slug || "";
+        opt.textContent = t.nome || t.label || t.id || "Template";
+        sel.appendChild(opt);
+      });
+
+      if(!lista.length){
+        const opt = document.createElement("option");
+        opt.value = "vrf";
+        opt.textContent = "Template VRF";
+        sel.appendChild(opt);
+      }
+    }catch(e){
+      console.warn("listar_templates.php indisponível, mantendo fallback");
+      const opt = document.createElement("option");
+      opt.value = "vrf";
+      opt.textContent = "Template VRF";
+      sel.appendChild(opt);
+    }
   }
 
-  const atividades = j.template.atividades;
-
-  atividades.forEach(a => {
-      addLinha({
-         nivel: a.nivel,
-         nome: a.nome,
-         responsavel: a.responsavel || "",
-         inicio: a.inicio || "",
-         fim: a.fim || "",
-         duracao: a.duracao || 1,
-         real: a.real || 0
-      });
-  });
-
-}
   async function importarTemplate(){
     const sel = document.getElementById("templateSelect");
     const id = (sel.value || "").trim();
@@ -1297,7 +1464,7 @@
 
     try{
       const j = await fetchJsonSafe(API + "carregar_template.php?id=" + encodeURIComponent(id));
-      const data = j && j.data ? j.data : null;
+      const data = j && (j.data || j.template) ? (j.data || j.template) : null;
       const atv = data && Array.isArray(data.atividades) ? data.atividades : null;
 
       if(!atv || !atv.length){
@@ -1305,25 +1472,25 @@
         return;
       }
 
-      const baseOrder = state.atividades.length;
+      const base = atv.map((a) => ({
+        id: cryptoRandomId(),
+        ordem: 0,
+        ordemHier: "",
+        nivel: Number(a.nivel || 0),
+        nome: a.nome || a.atividade || "Nome da atividade",
+        responsavel: a.responsavel || "",
+        inicio: a.inicio || "",
+        fim: a.fim || "",
+        duracao: Number(a.duracao || a.duracaoDias || 1),
+        previsto: Number(a.previsto || 0),
+        real: Number(a.real || 0),
+        status: a.status || "Não iniciado",
+        collapsed: !!a.collapsed,
+        comentario: a.comentario || a.observacao || "",
+        predecessora: a.predecessora || ""
+      }));
 
-      atv.forEach((a, idx) => {
-        state.atividades.push({
-          id: cryptoRandomId(),
-          ordem: baseOrder + idx + 1,
-          nivel: Number(a.nivel || 0),
-          nome: a.nome || a.atividade || "Nome da atividade",
-          responsavel: a.responsavel || "",
-          inicio: a.inicio || "",
-          fim: a.fim || "",
-          duracao: Number(a.duracao || a.duracaoDias || 1),
-          previsto: Number(a.previsto || 0),
-          real: Number(a.real || 0),
-          status: a.status || "Não iniciado",
-          collapsed: !!a.collapsed,
-          comentario: a.comentario || a.observacao || ""
-        });
-      });
+      state.atividades = state.atividades.concat(base);
 
       renderTabela();
       saveDebounced();
