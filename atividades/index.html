@@ -1424,7 +1424,9 @@ body{opacity:1 !important;}
     order:99; /* força ficar abaixo */
   }
 }
-	
+#histDateStart, #histDateEnd{
+  max-width: 180px;
+}	
 </style>
 
 </head>
@@ -1520,7 +1522,10 @@ body{opacity:1 !important;}
                <div class="title">Histórico (Finalizados)</div>
                <div class="hint">Clique no card para abrir o PDF do dia</div>
               </div>
-              <input id="histDate" class="inp inp-date" type="date" placeholder="dd/mm/aaaa"/>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                      <input id="histDateStart" class="inp inp-date" type="date" placeholder="Data início"/>
+                      <input id="histDateEnd" class="inp inp-date" type="date" placeholder="Data fim"/>
+              </div>
             </div>
               <div id="histList" class="hist-list" style="display:flex;flex-direction:column;gap:10px;"></div>
 	
@@ -2603,74 +2608,96 @@ function saveHist(h){}
 function pushHistory(payloadFinal){}
 
 
-  async function renderHistoryServer(){
-  const dt = (document.getElementById("histDate")?.value || "").trim();
+async function renderHistoryServer(){
+  const dtStart = (document.getElementById("histDateStart")?.value || "").trim();
+  const dtEnd   = (document.getElementById("histDateEnd")?.value || "").trim();
 
   async function renderIds(ids){
     const list = Array.isArray(ids) ? ids : [];
+
     // normaliza (list.php pode retornar string[] ou objetos)
-    let norm = list.map(x => (typeof x === 'string') ? x : (x && (x.id || x.filename)) ).filter(Boolean);
+    let norm = list
+      .map(x => (typeof x === "string") ? x : (x && (x.id || x.filename)))
+      .filter(Boolean);
+
     // ordena desc (IDs geralmente começam com YYYY-MM-DD)
     norm.sort((a,b)=> String(b).localeCompare(String(a)));
-    if(dt) norm = norm.filter(id => String(id).startsWith(dt));
+
+    // filtro por período
+    if(dtStart || dtEnd){
+      norm = norm.filter(id => {
+        const d = String(id).slice(0,10); // YYYY-MM-DD
+        if(dtStart && d < dtStart) return false;
+        if(dtEnd && d > dtEnd) return false;
+        return true;
+      });
+    }
 
     histListEl.innerHTML = "";
 
     if(norm.length === 0){
-      const empty = document.createElement('div');
-      empty.style.color = 'var(--muted)';
-      empty.style.fontSize = '12px';
-      empty.textContent = dt ? 'Sem registros no servidor para esta data.' : 'Sem registros no servidor.';
+      const empty = document.createElement("div");
+      empty.style.color = "var(--muted)";
+      empty.style.fontSize = "12px";
+      empty.textContent = (dtStart || dtEnd)
+        ? "Sem registros no servidor para o período selecionado."
+        : "Sem registros no servidor.";
       histListEl.appendChild(empty);
       return;
     }
 
     // limita para não pesar
     norm.slice(0, 80).forEach(id => {
-      const card=document.createElement("button");
-      card.type="button";
-      card.className="hist-item";
-      card.style.textAlign="left";
-      card.style.padding="12px 14px";
-      card.style.borderRadius="14px";
-      card.style.width="100%";
-      card.style.border="1px solid rgba(148,163,184,.18)";
-      card.style.background="rgba(2,6,23,.30)";
-      card.style.cursor="pointer";
-      card.style.color="inherit";
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hist-item";
+      card.style.textAlign = "left";
+      card.style.padding = "12px 14px";
+      card.style.borderRadius = "14px";
+      card.style.width = "100%";
+      card.style.border = "1px solid rgba(148,163,184,.18)";
+      card.style.background = "rgba(2,6,23,.30)";
+      card.style.cursor = "pointer";
+      card.style.color = "inherit";
 
       const date = String(id).slice(0,10);
+
       card.innerHTML =
-        '<div style="font-weight:1000;letter-spacing:.2px;">'+escapeHtml(date)+' - ATIVIDADES EXECUTADAS</div>'+
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:6px;">'+
-          '<span>ID: <b>'+escapeHtml(id)+'</b></span>'+
+        '<div style="font-weight:1000;letter-spacing:.2px;">' + escapeHtml(date) + ' - ATIVIDADES EXECUTADAS</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:6px;">' +
+          '<span>ID: <b>' + escapeHtml(id) + '</b></span>' +
         '</div>';
 
-      card.addEventListener("click", async()=>{
+      card.addEventListener("click", async ()=>{
         try{
-          const data = await withProcessing(async()=> await apiGet(id), "Buscando no servidor…", "PROCESSANDO DADOS......", 700);
+          const data = await withProcessing(
+            async()=> await apiGet(id),
+            "Buscando no servidor…",
+            "PROCESSANDO DADOS......",
+            700
+          );
           openPrintWindow(data);
         }catch(e){
           alertWarn("Não consegui abrir este registro do servidor.\n\n" + (e && e.message ? e.message : ""));
         }
       });
+
       histListEl.appendChild(card);
     });
   }
 
   try{
-    const ids = await apiList();    await renderIds(ids);
+    const ids = await apiList();
+    await renderIds(ids);
   }catch(e){
-    // fallback: cache do servidor (não usa histórico local como fonte principal)
-    try{
-      const cached = JSON.parse([])
-      await renderIds(cached);
-    }catch(_){
-      histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Servidor indisponível e sem cache.</div>';
-    }
+    console.warn("renderHistoryServer falhou:", e);
+
+    histListEl.innerHTML =
+      '<div style="color:var(--muted);font-size:12px;">' +
+      'Histórico indisponível no servidor no momento.' +
+      '</div>';
   }
 }
-
 function renderHistory(){
   const hist=loadHist();
   const items=hist.items||[];
@@ -3189,9 +3216,12 @@ if(btnFinalize) btnFinalize.addEventListener("click", finalizeDay);
 const btnVoltar = document.getElementById("btnVoltarMenu");
 if(btnVoltar) btnVoltar.addEventListener("click", ()=>{ window.location.href="/menu.html"; });
 
-const histDateEl = document.getElementById("histDate");
-if(histDateEl) histDateEl.addEventListener("change", ()=>{ renderHistoryServer(); });
+const histDateStartEl = document.getElementById("histDateStart");
+const histDateEndEl   = document.getElementById("histDateEnd");
 
+if(histDateStartEl) histDateStartEl.addEventListener("change", ()=>{ renderHistoryServer(); });
+if(histDateEndEl)   histDateEndEl.addEventListener("change", ()=>{ renderHistoryServer(); });
+	
 if(btnNewDay) btnNewDay.addEventListener("click", newDay);
 
 // ✅ checklist sempre atualiza quando mudar qualquer campo
