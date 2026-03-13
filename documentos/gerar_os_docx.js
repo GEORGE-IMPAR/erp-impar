@@ -30,9 +30,9 @@
     if (!window.docxtemplater) {
       await loadScript("https://cdn.jsdelivr.net/npm/docxtemplater@3.53.0/build/docxtemplater.js");
     }
-    if (!window.saveAs) {
-      await loadScript("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
-    }
+   // if (!window.saveAs) {
+   //   await loadScript("https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js");
+   // }
   }
 
   function safeStr(v) {
@@ -76,6 +76,65 @@
     return await r.arrayBuffer();
   }
 
+  function descricaoAutomaticaAnexo(nomeArquivo) {
+    const ext = String(nomeArquivo || "").split(".").pop().toLowerCase();
+
+    switch (ext) {
+      case "pdf":
+        return "Documento complementar em formato PDF.";
+      case "xls":
+      case "xlsx":
+        return "Planilha complementar contendo informações técnicas.";
+      case "csv":
+        return "Arquivo de dados complementar.";
+      case "ppt":
+      case "pptx":
+        return "Apresentação complementar.";
+      case "doc":
+      case "docx":
+        return "Documento complementar integrante deste instrumento.";
+      case "png":
+      case "jpg":
+      case "jpeg":
+        return "Imagem complementar integrante deste instrumento.";
+      case "txt":
+        return "Arquivo de texto complementar.";
+      default:
+        return "Documento complementar integrante deste instrumento.";
+    }
+  }
+
+  function montarResumoAnexos(anexos) {
+    if (!anexos || !anexos.length) return "";
+
+    return anexos.map((a, i) => {
+      const nome = safeStr(a.name || a.nomeArquivo || "");
+      return `ANEXO ${i + 1} – ${nome}\n${descricaoAutomaticaAnexo(nome)}\nDisponível para visualização no sistema.`;
+    }).join("\n\n");
+  }
+
+  function montarLoopAnexos(anexos) {
+    if (!anexos || !anexos.length) {
+      return [{
+        numero: "",
+        nomeArquivo: "Sem anexos.",
+        descricaoAutomatica: "",
+        linkTexto: ""
+      }];
+    }
+
+    return anexos.map((a, i) => {
+      const nome = safeStr(a.name || a.nomeArquivo || "");
+      const viewUrl = safeStr(a.viewUrl || a.link || a.webUrl || "");
+      return {
+        numero: String(i + 1),
+        nomeArquivo: nome,
+        descricaoAutomatica: descricaoAutomaticaAnexo(nome),
+        linkTexto: viewUrl
+      };
+    });
+  }
+
   async function gerarOSBlob(codigo) {
     codigo = safeStr(codigo);
     if (!codigo) throw new Error("Código vazio.");
@@ -91,6 +150,13 @@
     data.codigo = safeStr(data.codigo || codigo);
     data.enderecoContratanteCompleto = enderecoCompleto(data, "Contratante");
     data.enderecoContratadaCompleto  = enderecoCompleto(data, "Contratada");
+
+    const anexos = Array.isArray(window.__ANEXOS_OS_UPLOADADOS__)
+      ? window.__ANEXOS_OS_UPLOADADOS__
+      : [];
+
+    data.anexos = montarLoopAnexos(anexos);
+    data.anexosResumo = montarResumoAnexos(anexos);
 
     const zip = new window.PizZip(templateBuf);
 
@@ -124,8 +190,13 @@
 
   async function gerarOSDocx(codigo) {
     const result = await gerarOSBlob(codigo);
-    window.saveAs(result.blob, result.filename);
-    return { ok: true, filename: result.filename };
+  // window.saveAs(result.blob, result.filename);
+    return {
+      ok: true,
+      filename: result.filename,
+      blob: result.blob,
+      data: result.data
+    };
   }
 
   // API pública para você chamar do seu código atual
