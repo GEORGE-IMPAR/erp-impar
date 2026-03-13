@@ -1794,9 +1794,20 @@ function renderResponsavelOptions(valorAtual, disabled){
   return `<select class="sel-responsavel" ${disabled ? "disabled" : ""}>${base.join("")}</select>`;
 }
   
-  async function carregarCronograma(){
-    console.log("CARREGAR CRONOGRAMA", new Date().toISOString());
-    console.trace("TRACE carregarCronograma");
+let __LOAD_CRONO_RUNNING__ = false;
+let __LOAD_CRONO_PROMISE__ = null;
+
+async function carregarCronograma(force = false){
+  console.log("CARREGAR CRONOGRAMA", new Date().toISOString());
+  console.trace("TRACE carregarCronograma");
+
+  if(__LOAD_CRONO_RUNNING__ && __LOAD_CRONO_PROMISE__){
+    return __LOAD_CRONO_PROMISE__;
+  }
+
+  __LOAD_CRONO_RUNNING__ = true;
+
+  __LOAD_CRONO_PROMISE__ = (async () => {
     const id = getQueryId();
     const j = await fetchJsonSafe(API + "carregar_cronograma.php?id=" + encodeURIComponent(id));
 
@@ -1805,49 +1816,47 @@ function renderResponsavelOptions(valorAtual, disabled){
     }
 
     const d = j.data;
-    document.body.classList.add("impar-enter");
-    loadUser();
 
-Promise.all([
-  //carregarTemplates(),
-  //carregarResponsaveis(),
-  //carregarCoordenadores()
-]).finally(() => {
-  carregarCronograma().catch((e) => {
-    console.error(e);
-    msgErr("Falha ao carregar o cronograma.\n\n" + (e.message || e));
-    document.getElementById("obraNomeTop").textContent = "Erro ao carregar";
-  });
-});
-    
-    state.atividades = state.atividades.map((a, idx) => ({
-      id: a.id || cryptoRandomId(),
-      ordem: a.ordem || (idx + 1),
-      ordemHier: a.ordemHier || String(a.ordem || (idx + 1)),
-      nivel: Number(a.nivel || 0),
-      nome: a.nome || a.atividade || "Nome da atividade",
-      responsavel: a.responsavel || "",
-      inicio: a.inicio || "",
-      fim: a.fim || "",
-      duracao: Number(a.duracao || a.duracaoDias || 1),
-      previsto: Number(a.previsto || 0),
-      real: Number(a.real || 0),
-      status: a.status || "Não iniciado",
-      collapsed: !!a.collapsed,
-      comentario: a.comentario || a.observacao || "",
-      predecessora: a.predecessora || ""
-    }));
+    state.id = d.id || id;
+    state.nome = d.nome || d.obra || ("OBRA " + state.id);
+    state.coordenador = d.coordenador || "";
+    state.atividades = Array.isArray(d.atividades) ? d.atividades : [];
+    state.baselines = Array.isArray(d.baselines) ? d.baselines : [];
 
     if(!state.atividades.length){
-      state.atividades.push(novaAtividadeBase());
-      renderTabela();
-      return;
+      state.atividades = [{
+        id: cryptoRandomId(),
+        ordem: 1,
+        ordemHier: "1",
+        nivel: 0,
+        nome: "Nova atividade",
+        responsavel: "",
+        inicio: "",
+        fim: "",
+        duracao: 1,
+        previsto: 0,
+        real: 0,
+        status: "Não iniciado",
+        collapsed: false,
+        comentario: "",
+        predecessora: ""
+      }];
     }
+
     renderTabela();
     state.isLoading = false;
     state.lastSavedHash = buildStableHash();
-  }
 
+    return d;
+  })();
+
+  try{
+    return await __LOAD_CRONO_PROMISE__;
+  } finally {
+    __LOAD_CRONO_RUNNING__ = false;
+    __LOAD_CRONO_PROMISE__ = null;
+  }
+}
   async function carregarTemplates(){
     const sel = document.getElementById("templateSelect");
     sel.innerHTML = `<option value="">Importar template...</option>`;
