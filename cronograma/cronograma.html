@@ -748,9 +748,10 @@ input[type="date"]::-webkit-calendar-picker-indicator{
   .status-legend{gap:10px;}
 }
 .status-header-text{
-  font-size:16px;
+  font-size:20px;
   font-weight:1000;
   line-height:1.1;
+  letter-spacing:.01em;
 }
 
 .status-header-text.nao-iniciado{ color:#60a5fa; }
@@ -758,14 +759,17 @@ input[type="date"]::-webkit-calendar-picker-indicator{
 .status-header-text.atrasado{ color:#f87171; }
 .status-header-text.concluido{ color:#22c55e; }
 
-.crono-row[data-level="1"] .cell-order,
-.crono-row[data-level="1"] .cell-atividade{ padding-left:14px; }
-.crono-row[data-level="2"] .cell-order,
-.crono-row[data-level="2"] .cell-atividade{ padding-left:28px; }
-.crono-row[data-level="3"] .cell-order,
-.crono-row[data-level="3"] .cell-atividade{ padding-left:42px; }
-.crono-row[data-level="4"] .cell-order,
-.crono-row[data-level="4"] .cell-atividade{ padding-left:56px; }
+.crono-row[data-level="1"] .cell-order{ padding-left:16px; }
+.crono-row[data-level="1"] .cell-atividade{ padding-left:12px; }
+
+.crono-row[data-level="2"] .cell-order{ padding-left:30px; }
+.crono-row[data-level="2"] .cell-atividade{ padding-left:18px; }
+
+.crono-row[data-level="3"] .cell-order{ padding-left:44px; }
+.crono-row[data-level="3"] .cell-atividade{ padding-left:24px; }
+
+.crono-row[data-level="4"] .cell-order{ padding-left:58px; }
+.crono-row[data-level="4"] .cell-atividade{ padding-left:30px; }
 
 .cell-pred{ width:90px; }
 .cell-pred input{
@@ -782,6 +786,67 @@ input[type="date"]::-webkit-calendar-picker-indicator{
   display:flex;
   justify-content:center;
   align-items:center;
+}   
+.group-toggle{
+  width:24px;
+  height:24px;
+  min-width:24px;
+  border-radius:999px;
+  border:1px solid rgba(59,130,246,.55);
+  background:rgba(15,23,42,.95);
+  color:#ffffff;
+  font-size:18px;
+  font-weight:1000;
+  line-height:1;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-right:8px;
+  cursor:pointer;
+  box-shadow:0 0 14px rgba(59,130,246,.24);
+  transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+
+.group-toggle:hover{
+  transform:translateY(-1px) scale(1.06);
+  box-shadow:0 0 20px rgba(59,130,246,.40);
+  filter:brightness(1.08);
+}    
+.group-toggle-placeholder{
+  display:inline-block;
+  width:24px;
+  margin-right:8px;
+} 
+input:disabled,
+select:disabled{
+  opacity:.72;
+  cursor:not-allowed;
+  filter:saturate(.7);
+}    
+.cell-date{ width:140px; }
+.cell-date input{
+  min-width:132px;
+  max-width:140px;
+  padding-right:34px !important;
+  font-size:13px;
+}
+
+.cell-dur{ width:86px; }
+.dur-wrap input{
+  width:56px;
+  text-align:center;
+}
+
+.cell-pct{ width:72px; }
+.cell-pct input{
+  width:58px;
+  text-align:center;
+}
+
+.cell-pred{ width:72px; }
+.cell-pred input{
+  width:58px;
+  text-align:center;
 }    
   </style>
 </head>
@@ -901,7 +966,6 @@ input[type="date"]::-webkit-calendar-picker-indicator{
                 <th>% Prev.</th>
                 <th>% Real</th>
                 <th>Predec.</th>
-                <th>Coment.</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -922,7 +986,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Cronograma</div>
-    <div>v100 • Receita do zero • Fonte da verdade = servidor</div>
+    <div>v199 • Receita do zero • Fonte da verdade = servidor</div>
   </div>
 </footer>
 
@@ -1288,7 +1352,7 @@ function recomputeRollups(){
   // agrupadores de baixo para cima
   for(let i = state.atividades.length - 1; i >= 0; i--){
     const item = state.atividades[i];
-    const filhosIdx = directChildrenIndexes(i);
+    const filhosIdx = descendantIndexes(i);
 
     if(filhosIdx.length){
       const filhos = filhosIdx.map(fi => state.atividades[fi]);
@@ -1508,9 +1572,9 @@ function updateSummary(){
   }
 
 async function carregarObras(){
-  if(state.obras && state.obras.length) return state.obras;
-
   const sel = document.getElementById("obraSelect");
+  if(!sel) return [];
+
   sel.innerHTML = `<option value="">Projeto / Obra...</option>`;
 
   try{
@@ -1522,19 +1586,25 @@ async function carregarObras(){
   }
 
   state.obras.forEach(o => {
+    const nome = String(o.nome || "").trim();
+    if(!nome) return;
+
     const opt = document.createElement("option");
-    opt.value = o.nome || "";
-    opt.textContent = o.nome || "";
+    opt.value = nome;
+    opt.textContent = nome;
     sel.appendChild(opt);
   });
 
-  if(state.nome){
+  // só seta valor se realmente existir nome salvo
+  if(state.nome && String(state.nome).trim()){
     sel.value = state.nome;
+  }else{
+    sel.value = "";
   }
 
   sel.onchange = () => {
-    state.nome = sel.value || ("OBRA " + state.id);
-    document.getElementById("obraNomeTop").textContent = state.nome;
+    state.nome = sel.value || "";
+    document.getElementById("obraNomeTop").textContent = state.nome || ("OBRA " + state.id);
     saveDebounced();
   };
 
@@ -1691,8 +1761,8 @@ function renderTabela(){
 
       const isGroup = isGroupRow(index);
       const toggleHtml = isGroup
-        ? `<button class="group-toggle" type="button" title="${item.collapsed ? 'Expandir' : 'Recolher'}">${item.collapsed ? '+' : '−'}</button>`
-        : "";
+      ? `<button class="group-toggle" type="button" title="${item.collapsed ? 'Expandir' : 'Recolher'}">${item.collapsed ? '+' : '−'}</button>`
+      : `<span class="group-toggle-placeholder"></span>`;
 
       const groupLocked = isGroup;
       const disabledAttr = groupLocked ? "disabled" : "";
@@ -1716,7 +1786,7 @@ function renderTabela(){
         </td>
 
         <td class="cell-date">
-          <input type="date" class="inp-date inp-inicio" value="${escapeHtml(item.inicio || "")}">
+          <input type="date" class="inp-date inp-inicio" value="${escapeHtml(item.inicio || "")}" ${disabledAttr}>
         </td>
 
         <td class="cell-date">
@@ -1742,10 +1812,7 @@ function renderTabela(){
           <input type="text" class="inp-pred" value="${escapeHtml(item.predecessora || "")}" placeholder="1 ou 1.1" ${disabledAttr}>
         </td>
 
-        <td class="cell-comment">
-          <button class="btn-comment" type="button" title="Comentário">💬</button>
-        </td>
-
+        
         <td class="cell-status">
           ${renderStatusDotOnly(item.status)}
         </td>
@@ -1755,7 +1822,6 @@ function renderTabela(){
 
       const btnIndent = tr.querySelector(".btn-indent");
       const btnOutdent = tr.querySelector(".btn-outdent");
-      const btnComment = tr.querySelector(".btn-comment");
       const btnToggle = tr.querySelector(".group-toggle");
 
       if(btnToggle){
@@ -1895,7 +1961,21 @@ function renderTabela(){
   } finally {
     state.isRendering = false;
   }
-}  
+} 
+
+function descendantIndexes(idx){
+  const base = Number(state.atividades[idx].nivel || 0);
+  const out = [];
+
+  for(let i = idx + 1; i < state.atividades.length; i++){
+    const lvl = Number(state.atividades[i].nivel || 0);
+    if(lvl <= base) break;
+    out.push(i);
+  }
+
+  return out;
+} 
+  
 async function saveCronograma(){
   if(state.saving || state.isRendering || state.isLoading) return;
 
@@ -2019,7 +2099,7 @@ async function carregarCronograma(force = false){
     const d = j.data;
 
     state.id = d.id || id;
-    state.nome = d.nome || d.obra || ("OBRA " + state.id);
+    state.nome = (d.nome || d.obra || "").trim();
     state.coordenador = d.coordenador || "";
     state.atividades = Array.isArray(d.atividades) ? d.atividades : [];
     state.baselines = Array.isArray(d.baselines) ? d.baselines : [];
