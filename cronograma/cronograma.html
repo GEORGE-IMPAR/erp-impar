@@ -1337,18 +1337,21 @@ function recomputeRollups(){
   });
 
   // predecessoras primeiro
-  state.atividades.forEach((item) => {
-    const pred = String(item.predecessora || "").trim();
-    if(!pred) return;
+// predecessoras primeiro
+state.atividades.forEach((item, index) => {
+  const isGroup = descendantIndexes(index).length > 0;
+  if(isGroup) return;
 
-    const pai = getItemByHier(pred);
-    if(!pai || !pai.fim) return;
+  const pred = String(item.predecessora || "").trim();
+  if(!pred) return;
 
-    const inicioNovo = addDays(pai.fim, 1);
-    item.inicio = inicioNovo;
-    item.fim = computeEndFromStartAndDuration(inicioNovo, item.duracao || 1);
-  });
+  const pai = getItemByHier(pred);
+  if(!pai || !pai.fim) return;
 
+  const inicioNovo = addDays(pai.fim, 1);
+  item.inicio = inicioNovo;
+  item.fim = computeEndFromStartAndDuration(inicioNovo, item.duracao || 1);
+});
   // agrupadores de baixo para cima
   for(let i = state.atividades.length - 1; i >= 0; i--){
     const item = state.atividades[i];
@@ -1385,7 +1388,7 @@ function recomputeRollups(){
 
       item.previsto = pesoPrev > 0 ? Math.round((somaPrev / pesoPrev) * 10) / 10 : 0;
       item.real = pesoReal > 0 ? Math.round((somaReal / pesoReal) * 10) / 10 : 0;
-      item.status = calcStatusByDates(item.previsto, item.real, item.inicio, item.fim);
+      item.status = mergeStatuses(filhos.map(f => f.status));
     } else {
       item.previsto = pct(item.previsto);
       item.real = pct(item.real);
@@ -1425,6 +1428,29 @@ function recomputeRollups(){
   };
 }
 
+function getStatusPriority(status){
+  const s = String(status || "").toLowerCase();
+
+  if(s.includes("atras")) return 4;
+  if(s.includes("andamento")) return 3;
+  if(s.includes("conclu")) return 2;
+  return 1; // não iniciado
+}
+
+function mergeStatuses(list){
+  if(!list.length) return "Não iniciado";
+
+  let max = 1;
+  list.forEach(st => {
+    max = Math.max(max, getStatusPriority(st));
+  });
+
+  if(max === 4) return "Atrasado";
+  if(max === 3) return "Em andamento";
+  if(max === 2) return "Concluído";
+  return "Não iniciado";
+}
+  
 function toggleCollapse(index){
   const item = state.atividades[index];
   if(!isGroupRow(index)) return;
@@ -1441,6 +1467,54 @@ function isHiddenByParent(index){
     }
   }
   return false;
+}
+
+function isGroupRowByIndex(index){
+  return descendantIndexes(index).length > 0;
+}
+
+function validarCronogramaParaBaseline(){
+  const erros = [];
+
+  if(!String(state.nome || "").trim()){
+    erros.push("Selecione a obra.");
+  }
+
+  if(!String(state.coordenador || "").trim()){
+    erros.push("Selecione o coordenador.");
+  }
+
+  state.atividades.forEach((item, index) => {
+    const isGroup = isGroupRowByIndex(index);
+
+    if(!String(item.nome || "").trim()){
+      erros.push(`Linha ${item.ordemHier || index + 1}: nome da atividade obrigatório.`);
+    }
+
+    if(isGroup) return;
+
+    if(!String(item.inicio || "").trim()){
+      erros.push(`Linha ${item.ordemHier || index + 1}: início obrigatório.`);
+    }
+
+    if(!String(item.fim || "").trim()){
+      erros.push(`Linha ${item.ordemHier || index + 1}: fim obrigatório.`);
+    }
+
+    if(Number(item.duracao || 0) <= 0){
+      erros.push(`Linha ${item.ordemHier || index + 1}: duração obrigatória.`);
+    }
+
+    const pred = String(item.predecessora || "").trim();
+    if(pred){
+      const pai = getItemByHier(pred);
+      if(!pai){
+        erros.push(`Linha ${item.ordemHier || index + 1}: predecessora ${pred} não encontrada.`);
+      }
+    }
+  });
+
+  return erros;
 }
   
 function updateSummary(){
@@ -1464,10 +1538,9 @@ function updateSummary(){
     somaReal += pct(r.real) * dur;
   });
 
-  const prev = pesoPrev > 0 ? Math.round((somaPrev / pesoPrev) * 10) / 10 : 0;
-  const real = pesoReal > 0 ? Math.round((somaReal / pesoReal) * 10) / 10 : 0;
-  const status = calcStatusByDates(prev, real, inicio === "—" ? "" : inicio, fim === "—" ? "" : fim);
-
+const folhas = state.atividades.filter((a, i) => descendantIndexes(i).length === 0);
+const status = mergeStatuses(folhas.map(f => f.status));
+  
   let durTotal = "—";
   if(inicio !== "—" && fim !== "—"){
     const a = new Date(inicio + "T12:00:00");
@@ -1718,10 +1791,23 @@ function calcStatusByDates(prev, real, inicio, fim){
   const dtFim = fim ? new Date(fim + "T12:00:00") : null;
 
   if(real >= 100) return "Concluído";
-  if(dtFim && dtFim < hoje && real < 100) return "Atrasado";
-  if(real > 0) return "Em andamento";
-  if(prev > 0) return "Em andamento";
-  if(dtInicio && dtInicio <= hoje && real <= 0) return "Atrasado";
+
+  if(dtFim && dtFim < hoje && real < 100){
+    return "Atrasado";
+  }
+
+  if(real > 0){
+    return "Em andamento";
+  }
+
+  if(prev > 0){
+    return "Em andamento";
+  }
+
+  if(dtInicio && dtInicio <= hoje && real <= 0){
+    return "Atrasado";
+  }
+
   return "Não iniciado";
 }
 
@@ -1759,7 +1845,7 @@ function renderTabela(){
       tr.className = "crono-row";
       tr.dataset.level = String(item.nivel || 0);
 
-      const isGroup = isGroupRow(index);
+      const isGroup = descendantIndexes(index).length > 0;
       const toggleHtml = isGroup
       ? `<button class="group-toggle" type="button" title="${item.collapsed ? 'Expandir' : 'Recolher'}">${item.collapsed ? '+' : '−'}</button>`
       : `<span class="group-toggle-placeholder"></span>`;
@@ -1790,7 +1876,7 @@ function renderTabela(){
         </td>
 
         <td class="cell-date">
-          <input type="date" class="inp-date inp-fim" value="${escapeHtml(item.fim || "")}" ${(String(item.predecessora || "").trim() || groupLocked) ? "disabled" : ""}>
+          <input type="date" class="inp-date inp-fim" value="${escapeHtml(item.fim || "")}" ${disabledAttr}>
         </td>
 
         <td class="cell-dur">
@@ -2094,6 +2180,11 @@ async function carregarCronograma(force = false){
 
     state.id = d.id || id;
     state.nome = (d.nome || d.obra || "").trim();
+
+// NÃO força nome fake tipo "OBRA 000"
+if(!state.nome){
+  state.nome = "";
+}
     state.coordenador = d.coordenador || "";
     state.atividades = Array.isArray(d.atividades) ? d.atividades : [];
     state.baselines = Array.isArray(d.baselines) ? d.baselines : [];
@@ -2216,38 +2307,38 @@ async function carregarCronograma(force = false){
     }
   }
 
-  async function salvarBaseline(){
-    try{
-      const payload = buildPayload();
+async function salvarBaseline(){
+  const erros = validarCronogramaParaBaseline();
 
-      const j = await fetchJsonSafe(API + "salvar_baseline.php", {
-        method: "POST",
-        headers: { "Content-Type":"text/plain;charset=UTF-8" },
-        body: JSON.stringify(payload)
-      });
-
-      if(!j || j.ok !== true){
-        throw new Error((j && (j.error || j.message)) || "Falha ao salvar baseline");
-      }
-
-      if(Array.isArray(j.data && j.data.baselines)){
-        state.baselines = j.data.baselines;
-      }else{
-        state.baselines.push({
-          versao: state.baselines.length + 1,
-          createdAt: new Date().toISOString(),
-          atividades: payload.atividades
-        });
-      }
-
-      updateSummary();
-      msgOk("Baseline salva com sucesso.");
-    }catch(e){
-      console.error(e);
-      msgErr("Falha ao salvar baseline.\n\n" + (e.message || e));
-    }
+  if(erros.length){
+    msgWarn("Corrija antes de salvar a baseline:\n\n- " + erros.join("\n- "));
+    return;
   }
 
+  try{
+    const payload = buildPayload();
+
+    const j = await fetchJsonSafe(API + "salvar_baseline.php", {
+      method: "POST",
+      headers: { "Content-Type":"text/plain;charset=UTF-8" },
+      body: JSON.stringify(payload)
+    });
+
+    if(!j || j.ok !== true){
+      throw new Error((j && (j.error || j.message)) || "Falha ao salvar baseline");
+    }
+
+    if(Array.isArray(j.data && j.data.baselines)){
+      state.baselines = j.data.baselines;
+    }
+
+    updateSummary();
+    msgOk("Baseline salva com sucesso.");
+  }catch(e){
+    console.error(e);
+    msgErr("Falha ao salvar baseline.\n\n" + (e.message || e));
+  }
+}
   document.getElementById("btnVoltarMenu").addEventListener("click", () => {
     location.href = "/menu.html";
   });
