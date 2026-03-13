@@ -1450,171 +1450,250 @@ function isHiddenByParent(index){
     });
   }
 
-  function renderTabelaLight(){
-    recomputeRollups();
-    updateSummary();
+function renderTabelaLight(){
+  if(state.isRendering || state.isLoading) return;
 
-    const rows = document.querySelectorAll("#tbodyCrono .crono-row");
-    rows.forEach((row, i) => {
-      const item = state.atividades[i];
-      if(!item) return;
-      row.dataset.level = String(item.nivel || 0);
-
-      const statusCell = row.querySelector(".cell-status");
-      if(statusCell) statusCell.innerHTML = renderStatusPill(item.status);
-
-      const ordemCell = row.querySelector(".cell-order");
-      if(ordemCell) ordemCell.innerHTML = `${isGroupRow(i) ? '<span class="group-mark">+</span>' : ''}${escapeHtml(item.ordemHier || String(i+1))}`;
-    });
-  }
-
-function renderTabela(){
-  state.isRendering = true;
   recomputeRollups();
-  tbody.innerHTML = "";
-  
-  state.atividades.forEach((item, index) => {
-    if(isHiddenByParent(index)) return;
+  updateSummary();
 
-    const tr = document.createElement("tr");
-    tr.className = "crono-row";
-    tr.dataset.level = String(item.nivel || 0);
+  const rows = document.querySelectorAll("#tbodyCrono .crono-row");
 
-    const isGroup = isGroupRow(index);
-    const toggleHtml = isGroup
-      ? `<button class="group-toggle" type="button" title="${item.collapsed ? 'Expandir' : 'Recolher'}">${item.collapsed ? '+' : '−'}</button>`
-      : "";
+  rows.forEach((row, i) => {
+    const item = state.atividades[i];
+    if(!item) return;
 
-    tr.innerHTML = `
-      <td class="cell-move">⋮⋮</td>
+    row.dataset.level = String(item.nivel || 0);
 
-      <td class="cell-mini">
-        <button class="btn-mini btn-outdent" type="button" title="Desindentar">←</button>
-        <button class="btn-mini green btn-indent" type="button" title="Indentar">→</button>
-      </td>
-
-      <td class="cell-order">${toggleHtml}${escapeHtml(item.ordemHier || (index + 1))}</td>
-
-      <td class="cell-atividade">
-        <input type="text" class="inp-atividade" value="${escapeHtml(item.nome || "")}" placeholder="Nome da atividade">
-      </td>
-
-      <td class="cell-responsavel">
-        ${renderResponsavelOptions(item.responsavel || "", isGroup)}
-      </td>
-
-      <td class="cell-date">
-        <input type="date" class="inp-date inp-inicio" value="${escapeHtml(item.inicio || "")}">
-      </td>
-
-      <td class="cell-date">
-        <input type="date" class="inp-date inp-fim" value="${escapeHtml(item.fim || "")}" ${String(item.predecessora || "").trim() ? "disabled" : ""}>
-      </td>
-
-      <td class="cell-dur">
-        <div class="dur-wrap">
-          <input type="number" step="0.1" min="0" class="inp-duracao" value="${Number(item.duracao || 0)}">
-          <span class="dur-suffix">dias</span>
-        </div>
-      </td>
-
-      <td class="cell-pct">
-        <input type="number" min="0" max="100" step="1" class="inp-previsto" value="${parseInt(item.previsto || 0, 10)}">
-      </td>
-
-      <td class="cell-pct">
-        <input type="number" min="0" max="100" step="1" class="inp-real" value="${parseInt(item.real || 0, 10)}">
-      </td>
-
-      <td class="cell-pred">
-        <input type="text" class="inp-pred" value="${escapeHtml(item.predecessora || "")}" placeholder="1 ou 1.1">
-      </td>
-
-      <td class="cell-comment">
-        <button class="btn-comment" type="button" title="Comentário">💬</button>
-      </td>
-
-      <td class="cell-status">
-        ${renderStatusPill(item.status)}
-      </td>
-    `;
-
-    bindDrag(tr, index);
-
-    const btnIndent = tr.querySelector(".btn-indent");
-    const btnOutdent = tr.querySelector(".btn-outdent");
-    const btnComment = tr.querySelector(".btn-comment");
-    const btnToggle = tr.querySelector(".group-toggle");
-
-    if(btnToggle){
-      btnToggle.addEventListener("click", () => toggleCollapse(index));
+    const statusCell = row.querySelector(".cell-status");
+    if(statusCell){
+      statusCell.innerHTML = renderStatusPill(item.status);
     }
 
-    btnIndent.addEventListener("click", () => indentRow(index));
-    btnOutdent.addEventListener("click", () => outdentRow(index));
-    btnComment.addEventListener("click", () => abrirComentario(item));
-
-    tr.querySelector(".inp-atividade").addEventListener("input", (e) => {
-      item.nome = e.target.value || "";
-      saveDebounced();
-    });
-
-    tr.querySelector(".sel-responsavel").addEventListener("change", (e) => {
-      item.responsavel = e.target.value || "";
-      saveDebounced();
-    });
-
-    tr.querySelector(".inp-inicio").addEventListener("change", (e) => {
-      item.inicio = e.target.value || "";
-      if(item.inicio){
-        item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
-      }
-      renderTabela();
-      saveDebounced();
-    });
-
-    tr.querySelector(".inp-fim").addEventListener("change", (e) => {
-      item.fim = e.target.value || "";
-      renderTabela();
-      saveDebounced();
-    });
-
-    tr.querySelector(".inp-duracao").addEventListener("input", (e) => {
-      normalizeDurationInput(e.target);
-      item.duracao = Number(e.target.value || 0);
-      if(item.predecessora || item.inicio){
-        recomputeRollups();
-        renderTabela();
-      }
-      saveDebounced();
-    });
-
-    tr.querySelector(".inp-previsto").addEventListener("input", (e) => {
-      normalizePctInput(e.target);
-      item.previsto = Number(e.target.value || 0);
-      saveDebounced();
-    });
-
-    tr.querySelector(".inp-real").addEventListener("input", (e) => {
-      normalizePctInput(e.target);
-      item.real = Number(e.target.value || 0);
-      saveDebounced();
-    });
-
-    tr.querySelector(".inp-pred").addEventListener("input", (e) => {
-      item.predecessora = (e.target.value || "").trim();
-      recomputeRollups();
-      renderTabela();
-      saveDebounced();
-    });
-
-    tbody.appendChild(tr);
+    const orderCell = row.querySelector(".cell-order");
+    if(orderCell){
+      orderCell.textContent = item.ordemHier || item.ordem || (i + 1);
+    }
   });
-
-  updateSummary();
-  state.isRendering = false;
 }
   
+function renderTabela(){
+  state.isRendering = true;
+
+  try{
+    recomputeRollups();
+    tbody.innerHTML = "";
+
+    state.atividades.forEach((item, index) => {
+      if(isHiddenByParent(index)) return;
+
+      const tr = document.createElement("tr");
+      tr.className = "crono-row";
+      tr.dataset.level = String(item.nivel || 0);
+
+      const isGroup = isGroupRow(index);
+      const toggleHtml = isGroup
+        ? `<button class="group-toggle" type="button" title="${item.collapsed ? 'Expandir' : 'Recolher'}">${item.collapsed ? '+' : '−'}</button>`
+        : "";
+
+      tr.innerHTML = `
+        <td class="cell-move">⋮⋮</td>
+
+        <td class="cell-mini">
+          <button class="btn-mini btn-outdent" type="button" title="Desindentar">←</button>
+          <button class="btn-mini green btn-indent" type="button" title="Indentar">→</button>
+        </td>
+
+        <td class="cell-order">${toggleHtml}${escapeHtml(item.ordemHier || (index + 1))}</td>
+
+        <td class="cell-atividade">
+          <input type="text" class="inp-atividade" value="${escapeHtml(item.nome || "")}" placeholder="Nome da atividade">
+        </td>
+
+        <td class="cell-responsavel">
+          ${renderResponsavelOptions(item.responsavel || "", isGroup)}
+        </td>
+
+        <td class="cell-date">
+          <input type="date" class="inp-date inp-inicio" value="${escapeHtml(item.inicio || "")}">
+        </td>
+
+        <td class="cell-date">
+          <input type="date" class="inp-date inp-fim" value="${escapeHtml(item.fim || "")}" ${String(item.predecessora || "").trim() ? "disabled" : ""}>
+        </td>
+
+        <td class="cell-dur">
+          <div class="dur-wrap">
+            <input type="number" step="0.1" min="0" class="inp-duracao" value="${Number(item.duracao || 0)}">
+            <span class="dur-suffix">dias</span>
+          </div>
+        </td>
+
+        <td class="cell-pct">
+          <input type="number" min="0" max="100" step="1" class="inp-previsto" value="${parseInt(item.previsto || 0, 10)}">
+        </td>
+
+        <td class="cell-pct">
+          <input type="number" min="0" max="100" step="1" class="inp-real" value="${parseInt(item.real || 0, 10)}">
+        </td>
+
+        <td class="cell-pred">
+          <input type="text" class="inp-pred" value="${escapeHtml(item.predecessora || "")}" placeholder="1 ou 1.1">
+        </td>
+
+        <td class="cell-comment">
+          <button class="btn-comment" type="button" title="Comentário">💬</button>
+        </td>
+
+        <td class="cell-status">
+          ${renderStatusPill(item.status)}
+        </td>
+      `;
+
+      bindDrag(tr, index);
+
+      const btnIndent = tr.querySelector(".btn-indent");
+      const btnOutdent = tr.querySelector(".btn-outdent");
+      const btnComment = tr.querySelector(".btn-comment");
+      const btnToggle = tr.querySelector(".group-toggle");
+
+      if(btnToggle){
+        btnToggle.addEventListener("click", () => {
+          toggleCollapse(index);
+        });
+      }
+
+      if(btnIndent){
+        btnIndent.addEventListener("click", () => {
+          indentRow(index);
+        });
+      }
+
+      if(btnOutdent){
+        btnOutdent.addEventListener("click", () => {
+          outdentRow(index);
+        });
+      }
+
+      if(btnComment){
+        btnComment.addEventListener("click", () => {
+          abrirComentario(item);
+        });
+      }
+
+      const inpAtividade = tr.querySelector(".inp-atividade");
+      if(inpAtividade){
+        inpAtividade.addEventListener("input", (e) => {
+          item.nome = e.target.value || "";
+          saveDebounced();
+        });
+      }
+
+      const selResp = tr.querySelector(".sel-responsavel");
+      if(selResp){
+        selResp.addEventListener("change", (e) => {
+          item.responsavel = e.target.value || "";
+          saveDebounced();
+        });
+      }
+
+      const inpInicio = tr.querySelector(".inp-inicio");
+      if(inpInicio){
+        inpInicio.addEventListener("change", (e) => {
+          item.inicio = e.target.value || "";
+
+          if(item.inicio){
+            item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
+
+            const inpFim = tr.querySelector(".inp-fim");
+            if(inpFim){
+              inpFim.value = item.fim || "";
+            }
+          }
+
+          renderTabelaLight();
+          saveDebounced();
+        });
+      }
+
+      const inpFim = tr.querySelector(".inp-fim");
+      if(inpFim){
+        inpFim.addEventListener("change", (e) => {
+          item.fim = e.target.value || "";
+          renderTabelaLight();
+          saveDebounced();
+        });
+      }
+
+      const inpDuracao = tr.querySelector(".inp-duracao");
+      if(inpDuracao){
+        inpDuracao.addEventListener("input", (e) => {
+          normalizeDurationInput(e.target);
+          item.duracao = Number(e.target.value || 0);
+
+          if(item.inicio){
+            item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1);
+
+            const inpFim = tr.querySelector(".inp-fim");
+            if(inpFim){
+              inpFim.value = item.fim || "";
+            }
+          }
+
+          renderTabelaLight();
+          saveDebounced();
+        });
+      }
+
+      const inpPrevisto = tr.querySelector(".inp-previsto");
+      if(inpPrevisto){
+        inpPrevisto.addEventListener("input", (e) => {
+          normalizePctInput(e.target);
+          item.previsto = Number(e.target.value || 0);
+          renderTabelaLight();
+          saveDebounced();
+        });
+      }
+
+      const inpReal = tr.querySelector(".inp-real");
+      if(inpReal){
+        inpReal.addEventListener("input", (e) => {
+          normalizePctInput(e.target);
+          item.real = Number(e.target.value || 0);
+          renderTabelaLight();
+          saveDebounced();
+        });
+      }
+
+      const inpPred = tr.querySelector(".inp-pred");
+      if(inpPred){
+        inpPred.addEventListener("change", (e) => {
+          item.predecessora = (e.target.value || "").trim();
+
+          // aqui sim pode recalcular datas/rollups,
+          // mas sem redesenhar a tabela inteira no meio da digitação
+          recomputeRollups();
+
+          // atualiza só visual leve
+          renderTabelaLight();
+
+          // atualiza disabled do campo fim só quando a edição terminar
+          const fimField = tr.querySelector(".inp-fim");
+          if(fimField){
+            fimField.disabled = !!String(item.predecessora || "").trim();
+          }
+
+          saveDebounced();
+        });
+      }
+
+      tbody.appendChild(tr);
+    });
+
+    updateSummary();
+  } finally {
+    state.isRendering = false;
+  }
+}  
 async function saveCronograma(){
   if(state.saving || state.isRendering || state.isLoading) return;
 
