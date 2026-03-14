@@ -2697,75 +2697,100 @@ function pushHistory(payloadFinal){}
 
 
 async function renderHistoryServer(){
+  function normalizeDate(v){
+    v = String(v || "").trim();
+    if(!v) return "";
+    if(v.includes("/")){
+      const p = v.split("/");
+      if(p.length === 3){
+        const dd = p[0].padStart(2,"0");
+        const mm = p[1].padStart(2,"0");
+        const yy = p[2];
+        return `${yy}-${mm}-${dd}`;
+      }
+    }
+    return v; // já veio yyyy-mm-dd
+  }
 
-const loader = document.getElementById("imparLoader");
-if(loader) loader.style.display="flex";
+  const dtStart = normalizeDate(document.getElementById("histDateStart")?.value || "");
+  const dtEnd   = normalizeDate(document.getElementById("histDateEnd")?.value || "");
 
-const start = document.getElementById("histStart").value;
-const end   = document.getElementById("histEnd").value;
+  histListEl.innerHTML = "";
 
-const container = document.getElementById("historyCards");
+  try{
+    const ids = await apiList(); // usa o list.php que você já tem
+    let norm = (Array.isArray(ids) ? ids : [])
+      .map(x => (typeof x === "string") ? x : (x && (x.id || x.filename)))
+      .filter(Boolean);
 
-if(!start || !end){
-container.innerHTML="Selecione período.";
-if(loader) loader.style.display="none";
-return;
-}
+    // ordena desc
+    norm.sort((a,b)=> String(b).localeCompare(String(a)));
 
-try{
+    // filtra pelo período
+    if(dtStart || dtEnd){
+      norm = norm.filter(id => {
+        const d = String(id).split("_")[0]; // ex.: 2026-03-12
+        if(dtStart && d < dtStart) return false;
+        if(dtEnd && d > dtEnd) return false;
+        return true;
+      });
+    }
 
-const res = await fetch("https://api.erpimpar.com.br/atividades/list.php");
-const json = await res.json();
+    if(norm.length === 0){
+      histListEl.innerHTML =
+        '<div style="color:var(--muted);font-size:12px;">' +
+        ((dtStart || dtEnd)
+          ? 'Sem registros no servidor para o período selecionado.'
+          : 'Sem registros no servidor.') +
+        '</div>';
+      return;
+    }
 
-container.innerHTML="";
+    norm.slice(0, 80).forEach(id => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hist-item";
+      card.style.textAlign = "left";
+      card.style.padding = "12px 14px";
+      card.style.borderRadius = "14px";
+      card.style.width = "100%";
+      card.style.border = "1px solid rgba(148,163,184,.18)";
+      card.style.background = "rgba(2,6,23,.30)";
+      card.style.cursor = "pointer";
+      card.style.color = "inherit";
 
-let encontrados = 0;
+      const date = String(id).split("_")[0];
 
-(json.files || []).forEach(file=>{
+      card.innerHTML =
+        '<div style="font-weight:1000;letter-spacing:.2px;">' + escapeHtml(date) + ' - ATIVIDADES EXECUTADAS</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:6px;">' +
+          '<span>ID: <b>' + escapeHtml(id) + '</b></span>' +
+        '</div>';
 
-const data = file.split("_")[0];
+      card.addEventListener("click", async ()=>{
+        try{
+          const data = await withProcessing(
+            async()=> await apiGet(id),
+            "Buscando no servidor…",
+            "PROCESSANDO DADOS......",
+            700
+          );
+          openPrintWindow(data);
+        }catch(e){
+          alertWarn("Não consegui abrir este registro do servidor.\n\n" + (e && e.message ? e.message : ""));
+        }
+      });
 
-if(data >= start && data <= end){
+      histListEl.appendChild(card);
+    });
 
-encontrados++;
+  }catch(e){
+    console.warn("renderHistoryServer falhou:", e);
+    histListEl.innerHTML =
+      '<div style="color:var(--muted);font-size:12px;">Histórico indisponível no servidor no momento.</div>';
+  }
+}	
 
-const dataBR = data.split("-").reverse().join("/");
-
-const card = document.createElement("div");
-card.className="hist-card";
-
-card.innerHTML = `📄 Histórico ${dataBR}`;
-
-card.onclick = ()=>{
-
-const url = `https://api.erpimpar.com.br/atividades/events/${file}.json`;
-
-window.open(url,"_blank");
-
-};
-
-container.appendChild(card);
-
-}
-
-});
-
-if(encontrados===0){
-container.innerHTML="Sem registros no servidor para o período selecionado.";
-}
-
-}catch(e){
-
-container.innerHTML="Erro ao buscar histórico.";
-console.error(e);
-
-}
-
-if(loader) loader.style.display="none";
-
-}
-	
-}
 
 function renderHistory(){
   const hist=loadHist();
