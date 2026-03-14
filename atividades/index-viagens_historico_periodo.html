@@ -2611,93 +2611,107 @@ function saveHist(h){}
 function pushHistory(payloadFinal){}
 
 
-  async function renderHistoryServer(){
-  const dtStart = (document.getElementById("histDateStart")?.value || "").trim();
-  const dtEnd   = (document.getElementById("histDateEnd")?.value || "").trim();
-  const btnBuscarHist = document.getElementById("btnBuscarHist");
+async function renderHistoryServer(){
+  const startEl = document.getElementById("histDateStart");
+  const endEl   = document.getElementById("histDateEnd");
+  const btnEl   = document.getElementById("btnBuscarHist");
 
-  function showHistLoader(){
-    const el = document.getElementById("pageLoader");
-    if(!el) return;
-    const title = el.querySelector(".loader-title");
-    const sub = el.querySelector(".loader-sub");
-    if(title) title.textContent = "Buscando histórico…";
-    if(sub) sub.textContent = "PROCESSANDO DADOS......";
-    el.classList.remove("hidden");
-    el.setAttribute("aria-hidden","false");
+  const dtStart = String(startEl?.value || "").trim();
+  const dtEnd   = String(endEl?.value || "").trim();
+
+  histListEl.innerHTML = "";
+
+  if(!dtStart || !dtEnd){
+    histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Selecione Data início e Data fim.</div>';
+    return;
   }
 
-  function hideHistLoader(){
-    const el = document.getElementById("pageLoader");
-    if(!el) return;
-    el.classList.add("hidden");
-    el.setAttribute("aria-hidden","true");
+  if(dtStart > dtEnd){
+    histListEl.innerHTML = '<div style="color:#fca5a5;font-size:12px;">A Data início não pode ser maior que a Data fim.</div>';
+    return;
   }
 
-  async function renderIds(ids){
-    const list = Array.isArray(ids) ? ids : [];
-    let norm = list.map(x => (typeof x === 'string') ? x : (x && (x.id || x.filename)) ).filter(Boolean);
-    norm.sort((a,b)=> String(b).localeCompare(String(a)));
+  if(btnEl){
+    btnEl.disabled = true;
+    btnEl.classList.add("is-loading");
+  }
 
-    if(dtStart || dtEnd){
-      norm = norm.filter(id => {
-        const d = String(id).split("_")[0];
-        if(dtStart && d < dtStart) return false;
-        if(dtEnd && d > dtEnd) return false;
-        return true;
-      });
+  showPageLoader("Carregando módulo...", "Buscando históricos no servidor");
+
+  try{
+    await new Promise(r => setTimeout(r, 350));
+
+    const res = await fetch(API_LIST + "?t=" + Date.now(), { method:"GET", cache:"no-store" });
+    const json = await res.json().catch(()=>null);
+
+    if(!res.ok || !json || json.ok !== true){
+      throw new Error((json && (json.error || json.message)) || ("LIST_HTTP_" + res.status));
     }
+
+    let items = Array.isArray(json.items) ? json.items : [];
+
+    items = items.filter(item => {
+      const d = String(item?.date || "").trim();
+      if(!d) return false;
+      return d >= dtStart && d <= dtEnd;
+    });
+
+    items.sort((a,b)=> String(b?.finalizedAt || "").localeCompare(String(a?.finalizedAt || "")));
 
     histListEl.innerHTML = "";
 
-    if(norm.length === 0){
-      const empty = document.createElement('div');
-      empty.style.color = 'var(--muted)';
-      empty.style.fontSize = '12px';
-      empty.textContent = (dtStart || dtEnd)
-        ? 'Sem registros no servidor para o período selecionado.'
-        : 'Selecione o período e clique em BUSCAR.';
-      histListEl.appendChild(empty);
+    if(items.length === 0){
+      histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Sem registros no servidor para o período selecionado.</div>';
       return;
     }
 
-    norm.slice(0, 80).forEach(id => {
-      const card=document.createElement("button");
-      card.type="button";
-      card.className="hist-card-btn";
+    items.slice(0, 120).forEach(item => {
+      const id = String(item.id || "").trim();
+      const dateIso = String(item.date || "").trim();
+      const dateBr = dateIso ? dateIso.split("-").reverse().join("/") : "—";
+      const userName = String(item.userName || "Usuário");
+      const total = item.total ?? "—";
+      const pend = item.pend ?? "—";
 
-      const date = String(id).split("_")[0];
-      const dateBR = date.split("-").reverse().join("/");
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hist-result-card";
+
       card.innerHTML =
-        '<div class="hist-card-date">📄 ATIVIDADES EXECUTADAS EM ' + escapeHtml(dateBR) + '</div>' +
-        '<div class="hist-card-meta"><span>ID: <b>' + escapeHtml(id) + '</b></span></div>';
+        '<div class="hist-result-title">📄 Atividades executadas em ' + escapeHtml(dateBr) + '</div>' +
+        '<div class="hist-result-sub">' +
+          '<span>ID: <b>' + escapeHtml(id) + '</b></span>' +
+          '<span>Usuário: <b>' + escapeHtml(userName) + '</b></span>' +
+          '<span>Linhas: <b>' + escapeHtml(String(total)) + '</b></span>' +
+          '<span>Pendências: <b>' + escapeHtml(String(pend)) + '</b></span>' +
+        '</div>';
 
-      card.addEventListener("click", async()=>{
+      card.addEventListener("click", async ()=>{
+        showPageLoader("Carregando módulo...", "Abrindo histórico em PDF");
         try{
-          const data = await withProcessing(async()=> await apiGet(id), "Buscando no servidor…", "PROCESSANDO DADOS......", 700);
+          const data = await apiGet(id);
           openPrintWindow(data);
         }catch(e){
           alertWarn("Não consegui abrir este registro do servidor.\n\n" + (e && e.message ? e.message : ""));
+        }finally{
+          hidePageLoader();
         }
       });
+
       histListEl.appendChild(card);
     });
-  }
 
-  if(btnBuscarHist) btnBuscarHist.classList.add("is-loading");
-  showHistLoader();
-  try{
-    await new Promise(r=>setTimeout(r, 350));
-    const ids = await apiList();
-    await renderIds(ids);
   }catch(e){
+    console.warn("renderHistoryServer falhou:", e);
     histListEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Histórico indisponível no servidor no momento.</div>';
   }finally{
-    if(btnBuscarHist) btnBuscarHist.classList.remove("is-loading");
-    hideHistLoader();
+    hidePageLoader();
+    if(btnEl){
+      btnEl.disabled = false;
+      btnEl.classList.remove("is-loading");
+    }
   }
 }
-
 function renderHistory(){
   const hist=loadHist();
   const items=hist.items||[];
