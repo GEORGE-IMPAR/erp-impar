@@ -1427,6 +1427,46 @@ body{opacity:1 !important;}
 #histDateStart, #histDateEnd{
   max-width: 180px;
 }	
+
+.impar-loader{
+  position:fixed;
+  inset:0;
+  backdrop-filter: blur(6px);
+  background: rgba(2,6,23,0.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+
+.impar-loader-box{
+  background:#061a2b;
+  padding:26px 40px;
+  border-radius:14px;
+  text-align:center;
+  box-shadow:0 0 30px rgba(0,0,0,0.6);
+}
+
+.spinner{
+  width:38px;
+  height:38px;
+  border:4px solid rgba(255,255,255,0.15);
+  border-top:4px solid #22c55e;
+  border-radius:50%;
+  margin:auto;
+  margin-bottom:10px;
+  animation:spin 0.9s linear infinite;
+}
+
+@keyframes spin{
+  to{ transform:rotate(360deg); }
+}
+
+.loader-text{
+  color:#e2e8f0;
+  font-size:14px;
+}	
+
 </style>
 
 </head>
@@ -2609,96 +2649,113 @@ function pushHistory(payloadFinal){}
 
 
 async function renderHistoryServer(){
-  const dtStart = (document.getElementById("histDateStart")?.value || "").trim();
-  const dtEnd   = (document.getElementById("histDateEnd")?.value || "").trim();
 
-  async function renderIds(ids){
-    const list = Array.isArray(ids) ? ids : [];
+  // ===== LOADER =====
+  const loader = document.getElementById("imparLoader");
 
-    // normaliza (list.php pode retornar string[] ou objetos)
-    let norm = list
-      .map(x => (typeof x === "string") ? x : (x && (x.id || x.filename)))
-      .filter(Boolean);
+  function showLoader(){
+    if(loader) loader.style.display="flex";
+  }
 
-    // ordena desc (IDs geralmente começam com YYYY-MM-DD)
-    norm.sort((a,b)=> String(b).localeCompare(String(a)));
+  function hideLoader(){
+    if(loader) loader.style.display="none";
+  }
 
-    // filtro por período
-    if(dtStart || dtEnd){
-      norm = norm.filter(id => {
-        const d = String(id).split("_")[0];
-        if(dtStart && d < dtStart) return false;
-        if(dtEnd && d > dtEnd) return false;
-        return true;
-      });
-    }
+  showLoader();
 
-    histListEl.innerHTML = "";
+  // pequeno delay para efeito visual premium
+  await new Promise(r => setTimeout(r, 400));
 
-    if(norm.length === 0){
-      const empty = document.createElement("div");
-      empty.style.color = "var(--muted)";
-      empty.style.fontSize = "12px";
-      empty.textContent = (dtStart || dtEnd)
-        ? "Sem registros no servidor para o período selecionado."
-        : "Sem registros no servidor.";
-      histListEl.appendChild(empty);
+  try{
+
+    const startInput = document.getElementById("histStart");
+    const endInput   = document.getElementById("histEnd");
+    const container  = document.getElementById("historyCards");
+
+    if(!startInput || !endInput || !container){
+      hideLoader();
       return;
     }
 
-    // limita para não pesar
-    norm.slice(0, 80).forEach(id => {
-      const card = document.createElement("button");
-      card.type = "button";
-      card.className = "hist-item";
-      card.style.textAlign = "left";
-      card.style.padding = "12px 14px";
-      card.style.borderRadius = "14px";
-      card.style.width = "100%";
-      card.style.border = "1px solid rgba(148,163,184,.18)";
-      card.style.background = "rgba(2,6,23,.30)";
-      card.style.cursor = "pointer";
-      card.style.color = "inherit";
+    const start = startInput.value;
+    const end   = endInput.value;
 
-      const date = String(id).slice(0,10);
+    if(!start || !end){
+      container.innerHTML = "Selecione período.";
+      hideLoader();
+      return;
+    }
 
-      card.innerHTML =
-        '<div style="font-weight:1000;letter-spacing:.2px;">' + escapeHtml(date) + ' - ATIVIDADES EXECUTADAS</div>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:6px;">' +
-          '<span>ID: <b>' + escapeHtml(id) + '</b></span>' +
-        '</div>';
+    container.innerHTML = "";
 
-      card.addEventListener("click", async ()=>{
-        try{
-          const data = await withProcessing(
-            async()=> await apiGet(id),
-            "Buscando no servidor…",
-            "PROCESSANDO DADOS......",
-            700
-          );
-          openPrintWindow(data);
-        }catch(e){
-          alertWarn("Não consegui abrir este registro do servidor.\n\n" + (e && e.message ? e.message : ""));
-        }
-      });
+    // ===== BUSCA LISTA DE ARQUIVOS =====
+    const res = await fetch("https://api.erpimpar.com.br/atividades/list.php");
+    const json = await res.json();
 
-      histListEl.appendChild(card);
+    if(!json.ok){
+      container.innerHTML = "Erro ao buscar histórico.";
+      hideLoader();
+      return;
+    }
+
+    let files = json.files || [];
+
+    // ordena do mais recente
+    files.sort().reverse();
+
+    let encontrados = 0;
+
+    files.forEach(file => {
+
+      const dataArquivo = file.split("_")[0];
+
+      if(dataArquivo >= start && dataArquivo <= end){
+
+        encontrados++;
+
+        const card = document.createElement("div");
+        card.className = "hist-card";
+
+        card.innerHTML = `
+          <div class="hist-card-date">
+            📄 ${dataArquivo.split("-").reverse().join("/")}
+          </div>
+        `;
+
+        card.style.cursor = "pointer";
+
+        card.onclick = () => {
+
+          const url = `https://api.erpimpar.com.br/atividades/events/${file}.json`;
+
+          // abre usando mesmo fluxo das atividades
+          window.open(url, "_blank");
+
+        };
+
+        container.appendChild(card);
+
+      }
+
     });
-  }
 
-  try{
-    const ids = await apiList();
-    await renderIds(ids);
+    if(encontrados === 0){
+      container.innerHTML = "Sem registros no servidor para o período selecionado.";
+    }
+
   }catch(e){
-    console.warn("renderHistoryServer falhou:", e);
 
-    histListEl.innerHTML =
-      '<div style="color:var(--muted);font-size:12px;">' +
-      'Histórico indisponível no servidor no momento.' +
-      '</div>';
+    console.error(e);
+    const container = document.getElementById("historyCards");
+    if(container){
+      container.innerHTML = "Erro ao carregar histórico.";
+    }
+
   }
-}
-function renderHistory(){
+
+  hideLoader();
+
+}function renderHistory(){
   const hist=loadHist();
   const items=hist.items||[];
   histListEl.innerHTML="";
@@ -3388,7 +3445,15 @@ function wireViagemUI(cardEl, rowObj){
 	
 </script>
 
-
+<div id="imparLoader" class="impar-loader" style="display:none;">
+  <div class="impar-loader-box">
+    <div class="spinner"></div>
+    <div class="loader-text">
+      <strong>Carregando módulo...</strong>
+      <div>Buscando históricos no servidor</div>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
