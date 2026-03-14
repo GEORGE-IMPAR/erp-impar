@@ -1466,7 +1466,55 @@ body{opacity:1 !important;}
   color:#e2e8f0;
   font-size:14px;
 }	
+.hist-filter-row{
+display:flex;
+align-items:center;
+gap:10px;
+margin-bottom:15px;
+}
 
+.hist-filter-row input{
+background:#071c2c;
+border:1px solid rgba(255,255,255,0.2);
+color:white;
+padding:8px 10px;
+border-radius:8px;
+}
+
+.hist-sep{
+color:#9bd4ff;
+font-weight:600;
+}
+
+.btn-buscar-hist{
+background:linear-gradient(90deg,#22c55e,#16a34a);
+border:none;
+color:white;
+padding:9px 18px;
+border-radius:20px;
+font-weight:600;
+cursor:pointer;
+transition:all .25s;
+}
+
+.btn-buscar-hist:hover{
+transform:scale(1.05);
+box-shadow:0 0 12px rgba(34,197,94,0.6);
+}
+
+.hist-card{
+background:#071c2c;
+border-radius:10px;
+padding:12px;
+margin-bottom:8px;
+cursor:pointer;
+transition:all .2s;
+}
+
+.hist-card:hover{
+transform:translateY(-2px);
+box-shadow:0 0 10px rgba(34,197,94,0.5);
+}
 </style>
 
 </head>
@@ -1594,7 +1642,7 @@ body{opacity:1 !important;}
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Lista de Atividades</div>
-    <div>v10.0 • Draft: <b>ERPIMPAR_ATIVIDADES_DIARIAS_V2</b> • Pendências: <b>ERPIMPAR_PENDENCIAS_V1</b> • Histórico: <b>ERPIMPAR_ATIVIDADES_HIST_V1</b></div>
+    <div>v55.0 • Draft: <b>ERPIMPAR_ATIVIDADES_DIARIAS_V2</b> • Pendências: <b>ERPIMPAR_PENDENCIAS_V1</b> • Histórico: <b>ERPIMPAR_ATIVIDADES_HIST_V1</b></div>
   </div>
 </footer>
 
@@ -2650,111 +2698,73 @@ function pushHistory(payloadFinal){}
 
 async function renderHistoryServer(){
 
-  // ===== LOADER =====
-  const loader = document.getElementById("imparLoader");
+const loader = document.getElementById("imparLoader");
+if(loader) loader.style.display="flex";
 
-  function showLoader(){
-    if(loader) loader.style.display="flex";
-  }
+const start = document.getElementById("histStart").value;
+const end   = document.getElementById("histEnd").value;
 
-  function hideLoader(){
-    if(loader) loader.style.display="none";
-  }
+const container = document.getElementById("historyCards");
 
-  showLoader();
+if(!start || !end){
+container.innerHTML="Selecione período.";
+if(loader) loader.style.display="none";
+return;
+}
 
-  // pequeno delay para efeito visual premium
-  await new Promise(r => setTimeout(r, 400));
+try{
 
-  try{
+const res = await fetch("https://api.erpimpar.com.br/atividades/list.php");
+const json = await res.json();
 
-    const startInput = document.getElementById("histStart");
-    const endInput   = document.getElementById("histEnd");
-    const container  = document.getElementById("historyCards");
+container.innerHTML="";
 
-    if(!startInput || !endInput || !container){
-      hideLoader();
-      return;
-    }
+let encontrados = 0;
 
-    const start = startInput.value;
-    const end   = endInput.value;
+(json.files || []).forEach(file=>{
 
-    if(!start || !end){
-      container.innerHTML = "Selecione período.";
-      hideLoader();
-      return;
-    }
+const data = file.split("_")[0];
 
-    container.innerHTML = "";
+if(data >= start && data <= end){
 
-    // ===== BUSCA LISTA DE ARQUIVOS =====
-    const res = await fetch("https://api.erpimpar.com.br/atividades/list.php");
-    const json = await res.json();
+encontrados++;
 
-    if(!json.ok){
-      container.innerHTML = "Erro ao buscar histórico.";
-      hideLoader();
-      return;
-    }
+const dataBR = data.split("-").reverse().join("/");
 
-    let files = json.files || [];
+const card = document.createElement("div");
+card.className="hist-card";
 
-    // ordena do mais recente
-    files.sort().reverse();
+card.innerHTML = `📄 Histórico ${dataBR}`;
 
-    let encontrados = 0;
+card.onclick = ()=>{
 
-    files.forEach(file => {
+const url = `https://api.erpimpar.com.br/atividades/events/${file}.json`;
 
-      const dataArquivo = file.split("_")[0];
+window.open(url,"_blank");
 
-      if(dataArquivo >= start && dataArquivo <= end){
+};
 
-        encontrados++;
+container.appendChild(card);
 
-        const card = document.createElement("div");
-        card.className = "hist-card";
+}
 
-        card.innerHTML = `
-          <div class="hist-card-date">
-            📄 ${dataArquivo.split("-").reverse().join("/")}
-          </div>
-        `;
+});
 
-        card.style.cursor = "pointer";
+if(encontrados===0){
+container.innerHTML="Sem registros no servidor para o período selecionado.";
+}
 
-        card.onclick = () => {
+}catch(e){
 
-          const url = `https://api.erpimpar.com.br/atividades/events/${file}.json`;
+container.innerHTML="Erro ao buscar histórico.";
+console.error(e);
 
-          // abre usando mesmo fluxo das atividades
-          window.open(url, "_blank");
+}
 
-        };
+if(loader) loader.style.display="none";
 
-        container.appendChild(card);
-
-      }
-
-    });
-
-    if(encontrados === 0){
-      container.innerHTML = "Sem registros no servidor para o período selecionado.";
-    }
-
-  }catch(e){
-
-    console.error(e);
-    const container = document.getElementById("historyCards");
-    if(container){
-      container.innerHTML = "Erro ao carregar histórico.";
-    }
-
-  }
-
-  hideLoader();
-
+}
+	
 }function renderHistory(){
   const hist=loadHist();
   const items=hist.items||[];
