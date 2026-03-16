@@ -3350,7 +3350,36 @@ async function gerarDocumento(tipo) {
   showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
 
   try {
-    // 1) sobe os anexos do tipo escolhido
+    // 1) Consulta se o documento já existe no OneDrive
+    const consultaResp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ codigo, tipo }),
+      cache: "no-store"
+    });
+
+    const consultaData = await consultaResp.json();
+
+    if (!consultaResp.ok || !consultaData?.ok) {
+      throw new Error(consultaData?.message || `Falha ao consultar documento (HTTP ${consultaResp.status}).`);
+    }
+
+    // 2) Se já existe no OneDrive, NÃO abre Word de novo.
+    //    Vai direto para a etapa final: baixar / compartilhar
+    if (consultaData.exists) {
+      hideImparLoading();
+
+      if (window.DOC_FINAL_ACTIONS && typeof window.DOC_FINAL_ACTIONS.abrirModalDocumentoFinal === "function") {
+        await DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+        return true;
+      }
+
+      throw new Error("Módulo de finalização não carregado.");
+    }
+
+    // 3) Se ainda não existe, sobe os anexos do tipo escolhido
     const uploadResult = await uploadAnexosWord365({
       codigo,
       tipo,
@@ -3363,98 +3392,72 @@ async function gerarDocumento(tipo) {
       window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
     }
 
-    // 2) verifica se já existe no OneDrive
-    const resp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ codigo, tipo }),
-      cache: "no-store"
+    // 4) Gera o DOCX em memória
+    if (!window.ERP_DOCX) {
+      throw new Error("Módulo ERP_DOCX não carregado.");
+    }
+
+    let ret;
+
+    if (tipo === "contrato") {
+      if (typeof window.ERP_DOCX.gerarContrato !== "function") {
+        throw new Error("Função gerarContrato não encontrada.");
+      }
+      ret = await window.ERP_DOCX.gerarContrato(codigo);
+    } else {
+      if (typeof window.ERP_DOCX.gerarOS !== "function") {
+        throw new Error("Função gerarOS não encontrada.");
+      }
+      ret = await window.ERP_DOCX.gerarOS(codigo);
+    }
+
+    if (!ret?.blob) {
+      throw new Error(`${nomeDoc} gerado sem blob.`);
+    }
+
+    // 5) Define nome do arquivo
+    const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
+    const filenameBase = tipo === "contrato" ? "CONTRATO" : "OS";
+    const filename = `${codigo}_${filenameBase}_${nomeSafe}.docx`;
+
+    // 6) Sobe para o OneDrive
+    const salvo = await subirDocumentoWord365({
+      codigo,
+      tipo,
+      filename: ret.filename || filename,
+      blob: ret.blob
     });
 
-    if (data.exists && data.webUrl) {
-  hideImparLoading();
+    const wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
 
-  if (window.DOC_FINAL_ACTIONS && typeof window.DOC_FINAL_ACTIONS.abrirModalDocumentoFinal === "function") {
-    await DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+    if (!wordUrl) {
+      throw new Error("A API não retornou a URL do Word.");
+    }
+
+    // 7) Abre no Word Web para edição
+    window.open(wordUrl, "_blank", "noopener");
+
+    hideImparLoading();
+
+    await Swal.fire({
+      icon: "success",
+      title: "Documento pronto",
+      html: `${nomeDoc} aberto no Word 365 para edição.<br><br>Após concluir as alterações no Word, volte ao sistema e clique em <b>FINALIZAR</b> novamente para baixar ou compartilhar a versão final.`,
+      confirmButtonText: "OK"
+    });
+
     return true;
-  }
-
-  throw new Error("Módulo de finalização não carregado.");
-}
-    const data = await resp.json();
-
-    if (!resp.ok || !data?.ok) {
-      throw new Error(data?.message || `Falha ao consultar documento (HTTP ${resp.status}).`);
-    }
-
-    let wordUrl = data.webUrl || "";
-
-    // 3) se não existir, gera e sobe
-    if (!data.exists || !wordUrl) {
-      if (!window.ERP_DOCX) {
-        throw new Error("Módulo ERP_DOCX não carregado.");
-      }
-
-      let ret;
-
-      if (tipo === "contrato") {
-        if (typeof window.ERP_DOCX.gerarContrato !== "function") {
-          throw new Error("Função gerarContrato não encontrada.");
-        }
-        ret = await window.ERP_DOCX.gerarContrato(codigo);
-      } else {
-        if (typeof window.ERP_DOCX.gerarOS !== "function") {
-          throw new Error("Função gerarOS não encontrada.");
-        }
-        ret = await window.ERP_DOCX.gerarOS(codigo);
-      }
-
-      if (!ret?.blob) {
-        throw new Error(`${nomeDoc} gerado sem blob.`);
-      }
-
-      const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
-      const filenameBase = tipo === "contrato" ? "CONTRATO" : "OS";
-      const filename = `${codigo}_${filenameBase}_${nomeSafe}.docx`;
-
-      const salvo = await subirDocumentoWord365({
-        codigo,
-        tipo,
-        filename: ret.filename || filename,
-        blob: ret.blob
-      });
-
-      wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
-
-      if (!wordUrl) {
-        throw new Error("A API não retornou a URL do Word.");
-      }
-    }
-
-window.open(wordUrl, "_blank", "noopener");
-
-hideImparLoading();
-
-await Swal.fire({
-  icon: "success",
-  title: "Documento pronto",
-  html: `${nomeDoc} aberto no Word 365 para edição.<br><br>Após concluir as alterações no Word, volte ao sistema e clique em <b>FINALIZAR</b> novamente para baixar ou compartilhar a versão final.`,
-  confirmButtonText: "OK"
-});
-
-return true;
 
   } catch (err) {
+    hideImparLoading();
+
     Swal.fire({
       icon: "error",
       title: "Erro ao gerar documento",
       html: err?.message || String(err)
     });
+
     return false;
-  } finally {
-    hideImparLoading();
   }
 }
   
