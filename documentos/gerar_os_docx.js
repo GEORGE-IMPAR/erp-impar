@@ -189,17 +189,17 @@
   }
 
   async function gerarOSDocx(codigo) {
-    const result = await gerarOSBlob(codigo);
-  // window.saveAs(result.blob, result.filename);
-    return {
-      ok: true,
-      filename: result.filename,
-      blob: result.blob,
-      data: result.data
-    };
-  }
+  const result = await gerarOSBlob(codigo);
+// window.saveAs(result.blob, result.filename);
+  return {
+    ok: true,
+    filename: result.filename,
+    blob: result.blob,
+    data: result.data
+  };
+}
 
-  // API pública para você chamar do seu código atual
+// API pública para você chamar do seu código atual
 window.ERP_DOCX = window.ERP_DOCX || {};
 window.ERP_DOCX.gerarOSDocx = gerarOSDocx;
 window.ERP_DOCX.gerarOSBlob = gerarOSBlob;
