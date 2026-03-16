@@ -3332,14 +3332,14 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
   setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
 }
   
-async function gerarDocumento(tipo){
-  const {codigo} = getProjetoMetaForFilename();
+async function gerarDocumento(tipo) {
+  const { codigo, nomeObra } = getProjetoMetaForFilename();
 
-  if(!codigo){
+  if (!codigo) {
     Swal.fire({
-      icon:"warning",
-      title:"Informe o código do projeto",
-      html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."
+      icon: "warning",
+      title: "Informe o código do projeto",
+      html: "Preencha o campo <b>CÓDIGO</b> para gerar o documento."
     });
     return false;
   }
@@ -3349,20 +3349,21 @@ async function gerarDocumento(tipo){
 
   showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
 
-  try{
+  try {
     // 1) sobe os anexos do tipo escolhido
-const uploadResult = await uploadAnexosWord365({
-  codigo,
-  tipo,
-  arquivos
-});
+    const uploadResult = await uploadAnexosWord365({
+      codigo,
+      tipo,
+      arquivos
+    });
 
-if (tipo === "contrato") {
-  window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
-} else {
-  window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
-}
-    // 2) segue o fluxo que já funciona
+    if (tipo === "contrato") {
+      window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+    } else {
+      window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
+    }
+
+    // 2) verifica se já existe no OneDrive
     const resp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
       method: "POST",
       headers: {
@@ -3374,33 +3375,81 @@ if (tipo === "contrato") {
 
     const data = await resp.json();
 
-    if(!resp.ok || !data?.ok){
-      throw new Error(data?.message || `Falha ao gerar documento (HTTP ${resp.status}).`);
+    if (!resp.ok || !data?.ok) {
+      throw new Error(data?.message || `Falha ao consultar documento (HTTP ${resp.status}).`);
     }
 
-    if(!data.webUrl){
-      throw new Error("A API não retornou a URL do Word.");
+    let wordUrl = data.webUrl || "";
+
+    // 3) se não existir, gera e sobe
+    if (!data.exists || !wordUrl) {
+      if (!window.ERP_DOCX) {
+        throw new Error("Módulo ERP_DOCX não carregado.");
+      }
+
+      let ret;
+
+      if (tipo === "contrato") {
+        if (typeof window.ERP_DOCX.gerarContrato !== "function") {
+          throw new Error("Função gerarContrato não encontrada.");
+        }
+        ret = await window.ERP_DOCX.gerarContrato(codigo);
+      } else {
+        if (typeof window.ERP_DOCX.gerarOS !== "function") {
+          throw new Error("Função gerarOS não encontrada.");
+        }
+        ret = await window.ERP_DOCX.gerarOS(codigo);
+      }
+
+      if (!ret?.blob) {
+        throw new Error(`${nomeDoc} gerado sem blob.`);
+      }
+
+      const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
+      const filenameBase = tipo === "contrato" ? "CONTRATO" : "OS";
+      const filename = `${codigo}_${filenameBase}_${nomeSafe}.docx`;
+
+      const salvo = await subirDocumentoWord365({
+        codigo,
+        tipo,
+        filename: ret.filename || filename,
+        blob: ret.blob
+      });
+
+      wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
+
+      if (!wordUrl) {
+        throw new Error("A API não retornou a URL do Word.");
+      }
     }
 
-    window.open(data.webUrl, "_blank", "noopener");
+    // 4) abre no Word Web para edição
+    window.open(wordUrl, "_blank", "noopener");
 
-    Swal.fire({
+    await Swal.fire({
       icon: "success",
       title: "Documento pronto",
       html: `${nomeDoc} aberto no Word 365 com sucesso.`
     });
-    DOC_FINAL_ACTIONS.abrirModalDocumentoFinal('contrato');
+
+    // 5) depois chama a finalização com o tipo correto
+    if (window.DOC_FINAL_ACTIONS && typeof window.DOC_FINAL_ACTIONS.abrirModalDocumentoFinal === "function") {
+      DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+    }
+
     return true;
-  } catch(err){
+
+  } catch (err) {
     Swal.fire({
-      icon:"error",
-      title:"Erro ao gerar documento",
+      icon: "error",
+      title: "Erro ao gerar documento",
       html: err?.message || String(err)
     });
     return false;
   } finally {
     hideImparLoading();
   }
+}
   
 }/* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
