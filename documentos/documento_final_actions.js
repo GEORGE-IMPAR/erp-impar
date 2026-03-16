@@ -104,9 +104,14 @@
         return;
       }
 
-      if (data.downloadUrl) {
-        window.open(data.downloadUrl, "_blank", "noopener");
-      }
+if (data.downloadUrl) {
+  const a = document.createElement("a");
+  a.href = data.downloadUrl;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
       await Swal.fire({
         icon: "success",
