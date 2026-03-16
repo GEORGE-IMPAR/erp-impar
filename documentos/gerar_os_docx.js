@@ -188,9 +188,8 @@
     return { ok: true, filename, blob: out, data };
   }
 
-  async function gerarOSDocx(codigo) {
+  async function gerarOS(codigo) {
   const result = await gerarOSBlob(codigo);
-// window.saveAs(result.blob, result.filename);
   return {
     ok: true,
     filename: result.filename,
@@ -199,9 +198,9 @@
   };
 }
 
-// API pública para você chamar do seu código atual
 window.ERP_DOCX = window.ERP_DOCX || {};
-window.ERP_DOCX.gerarOSDocx = gerarOSDocx;
+window.ERP_DOCX.gerarOS = gerarOS;
+window.ERP_DOCX.gerarOSDocx = gerarOS;
 window.ERP_DOCX.gerarOSBlob = gerarOSBlob;
 
 })();
