@@ -1424,8 +1424,8 @@ state.atividades.forEach((item, index) => {
   recomputeRollups();
 
   return {
-    id: state.id,
-    nome: state.nome,
+    id: state.id || "",
+    nome: state.nome || "",
     coordenador: state.coordenador || "",
     atividades: state.atividades.map(a => ({
       id: a.id,
@@ -1536,36 +1536,36 @@ function validarCronogramaParaBaseline(){
 
   return erros;
 }
-  
-function updateSummary(){
+
+  function updateSummary(){
   recomputeRollups();
 
-  document.getElementById("obraNomeTop").textContent = state.nome || ("OBRA " + state.id);
+  document.getElementById("obraNomeTop").textContent = state.nome || (state.id ? ("OBRA " + state.id) : "Cronograma da Obra");
 
-  const roots = state.atividades.filter(a => Number(a.nivel || 0) === 0);
-  const starts = roots.map(r => r.inicio).filter(Boolean).sort();
-  const ends = roots.map(r => r.fim).filter(Boolean).sort();
+  const folhas = state.atividades.filter((a, i) => descendantIndexes(i).length === 0);
 
-  let inicio = starts[0] || "—";
-  let fim = ends[ends.length - 1] || "—";
+  const starts = folhas.map(f => f.inicio).filter(Boolean).sort();
+  const ends = folhas.map(f => f.fim).filter(Boolean).sort();
+
+  const inicio = starts[0] || "—";
+  const fim = ends[ends.length - 1] || "—";
 
   let pesoPrev = 0;
   let somaPrev = 0;
   let pesoReal = 0;
   let somaReal = 0;
 
-  roots.forEach(r => {
-    const dur = Math.max(0.1, Number(r.duracao || 0.1));
+  folhas.forEach(f => {
+    const dur = Math.max(0.1, Number(f.duracao || 0.1));
     pesoPrev += dur;
-    somaPrev += pct(r.previsto) * dur;
+    somaPrev += pct(f.previsto) * dur;
     pesoReal += dur;
-    somaReal += pct(r.real) * dur;
+    somaReal += pct(f.real) * dur;
   });
 
   const prev = pesoPrev > 0 ? Math.round((somaPrev / pesoPrev) * 10) / 10 : 0;
   const real = pesoReal > 0 ? Math.round((somaReal / pesoReal) * 10) / 10 : 0;
 
-  const folhas = state.atividades.filter((a, i) => descendantIndexes(i).length === 0);
   const status = mergeStatuses(folhas.map(f => f.status));
 
   let durTotal = "—";
@@ -1586,6 +1586,7 @@ function updateSummary(){
   document.getElementById("sumPerc").textContent = prev + "% / " + real + "%";
   document.getElementById("sumStatusWrap").innerHTML = renderStatusTextHeader(status);
 }
+
   function novaLinha(){
     state.atividades.push(novaAtividadeBase());
     renderTabela();
@@ -1716,12 +1717,21 @@ async function carregarObras(){
     sel.value = "";
   }
 
-  sel.onchange = () => {
-    state.nome = sel.value || "";
-    document.getElementById("obraNomeTop").textContent = state.nome || ("OBRA " + state.id);
-    saveDebounced();
-  };
+sel.onchange = () => {
+  state.nome = sel.value || "";
 
+  const obraObj = state.obras.find(o =>
+    String(o.nome || "").trim() === String(state.nome || "").trim()
+  );
+
+  state.id = obraObj ? String(obraObj.id || "").trim() : "";
+
+  document.getElementById("obraNomeTop").textContent =
+    state.nome || "Cronograma da Obra";
+
+  saveDebounced();
+};
+  
   return state.obras;
 }
   
@@ -1831,22 +1841,42 @@ function calcStatusByDates(prev, real, inicio, fim){
   const dtInicio = inicio ? new Date(inicio + "T12:00:00") : null;
   const dtFim = fim ? new Date(fim + "T12:00:00") : null;
 
-  if(real >= 100) return "Concluído";
+  const prevNum = Number(prev || 0);
+  const realNum = Number(real || 0);
 
-  if(dtFim && dtFim < hoje && real < 100){
+  // ✅ 1. Concluído
+  if(realNum >= 100){
+    return "Concluído";
+  }
+
+  // ✅ 2. Se não tem data válida
+  if(!dtInicio || !dtFim){
+    return "Não iniciado";
+  }
+
+  // ✅ 3. Antes de começar
+  if(hoje < dtInicio && realNum <= 0){
+    return "Não iniciado";
+  }
+
+  // ✅ 4. Já passou do fim e não concluiu → ATRASADO
+  if(hoje > dtFim && realNum < 100){
     return "Atrasado";
   }
 
-  if(real > 0){
-    return "Em andamento";
-  }
-
-  if(prev > 0){
-    return "Em andamento";
-  }
-
-  if(dtInicio && dtInicio <= hoje && real <= 0){
+  // ✅ 5. Já deveria ter progresso e não tem → ATRASADO
+  if(prevNum > 0 && realNum === 0){
     return "Atrasado";
+  }
+
+  // ✅ 6. Está fazendo, mas abaixo do previsto → ATRASADO
+  if(realNum > 0 && realNum < prevNum){
+    return "Atrasado";
+  }
+
+  // ✅ 7. Está dentro do esperado → EM ANDAMENTO
+  if(realNum > 0 && realNum < 100){
+    return "Em andamento";
   }
 
   return "Não iniciado";
@@ -2103,7 +2133,13 @@ async function saveCronograma(){
 
   try{
     const payload = buildPayload();
+    
+    if(!String(state.id || "").trim()){
+  setSaveStatus("Selecione a obra antes de salvar.", "err");
+  return;
+}
 
+    
     const j = await fetchJsonSafe(API + "salvar_cronograma.php", {
       method: "POST",
       headers: { "Content-Type":"text/plain;charset=UTF-8" },
