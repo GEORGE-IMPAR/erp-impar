@@ -455,60 +455,78 @@
     return false;
   }
 
-  function computeResumoCronograma(data){
-    const atividades = Array.isArray(data.atividades) ? data.atividades : [];
-    const folhas = atividades.filter((a, i) => !isGroup(atividades, i));
+function computeResumoCronograma(data){
+  const atividades = Array.isArray(data.atividades) ? data.atividades : [];
+  const folhas = atividades.filter((a, i) => !isGroup(atividades, i));
 
-    const nome = String(data.nome || data.obra || "").trim();
-    const id = normalizeId(data.id);
+  const nome = String(data.nome || data.obra || "").trim();
+  const id = normalizeId(data.id);
 
-    if(!folhas.length){
-      return {
-        id,
-        nome,
-        previsto: 0,
-        real: 0,
-        status: "Novo"
-      };
-    }
-
-    let pesoPrev = 0, somaPrev = 0, pesoReal = 0, somaReal = 0;
-    let statusFinal = "Não iniciado";
-
-    const prioridade = {
-      "Não iniciado": 1,
-      "Novo": 1,
-      "Concluído": 2,
-      "Em andamento": 3,
-      "Atrasado": 4
-    };
-
-    folhas.forEach(f => {
-      const dur = Math.max(0.1, Number(f.duracao || 0.1));
-      const prev = pct(f.previsto);
-      const real = pct(f.real);
-
-      pesoPrev += dur;
-      somaPrev += prev * dur;
-
-      pesoReal += dur;
-      somaReal += real * dur;
-
-      const st = String(f.status || "Não iniciado");
-      if((prioridade[st] || 1) > (prioridade[statusFinal] || 1)){
-        statusFinal = st;
-      }
-    });
-
+  if(!folhas.length){
     return {
       id,
       nome,
-      previsto: pesoPrev > 0 ? Math.round((somaPrev / pesoPrev) * 10) / 10 : 0,
-      real: pesoReal > 0 ? Math.round((somaReal / pesoReal) * 10) / 10 : 0,
-      status: statusFinal
+      previsto: 0,
+      real: 0,
+      status: "Novo"
     };
   }
 
+  const starts = folhas.map(f => f.inicio).filter(Boolean).sort();
+  const ends = folhas.map(f => f.fim).filter(Boolean).sort();
+
+  const inicio = starts[0] || "";
+  const fim = ends[ends.length - 1] || "";
+
+  let duracaoTotalProjeto = 0;
+  if(inicio && fim){
+    const a = new Date(inicio + "T12:00:00");
+    const b = new Date(fim + "T12:00:00");
+    duracaoTotalProjeto = Math.round((b - a) / 86400000) + 1;
+  }
+
+  let duracaoPrevistaHoje = 0;
+  let duracaoRealHoje = 0;
+  let statusFinal = "Não iniciado";
+
+  const prioridade = {
+    "Não iniciado": 1,
+    "Novo": 1,
+    "Concluído": 2,
+    "Em andamento": 3,
+    "Atrasado": 4
+  };
+
+  folhas.forEach(f => {
+    const dur = Math.max(0, Number(f.duracao || 0));
+    const prev = Number(f.previsto || 0);
+    const real = Number(f.real || 0);
+
+    duracaoPrevistaHoje += dur * (prev / 100);
+    duracaoRealHoje += dur * (real / 100);
+
+    const st = String(f.status || "Não iniciado");
+    if((prioridade[st] || 1) > (prioridade[statusFinal] || 1)){
+      statusFinal = st;
+    }
+  });
+
+  const previsto = duracaoTotalProjeto > 0
+    ? Math.round((duracaoPrevistaHoje / duracaoTotalProjeto) * 1000) / 10
+    : 0;
+
+  const real = duracaoTotalProjeto > 0
+    ? Math.round((duracaoRealHoje / duracaoTotalProjeto) * 1000) / 10
+    : 0;
+
+  return {
+    id,
+    nome,
+    previsto,
+    real,
+    status: statusFinal
+  };
+}
   function showExcelOverlay(){
   const el = document.getElementById("excelOverlay");
   if(el) el.style.display = "flex";
