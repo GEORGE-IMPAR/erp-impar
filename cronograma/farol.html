@@ -495,12 +495,12 @@
     location.href = "/cronograma/cronograma.html?novo=1";
   }
 
-function abrirImportacaoPlanilha(){
-  const inp = document.getElementById("excelImportInput");
-  if(!inp) return;
-  inp.value = "";
-  inp.click();
-}
+// function abrirImportacaoPlanilha(){
+//  const inp = document.getElementById("excelImportInput");
+//  if(!inp) return;
+//  inp.value = "";
+//  inp.click();
+// }
 
   function abrirCronograma(id){
     if(isInvalidGhostId(id)) return;
@@ -805,17 +805,7 @@ async function importarExcelParaCronograma(file){
   location.href = "/cronograma/cronograma.html?novo=1&importado=1";
 }
 
-  function abrirImportacaoPlanilha(){
-  const inp = document.getElementById("excelImportInput");
-  if(!inp){
-    alert("Input de importação não encontrado.");
-    return;
-  }
-
-  inp.value = "";
-  inp.click();
-}
-  
+ 
   async function loadFarol(){
     setStatus("Atualizando farol...", "ok");
     cardsGrid.innerHTML = cardNovoHtml();
@@ -892,6 +882,96 @@ async function importarExcelParaCronograma(file){
   window.__abrirImportacaoPlanilha = abrirImportacaoPlanilha;
   window.__abrirCronograma = abrirCronograma;
 
+  function abrirImportacaoPlanilha(){
+  console.log("abrirImportacaoPlanilha()");
+  const inp = document.getElementById("excelImportInput");
+
+  if(!inp){
+    alert("Input de importação não encontrado.");
+    return;
+  }
+
+  inp.value = "";
+  inp.click();
+}
+
+async function importarExcelParaCronograma(file){
+  console.log("importarExcelParaCronograma()", file);
+
+  if(typeof XLSX === "undefined"){
+    throw new Error("Biblioteca XLSX não carregou.");
+  }
+
+  const buf = await file.arrayBuffer();
+  console.log("arrayBuffer OK", buf.byteLength);
+
+  const wb = XLSX.read(buf, { type: "array" });
+  console.log("workbook OK", wb);
+
+  const firstSheetName = wb.SheetNames[0];
+  if(!firstSheetName){
+    throw new Error("Planilha vazia.");
+  }
+
+  const ws = wb.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, {
+    defval: "",
+    raw: true
+  });
+
+  console.log("rows importadas", rows);
+
+  if(!rows.length){
+    throw new Error("Nenhuma linha encontrada na planilha.");
+  }
+
+  const atividades = mapExcelRowsToCronograma(rows);
+  console.log("atividades mapeadas", atividades);
+
+  if(!atividades.length){
+    throw new Error("Nenhuma atividade válida encontrada.");
+  }
+
+  const payload = {
+    origem: "excel",
+    importedAt: new Date().toISOString(),
+    atividades
+  };
+
+  sessionStorage.setItem("ERPIMPAR_CRONO_IMPORT", JSON.stringify(payload));
+  console.log("payload salvo no sessionStorage");
+
+  location.href = "/cronograma/cronograma.html?novo=1&importado=1";
+}
+
+const excelImportInput = document.getElementById("excelImportInput");
+
+if(excelImportInput){
+  excelImportInput.addEventListener("change", async (e) => {
+    console.log("CHANGE do input disparou");
+
+    const file = e.target.files && e.target.files[0];
+    console.log("arquivo selecionado", file);
+
+    if(!file){
+      alert("Nenhum arquivo foi selecionado.");
+      return;
+    }
+
+    try{
+      setStatus("Importando planilha...", "ok");
+      await importarExcelParaCronograma(file);
+    }catch(err){
+      console.error("ERRO IMPORTAÇÃO", err);
+      setStatus("Erro ao importar planilha.", "err");
+      alert("Erro ao importar planilha:\n\n" + (err.message || err));
+    }
+  });
+} else {
+  console.error("excelImportInput não encontrado no DOM");
+}
+
+window.__abrirImportacaoPlanilha = abrirImportacaoPlanilha;
  
   document.body.classList.add("impar-enter");
   loadUser();
