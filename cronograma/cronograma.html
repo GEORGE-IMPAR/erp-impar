@@ -899,26 +899,18 @@ select:disabled{
         Blocos herdam automaticamente início, fim, duração e percentual ponderado por duração das atividades filhas.
       </div>
 
-<div class="toolbar-row toolbar-row-top">
-  <div class="toolbar-left">
-    <select id="templateSelect" class="sel-template">
-      <option value="">Importar template...</option>
-    </select>
+<div class="toolbar-row">
+  <select id="coordenadorSelect" class="sel-template" required>
+    <option value="">Coordenador da obra...</option>
+  </select>
 
-    <select id="coordenadorSelect" class="sel-template">
-      <option value="">Coordenador da obra...</option>
-    </select>
-    
-    <select id="obraSelect" class="sel-template">
-      <option value="">Projeto / Obra...</option>
-    </select>
-    
-    <button class="btn btn-secondary" id="btnImportTemplate" type="button">⭳ IMPORTAR TEMPLATE</button>
-  </div>
+  <select id="obraSelect" class="sel-template" required>
+    <option value="">Projeto / Obra...</option>
+  </select>
 
-  <div class="toolbar-right">
-    <button class="btn btn-green-premium" id="btnSalvarBaseline" type="button">💾 SALVAR BASELINE</button>
-  </div>
+  <div></div>
+
+  <button class="btn btn-green-premium" id="btnSalvarBaseline" type="button">💾 SALVAR BASELINE</button>
 </div>
 
       <div class="summary-grid">
@@ -1029,7 +1021,6 @@ async function bootCronograma(){
     loadUser();
 
     await Promise.all([
-      carregarTemplates(),
       carregarResponsaveis(),
       carregarCoordenadores(),
       carregarObras()
@@ -1257,6 +1248,38 @@ async function bootCronograma(){
     return formatDateISO(fim);
   }
 
+  function addOneDay(iso){
+  if(!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+function getItemByHier(ordemHier){
+  const alvo = String(ordemHier || "").trim().replace(",", ".").replace(/\s+/g, "");
+  if(!alvo) return null;
+  return state.atividades.find(a =>
+    String(a.ordemHier || "").trim().replace(",", ".").replace(/\s+/g, "") === alvo
+  ) || null;
+}
+
+function aplicarPredecessora(item){
+  const pred = String(item.predecessora || "").trim().replace(",", ".").replace(/\s+/g, "");
+  if(!pred) return;
+
+  const predItem = getItemByHier(pred);
+  if(!predItem || !predItem.fim) return;
+
+  item.inicio = addOneDay(predItem.fim);
+
+  if(Number(item.duracao || 0) > 0){
+    item.fim = computeEndFromStartAndDuration(item.inicio, item.duracao || 1, item.modo || "comercial");
+  } else if(item.inicio && item.fim){
+    item.duracao = computeDurationFromDates(item.inicio, item.fim, item.modo || "comercial");
+  }
+}
+
+  
   function computeStartFromPredEnd(predEndIso){
     const predEnd = parseDateISO(predEndIso);
     if(!predEnd) return "";
@@ -1537,10 +1560,11 @@ function validarCronogramaParaBaseline(){
   return erros;
 }
 
-  function updateSummary(){
+function updateSummary(){
   recomputeRollups();
 
-  document.getElementById("obraNomeTop").textContent = state.nome || (state.id ? ("OBRA " + state.id) : "Cronograma da Obra");
+  document.getElementById("obraNomeTop").textContent =
+    state.nome || (state.id ? ("OBRA " + state.id) : "Cronograma da Obra");
 
   const folhas = state.atividades.filter((a, i) => descendantIndexes(i).length === 0);
 
@@ -1844,37 +1868,30 @@ function calcStatusByDates(prev, real, inicio, fim){
   const prevNum = Number(prev || 0);
   const realNum = Number(real || 0);
 
-  // ✅ 1. Concluído
   if(realNum >= 100){
     return "Concluído";
   }
 
-  // ✅ 2. Se não tem data válida
   if(!dtInicio || !dtFim){
     return "Não iniciado";
   }
 
-  // ✅ 3. Antes de começar
   if(hoje < dtInicio && realNum <= 0){
     return "Não iniciado";
   }
 
-  // ✅ 4. Já passou do fim e não concluiu → ATRASADO
   if(hoje > dtFim && realNum < 100){
     return "Atrasado";
   }
 
-  // ✅ 5. Já deveria ter progresso e não tem → ATRASADO
   if(prevNum > 0 && realNum === 0){
     return "Atrasado";
   }
 
-  // ✅ 6. Está fazendo, mas abaixo do previsto → ATRASADO
   if(realNum > 0 && realNum < prevNum){
     return "Atrasado";
   }
 
-  // ✅ 7. Está dentro do esperado → EM ANDAMENTO
   if(realNum > 0 && realNum < 100){
     return "Em andamento";
   }
@@ -1958,15 +1975,15 @@ function renderTabela(){
         </td>
 
         <td class="cell-pct">
-          <input type="number" min="0" max="100" step="1" class="inp-previsto" value="${parseInt(item.previsto || 0, 10)}" disabled>
+          <input type="text" class="inp-previsto" value="${parseInt(item.previsto || 0, 10)}%" disabled>
         </td>
 
         <td class="cell-pct">
-          <input type="number" min="0" max="100" step="1" class="inp-real" value="${parseInt(item.real || 0, 10)}" ${disabledAttr}>
+          <input type="text" class="inp-real" value="${parseInt(item.real || 0, 10)}%">
         </td>
 
         <td class="cell-pred">
-          <input type="text" class="inp-pred" value="${escapeHtml(item.predecessora || "")}" placeholder="1 ou 1.1" ${disabledAttr}>
+          <input type="text" class="inp-pred" value="${escapeHtml(item.predecessora || "")}" ${disabledAttr}>
         </td>
 
         
@@ -2065,37 +2082,50 @@ function renderTabela(){
 
 
 
-      const inpReal = tr.querySelector(".inp-real");
-      if(inpReal){
-        inpReal.addEventListener("input", (e) => {
-          normalizePctInput(e.target);
-          item.real = Number(e.target.value || 0);
-          renderTabelaLight();
-          saveDebounced();
-        });
-      }
+const inpReal = tr.querySelector(".inp-real");
+if(inpReal){
+  inpReal.addEventListener("input", (e) => {
+    let v = String(e.target.value || "").replace(/[^\d]/g, "");
+    let n = parseInt(v || "0", 10);
+    if(!Number.isFinite(n)) n = 0;
+    if(n < 0) n = 0;
+    if(n > 100) n = 100;
 
-      const inpPred = tr.querySelector(".inp-pred");
-      if(inpPred){
-        inpPred.addEventListener("change", (e) => {
-          item.predecessora = (e.target.value || "").trim();
+    item.real = n;
+    e.target.value = n + "%";
 
-          // aqui sim pode recalcular datas/rollups,
-          // mas sem redesenhar a tabela inteira no meio da digitação
-          recomputeRollups();
+    renderTabelaLight();
+    saveDebounced();
+  });
 
-          // atualiza só visual leve
-          renderTabelaLight();
+  inpReal.addEventListener("focus", (e) => {
+    e.target.value = String(parseInt(item.real || 0, 10));
+  });
 
-          // atualiza disabled do campo fim só quando a edição terminar
-          const fimField = tr.querySelector(".inp-fim");
-          if(fimField){
-            fimField.disabled = !!String(item.predecessora || "").trim();
-          }
+  inpReal.addEventListener("blur", (e) => {
+    e.target.value = parseInt(item.real || 0, 10) + "%";
+  });
+}
 
-          saveDebounced();
-        });
-      }
+const inpPred = tr.querySelector(".inp-pred");
+if(inpPred){
+  inpPred.addEventListener("change", (e) => {
+    item.predecessora = String(e.target.value || "").trim().replace(",", ".").replace(/\s+/g, "");
+
+    aplicarPredecessora(item);
+
+    const inpInicio = tr.querySelector(".inp-inicio");
+    const inpFim = tr.querySelector(".inp-fim");
+    const inpDur = tr.querySelector(".inp-duracao");
+
+    if(inpInicio) inpInicio.value = item.inicio || "";
+    if(inpFim) inpFim.value = item.fim || "";
+    if(inpDur) inpDur.value = item.duracao || 0;
+
+    renderTabelaLight();
+    saveDebounced();
+  });
+}
 
       tbody.appendChild(tr);
     });
@@ -2364,83 +2394,6 @@ let __LOAD_CRONO_PROMISE__ = null;
   }
 }
   
-  async function carregarTemplates(){
-    const sel = document.getElementById("templateSelect");
-    sel.innerHTML = `<option value="">Importar template...</option>`;
-
-    try{
-      const j = await fetchJsonSafe(API + "listar_templates.php");
-      const lista = Array.isArray(j.data) ? j.data : [];
-
-      lista.forEach(t => {
-        const opt = document.createElement("option");
-        opt.value = t.id || t.codigo || t.slug || "";
-        opt.textContent = t.nome || t.label || t.id || "Template";
-        sel.appendChild(opt);
-      });
-
-      if(!lista.length){
-        const opt = document.createElement("option");
-        opt.value = "vrf";
-        opt.textContent = "Template VRF";
-        sel.appendChild(opt);
-      }
-    }catch(e){
-      console.warn("listar_templates.php indisponível, mantendo fallback");
-      const opt = document.createElement("option");
-      opt.value = "vrf";
-      opt.textContent = "Template VRF";
-      sel.appendChild(opt);
-    }
-  }
-
-  async function importarTemplate(){
-    const sel = document.getElementById("templateSelect");
-    const id = (sel.value || "").trim();
-
-    if(!id){
-      msgWarn("Selecione um template para importar.");
-      return;
-    }
-
-    try{
-      const j = await fetchJsonSafe(API + "carregar_template.php?id=" + encodeURIComponent(id));
-      const data = j && (j.data || j.template) ? (j.data || j.template) : null;
-      const atv = data && Array.isArray(data.atividades) ? data.atividades : null;
-
-      if(!atv || !atv.length){
-        msgWarn("Template sem atividades.");
-        return;
-      }
-
-      const base = atv.map((a) => ({
-        id: cryptoRandomId(),
-        ordem: 0,
-        ordemHier: "",
-        nivel: Number(a.nivel || 0),
-        nome: a.nome || a.atividade || "Nome da atividade",
-        responsavel: a.responsavel || "",
-        inicio: a.inicio || "",
-        fim: a.fim || "",
-        duracao: Number(a.duracao || a.duracaoDias || 1),
-        previsto: Number(a.previsto || 0),
-        real: Number(a.real || 0),
-        status: a.status || "Não iniciado",
-        collapsed: !!a.collapsed,
-        comentario: a.comentario || a.observacao || "",
-        predecessora: a.predecessora || ""
-      }));
-
-      state.atividades = state.atividades.concat(base);
-
-      renderTabela();
-      saveDebounced();
-      msgOk("Template importado com sucesso.");
-    }catch(e){
-      console.error(e);
-      msgErr("Falha ao importar template.\n\n" + (e.message || e));
-    }
-  }
 
 async function salvarBaseline(){
   const erros = validarCronogramaParaBaseline();
@@ -2483,7 +2436,6 @@ async function salvarBaseline(){
   });
 
   document.getElementById("btnNovaLinha").addEventListener("click", novaLinha);
-  document.getElementById("btnImportTemplate").addEventListener("click", importarTemplate);
   document.getElementById("btnSalvarBaseline").addEventListener("click", salvarBaseline);
 
 document.body.classList.add("impar-enter");
