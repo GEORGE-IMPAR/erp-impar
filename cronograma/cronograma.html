@@ -2186,10 +2186,7 @@ function renderResponsavelOptions(valorAtual, disabled){
 let __LOAD_CRONO_RUNNING__ = false;
 let __LOAD_CRONO_PROMISE__ = null;
 
-async function carregarCronograma(force = false){
-  console.log("CARREGAR CRONOGRAMA", new Date().toISOString());
-  console.trace("TRACE carregarCronograma");
-
+  async function carregarCronograma(force = false){
   if(__LOAD_CRONO_RUNNING__ && __LOAD_CRONO_PROMISE__){
     return __LOAD_CRONO_PROMISE__;
   }
@@ -2197,7 +2194,75 @@ async function carregarCronograma(force = false){
   __LOAD_CRONO_RUNNING__ = true;
 
   __LOAD_CRONO_PROMISE__ = (async () => {
+    const novo = isNovoCronograma();
     const id = getQueryId();
+
+    if(novo){
+      const imported = getImportedCronogramaPayload();
+
+      state.id = "";
+      state.nome = "";
+      state.coordenador = "";
+      state.baselines = [];
+
+      if(imported && Array.isArray(imported.atividades) && imported.atividades.length){
+        state.atividades = imported.atividades.map((a, idx) => ({
+          id: a.id || cryptoRandomId(),
+          ordem: idx + 1,
+          ordemHier: a.ordemHier || String(idx + 1),
+          nivel: Number(a.nivel || 0),
+          nome: a.nome || "Nova atividade",
+          responsavel: a.responsavel || "",
+          inicio: a.inicio || "",
+          fim: a.fim || "",
+          duracao: Number(a.duracao || 1),
+          previsto: Number(a.previsto || 0),
+          real: Number(a.real || 0),
+          status: a.status || "Não iniciado",
+          collapsed: !!a.collapsed,
+          comentarios: Array.isArray(a.comentarios) ? a.comentarios : [],
+          predecessora: a.predecessora || "",
+          modo: a.modo || "comercial"
+        }));
+      } else {
+        state.atividades = [{
+          id: cryptoRandomId(),
+          ordem: 1,
+          ordemHier: "1",
+          nivel: 0,
+          nome: "Nova atividade",
+          responsavel: "",
+          inicio: "",
+          fim: "",
+          duracao: 1,
+          previsto: 0,
+          real: 0,
+          status: "Não iniciado",
+          collapsed: false,
+          comentarios: [],
+          predecessora: "",
+          modo: "comercial"
+        }];
+      }
+
+      renderTabela();
+      state.isLoading = false;
+      state.lastSavedHash = buildStableHash();
+      sessionStorage.removeItem("ERPIMPAR_CRONO_IMPORT");
+
+      const obraSel = document.getElementById("obraSelect");
+      if(obraSel) obraSel.value = "";
+
+      const coordSel = document.getElementById("coordenadorSelect");
+      if(coordSel) coordSel.value = "";
+
+      return;
+    }
+
+    if(!id){
+      throw new Error("ID da obra não informado.");
+    }
+
     const j = await fetchJsonSafe(API + "carregar_cronograma.php?id=" + encodeURIComponent(id));
 
     if(!j || j.ok !== true || !j.data){
@@ -2208,77 +2273,47 @@ async function carregarCronograma(force = false){
 
     state.id = d.id || id;
     state.nome = (d.nome || d.obra || "").trim();
-
-// NÃO força nome fake tipo "OBRA 000"
-if(!state.nome){
-  state.nome = "";
-}
+    if(!state.nome) state.nome = "";
     state.coordenador = d.coordenador || "";
     state.atividades = Array.isArray(d.atividades) ? d.atividades : [];
     state.baselines = Array.isArray(d.baselines) ? d.baselines : [];
-    
-    const obraSel = document.getElementById("obraSelect");
-if(obraSel){
-  const existe = state.obras.some(o => String(o.nome || "").trim() === String(state.nome || "").trim());
-  obraSel.value = existe ? state.nome : "";
-} "";
 
-    const coordSel = document.getElementById("coordenadorSelect");
-    if(coordSel) coordSel.value = state.coordenador || "";
-    
-if(novo){
-  const imported = getImportedCronogramaPayload();
+    if(!state.atividades.length){
+      state.atividades = [{
+        id: cryptoRandomId(),
+        ordem: 1,
+        ordemHier: "1",
+        nivel: 0,
+        nome: "Nova atividade",
+        responsavel: "",
+        inicio: "",
+        fim: "",
+        duracao: 1,
+        previsto: 0,
+        real: 0,
+        status: "Não iniciado",
+        collapsed: false,
+        comentarios: [],
+        predecessora: "",
+        modo: "comercial"
+      }];
+    }
 
-  state.id = "";
-  state.nome = "";
-  state.coordenador = "";
-  state.baselines = [];
-
-  if(imported && Array.isArray(imported.atividades) && imported.atividades.length){
-    state.atividades = imported.atividades.map((a, idx) => ({
-      id: a.id || cryptoRandomId(),
-      ordem: idx + 1,
-      ordemHier: a.ordemHier || String(idx + 1),
-      nivel: Number(a.nivel || 0),
-      nome: a.nome || "Nova atividade",
-      responsavel: a.responsavel || "",
-      inicio: a.inicio || "",
-      fim: a.fim || "",
-      duracao: Number(a.duracao || 1),
-      previsto: Number(a.previsto || 0),
-      real: Number(a.real || 0),
-      status: a.status || "Não iniciado",
-      collapsed: !!a.collapsed,
-      comentarios: Array.isArray(a.comentarios) ? a.comentarios : [],
-      predecessora: a.predecessora || "",
-      modo: a.modo || "comercial"
-    }));
-  } else {
-    state.atividades = [{
-      id: cryptoRandomId(),
-      ordem: 1,
-      ordemHier: "1",
-      nivel: 0,
-      nome: "Nova atividade",
-      responsavel: "",
-      inicio: "",
-      fim: "",
-      duracao: 1,
-      previsto: 0,
-      real: 0,
-      status: "Não iniciado",
-      collapsed: false,
-      comentarios: [],
-      predecessora: "",
-      modo: "comercial"
-    }];
-  }
     renderTabela();
     state.isLoading = false;
     state.lastSavedHash = buildStableHash();
-    sessionStorage.removeItem("ERPIMPAR_CRONO_IMPORT");
+
+    const obraSel = document.getElementById("obraSelect");
+    if(obraSel){
+      const existe = state.obras.some(o => String(o.nome || "").trim() === String(state.nome || "").trim());
+      obraSel.value = existe ? state.nome : "";
+    }
+
+    const coordSel = document.getElementById("coordenadorSelect");
+    if(coordSel) coordSel.value = state.coordenador || "";
+
     return d;
-  };
+  })();
 
   try{
     return await __LOAD_CRONO_PROMISE__;
@@ -2287,6 +2322,7 @@ if(novo){
     __LOAD_CRONO_PROMISE__ = null;
   }
 }
+  
   async function carregarTemplates(){
     const sel = document.getElementById("templateSelect");
     sel.innerHTML = `<option value="">Importar template...</option>`;
