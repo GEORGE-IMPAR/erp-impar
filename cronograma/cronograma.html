@@ -1385,16 +1385,23 @@ state.atividades.forEach((item, index) => {
   const isGroup = descendantIndexes(index).length > 0;
   if(isGroup) return;
 
-  const pred = String(item.predecessora || "").trim();
+  const pred = String(item.predecessora || "").trim().replace(",", ".").replace(/\s+/g, "");
   if(!pred) return;
 
   const pai = getItemByHier(pred);
   if(!pai || !pai.fim) return;
 
   const inicioNovo = addDays(pai.fim, 1);
+
   item.inicio = inicioNovo;
-  item.fim = computeEndFromStartAndDuration(inicioNovo, item.duracao || 1);
-});
+
+  if(item.duracao > 0){
+    item.fim = computeEndFromStartAndDuration(inicioNovo, item.duracao || 1);
+  } else if(item.fim){
+    item.duracao = computeDurationFromDates(item.inicio, item.fim);
+  }
+});  
+  
   // agrupadores de baixo para cima
   for(let i = state.atividades.length - 1; i >= 0; i--){
     const item = state.atividades[i];
@@ -1755,6 +1762,7 @@ sel.onchange = () => {
 
   saveDebounced();
 };
+
   
   return state.obras;
 }
@@ -2150,7 +2158,13 @@ function descendantIndexes(idx){
 } 
   
 async function saveCronograma(){
-  if(state.saving || state.isRendering || state.isLoading) return;
+
+      if(!String(state.id || "").trim()){
+       setSaveStatus("Selecione a obra antes de salvar.", "err");
+      return;
+     }
+
+    if(state.saving || state.isRendering || state.isLoading) return;
 
   const nowHash = buildStableHash();
   if(nowHash === state.lastSavedHash){
@@ -2164,10 +2178,6 @@ async function saveCronograma(){
   try{
     const payload = buildPayload();
     
-    if(!String(state.id || "").trim()){
-  setSaveStatus("Selecione a obra antes de salvar.", "err");
-  return;
-}
 
     
     const j = await fetchJsonSafe(API + "salvar_cronograma.php", {
