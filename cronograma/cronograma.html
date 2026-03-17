@@ -1056,6 +1056,21 @@ async function bootCronograma(){
     try { return JSON.parse(raw); } catch { return null; }
   }
 
+  function getImportedCronogramaPayload(){
+  const p = new URLSearchParams(location.search);
+  const isImportado = p.get("importado") === "1";
+  if(!isImportado) return null;
+
+  const raw = sessionStorage.getItem("ERPIMPAR_CRONO_IMPORT");
+  if(!raw) return null;
+
+  try{
+    return JSON.parse(raw);
+  }catch(e){
+    return null;
+  }
+}
+  
   function buildStableHash(){
   return JSON.stringify({
     id: state.id,
@@ -1908,7 +1923,7 @@ function renderTabela(){
         </td>
 
         <td class="cell-pct">
-          <input type="number" min="0" max="100" step="1" class="inp-previsto" value="${parseInt(item.previsto || 0, 10)}" ${disabledAttr}>
+          <input type="number" min="0" max="100" step="1" class="inp-previsto" value="${parseInt(item.previsto || 0, 10)}" disabled>
         </td>
 
         <td class="cell-pct">
@@ -2013,15 +2028,7 @@ function renderTabela(){
         });
       }
 
-      const inpPrevisto = tr.querySelector(".inp-previsto");
-      if(inpPrevisto){
-        inpPrevisto.addEventListener("input", (e) => {
-          normalizePctInput(e.target);
-          item.previsto = Number(e.target.value || 0);
-          renderTabelaLight();
-          saveDebounced();
-        });
-      }
+
 
       const inpReal = tr.querySelector(".inp-real");
       if(inpReal){
@@ -2219,30 +2226,57 @@ if(obraSel){
     const coordSel = document.getElementById("coordenadorSelect");
     if(coordSel) coordSel.value = state.coordenador || "";
     
-    if(!state.atividades.length){
-      state.atividades = [{
-        id: cryptoRandomId(),
-        ordem: 1,
-        ordemHier: "1",
-        nivel: 0,
-        nome: "Nova atividade",
-        responsavel: "",
-        inicio: "",
-        fim: "",
-        duracao: 1,
-        previsto: 0,
-        real: 0,
-        status: "Não iniciado",
-        collapsed: false,
-        comentario: "",
-        predecessora: ""
-      }];
-    }
+if(novo){
+  const imported = getImportedCronogramaPayload();
 
+  state.id = "";
+  state.nome = "";
+  state.coordenador = "";
+  state.baselines = [];
+
+  if(imported && Array.isArray(imported.atividades) && imported.atividades.length){
+    state.atividades = imported.atividades.map((a, idx) => ({
+      id: a.id || cryptoRandomId(),
+      ordem: idx + 1,
+      ordemHier: a.ordemHier || String(idx + 1),
+      nivel: Number(a.nivel || 0),
+      nome: a.nome || "Nova atividade",
+      responsavel: a.responsavel || "",
+      inicio: a.inicio || "",
+      fim: a.fim || "",
+      duracao: Number(a.duracao || 1),
+      previsto: Number(a.previsto || 0),
+      real: Number(a.real || 0),
+      status: a.status || "Não iniciado",
+      collapsed: !!a.collapsed,
+      comentarios: Array.isArray(a.comentarios) ? a.comentarios : [],
+      predecessora: a.predecessora || "",
+      modo: a.modo || "comercial"
+    }));
+  } else {
+    state.atividades = [{
+      id: cryptoRandomId(),
+      ordem: 1,
+      ordemHier: "1",
+      nivel: 0,
+      nome: "Nova atividade",
+      responsavel: "",
+      inicio: "",
+      fim: "",
+      duracao: 1,
+      previsto: 0,
+      real: 0,
+      status: "Não iniciado",
+      collapsed: false,
+      comentarios: [],
+      predecessora: "",
+      modo: "comercial"
+    }];
+  }
     renderTabela();
     state.isLoading = false;
     state.lastSavedHash = buildStableHash();
-
+    sessionStorage.removeItem("ERPIMPAR_CRONO_IMPORT");
     return d;
   })();
 
