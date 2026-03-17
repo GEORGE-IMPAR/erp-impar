@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>  
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ERP ÍMPAR — Farol de Obras</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
     :root{
@@ -264,7 +265,10 @@
     .legend-top{
       display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:8px;
     }
-    .legend-item{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:900;color:#e5e7eb;background:rgba(2,6,23,.35);padding:6px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.12);}
+    .legend-item{
+      display:flex;align-items:center;gap:6px;font-size:11px;font-weight:900;color:#e5e7eb;
+      background:rgba(2,6,23,.35);padding:6px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.12);
+    }
     .legend-dot{width:8px;height:8px;border-radius:50%;}
     .legend-dot.blue{background:#60a5fa}
     .legend-dot.yellow{background:#facc15}
@@ -353,9 +357,11 @@
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Farol de Obras</div>
-    <div>v4 • Leitura oficial do servidor</div>
+    <div>v5 • Leitura oficial do servidor</div>
   </div>
 </footer>
+
+<input type="file" id="excelImportInput" accept=".xlsx,.xls,.csv" style="display:none">
 
 <script>
 (() => {
@@ -363,6 +369,7 @@
   const API = "https://api.erpimpar.com.br/cronograma/";
   const cardsGrid = document.getElementById("cardsGrid");
   const statusMsg = document.getElementById("statusMsg");
+  const excelImportInput = document.getElementById("excelImportInput");
 
   function getSessaoERP(){
     const raw = localStorage.getItem(KEY) || sessionStorage.getItem(KEY);
@@ -402,6 +409,12 @@
       console.error("Resposta bruta:", text);
       throw new Error("JSON inválido retornado pela API.");
     }
+  }
+
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, m => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[m]));
   }
 
   function pct(n){
@@ -495,12 +508,14 @@
     location.href = "/cronograma/cronograma.html?novo=1";
   }
 
-// function abrirImportacaoPlanilha(){
-//  const inp = document.getElementById("excelImportInput");
-//  if(!inp) return;
-//  inp.value = "";
-//  inp.click();
-// }
+  function abrirImportacaoPlanilha(){
+    if(!excelImportInput){
+      alert("Input de importação não encontrado.");
+      return;
+    }
+    excelImportInput.value = "";
+    excelImportInput.click();
+  }
 
   function abrirCronograma(id){
     if(isInvalidGhostId(id)) return;
@@ -593,219 +608,199 @@
     `;
   }
 
-  function escapeHtml(s){
-    return String(s ?? "").replace(/[&<>"']/g, m => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[m]));
-  }
-
   function excelDateToISO(value){
-  if(value == null || value === "") return "";
+    if(value == null || value === "") return "";
 
-  // data serial do Excel
-  if(typeof value === "number"){
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if(!parsed) return "";
-    const y = parsed.y;
-    const m = String(parsed.m).padStart(2, "0");
-    const d = String(parsed.d).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
-  const s = String(value).trim();
-
-  // dd/mm/aaaa
-  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if(m){
-    const dd = String(m[1]).padStart(2, "0");
-    const mm = String(m[2]).padStart(2, "0");
-    const yy = m[3];
-    return `${yy}-${mm}-${dd}`;
-  }
-
-  // aaaa-mm-dd
-  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(m){
-    return s;
-  }
-
-  return "";
-}
-
-function normalizeImportId(v){
-  return String(v || "")
-    .trim()
-    .replace(",", ".")
-    .replace(/\s+/g, "")
-    .replace(/\.+$/g, "");
-}
-
-function levelFromId(id){
-  const s = normalizeImportId(id);
-  if(!s) return 0;
-  return Math.max(0, s.split(".").length - 1);
-}
-
-function computeDurationInclusive(inicio, fim){
-  if(!inicio || !fim) return 0;
-  const a = new Date(inicio + "T12:00:00");
-  const b = new Date(fim + "T12:00:00");
-  const diff = Math.round((b - a) / 86400000) + 1;
-  return diff > 0 ? diff : 0;
-}
-
-function plannedPercentToday(inicio, fim){
-  if(!inicio || !fim) return 0;
-
-  const hoje = new Date();
-  hoje.setHours(12,0,0,0);
-
-  const dtInicio = new Date(inicio + "T12:00:00");
-  const dtFim = new Date(fim + "T12:00:00");
-
-  if(hoje < dtInicio) return 0;
-  if(hoje >= dtFim) return 100;
-
-  const total = computeDurationInclusive(inicio, fim);
-  if(total <= 0) return 0;
-
-  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}-${String(hoje.getDate()).padStart(2,"0")}`;
-  const decorridos = computeDurationInclusive(inicio, hojeIso);
-
-  return Math.max(0, Math.min(100, Math.round((decorridos / total) * 1000) / 10));
-}
-
-function calcImportedStatus(inicio, fim, real){
-  const hoje = new Date();
-  hoje.setHours(12,0,0,0);
-
-  const dtInicio = inicio ? new Date(inicio + "T12:00:00") : null;
-  const dtFim = fim ? new Date(fim + "T12:00:00") : null;
-  const realNum = Number(real || 0);
-  const previstoHoje = plannedPercentToday(inicio, fim);
-
-  if(realNum >= 100) return "Concluído";
-  if(dtFim && hoje > dtFim && realNum < 100) return "Atrasado";
-  if(dtInicio && hoje < dtInicio && realNum <= 0) return "Não iniciado";
-  if(dtInicio && hoje >= dtInicio && realNum <= 0 && previstoHoje > 0) return "Atrasado";
-  if(realNum > 0 && realNum < 100 && realNum + 0.001 < previstoHoje) return "Atrasado";
-  if(realNum > 0 && realNum < 100) return "Em andamento";
-  if(previstoHoje > 0 && realNum < previstoHoje) return "Atrasado";
-  return "Não iniciado";
-}
-
-const excelImportInput = document.getElementById("excelImportInput");
-
-if(excelImportInput){
-  excelImportInput.addEventListener("change", async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if(!file) return;
-
-    try{
-      setStatus("Importando planilha...", "ok");
-      await importarExcelParaCronograma(file);
-    }catch(err){
-      console.error(err);
-      setStatus("Erro ao importar planilha.", "err");
-      alert("Erro ao importar planilha:\n\n" + (err.message || err));
-    }
-  });
-}  
-  
-function mapExcelRowsToCronograma(rows){
-  const mapped = [];
-
-  rows.forEach((r, idx) => {
-    const id = normalizeImportId(r.ID ?? r.Id ?? r.id ?? "");
-    const atividade = String(r.ATIVIDADE ?? r.Atividade ?? r.atividade ?? "").trim();
-    const inicio = excelDateToISO(r.DATA_INICIO ?? r["DATA INICIO"] ?? r.INICIO ?? "");
-    const fim = excelDateToISO(r.DATA_FIM ?? r["DATA FIM"] ?? r.FIM ?? "");
-    const predecessora = normalizeImportId(r.PREDECESSORA ?? r.Predecessora ?? r.predecessora ?? "");
-
-    if(!id && !atividade && !inicio && !fim && !predecessora){
-      return;
+    if(typeof value === "number"){
+      const parsed = XLSX.SSF.parse_date_code(value);
+      if(!parsed) return "";
+      const y = parsed.y;
+      const m = String(parsed.m).padStart(2, "0");
+      const d = String(parsed.d).padStart(2, "0");
+      return `${y}-${m}-${d}`;
     }
 
-    if(!id) throw new Error(`Linha ${idx + 2}: ID obrigatório.`);
-    if(!atividade) throw new Error(`Linha ${idx + 2}: ATIVIDADE obrigatória.`);
-    if(!inicio) throw new Error(`Linha ${idx + 2}: DATA_INICIO obrigatória.`);
-    if(!fim) throw new Error(`Linha ${idx + 2}: DATA_FIM obrigatória.`);
+    const s = String(value).trim();
 
-    const duracao = computeDurationInclusive(inicio, fim);
-    if(duracao <= 0){
-      throw new Error(`Linha ${idx + 2}: DATA_FIM menor que DATA_INICIO.`);
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(m){
+      const dd = String(m[1]).padStart(2, "0");
+      const mm = String(m[2]).padStart(2, "0");
+      const yy = m[3];
+      return `${yy}-${mm}-${dd}`;
     }
 
-    const previsto = plannedPercentToday(inicio, fim);
-    const real = 0;
-    const status = calcImportedStatus(inicio, fim, real);
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(m){
+      return s;
+    }
 
-    mapped.push({
-      id: cryptoRandomId(),
-      ordem: idx + 1,
-      ordemHier: id,
-      nivel: levelFromId(id),
-      nome: atividade,
-      responsavel: "",
-      inicio,
-      fim,
-      duracao,
-      previsto,
-      real,
-      status,
-      collapsed: false,
-      comentarios: [],
-      predecessora,
-      modo: "comercial"
+    return "";
+  }
+
+  function normalizeImportId(v){
+    return String(v || "")
+      .trim()
+      .replace(",", ".")
+      .replace(/\s+/g, "")
+      .replace(/\.+$/g, "");
+  }
+
+  function levelFromId(id){
+    const s = normalizeImportId(id);
+    if(!s) return 0;
+    return Math.max(0, s.split(".").length - 1);
+  }
+
+  function computeDurationInclusive(inicio, fim){
+    if(!inicio || !fim) return 0;
+    const a = new Date(inicio + "T12:00:00");
+    const b = new Date(fim + "T12:00:00");
+    const diff = Math.round((b - a) / 86400000) + 1;
+    return diff > 0 ? diff : 0;
+  }
+
+  function plannedPercentToday(inicio, fim){
+    if(!inicio || !fim) return 0;
+
+    const hoje = new Date();
+    hoje.setHours(12,0,0,0);
+
+    const dtInicio = new Date(inicio + "T12:00:00");
+    const dtFim = new Date(fim + "T12:00:00");
+
+    if(hoje < dtInicio) return 0;
+    if(hoje >= dtFim) return 100;
+
+    const total = computeDurationInclusive(inicio, fim);
+    if(total <= 0) return 0;
+
+    const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}-${String(hoje.getDate()).padStart(2,"0")}`;
+    const decorridos = computeDurationInclusive(inicio, hojeIso);
+
+    return Math.max(0, Math.min(100, Math.round((decorridos / total) * 1000) / 10));
+  }
+
+  function calcImportedStatus(inicio, fim, real){
+    const hoje = new Date();
+    hoje.setHours(12,0,0,0);
+
+    const dtInicio = inicio ? new Date(inicio + "T12:00:00") : null;
+    const dtFim = fim ? new Date(fim + "T12:00:00") : null;
+    const realNum = Number(real || 0);
+    const previstoHoje = plannedPercentToday(inicio, fim);
+
+    if(realNum >= 100) return "Concluído";
+    if(dtFim && hoje > dtFim && realNum < 100) return "Atrasado";
+    if(dtInicio && hoje < dtInicio && realNum <= 0) return "Não iniciado";
+    if(dtInicio && hoje >= dtInicio && realNum <= 0 && previstoHoje > 0) return "Atrasado";
+    if(realNum > 0 && realNum < 100 && realNum + 0.001 < previstoHoje) return "Atrasado";
+    if(realNum > 0 && realNum < 100) return "Em andamento";
+    if(previstoHoje > 0 && realNum < previstoHoje) return "Atrasado";
+    return "Não iniciado";
+  }
+
+  function cryptoRandomId(){
+    try { return crypto.randomUUID(); }
+    catch(e){ return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16); }
+  }
+
+  function mapExcelRowsToCronograma(rows){
+    const mapped = [];
+
+    rows.forEach((r, idx) => {
+      const id = normalizeImportId(r.ID ?? r.Id ?? r.id ?? "");
+      const atividade = String(r.ATIVIDADE ?? r.Atividade ?? r.atividade ?? "").trim();
+      const inicio = excelDateToISO(r.DATA_INICIO ?? r["DATA INICIO"] ?? r.INICIO ?? "");
+      const fim = excelDateToISO(r.DATA_FIM ?? r["DATA FIM"] ?? r.FIM ?? "");
+      const predecessora = normalizeImportId(r.PREDECESSORA ?? r.Predecessora ?? r.predecessora ?? "");
+
+      if(!id && !atividade && !inicio && !fim && !predecessora){
+        return;
+      }
+
+      if(!id) throw new Error(`Linha ${idx + 2}: ID obrigatório.`);
+      if(!atividade) throw new Error(`Linha ${idx + 2}: ATIVIDADE obrigatória.`);
+      if(!inicio) throw new Error(`Linha ${idx + 2}: DATA_INICIO obrigatória.`);
+      if(!fim) throw new Error(`Linha ${idx + 2}: DATA_FIM obrigatória.`);
+
+      const duracao = computeDurationInclusive(inicio, fim);
+      if(duracao <= 0){
+        throw new Error(`Linha ${idx + 2}: DATA_FIM menor que DATA_INICIO.`);
+      }
+
+      const previsto = plannedPercentToday(inicio, fim);
+      const real = 0;
+      const status = calcImportedStatus(inicio, fim, real);
+
+      mapped.push({
+        id: cryptoRandomId(),
+        ordem: idx + 1,
+        ordemHier: id,
+        nivel: levelFromId(id),
+        nome: atividade,
+        responsavel: "",
+        inicio,
+        fim,
+        duracao,
+        previsto,
+        real,
+        status,
+        collapsed: false,
+        comentarios: [],
+        predecessora,
+        modo: "comercial"
+      });
     });
-  });
 
-  // valida predecessoras
-  const ids = new Set(mapped.map(x => x.ordemHier));
-  mapped.forEach((item) => {
-    if(item.predecessora && !ids.has(item.predecessora)){
-      throw new Error(`Predecessora ${item.predecessora} não encontrada no arquivo.`);
+    const ids = new Set(mapped.map(x => x.ordemHier));
+    mapped.forEach((item) => {
+      if(item.predecessora && !ids.has(item.predecessora)){
+        throw new Error(`Predecessora ${item.predecessora} não encontrada no arquivo.`);
+      }
+    });
+
+    return mapped;
+  }
+
+  async function importarExcelParaCronograma(file){
+    if(typeof XLSX === "undefined"){
+      throw new Error("Biblioteca XLSX não carregou.");
     }
-  });
 
-  return mapped;
-}
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const firstSheetName = wb.SheetNames[0];
+    if(!firstSheetName){
+      throw new Error("Planilha vazia.");
+    }
 
-async function importarExcelParaCronograma(file){
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const firstSheetName = wb.SheetNames[0];
-  if(!firstSheetName){
-    throw new Error("Planilha vazia.");
+    const ws = wb.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {
+      defval: "",
+      raw: true
+    });
+
+    if(!rows.length){
+      throw new Error("Nenhuma linha encontrada na planilha.");
+    }
+
+    const atividades = mapExcelRowsToCronograma(rows);
+
+    if(!atividades.length){
+      throw new Error("Nenhuma atividade válida encontrada.");
+    }
+
+    const payload = {
+      origem: "excel",
+      importedAt: new Date().toISOString(),
+      atividades
+    };
+
+    sessionStorage.setItem("ERPIMPAR_CRONO_IMPORT", JSON.stringify(payload));
+    location.href = "/cronograma/cronograma.html?novo=1&importado=1";
   }
 
-  const ws = wb.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, {
-    defval: "",
-    raw: true
-  });
-
-  if(!rows.length){
-    throw new Error("Nenhuma linha encontrada na planilha.");
-  }
-
-  const atividades = mapExcelRowsToCronograma(rows);
-
-  if(!atividades.length){
-    throw new Error("Nenhuma atividade válida encontrada.");
-  }
-
-  const payload = {
-    origem: "excel",
-    importedAt: new Date().toISOString(),
-    atividades
-  };
-
-  sessionStorage.setItem("ERPIMPAR_CRONO_IMPORT", JSON.stringify(payload));
-  location.href = "/cronograma/cronograma.html?novo=1&importado=1";
-}
-
- 
   async function loadFarol(){
     setStatus("Atualizando farol...", "ok");
     cardsGrid.innerHTML = cardNovoHtml();
@@ -872,6 +867,24 @@ async function importarExcelParaCronograma(file){
     setStatus(`Farol atualizado. ${resumos.length} obra(s) carregada(s).`, "ok");
   }
 
+  if(excelImportInput){
+    excelImportInput.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if(!file) return;
+
+      try{
+        setStatus("Importando planilha...", "ok");
+        await importarExcelParaCronograma(file);
+      }catch(err){
+        console.error("ERRO IMPORTAÇÃO", err);
+        setStatus("Erro ao importar planilha.", "err");
+        alert("Erro ao importar planilha:\n\n" + (err.message || err));
+      }
+    });
+  } else {
+    console.error("excelImportInput não encontrado no DOM");
+  }
+
   document.getElementById("btnVoltarMenu").addEventListener("click", () => {
     location.href = "/menu.html";
   });
@@ -882,102 +895,10 @@ async function importarExcelParaCronograma(file){
   window.__abrirImportacaoPlanilha = abrirImportacaoPlanilha;
   window.__abrirCronograma = abrirCronograma;
 
-  function abrirImportacaoPlanilha(){
-  console.log("abrirImportacaoPlanilha()");
-  const inp = document.getElementById("excelImportInput");
-
-  if(!inp){
-    alert("Input de importação não encontrado.");
-    return;
-  }
-
-  inp.value = "";
-  inp.click();
-}
-
-async function importarExcelParaCronograma(file){
-  console.log("importarExcelParaCronograma()", file);
-
-  if(typeof XLSX === "undefined"){
-    throw new Error("Biblioteca XLSX não carregou.");
-  }
-
-  const buf = await file.arrayBuffer();
-  console.log("arrayBuffer OK", buf.byteLength);
-
-  const wb = XLSX.read(buf, { type: "array" });
-  console.log("workbook OK", wb);
-
-  const firstSheetName = wb.SheetNames[0];
-  if(!firstSheetName){
-    throw new Error("Planilha vazia.");
-  }
-
-  const ws = wb.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, {
-    defval: "",
-    raw: true
-  });
-
-  console.log("rows importadas", rows);
-
-  if(!rows.length){
-    throw new Error("Nenhuma linha encontrada na planilha.");
-  }
-
-  const atividades = mapExcelRowsToCronograma(rows);
-  console.log("atividades mapeadas", atividades);
-
-  if(!atividades.length){
-    throw new Error("Nenhuma atividade válida encontrada.");
-  }
-
-  const payload = {
-    origem: "excel",
-    importedAt: new Date().toISOString(),
-    atividades
-  };
-
-  sessionStorage.setItem("ERPIMPAR_CRONO_IMPORT", JSON.stringify(payload));
-  console.log("payload salvo no sessionStorage");
-
-  location.href = "/cronograma/cronograma.html?novo=1&importado=1";
-}
-
-// const excelImportInput = document.getElementById("excelImportInput");
-
-if(excelImportInput){
-  excelImportInput.addEventListener("change", async (e) => {
-    console.log("CHANGE do input disparou");
-
-    const file = e.target.files && e.target.files[0];
-    console.log("arquivo selecionado", file);
-
-    if(!file){
-      alert("Nenhum arquivo foi selecionado.");
-      return;
-    }
-
-    try{
-      setStatus("Importando planilha...", "ok");
-      await importarExcelParaCronograma(file);
-    }catch(err){
-      console.error("ERRO IMPORTAÇÃO", err);
-      setStatus("Erro ao importar planilha.", "err");
-      alert("Erro ao importar planilha:\n\n" + (err.message || err));
-    }
-  });
-} else {
-  console.error("excelImportInput não encontrado no DOM");
-}
-
-window.__abrirImportacaoPlanilha = abrirImportacaoPlanilha;
- 
   document.body.classList.add("impar-enter");
   loadUser();
   loadFarol();
 })();
 </script>
-<input type="file" id="excelImportInput" accept=".xlsx,.xls,.csv" style="display:none"> 
 </body>
 </html>
