@@ -375,6 +375,9 @@
   const chartCargaSemana = document.getElementById("chartCargaSemana");
   const chartTopPessoas = document.getElementById("chartTopPessoas");
   const insightsSemana = document.getElementById("insightsSemana");
+  const scoreSemanaEl = document.createElement("div");
+  scoreSemanaEl.style.marginTop = "10px";
+  insightsSemana?.appendChild(scoreSemanaEl);
   const filtroBusca = document.getElementById("filtroBusca");
   const filtroCoordenador = document.getElementById("filtroCoordenador");
   const filtroObra = document.getElementById("filtroObra");
@@ -912,6 +915,7 @@
     });
 
     const pico = Math.max(1, ...cargaDias.map(x => x.alocados));
+
     chartCargaSemana.innerHTML = `
       <div class="mini-chart">
         ${cargaDias.map(d => `
@@ -926,31 +930,74 @@
       </div>
     `;
 
-    const topPessoas = [...pessoas]
-      .map(p => ({ nome:p.nome, ocupados:p.ocupados, conflitos:p.conflitos }))
-      .sort((a,b) => (b.ocupados - a.ocupados) || (b.conflitos - a.conflitos) || a.nome.localeCompare(b.nome, "pt-BR"))
+    const pessoasScore = pessoas.map(p => {
+      const carga = Math.round((p.ocupados / 6) * 100);
+      return {
+        nome: p.nome,
+        carga,
+        conflitos: p.conflitos
+      };
+    });
+
+    const topPessoas = [...pessoasScore]
+      .sort((a,b) => (b.carga - a.carga) || (b.conflitos - a.conflitos))
       .slice(0,5);
 
-    const picoPessoa = Math.max(1, ...topPessoas.map(x => x.ocupados));
-    chartTopPessoas.innerHTML = topPessoas.length ? `
+    chartTopPessoas.innerHTML = `
       <div class="mini-chart">
         ${topPessoas.map(p => `
           <div class="chart-row">
             <div class="chart-label">${escapeHtml(p.nome.split(" ")[0])}</div>
             <div class="chart-track">
-              <div class="chart-fill ${p.conflitos > 0 ? "err" : ""}" style="width:${Math.max(8, (p.ocupados / picoPessoa) * 100)}%"></div>
+              <div class="chart-fill ${p.carga > 100 ? "err" : p.carga > 80 ? "warn" : ""}" style="width:${Math.min(100,p.carga)}%"></div>
             </div>
-            <div class="chart-value">${p.ocupados}/6</div>
+            <div class="chart-value">${p.carga}%</div>
           </div>
         `).join("")}
       </div>
-    ` : `<div class="empty-box">Sem dados para ranqueamento nesta semana.</div>`;
+    `;
 
-    const melhorDia = [...cargaDias].sort((a,b) => b.alocados - a.alocados)[0];
-    const piorDia = [...cargaDias].sort((a,b) => b.conflitos - a.conflitos)[0];
-    const ociosidade = Math.max(0, kpis.colaboradores - Math.max(...cargaDias.map(x => x.alocados), 0));
+    const totalConflitos = conflitos.length;
+    const totalLivres = pessoas.filter(p => p.ocupados === 0).length;
+
+    let score = 100;
+    score -= totalConflitos * 10;
+    score -= totalLivres * 5;
+    score = Math.max(0, score);
+
+    let statusScore = "SAUDÁVEL";
+    let cls = "ok";
+    if(score < 70){ statusScore = "CRÍTICO"; cls = "err"; }
+    else if(score < 85){ statusScore = "ATENÇÃO"; cls = "warn"; }
 
     insightsSemana.innerHTML = `
+      <div class="insight-list">
+        <div class="insight-item ${cls}">
+          <div class="a">Score da semana</div>
+          <div class="b">${score}% • ${statusScore}</div>
+        </div>
+
+        <div class="insight-item ok">
+          <div class="a">Pico de alocação</div>
+          <div class="b">${cargaDias.sort((a,b)=>b.alocados-a.alocados)[0]?.label || "-"}</div>
+        </div>
+
+        <div class="insight-item err">
+          <div class="a">Conflitos</div>
+          <div class="b">${totalConflitos} ocorrência(s)</div>
+        </div>
+
+        <div class="insight-item warn">
+          <div class="a">Capacidade livre</div>
+          <div class="b">${totalLivres} pessoa(s) sem uso</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;font-size:11px;font-weight:900;color:#93c5fd">
+        💡 Sugestão automática: redistribuir pessoas com carga >100% para dias com menor alocação.
+      </div>
+    `;
+  }
       <div class="insight-list">
         <div class="insight-item ok">
           <div class="a">Pico de alocação</div>
