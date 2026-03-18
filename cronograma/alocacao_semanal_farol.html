@@ -355,6 +355,11 @@
         <div id="simResultado" style="margin-top:12px;"></div>
       </div>
 
+      <div class="panel" style="margin-bottom:14px;">
+        <div class="panel-title">Planejador inteligente • Top ajustes recomendados</div>
+        <div id="planejadorInteligente"></div>
+      </div>
+
       <div class="bottom-grid">
         <div class="panel">
           <div class="panel-title">Conflitos da semana</div>
@@ -399,6 +404,7 @@
   const simDiaOrigem = document.getElementById("simDiaOrigem");
   const simDiaDestino = document.getElementById("simDiaDestino");
   const simResultado = document.getElementById("simResultado");
+  const planejadorInteligente = document.getElementById("planejadorInteligente");
   let ultimoModelo = null;
   const scoreSemanaEl = document.createElement("div");
   scoreSemanaEl.style.marginTop = "10px";
@@ -920,235 +926,301 @@
     `).join("");
   }
 
+  function renderCharts(model){
+    const { weekDays, pessoas, conflitos, kpis } = model;
+
+    const cargaDias = weekDays.map(day => {
+      const iso = toISO(day);
+      let alocados = 0;
+      let conflitosDia = 0;
+      pessoas.forEach(p => {
+        const items = p.dias.get(iso) || [];
+        if(items.length) alocados += 1;
+        if(items.length > 1) conflitosDia += 1;
+      });
+      return {
+        label: day.toLocaleDateString("pt-BR", { weekday:"short" }).replace(".", ""),
+        alocados,
+        conflitos: conflitosDia
+      };
+    });
+
+    const pico = Math.max(1, ...cargaDias.map(x => x.alocados));
+
+    chartCargaSemana.innerHTML = `
+      <div class="mini-chart">
+        ${cargaDias.map(d => `
+          <div class="chart-row">
+            <div class="chart-label">${escapeHtml(d.label)}</div>
+            <div class="chart-track">
+              <div class="chart-fill ${d.conflitos > 0 ? "warn" : ""}" style="width:${Math.max(6, (d.alocados / pico) * 100)}%"></div>
+            </div>
+            <div class="chart-value">${d.alocados}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    const pessoasScore = pessoas.map(p => {
+      const carga = Math.round((p.ocupados / 6) * 100);
+      return {
+        nome: p.nome,
+        carga,
+        conflitos: p.conflitos
+      };
+    });
+
+    const topPessoas = [...pessoasScore]
+      .sort((a,b) => (b.carga - a.carga) || (b.conflitos - a.conflitos))
+      .slice(0,5);
+
+    chartTopPessoas.innerHTML = `
+      <div class="mini-chart">
+        ${topPessoas.map(p => `
+          <div class="chart-row">
+            <div class="chart-label">${escapeHtml(p.nome.split(" ")[0])}</div>
+            <div class="chart-track">
+              <div class="chart-fill ${p.carga > 100 ? "err" : p.carga > 80 ? "warn" : ""}" style="width:${Math.min(100,p.carga)}%"></div>
+            </div>
+            <div class="chart-value">${p.carga}%</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    const totalConflitos = conflitos.length;
+    const totalLivres = pessoas.filter(p => p.ocupados === 0).length;
+
+    let score = 100;
+    score -= totalConflitos * 10;
+    score -= totalLivres * 5;
+    score = Math.max(0, score);
+
+    let statusScore = "SAUDÁVEL";
+    let cls = "ok";
+    if(score < 70){ statusScore = "CRÍTICO"; cls = "err"; }
+    else if(score < 85){ statusScore = "ATENÇÃO"; cls = "warn"; }
+
+    insightsSemana.innerHTML = `
+      <div class="insight-list">
+        <div class="insight-item ${cls}">
+          <div class="a">Score da semana</div>
+          <div class="b">${score}% • ${statusScore}</div>
+        </div>
+
+        <div class="insight-item ok">
+          <div class="a">Pico de alocação</div>
+          <div class="b">${cargaDias.sort((a,b)=>b.alocados-a.alocados)[0]?.label || "-"}</div>
+        </div>
+
+        <div class="insight-item err">
+          <div class="a">Conflitos</div>
+          <div class="b">${totalConflitos} ocorrência(s)</div>
+        </div>
+
+        <div class="insight-item warn">
+          <div class="a">Capacidade livre</div>
+          <div class="b">${totalLivres} pessoa(s) sem uso</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;font-size:11px;font-weight:900;color:#93c5fd">
+        💡 Sugestão automática: redistribuir pessoas com carga >100% para dias com menor alocação.
+      </div>
+    `;
+  }
+      <div class="insight-list">
+        <div class="insight-item ok">
+          <div class="a">Pico de alocação</div>
+          <div class="b">${melhorDia ? `${escapeHtml(melhorDia.label)} com ${melhorDia.alocados} pessoa(s) ocupadas.` : "Sem pico identificado."}</div>
+        </div>
+        <div class="insight-item ${piorDia && piorDia.conflitos > 0 ? "err" : "warn"}">
+          <div class="a">Maior risco da semana</div>
+          <div class="b">${piorDia && piorDia.conflitos > 0 ? `${escapeHtml(piorDia.label)} com ${piorDia.conflitos} conflito(s) simultâneo(s).` : "Nenhum conflito relevante encontrado na semana."}</div>
+        </div>
+        <div class="insight-item warn">
+          <div class="a">Capacidade disponível</div>
+          <div class="b">Até ${ociosidade} pessoa(s) podem estar livres no dia menos carregado, conforme os filtros atuais.</div>
+        </div>
+      </div>
+    `;
+  }
+
   function preencherSimulador(model){
-  ultimoModelo = model;
+    ultimoModelo = model;
+    const pessoasConflito = model.pessoas.filter(p => p.conflitos > 0 || p.ocupados > 0);
+    simPessoa.innerHTML = `<option value="">Selecione</option>` + pessoasConflito.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(p.nome)}</option>`).join("");
+    const diasOpts = model.weekDays.map(d => {
+      const iso = toISO(d);
+      const label = d.toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"2-digit" });
+      return `<option value="${iso}">${escapeHtml(label)}</option>`;
+    }).join("");
+    simDiaOrigem.innerHTML = `<option value="">Selecione</option>` + diasOpts;
+    simDiaDestino.innerHTML = `<option value="">Selecione</option>` + diasOpts;
+    simResultado.innerHTML = `<div class="empty-box">Escolha uma pessoa e dois dias para simular o remanejamento.</div>`;
+  }
 
-  const pessoasConflito = model.pessoas.filter(p => p.conflitos > 0 || p.ocupados > 0);
+  function simularRemanejamento(){
+    if(!ultimoModelo) return;
 
-  simPessoa.innerHTML =
-    `<option value="">Selecione</option>` +
-    pessoasConflito.map(p => `<option value="${escapeHtml(p.key)}">${escapeHtml(p.nome)}</option>`).join("");
+    const pessoaKey = simPessoa.value;
+    const diaOrigem = simDiaOrigem.value;
+    const diaDestino = simDiaDestino.value;
 
-  const diasOpts = model.weekDays.map(d => {
-    const iso = toISO(d);
-    const label = d.toLocaleDateString("pt-BR", {
+    if(!pessoaKey || !diaOrigem || !diaDestino){
+      simResultado.innerHTML =
+        `<div class="list-item warn"><div class="a">Simulação incompleta</div><div class="b">Selecione pessoa, dia atual e dia de destino.</div></div>`;
+      return;
+    }
+
+    if(diaOrigem === diaDestino){
+      simResultado.innerHTML =
+        `<div class="list-item warn"><div class="a">Destino inválido</div><div class="b">Escolha dias diferentes para a simulação.</div></div>`;
+      return;
+    }
+
+    const pessoa = ultimoModelo.pessoas.find(p => p.key === pessoaKey);
+
+    if(!pessoa){
+      simResultado.innerHTML =
+        `<div class="list-item err"><div class="a">Pessoa não encontrada</div><div class="b">Atualize a visão e tente novamente.</div></div>`;
+      return;
+    }
+
+    const origemItems = pessoa.dias.get(diaOrigem) || [];
+    const destinoItems = pessoa.dias.get(diaDestino) || [];
+
+    const cargaOrigemAntes = origemItems.length;
+    const cargaDestinoAntes = destinoItems.length;
+    const cargaOrigemDepois = Math.max(0, cargaOrigemAntes - 1);
+    const cargaDestinoDepois = cargaDestinoAntes + 1;
+
+    const conflitoOrigemAntes = cargaOrigemAntes > 1;
+    const conflitoDestinoAntes = cargaDestinoAntes > 1;
+    const conflitoOrigemDepois = cargaOrigemDepois > 1;
+    const conflitoDestinoDepois = cargaDestinoDepois > 1;
+
+    let saldo = 0;
+    if(conflitoOrigemAntes && !conflitoOrigemDepois) saldo += 1;
+    if(!conflitoDestinoAntes && conflitoDestinoDepois) saldo -= 1;
+    if(conflitoDestinoAntes && !conflitoDestinoDepois) saldo += 1;
+
+    let diagnostico = "Movimento neutro";
+    let cls = "warn";
+
+    if(saldo > 0){
+      diagnostico = "Melhora a semana";
+      cls = "ok";
+    }else if(saldo < 0){
+      diagnostico = "Piora a semana";
+      cls = "err";
+    }
+
+    const itemBase = origemItems[0];
+    const origemLabel = new Date(diaOrigem + "T12:00:00").toLocaleDateString("pt-BR", {
       weekday: "long",
       day: "2-digit",
       month: "2-digit"
     });
-    return `<option value="${iso}">${escapeHtml(label)}</option>`;
-  }).join("");
-
-  simDiaOrigem.innerHTML = `<option value="">Selecione</option>` + diasOpts;
-  simDiaDestino.innerHTML = `<option value="">Selecione</option>` + diasOpts;
-
-  simResultado.innerHTML =
-    `<div class="empty-box">Escolha uma pessoa e dois dias para simular o remanejamento.</div>`;
-}
-
-function simularRemanejamento(){
-  if(!ultimoModelo) return;
-
-  const pessoaKey = simPessoa.value;
-  const diaOrigem = simDiaOrigem.value;
-  const diaDestino = simDiaDestino.value;
-
-  if(!pessoaKey || !diaOrigem || !diaDestino){
-    simResultado.innerHTML =
-      `<div class="list-item warn"><div class="a">Simulação incompleta</div><div class="b">Selecione pessoa, dia atual e dia de destino.</div></div>`;
-    return;
-  }
-
-  if(diaOrigem === diaDestino){
-    simResultado.innerHTML =
-      `<div class="list-item warn"><div class="a">Destino inválido</div><div class="b">Escolha dias diferentes para a simulação.</div></div>`;
-    return;
-  }
-
-  const pessoa = ultimoModelo.pessoas.find(p => p.key === pessoaKey);
-
-  if(!pessoa){
-    simResultado.innerHTML =
-      `<div class="list-item err"><div class="a">Pessoa não encontrada</div><div class="b">Atualize a visão e tente novamente.</div></div>`;
-    return;
-  }
-
-  const origemItems = pessoa.dias.get(diaOrigem) || [];
-  const destinoItems = pessoa.dias.get(diaDestino) || [];
-
-  const cargaOrigemAntes = origemItems.length;
-  const cargaDestinoAntes = destinoItems.length;
-  const cargaOrigemDepois = Math.max(0, cargaOrigemAntes - 1);
-  const cargaDestinoDepois = cargaDestinoAntes + 1;
-
-  const conflitoOrigemAntes = cargaOrigemAntes > 1;
-  const conflitoDestinoAntes = cargaDestinoAntes > 1;
-  const conflitoOrigemDepois = cargaOrigemDepois > 1;
-  const conflitoDestinoDepois = cargaDestinoDepois > 1;
-
-  let saldo = 0;
-  if(conflitoOrigemAntes && !conflitoOrigemDepois) saldo += 1;
-  if(!conflitoDestinoAntes && conflitoDestinoDepois) saldo -= 1;
-  if(conflitoDestinoAntes && !conflitoDestinoDepois) saldo += 1;
-
-  let diagnostico = "Movimento neutro";
-  let cls = "warn";
-
-  if(saldo > 0){
-    diagnostico = "Melhora a semana";
-    cls = "ok";
-  }else if(saldo < 0){
-    diagnostico = "Piora a semana";
-    cls = "err";
-  }
-
-  const itemBase = origemItems[0];
-  const origemLabel = new Date(diaOrigem + "T12:00:00").toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit"
-  });
-  const destinoLabel = new Date(diaDestino + "T12:00:00").toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit"
-  });
-
-  const sugestao = itemBase
-    ? `Mover ${pessoa.nome} de ${origemLabel} para ${destinoLabel} na atividade ${itemBase.atividade}.`
-    : `Não há atividade explícita em ${origemLabel} para esta pessoa dentro dos filtros atuais.`;
-
-  simResultado.innerHTML = `
-    <div class="list-item ${cls}">
-      <div class="a">${diagnostico}</div>
-      <div class="b">${escapeHtml(sugestao)}</div>
-    </div>
-
-    <div class="list-item">
-      <div class="a">Impacto estimado</div>
-      <div class="b">Origem: ${cargaOrigemAntes} → ${cargaOrigemDepois} alocação(ões) • Destino: ${cargaDestinoAntes} → ${cargaDestinoDepois} alocação(ões).</div>
-    </div>
-
-    <div class="list-item ${saldo > 0 ? "ok" : saldo < 0 ? "err" : "warn"}">
-      <div class="a">Leitura automática</div>
-      <div class="b">Saldo de conflito: ${saldo > 0 ? `melhora em ${saldo}` : saldo < 0 ? `piora em ${Math.abs(saldo)}` : "sem alteração relevante"}.</div>
-    </div>
-  `;
-}
-  
-function renderCharts(model){
-  const { weekDays, pessoas, conflitos, kpis } = model;
-
-  const cargaDias = weekDays.map(day => {
-    const iso = toISO(day);
-    let alocados = 0;
-    let conflitosDia = 0;
-
-    pessoas.forEach(p => {
-      const items = p.dias.get(iso) || [];
-      if(items.length) alocados += 1;
-      if(items.length > 1) conflitosDia += 1;
+    const destinoLabel = new Date(diaDestino + "T12:00:00").toLocaleDateString("pt-BR", {
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit"
     });
 
-    return {
-      label: day.toLocaleDateString("pt-BR", { weekday:"short" }).replace(".", ""),
-      alocados,
-      conflitos: conflitosDia
-    };
-  });
+    const sugestao = itemBase
+      ? `Mover ${pessoa.nome} de ${origemLabel} para ${destinoLabel} na atividade ${itemBase.atividade}.`
+      : `Não há atividade explícita em ${origemLabel} para esta pessoa dentro dos filtros atuais.`;
 
-  const pico = Math.max(1, ...cargaDias.map(x => x.alocados));
+    simResultado.innerHTML = `
+      <div class="list-item ${cls}">
+        <div class="a">${diagnostico}</div>
+        <div class="b">${escapeHtml(sugestao)}</div>
+      </div>
 
-  chartCargaSemana.innerHTML = `
-    <div class="mini-chart">
-      ${cargaDias.map(d => `
-        <div class="chart-row">
-          <div class="chart-label">${escapeHtml(d.label)}</div>
-          <div class="chart-track">
-            <div class="chart-fill ${d.conflitos > 0 ? "warn" : ""}" style="width:${Math.max(6, (d.alocados / pico) * 100)}%"></div>
-          </div>
-          <div class="chart-value">${d.alocados}</div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+      <div class="list-item">
+        <div class="a">Impacto estimado</div>
+        <div class="b">Origem: ${cargaOrigemAntes} → ${cargaOrigemDepois} alocação(ões) • Destino: ${cargaDestinoAntes} → ${cargaDestinoDepois} alocação(ões).</div>
+      </div>
 
-  const pessoasScore = pessoas.map(p => {
-    const carga = Math.round((p.ocupados / 6) * 100);
-    return {
-      nome: p.nome,
-      carga,
-      conflitos: p.conflitos
-    };
-  });
-
-  const topPessoas = [...pessoasScore]
-    .sort((a, b) => (b.carga - a.carga) || (b.conflitos - a.conflitos))
-    .slice(0, 5);
-
-  chartTopPessoas.innerHTML = topPessoas.length ? `
-    <div class="mini-chart">
-      ${topPessoas.map(p => `
-        <div class="chart-row">
-          <div class="chart-label">${escapeHtml(p.nome.split(" ")[0])}</div>
-          <div class="chart-track">
-            <div class="chart-fill ${p.carga > 100 ? "err" : p.carga > 80 ? "warn" : ""}" style="width:${Math.min(100, Math.max(8, p.carga))}%"></div>
-          </div>
-          <div class="chart-value">${p.carga}%</div>
-        </div>
-      `).join("")}
-    </div>
-  ` : `<div class="empty-box">Sem dados para ranqueamento nesta semana.</div>`;
-
-  const melhorDia = [...cargaDias].sort((a, b) => b.alocados - a.alocados)[0];
-  const piorDia = [...cargaDias].sort((a, b) => b.conflitos - a.conflitos)[0];
-  const totalConflitos = conflitos.length;
-  const totalLivres = pessoas.filter(p => p.ocupados === 0).length;
-  const ociosidade = Math.max(0, kpis.colaboradores - Math.max(...cargaDias.map(x => x.alocados), 0));
-
-  let score = 100;
-  score -= totalConflitos * 10;
-  score -= totalLivres * 5;
-  score = Math.max(0, score);
-
-  let statusScore = "SAUDÁVEL";
-  let cls = "ok";
-  if(score < 70){
-    statusScore = "CRÍTICO";
-    cls = "err";
-  }else if(score < 85){
-    statusScore = "ATENÇÃO";
-    cls = "warn";
+      <div class="list-item ${saldo > 0 ? "ok" : saldo < 0 ? "err" : "warn"}">
+        <div class="a">Leitura automática</div>
+        <div class="b">Saldo de conflito: ${saldo > 0 ? `melhora em ${saldo}` : saldo < 0 ? `piora em ${Math.abs(saldo)}` : "sem alteração relevante"}.</div>
+      </div>
+    `;
   }
 
-  insightsSemana.innerHTML = `
-    <div class="insight-list">
-      <div class="insight-item ${cls}">
-        <div class="a">Score da semana</div>
-        <div class="b">${score}% • ${statusScore}</div>
-      </div>
+  function renderPlanejadorInteligente(model){
+    const sugestoes = [];
 
-      <div class="insight-item ok">
-        <div class="a">Pico de alocação</div>
-        <div class="b">${melhorDia ? `${escapeHtml(melhorDia.label)} com ${melhorDia.alocados} pessoa(s) ocupadas.` : "Sem pico identificado."}</div>
-      </div>
+    model.pessoas.forEach(p => {
+      model.weekDays.forEach(origemDay => {
+        const origemIso = toISO(origemDay);
+        const origemItems = p.dias.get(origemIso) || [];
+        if(origemItems.length <= 1) return;
 
-      <div class="insight-item ${piorDia && piorDia.conflitos > 0 ? "err" : "warn"}">
-        <div class="a">Maior risco da semana</div>
-        <div class="b">${piorDia && piorDia.conflitos > 0 ? `${escapeHtml(piorDia.label)} com ${piorDia.conflitos} conflito(s) simultâneo(s).` : "Nenhum conflito relevante encontrado na semana."}</div>
-      </div>
+        model.weekDays.forEach(destinoDay => {
+          const destinoIso = toISO(destinoDay);
+          if(destinoIso === origemIso) return;
 
-      <div class="insight-item warn">
-        <div class="a">Capacidade disponível</div>
-        <div class="b">Até ${ociosidade} pessoa(s) podem estar livres no dia menos carregado, conforme os filtros atuais.</div>
-      </div>
-    </div>
+          const destinoItems = p.dias.get(destinoIso) || [];
+          const origemDepois = origemItems.length - 1;
+          const destinoDepois = destinoItems.length + 1;
 
-    <div style="margin-top:10px;font-size:11px;font-weight:900;color:#93c5fd">
-      💡 Sugestão automática: redistribuir pessoas com carga >100% para dias com menor alocação.
-    </div>
-  `;
-}
+          let ganho = 0;
+          if(origemItems.length > 1 && origemDepois <= 1) ganho += 2;
+          if(destinoItems.length === 0) ganho += 1;
+          if(destinoItems.length >= 2) ganho -= 2;
+          if(destinoItems.length === 1) ganho -= 1;
+
+          if(ganho <= 0) return;
+
+          sugestoes.push({
+            pessoa: p.nome,
+            pessoaKey: p.key,
+            origemIso,
+            destinoIso,
+            origemLabel: origemDay.toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"2-digit" }),
+            destinoLabel: destinoDay.toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"2-digit" }),
+            atividade: origemItems[0]?.atividade || "atividade",
+            ganho,
+            detalhe: `Mover ${p.nome} de ${origemDay.toLocaleDateString("pt-BR", { weekday:"short", day:"2-digit", month:"2-digit" })} para ${destinoDay.toLocaleDateString("pt-BR", { weekday:"short", day:"2-digit", month:"2-digit" })}.`
+          });
+        });
+      });
+    });
+
+    const top = sugestoes
+      .sort((a,b) => b.ganho - a.ganho || a.pessoa.localeCompare(b.pessoa, "pt-BR"))
+      .slice(0, 5);
+
+    if(!top.length){
+      planejadorInteligente.innerHTML = `<div class="empty-box">Nenhum ajuste inteligente relevante encontrado para esta semana.</div>`;
+      return;
+    }
+
+    planejadorInteligente.innerHTML = `
+      <div class="list">
+        ${top.map((s, idx) => `
+          <div class="list-item ${s.ganho >= 2 ? "ok" : "warn"}">
+            <div class="a">#${idx + 1} • ${escapeHtml(s.pessoa)}</div>
+            <div class="b">${escapeHtml(s.detalhe)} Ganho estimado: ${s.ganho} ponto(s) na saúde da semana.</div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-dark" type="button" onclick="window.__aplicarSugestao('${escapeHtml(s.pessoaKey)}','${s.origemIso}','${s.destinoIso}')">Usar na simulação</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function aplicarSugestao(pessoaKey, origemIso, destinoIso){
+    simPessoa.value = pessoaKey;
+    simDiaOrigem.value = origemIso;
+    simDiaDestino.value = destinoIso;
+    simularRemanejamento();
+  }
+
   function renderAll(){
     popularFiltros(cacheCronogramas);
     heroSemana.textContent = semanaLabel(semanaRef);
@@ -1160,6 +1232,7 @@ function renderCharts(model){
     renderLivres(model);
     renderResumoObras(model);
     preencherSimulador(model);
+    renderPlanejadorInteligente(model);
   }
 
   async function atualizarTudo(){
@@ -1196,6 +1269,7 @@ function renderCharts(model){
   });
   document.getElementById("btnImprimir").addEventListener("click", () => window.print());
   document.getElementById("btnSimular").addEventListener("click", simularRemanejamento);
+  window.__aplicarSugestao = aplicarSugestao;
 
   filtroBusca.addEventListener("input", renderAll);
   filtroCoordenador.addEventListener("change", renderAll);
