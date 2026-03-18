@@ -744,6 +744,52 @@
       .topbox-center{text-align:left}
       .obra-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
     }
+
+.card-actions{
+  margin-top:8px;
+  margin-bottom:10px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  width:100%;
+}
+
+.btn-open,
+.btn-share{
+  width:100%;
+  height:38px;
+  min-height:38px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:1000;
+  padding:8px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  white-space:nowrap;
+  cursor:pointer;
+}
+
+.btn-open{
+  background:linear-gradient(135deg,#22c55e,#16a34a);
+  color:#020617;
+  border:1px solid rgba(34,197,94,.88);
+  box-shadow:
+    0 0 0 1px rgba(34,197,94,.74),
+    0 0 18px rgba(34,197,94,.22),
+    0 10px 24px rgba(22,163,74,.30);
+}
+
+.btn-share{
+  background:linear-gradient(135deg,#2563eb,#60a5fa);
+  color:#fff;
+  border:1px solid rgba(96,165,250,.55);
+  box-shadow:
+    0 0 0 1px rgba(96,165,250,.26),
+    0 0 18px rgba(14,165,233,.18),
+    0 10px 24px rgba(14,165,233,.18);
+}
+    
   </style>
 </head>
 <body>
@@ -822,6 +868,14 @@
   const statusMsg = document.getElementById("statusMsg");
   const excelImportInput = document.getElementById("excelImportInput");
 
+  function getQueryParams(){
+  const p = new URLSearchParams(location.search);
+  return {
+    share: p.get("share") === "1",
+    id: p.get("id") || ""
+  };
+}
+  
   function getSessaoERP(){
     const raw = localStorage.getItem(KEY) || sessionStorage.getItem(KEY);
     if(!raw) return null;
@@ -962,22 +1016,22 @@
 
     let duracaoPrevistaHoje = 0;
     let duracaoRealHoje = 0;
-    let statusFinal = "Não iniciado";
-    let andamento = 0;
-    let concluidas = 0;
-    let naoIniciadas = 0;
+let statusFinal = "Não iniciado";
 
-    const prioridade = {
-      "Não iniciado": 1,
-      "Novo": 1,
-      "Concluído": 2,
-      "Em andamento": 3,
-      "Atrasado": 4
-    };
-
+if(real >= 100){
+  statusFinal = "Concluído";
+}else if(real <= 0 && previsto <= 0){
+  statusFinal = "Novo";
+}else if(real + 0.001 < previsto){
+  statusFinal = "Atrasado";
+}else if(real > 0 || previsto > 0){
+  statusFinal = "Em andamento";
+}else{
+  statusFinal = "Novo";
+}
     folhas.forEach(f => {
       const dur = Math.max(0, Number(f.duracao || 0));
-      const prev = Number(f.previsto || 0);
+      const prev = plannedPercentTodayByDates(f.inicio, f.fim);
       const real = Number(f.real || 0);
 
       duracaoPrevistaHoje += dur * (prev / 100);
@@ -1001,22 +1055,22 @@
       ? Math.round((duracaoRealHoje / duracaoTotalProjeto) * 1000) / 10
       : 0;
 
-    return {
-      id,
-      nome,
-      coordenador: String(data.coordenador || "").trim(),
-      previsto: pct(previsto),
-      real: pct(real),
-      status: statusFinal,
-      totalTarefas: folhas.length,
-      duracaoProjeto: duracaoTotalProjeto,
-      inicioPrevisto: inicio,
-      fimPrevisto: fim,
-      andamento,
-      concluidas,
-      naoIniciadas,
-      timelineHoje: timelinePercent(inicio, fim)
-    };
+return {
+  id,
+  nome,
+  coordenador: String(data.coordenador || "").trim(),
+  previsto: pct(previsto),
+  real: pct(real),
+  status: statusFinal,
+  totalTarefas: folhas.length,
+  duracaoProjeto: duracaoTotalProjeto,
+  inicioPrevisto: inicio,
+  fimPrevisto: fim,
+  andamento,
+  concluidas,
+  naoIniciadas,
+  timelineHoje: timelinePercent(inicio, fim)
+};
   }
 
   function abrirResumoExecutivo(id){
@@ -1078,9 +1132,10 @@ ${estilos}
 </html>`;
   }
 
-  function compartilharResumo(id){
-    abrirResumoExecutivo(id);
-  }
+function compartilharResumo(id){
+  const url = `${location.pathname}?share=1&id=${encodeURIComponent(id)}`;
+  window.open(url, "_blank");
+}
 
   function showExcelOverlay(){
     const el = document.getElementById("excelOverlay");
@@ -1114,108 +1169,108 @@ ${estilos}
     return "";
   }
 
-  function cardObraHtml(item){
-    const status = getStatusMeta(item.status);
-    const nomeExib = item.nome || ("OBRA " + item.id);
-    const coord = item.coordenador ? item.coordenador : "NÃO INFORMADO";
-    const fimPrev = formatDateBR(item.fimPrevisto);
-    const inicioPrev = formatDateBR(item.inicioPrevisto);
-    const tarefas = item.totalTarefas || 0;
-    const timeline = pct(item.timelineHoje || 0);
+function cardObraHtml(item){
+  const status = getStatusMeta(item.status);
+  const nomeExib = item.nome || ("OBRA " + item.id);
+  const coord = item.coordenador ? item.coordenador : "NÃO INFORMADO";
+  const fimPrev = formatDateBR(item.fimPrevisto);
+  const inicioPrev = formatDateBR(item.inicioPrevisto);
+  const tarefas = item.totalTarefas || 0;
+  const timeline = pct(item.timelineHoje || 0);
 
-    return `
-      <div class="obra-card obra-card--status-${status.cls}" data-share-id="${escapeHtml(item.id)}">
-        <div class="obra-top">
-          <div>
-            <div class="obra-name">${escapeHtml(nomeExib)}</div>
-            <div class="status-badge ${status.cls}"><span class="dot"></span>${escapeHtml(status.label)}</div>
-            <div class="obra-id" style="margin-top:8px;">ID: ${escapeHtml(item.id)}</div>
-            <div class="obra-coord">COORDENADOR: ${escapeHtml(coord)}</div>
-            <div class="card-actions" style="margin-top:0;">
-              <button class="btn-open" type="button" onclick="window.__abrirCronograma('${escapeHtml(item.id)}')">
-                📁 Abrir cronograma
-              </button>
-              <button class="btn-share" type="button" onclick="window.__compartilharResumo('${escapeHtml(item.id)}')">
-                📤 Compartilhar
-              </button>
-            </div>
+  return `
+    <div class="obra-card obra-card--status-${status.cls}" data-share-id="${escapeHtml(item.id)}">
+      <div class="obra-top">
+        <div>
+          <div class="obra-name">${escapeHtml(nomeExib)}</div>
+          <div class="status-badge ${status.cls}"><span class="dot"></span>${escapeHtml(status.label)}</div>
+          <div class="obra-id" style="margin-top:8px;">ID: ${escapeHtml(item.id)}</div>
+          <div class="obra-coord">COORDENADOR: ${escapeHtml(coord)}</div>
+        </div>
+
+        <div class="obra-metrics">
+          <div class="metric-box prev">
+            <div class="metric-k">Planejado</div>
+            <div class="metric-v">${pct(item.previsto)}%</div>
           </div>
-
-          <div class="obra-metrics">
-            <div class="metric-box prev">
-              <div class="metric-k">Planejado</div>
-              <div class="metric-v">${pct(item.previsto)}%</div>
-            </div>
-            <div class="metric-box real">
-              <div class="metric-k">Real</div>
-              <div class="metric-v">${pct(item.real)}%</div>
-            </div>
-          </div>
-
-          <div class="donut-wrap">
-            <div class="donut-holder">
-              <div class="donut" style="--pct:${pct(item.real)};"></div>
-              <div class="donut-value">${pct(item.real)}%</div>
-            </div>
-            <div class="donut-label">Executado</div>
+          <div class="metric-box real">
+            <div class="metric-k">Real</div>
+            <div class="metric-v">${pct(item.real)}%</div>
           </div>
         </div>
 
-        <div class="timeline-card">
-          <div class="timeline-head">
-            <div class="timeline-title">Linha do tempo executiva</div>
-            <div class="timeline-title">Hoje: ${timeline}%</div>
+        <div class="donut-wrap">
+          <div class="donut-holder">
+            <div class="donut" style="--pct:${pct(item.real)};"></div>
+            <div class="donut-value">${pct(item.real)}%</div>
           </div>
-          <div class="timeline-scale">
-            <div class="timeline-progress" style="width:${timeline}%"></div>
-            <div class="timeline-marker" style="left:${timeline}%"></div>
-          </div>
-          <div class="timeline-dates">
-            <span><small>Início</small>${escapeHtml(inicioPrev)}</span>
-            <span style="text-align:center"><small>Hoje</small>${timeline}%</span>
-            <span style="text-align:right"><small>Fim</small>${escapeHtml(fimPrev)}</span>
-          </div>
-        </div>
-
-        <div class="obra-status-grid">
-          <div class="status-box andamento">
-            <div class="sk">Em andamento</div>
-            <div class="sv">${item.andamento || 0}</div>
-          </div>
-          <div class="status-box concluidas">
-            <div class="sk">Concluídas</div>
-            <div class="sv">${item.concluidas || 0}</div>
-          </div>
-          <div class="status-box naoiniciadas">
-            <div class="sk">Não iniciadas</div>
-            <div class="sv">${item.naoIniciadas || 0}</div>
-          </div>
-          <div class="status-box total">
-            <div class="sk">Total</div>
-            <div class="sv">${tarefas}</div>
-          </div>
-        </div>
-
-        <div class="obra-bars">
-          <div class="obra-bar-row">
-            <div>Planej.</div>
-            <div class="obra-bar-track">
-              <div class="obra-bar-fill prev" style="width:${pct(item.previsto)}%"></div>
-            </div>
-            <div>${pct(item.previsto)}%</div>
-          </div>
-          <div class="obra-bar-row">
-            <div>Execut.</div>
-            <div class="obra-bar-track">
-              <div class="obra-bar-fill real" style="width:${pct(item.real)}%"></div>
-            </div>
-            <div>${pct(item.real)}%</div>
-          </div>
+          <div class="donut-label">Executado</div>
         </div>
       </div>
-    `;
-  }
 
+      <div class="card-actions">
+        <button class="btn-open" type="button" onclick="window.__abrirCronograma('${escapeHtml(item.id)}')">
+          📁 Abrir cronograma
+        </button>
+        <button class="btn-share" type="button" onclick="window.__compartilharResumo('${escapeHtml(item.id)}')">
+          📤 Compartilhar
+        </button>
+      </div>
+
+      <div class="timeline-card">
+        <div class="timeline-head">
+          <div class="timeline-title">Linha do tempo executiva</div>
+          <div class="timeline-title">Hoje: ${timeline}%</div>
+        </div>
+        <div class="timeline-scale">
+          <div class="timeline-progress" style="width:${timeline}%"></div>
+          <div class="timeline-marker" style="left:${timeline}%"></div>
+        </div>
+        <div class="timeline-dates">
+          <span><small>Início</small>${escapeHtml(inicioPrev)}</span>
+          <span style="text-align:center"><small>Hoje</small>${timeline}%</span>
+          <span style="text-align:right"><small>Fim</small>${escapeHtml(fimPrev)}</span>
+        </div>
+      </div>
+
+      <div class="obra-status-grid">
+        <div class="status-box andamento">
+          <div class="sk">Em andamento</div>
+          <div class="sv">${item.andamento || 0}</div>
+        </div>
+        <div class="status-box concluidas">
+          <div class="sk">Concluídas</div>
+          <div class="sv">${item.concluidas || 0}</div>
+        </div>
+        <div class="status-box naoiniciadas">
+          <div class="sk">Não iniciadas</div>
+          <div class="sv">${item.naoIniciadas || 0}</div>
+        </div>
+        <div class="status-box total">
+          <div class="sk">Total</div>
+          <div class="sv">${tarefas}</div>
+        </div>
+      </div>
+
+      <div class="obra-bars">
+        <div class="obra-bar-row">
+          <div>Planej.</div>
+          <div class="obra-bar-track">
+            <div class="obra-bar-fill prev" style="width:${pct(item.previsto)}%"></div>
+          </div>
+          <div>${pct(item.previsto)}%</div>
+        </div>
+        <div class="obra-bar-row">
+          <div>Execut.</div>
+          <div class="obra-bar-track">
+            <div class="obra-bar-fill real" style="width:${pct(item.real)}%"></div>
+          </div>
+          <div>${pct(item.real)}%</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
   function excelDateToISO(value){
     if(value == null || value === "") return "";
 
@@ -1254,6 +1309,28 @@ ${estilos}
       .replace(/\.+$/g, "");
   }
 
+  function plannedPercentTodayByDates(inicio, fim){
+  if(!inicio || !fim) return 0;
+
+  const hoje = new Date();
+  hoje.setHours(12,0,0,0);
+
+  const dtInicio = new Date(inicio + "T12:00:00");
+  const dtFim = new Date(fim + "T12:00:00");
+
+  if(hoje < dtInicio) return 0;
+  if(hoje >= dtFim) return 100;
+
+  const total = Math.round((dtFim - dtInicio) / 86400000) + 1;
+  if(total <= 0) return 0;
+
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,"0")}-${String(hoje.getDate()).padStart(2,"0")}`;
+  const dtHoje = new Date(hojeIso + "T12:00:00");
+  const decorridos = Math.round((dtHoje - dtInicio) / 86400000) + 1;
+
+  return Math.max(0, Math.min(100, Math.round((decorridos / total) * 1000) / 10));
+}
+  
   function levelFromId(id){
     const s = normalizeImportId(id);
     if(!s) return 0;
@@ -1509,9 +1586,57 @@ ${estilos}
   window.__compartilharResumo = compartilharResumo;
   window.__abrirResumoExecutivo = abrirResumoExecutivo;
 
-  document.body.classList.add("impar-enter");
-  loadUser();
+document.body.classList.add("impar-enter");
+loadUser();
+
+const qp = getQueryParams();
+
+if(qp.share && qp.id){
+  document.querySelector("header").style.display = "none";
+  document.querySelector(".topbox").style.display = "none";
+  document.querySelector(".toolbar").style.display = "none";
+
+  loadFarol().then(() => {
+    const todos = Array.from(document.querySelectorAll(".obra-card[data-share-id]"));
+    todos.forEach(card => {
+      if(card.getAttribute("data-share-id") !== qp.id){
+        card.remove();
+      }
+    });
+
+    const card = document.querySelector(`.obra-card[data-share-id="${qp.id}"]`);
+    if(card){
+      const acoes = card.querySelector(".card-actions");
+      if(acoes){
+        acoes.outerHTML = `<div class="share-banner">Resumo executivo da obra</div>`;
+      }
+
+      const badge = card.querySelector(".status-badge");
+      const obraId = card.querySelector(".obra-id");
+      const coord = card.querySelector(".obra-coord");
+
+      if(badge) badge.style.display = "none";
+      if(obraId) obraId.style.display = "none";
+      if(coord) coord.style.display = "none";
+
+      document.querySelector(".cards-grid").style.gridTemplateColumns = "1fr";
+      document.querySelector(".cards-grid").style.justifyItems = "center";
+
+      const wrap = document.querySelector(".cards-wrap");
+      wrap.insertAdjacentHTML("beforebegin", `
+        <div class="share-page-head" style="margin-bottom:14px;">
+          <div class="share-brand">
+            <div class="k1">Plataforma</div>
+            <div class="k2">ERP ÍMPAR • Status da Obra</div>
+            <div class="k3">Visão executiva para o cliente</div>
+          </div>
+        </div>
+      `);
+    }
+  });
+}else{
   loadFarol();
+}
 })();
 </script>
 <div id="excelOverlay" style="
