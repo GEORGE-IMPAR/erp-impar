@@ -202,6 +202,22 @@
     .list-item.ok{border-color:rgba(34,197,94,.24)}
     .empty-box{font-size:12px;color:#94a3b8;font-weight:800;padding:8px 2px}
 
+    .mini-chart{display:flex;flex-direction:column;gap:10px}
+    .chart-row{display:grid;grid-template-columns:84px 1fr 46px;gap:10px;align-items:center}
+    .chart-label{font-size:11px;font-weight:1000;color:#dbe7ff;text-transform:uppercase;letter-spacing:.08em}
+    .chart-track{height:12px;border-radius:999px;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.12);overflow:hidden;position:relative}
+    .chart-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#60a5fa,#22c55e);box-shadow:0 0 18px rgba(34,197,94,.18)}
+    .chart-fill.warn{background:linear-gradient(90deg,#f59e0b,#f97316)}
+    .chart-fill.err{background:linear-gradient(90deg,#ef4444,#f97316)}
+    .chart-value{font-size:11px;font-weight:1000;color:#fff;text-align:right}
+    .insight-list{display:flex;flex-direction:column;gap:8px}
+    .insight-item{border-radius:12px;border:1px solid rgba(148,163,184,.14);background:rgba(255,255,255,.03);padding:10px}
+    .insight-item .a{font-size:12px;font-weight:1000;color:#fff;margin-bottom:4px}
+    .insight-item .b{font-size:11px;color:#cbd5e1;font-weight:800;line-height:1.35}
+    .insight-item.ok{border-color:rgba(34,197,94,.24)}
+    .insight-item.warn{border-color:rgba(245,158,11,.24)}
+    .insight-item.err{border-color:rgba(239,68,68,.24)}
+
     .status-msg{margin-top:12px;font-size:12px;font-weight:900;color:#cbd5e1;min-height:16px}
     .status-msg.err{color:#fca5a5}
     .status-msg.ok{color:#86efac}
@@ -291,6 +307,21 @@
 
       <div class="kpi-grid" id="kpiGrid"></div>
 
+      <div class="bottom-grid" style="margin-bottom:14px;grid-template-columns:1.15fr .85fr .85fr;">
+        <div class="panel">
+          <div class="panel-title">Pulso da semana • Carga diária</div>
+          <div id="chartCargaSemana"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Top 5 • Pessoas mais carregadas</div>
+          <div id="chartTopPessoas"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Sinalizadores executivos</div>
+          <div id="insightsSemana"></div>
+        </div>
+      </div>
+
       <div class="board-wrap">
         <div class="board-head">
           <div class="board-title">Mapa semanal de alocação por colaborador</div>
@@ -341,6 +372,9 @@
   const listaConflitos = document.getElementById("listaConflitos");
   const listaLivres = document.getElementById("listaLivres");
   const listaObrasResumo = document.getElementById("listaObrasResumo");
+  const chartCargaSemana = document.getElementById("chartCargaSemana");
+  const chartTopPessoas = document.getElementById("chartTopPessoas");
+  const insightsSemana = document.getElementById("insightsSemana");
   const filtroBusca = document.getElementById("filtroBusca");
   const filtroCoordenador = document.getElementById("filtroCoordenador");
   const filtroObra = document.getElementById("filtroObra");
@@ -467,6 +501,13 @@
     const item = items[0];
     if(item.statusGeral === "Atrasado") return "partial";
     return "ok";
+  }
+
+  function getHeatIntensity(count){
+    if(count === 0) return 0;
+    if(count === 1) return 40;
+    if(count === 2) return 70;
+    return 100;
   }
 
   async function listarObras(){
@@ -747,6 +788,7 @@
         const iso = toISO(day);
         const items = p.dias.get(iso) || [];
         const state = getCellState(items);
+        const intensity = getHeatIntensity(items.length);
 
         if(!items.length){
           return `<td class="day-cell"><div class="slot empty">Sem alocação</div></td>`;
@@ -754,9 +796,10 @@
 
         const first = items[0];
         const more = items.length > 1 ? `<div class="slot-more">+${items.length - 1} conflito(s)</div>` : "";
+
         return `
           <td class="day-cell">
-            <div class="slot ${state}">
+            <div class="slot ${state}" style="background: linear-gradient(135deg, rgba(34,197,94,${intensity/200}), rgba(59,130,246,0.08));">
               <div class="slot-head">
                 <div class="slot-project">${escapeHtml(first.obraNome)}</div>
                 <div class="slot-count">${items.length}</div>
@@ -840,11 +883,88 @@
     `).join("");
   }
 
+  function renderCharts(model){
+    const { weekDays, pessoas, conflitos, kpis } = model;
+
+    const cargaDias = weekDays.map(day => {
+      const iso = toISO(day);
+      let alocados = 0;
+      let conflitosDia = 0;
+      pessoas.forEach(p => {
+        const items = p.dias.get(iso) || [];
+        if(items.length) alocados += 1;
+        if(items.length > 1) conflitosDia += 1;
+      });
+      return {
+        label: day.toLocaleDateString("pt-BR", { weekday:"short" }).replace(".", ""),
+        alocados,
+        conflitos: conflitosDia
+      };
+    });
+
+    const pico = Math.max(1, ...cargaDias.map(x => x.alocados));
+    chartCargaSemana.innerHTML = `
+      <div class="mini-chart">
+        ${cargaDias.map(d => `
+          <div class="chart-row">
+            <div class="chart-label">${escapeHtml(d.label)}</div>
+            <div class="chart-track">
+              <div class="chart-fill ${d.conflitos > 0 ? "warn" : ""}" style="width:${Math.max(6, (d.alocados / pico) * 100)}%"></div>
+            </div>
+            <div class="chart-value">${d.alocados}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    const topPessoas = [...pessoas]
+      .map(p => ({ nome:p.nome, ocupados:p.ocupados, conflitos:p.conflitos }))
+      .sort((a,b) => (b.ocupados - a.ocupados) || (b.conflitos - a.conflitos) || a.nome.localeCompare(b.nome, "pt-BR"))
+      .slice(0,5);
+
+    const picoPessoa = Math.max(1, ...topPessoas.map(x => x.ocupados));
+    chartTopPessoas.innerHTML = topPessoas.length ? `
+      <div class="mini-chart">
+        ${topPessoas.map(p => `
+          <div class="chart-row">
+            <div class="chart-label">${escapeHtml(p.nome.split(" ")[0])}</div>
+            <div class="chart-track">
+              <div class="chart-fill ${p.conflitos > 0 ? "err" : ""}" style="width:${Math.max(8, (p.ocupados / picoPessoa) * 100)}%"></div>
+            </div>
+            <div class="chart-value">${p.ocupados}/6</div>
+          </div>
+        `).join("")}
+      </div>
+    ` : `<div class="empty-box">Sem dados para ranqueamento nesta semana.</div>`;
+
+    const melhorDia = [...cargaDias].sort((a,b) => b.alocados - a.alocados)[0];
+    const piorDia = [...cargaDias].sort((a,b) => b.conflitos - a.conflitos)[0];
+    const ociosidade = Math.max(0, kpis.colaboradores - Math.max(...cargaDias.map(x => x.alocados), 0));
+
+    insightsSemana.innerHTML = `
+      <div class="insight-list">
+        <div class="insight-item ok">
+          <div class="a">Pico de alocação</div>
+          <div class="b">${melhorDia ? `${escapeHtml(melhorDia.label)} com ${melhorDia.alocados} pessoa(s) ocupadas.` : "Sem pico identificado."}</div>
+        </div>
+        <div class="insight-item ${piorDia && piorDia.conflitos > 0 ? "err" : "warn"}">
+          <div class="a">Maior risco da semana</div>
+          <div class="b">${piorDia && piorDia.conflitos > 0 ? `${escapeHtml(piorDia.label)} com ${piorDia.conflitos} conflito(s) simultâneo(s).` : "Nenhum conflito relevante encontrado na semana."}</div>
+        </div>
+        <div class="insight-item warn">
+          <div class="a">Capacidade disponível</div>
+          <div class="b">Até ${ociosidade} pessoa(s) podem estar livres no dia menos carregado, conforme os filtros atuais.</div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderAll(){
     popularFiltros(cacheCronogramas);
     heroSemana.textContent = semanaLabel(semanaRef);
     const model = montarModeloSemana(cacheCronogramas);
     renderKPIs(model);
+    renderCharts(model);
     renderBoard(model);
     renderConflitos(model);
     renderLivres(model);
