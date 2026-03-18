@@ -6,6 +6,7 @@
   <title>ERP ÍMPAR — Farol de Obras</title>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
     :root{
@@ -518,6 +519,78 @@
         0 0 26px rgba(34,197,94,.34),
         0 14px 30px rgba(22,163,74,.34);
     }
+    .btn-share{
+      min-width:170px;
+      min-height:42px;
+      border-radius:999px;
+      background:linear-gradient(135deg,#1d4ed8,#0ea5e9);
+      color:#fff;
+      font-size:12px;
+      font-weight:1000;
+      padding:10px 16px;
+      cursor:pointer;
+      border:1px solid rgba(96,165,250,.55);
+      box-shadow:
+        0 0 0 1px rgba(96,165,250,.26),
+        0 0 18px rgba(14,165,233,.18),
+        0 10px 24px rgba(14,165,233,.18);
+      transition:transform .18s ease, filter .18s ease, box-shadow .18s ease;
+    }
+    .btn-share:hover{
+      transform:translateY(-1px) scale(1.03);
+      filter:brightness(1.06);
+      box-shadow:
+        0 0 0 1px rgba(96,165,250,.35),
+        0 0 24px rgba(14,165,233,.26),
+        0 14px 28px rgba(14,165,233,.24);
+    }
+
+    .share-banner{
+      width:100%;
+      margin:2px 0 10px;
+      border-radius:999px;
+      padding:12px 18px;
+      text-align:center;
+      font-size:16px;
+      font-weight:1000;
+      color:#fff;
+      background:linear-gradient(135deg, rgba(14,116,144,.96), rgba(8,145,178,.92));
+      border:1px solid rgba(103,232,249,.20);
+      box-shadow:0 14px 28px rgba(8,145,178,.20), 0 0 0 1px rgba(255,255,255,.03) inset;
+    }
+
+    .obra-card.share-mode .card-actions,
+    .obra-card.share-mode .status-badge,
+    .obra-card.share-mode .obra-id,
+    .obra-card.share-mode .obra-coord{
+      display:none !important;
+    }
+    .obra-card.share-mode{
+      width:860px !important;
+      max-width:860px !important;
+      min-height:auto;
+      transform:none !important;
+      filter:none !important;
+      margin:0;
+    }
+    .obra-card.share-mode .obra-top{
+      grid-template-columns:minmax(0,1.7fr) minmax(140px,.9fr) 110px;
+      gap:14px;
+      margin-bottom:12px;
+    }
+    .obra-card.share-mode .obra-name{
+      font-size:20px;
+      min-height:auto;
+      margin-bottom:0;
+    }
+    .obra-card.share-mode .metric-v{font-size:22px;}
+    .obra-card.share-mode .donut-holder{width:84px;height:84px;}
+    .obra-card.share-mode .donut{width:84px;height:84px;}
+    .obra-card.share-mode .donut::after{width:54px;height:54px;}
+    .obra-card.share-mode .timeline-title{font-size:12px;}
+    .obra-card.share-mode .timeline-dates{font-size:12px;}
+    .obra-card.share-mode .status-box{min-height:74px;}
+    .obra-card.share-mode .status-box .sv{font-size:22px;}
     .btn-open--novo{
       background:linear-gradient(135deg,#22c55e,#16a34a);
       color:#020617;
@@ -899,6 +972,81 @@
     };
   }
 
+  async function compartilharResumo(id){
+    const origem = document.querySelector(`[data-share-id="${CSS.escape(String(id))}"]`);
+    if(!origem){
+      alert("Card da obra não encontrado para compartilhamento.");
+      return;
+    }
+    if(typeof html2canvas === "undefined"){
+      alert("Biblioteca de captura não carregou.");
+      return;
+    }
+
+    const clone = origem.cloneNode(true);
+    clone.classList.add("share-mode");
+
+    const topLeft = clone.querySelector('.obra-top > div:first-child');
+    if(topLeft){
+      const banner = document.createElement('div');
+      banner.className = 'share-banner';
+      banner.textContent = 'Resumo executivo da obra';
+      topLeft.appendChild(banner);
+    }
+
+    const host = document.createElement('div');
+    host.style.position = 'fixed';
+    host.style.left = '-99999px';
+    host.style.top = '0';
+    host.style.zIndex = '-1';
+    host.style.padding = '20px';
+    host.style.background = 'linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e)';
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
+    try{
+      setStatus('Gerando imagem de compartilhamento...', 'ok');
+      const canvas = await html2canvas(clone, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+        logging: false
+      });
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if(!blob) throw new Error('Não foi possível gerar a imagem.');
+
+      const nome = `resumo-executivo-${String(id).replace(/[^a-z0-9_-]/gi,'-')}.png`;
+      const arquivo = new File([blob], nome, { type:'image/png' });
+
+      if(navigator.canShare && navigator.canShare({ files:[arquivo] })){
+        await navigator.share({
+          files:[arquivo],
+          title:'Resumo executivo da obra',
+          text:'Resumo executivo da obra'
+        });
+      }else{
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nome;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        alert('Imagem do resumo gerada com sucesso.');
+      }
+
+      setStatus('Resumo pronto para compartilhamento.', 'ok');
+    }catch(err){
+      console.error(err);
+      setStatus('Erro ao gerar o resumo para compartilhamento.', 'err');
+      alert('Erro ao compartilhar o resumo executivo.');
+    }finally{
+      host.remove();
+    }
+  }
+
   function showExcelOverlay(){
     const el = document.getElementById("excelOverlay");
     if(el) el.style.display = "flex";
@@ -941,9 +1089,7 @@
     const timeline = pct(item.timelineHoje || 0);
 
     return `
-      <div class="obra-card obra-card--status-${status.cls}">
-        
-
+      <div class="obra-card obra-card--status-${status.cls}" data-share-id="${escapeHtml(item.id)}">
         <div class="obra-top">
           <div>
             <div class="obra-name">${escapeHtml(nomeExib)}</div>
@@ -953,6 +1099,9 @@
             <div class="card-actions" style="margin-top:0;">
               <button class="btn-open" type="button" onclick="window.__abrirCronograma('${escapeHtml(item.id)}')">
                 📁 Abrir cronograma
+              </button>
+              <button class="btn-share" type="button" onclick="window.__compartilharResumo('${escapeHtml(item.id)}')">
+                📤 Compartilhar
               </button>
             </div>
           </div>
@@ -1322,6 +1471,7 @@
   window.__abrirNovoCronograma = abrirNovoCronograma;
   window.__abrirImportacaoPlanilha = abrirImportacaoPlanilha;
   window.__abrirCronograma = abrirCronograma;
+  window.__compartilharResumo = compartilharResumo;
 
   document.body.classList.add("impar-enter");
   loadUser();
