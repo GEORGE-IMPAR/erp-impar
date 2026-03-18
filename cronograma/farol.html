@@ -454,7 +454,7 @@
 
     .obra-status-grid{
       display:grid;
-      grid-template-columns:repeat(4,minmax(0,1fr));
+      grid-template-columns:repeat(5,minmax(0,1fr));
       gap:8px;
       margin-bottom:12px;
     }
@@ -489,6 +489,7 @@
 
     .status-box.andamento{border-color:rgba(96,165,250,.24); background:linear-gradient(135deg, rgba(30,64,175,.18), rgba(14,116,144,.10));}
     .status-box.concluidas{border-color:rgba(34,197,94,.24); background:linear-gradient(135deg, rgba(21,128,61,.18), rgba(15,118,110,.10));}
+    .status-box.atrasadas{border-color:rgba(239,68,68,.28); background:linear-gradient(135deg, rgba(127,29,29,.22), rgba(153,27,27,.10));}
     .status-box.naoiniciadas{border-color:rgba(148,163,184,.18);}
     .status-box.total{border-color:rgba(245,158,11,.22); background:linear-gradient(135deg, rgba(180,83,9,.16), rgba(120,53,15,.10));}
 
@@ -608,7 +609,7 @@
     @media (max-width:800px){
       .cards-grid{grid-template-columns:1fr;}
       .topbox-center{text-align:left}
-      .obra-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+      .obra-status-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
       .card-actions{grid-template-columns:1fr;}
     }
   </style>
@@ -845,6 +846,7 @@
         fimPrevisto: "",
         andamento: 0,
         concluidas: 0,
+        atrasadas: 0,
         naoIniciadas: 0,
         timelineHoje: 0
       };
@@ -868,6 +870,7 @@
 
     let andamento = 0;
     let concluidas = 0;
+    let atrasadas = 0;
     let naoIniciadas = 0;
 
     folhas.forEach(f => {
@@ -880,6 +883,8 @@
 
       if(real >= 100){
         concluidas += 1;
+      }else if(real + 0.001 < prev && prev > 0){
+        atrasadas += 1;
       }else if(real > 0 || prev > 0){
         andamento += 1;
       }else{
@@ -919,9 +924,50 @@
       fimPrevisto: fim,
       andamento,
       concluidas,
+      atrasadas,
       naoIniciadas,
       timelineHoje: timelinePercent(inicio, fim)
     };
+  }
+
+  async function compartilharResumo(id){
+    const card = document.querySelector(`.obra-card[data-share-id="${CSS.escape(String(id))}"]`);
+    const url = `${location.origin}${location.pathname}?share=1&id=${encodeURIComponent(id)}`;
+
+    let nomeObra = "Obra";
+    let statusTxt = "Status não informado";
+    let coordTxt = "Coordenador não informado";
+
+    if(card){
+      const nomeEl = card.querySelector(".obra-name");
+      const statusEl = card.querySelector(".status-badge");
+      const coordEl = card.querySelector(".obra-coord");
+
+      if(nomeEl) nomeObra = nomeEl.textContent.trim();
+      if(statusEl) statusTxt = statusEl.textContent.trim();
+      if(coordEl) coordTxt = coordEl.textContent.replace(/^COORDENADOR:\s*/i, "").trim();
+    }
+
+    const texto =
+      `ERP ÍMPAR • Status da Obra\n` +
+      `${nomeObra}\n` +
+      `Status: ${statusTxt}\n` +
+      `Coordenador: ${coordTxt}\n\n` +
+      `Acesse o resumo executivo no link abaixo:\n${url}`;
+
+    try{
+      if(navigator.share){
+        await navigator.share({
+          title: `Status da obra • ${nomeObra}`,
+          text: texto,
+          url
+        });
+      }else{
+        window.open(url, "_blank");
+      }
+    }catch(err){
+      console.warn("Compartilhamento cancelado ou indisponível:", err);
+    }
   }
 
   function showExcelOverlay(){
@@ -950,114 +996,6 @@
   function abrirCronograma(id){
     if(isInvalidGhostId(id)) return;
     location.href = "/cronograma/cronograma.html?id=" + encodeURIComponent(id);
-  }
-
-  function compartilharResumo(id){
-    const url = `${location.pathname}?share=1&id=${encodeURIComponent(id)}`;
-    window.open(url, "_blank");
-  }
-
-  function cardObraHtml(item){
-    const status = getStatusMeta(item.status);
-    const nomeExib = item.nome || ("OBRA " + item.id);
-    const coord = item.coordenador ? item.coordenador : "NÃO INFORMADO";
-    const fimPrev = formatDateBR(item.fimPrevisto);
-    const inicioPrev = formatDateBR(item.inicioPrevisto);
-    const tarefas = item.totalTarefas || 0;
-    const timeline = pct(item.timelineHoje || 0);
-
-    return `
-      <div class="obra-card obra-card--status-${status.cls}" data-share-id="${escapeHtml(item.id)}">
-        <div class="obra-top">
-          <div>
-            <div class="obra-name">${escapeHtml(nomeExib)}</div>
-            <div class="status-badge ${status.cls}"><span class="dot"></span>${escapeHtml(status.label)}</div>
-            <div class="obra-id" style="margin-top:8px;">ID: ${escapeHtml(item.id)}</div>
-            <div class="obra-coord">COORDENADOR: ${escapeHtml(coord)}</div>
-          </div>
-
-          <div class="obra-metrics">
-            <div class="metric-box prev">
-              <div class="metric-k">Planejado</div>
-              <div class="metric-v">${pct(item.previsto)}%</div>
-            </div>
-            <div class="metric-box real">
-              <div class="metric-k">Real</div>
-              <div class="metric-v">${pct(item.real)}%</div>
-            </div>
-          </div>
-
-          <div class="donut-wrap">
-            <div class="donut-holder">
-              <div class="donut" style="--pct:${pct(item.real)};"></div>
-              <div class="donut-value">${pct(item.real)}%</div>
-            </div>
-            <div class="donut-label">Executado</div>
-          </div>
-        </div>
-
-        <div class="card-actions">
-          <button class="btn-open" type="button" onclick="window.__abrirCronograma('${escapeHtml(item.id)}')">
-            📁 Abrir cronograma
-          </button>
-          <button class="btn-share" type="button" onclick="window.__compartilharResumo('${escapeHtml(item.id)}')">
-            📤 Compartilhar
-          </button>
-        </div>
-
-        <div class="timeline-card">
-          <div class="timeline-head">
-            <div class="timeline-title">Linha do tempo executiva</div>
-            <div class="timeline-title">Hoje: ${timeline}%</div>
-          </div>
-          <div class="timeline-scale">
-            <div class="timeline-progress" style="width:${timeline}%"></div>
-            <div class="timeline-marker" style="left:${timeline}%"></div>
-          </div>
-          <div class="timeline-dates">
-            <span><small>Início</small>${escapeHtml(inicioPrev)}</span>
-            <span style="text-align:center"><small>Hoje</small>${timeline}%</span>
-            <span style="text-align:right"><small>Fim</small>${escapeHtml(fimPrev)}</span>
-          </div>
-        </div>
-
-        <div class="obra-status-grid">
-          <div class="status-box andamento">
-            <div class="sk">Em andamento</div>
-            <div class="sv">${item.andamento || 0}</div>
-          </div>
-          <div class="status-box concluidas">
-            <div class="sk">Concluídas</div>
-            <div class="sv">${item.concluidas || 0}</div>
-          </div>
-          <div class="status-box naoiniciadas">
-            <div class="sk">Não iniciadas</div>
-            <div class="sv">${item.naoIniciadas || 0}</div>
-          </div>
-          <div class="status-box total">
-            <div class="sk">Total</div>
-            <div class="sv">${tarefas}</div>
-          </div>
-        </div>
-
-        <div class="obra-bars">
-          <div class="obra-bar-row">
-            <div>Planej.</div>
-            <div class="obra-bar-track">
-              <div class="obra-bar-fill prev" style="width:${pct(item.previsto)}%"></div>
-            </div>
-            <div>${pct(item.previsto)}%</div>
-          </div>
-          <div class="obra-bar-row">
-            <div>Execut.</div>
-            <div class="obra-bar-track">
-              <div class="obra-bar-fill real" style="width:${pct(item.real)}%"></div>
-            </div>
-            <div>${pct(item.real)}%</div>
-          </div>
-        </div>
-      </div>
-    `;
   }
 
   function excelDateToISO(value){
@@ -1236,6 +1174,113 @@
     location.href = "/cronograma/cronograma.html?novo=1&importado=1";
   }
 
+  function cardObraHtml(item){
+    const status = getStatusMeta(item.status);
+    const nomeExib = item.nome || ("OBRA " + item.id);
+    const coord = item.coordenador ? item.coordenador : "NÃO INFORMADO";
+    const fimPrev = formatDateBR(item.fimPrevisto);
+    const inicioPrev = formatDateBR(item.inicioPrevisto);
+    const tarefas = item.totalTarefas || 0;
+    const timeline = pct(item.timelineHoje || 0);
+
+    return `
+      <div class="obra-card obra-card--status-${status.cls}" data-share-id="${escapeHtml(item.id)}">
+        <div class="obra-top">
+          <div>
+            <div class="obra-name">${escapeHtml(nomeExib)}</div>
+            <div class="status-badge ${status.cls}"><span class="dot"></span>${escapeHtml(status.label)}</div>
+            <div class="obra-id" style="margin-top:8px;">ID: ${escapeHtml(item.id)}</div>
+            <div class="obra-coord">COORDENADOR: ${escapeHtml(coord)}</div>
+          </div>
+
+          <div class="obra-metrics">
+            <div class="metric-box prev">
+              <div class="metric-k">Planejado</div>
+              <div class="metric-v">${pct(item.previsto)}%</div>
+            </div>
+            <div class="metric-box real">
+              <div class="metric-k">Real</div>
+              <div class="metric-v">${pct(item.real)}%</div>
+            </div>
+          </div>
+
+          <div class="donut-wrap">
+            <div class="donut-holder">
+              <div class="donut" style="--pct:${pct(item.real)};"></div>
+              <div class="donut-value">${pct(item.real)}%</div>
+            </div>
+            <div class="donut-label">Executado</div>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="btn-open" type="button" onclick="window.__abrirCronograma('${escapeHtml(item.id)}')">
+            📁 Abrir cronograma
+          </button>
+          <button class="btn-share" type="button" onclick="window.__compartilharResumo('${escapeHtml(item.id)}')">
+            📤 Compartilhar
+          </button>
+        </div>
+
+        <div class="timeline-card">
+          <div class="timeline-head">
+            <div class="timeline-title">Linha do tempo executiva</div>
+            <div class="timeline-title">Hoje: ${timeline}%</div>
+          </div>
+          <div class="timeline-scale">
+            <div class="timeline-progress" style="width:${timeline}%"></div>
+            <div class="timeline-marker" style="left:${timeline}%"></div>
+          </div>
+          <div class="timeline-dates">
+            <span><small>Início</small>${escapeHtml(inicioPrev)}</span>
+            <span style="text-align:center"><small>Hoje</small>${timeline}%</span>
+            <span style="text-align:right"><small>Fim</small>${escapeHtml(fimPrev)}</span>
+          </div>
+        </div>
+
+        <div class="obra-status-grid">
+          <div class="status-box andamento">
+            <div class="sk">Em andamento</div>
+            <div class="sv">${item.andamento || 0}</div>
+          </div>
+          <div class="status-box concluidas">
+            <div class="sk">Concluídas</div>
+            <div class="sv">${item.concluidas || 0}</div>
+          </div>
+          <div class="status-box atrasadas">
+            <div class="sk">Atrasadas</div>
+            <div class="sv">${item.atrasadas || 0}</div>
+          </div>
+          <div class="status-box naoiniciadas">
+            <div class="sk">Não iniciadas</div>
+            <div class="sv">${item.naoIniciadas || 0}</div>
+          </div>
+          <div class="status-box total">
+            <div class="sk">Total</div>
+            <div class="sv">${tarefas}</div>
+          </div>
+        </div>
+
+        <div class="obra-bars">
+          <div class="obra-bar-row">
+            <div>Planej.</div>
+            <div class="obra-bar-track">
+              <div class="obra-bar-fill prev" style="width:${pct(item.previsto)}%"></div>
+            </div>
+            <div>${pct(item.previsto)}%</div>
+          </div>
+          <div class="obra-bar-row">
+            <div>Execut.</div>
+            <div class="obra-bar-track">
+              <div class="obra-bar-fill real" style="width:${pct(item.real)}%"></div>
+            </div>
+            <div>${pct(item.real)}%</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   async function loadFarol(){
     setStatus("Atualizando farol...", "ok");
     cardsGrid.innerHTML = "";
@@ -1315,6 +1360,8 @@
         alert("Erro ao importar planilha:\n\n" + (err.message || err));
       }
     });
+  } else {
+    console.error("excelImportInput não encontrado no DOM");
   }
 
   document.getElementById("btnVoltarMenu").addEventListener("click", () => {
@@ -1359,13 +1406,8 @@
           acoes.outerHTML = `<div class="share-banner">Resumo executivo da obra</div>`;
         }
 
-        const badge = card.querySelector(".status-badge");
         const obraId = card.querySelector(".obra-id");
-        const coord = card.querySelector(".obra-coord");
-
-        if(badge) badge.style.display = "none";
         if(obraId) obraId.style.display = "none";
-        if(coord) coord.style.display = "none";
 
         const grid = document.querySelector(".cards-grid");
         if(grid){
@@ -1392,7 +1434,6 @@
   }
 })();
 </script>
-
 <div id="excelOverlay" style="
   position:fixed; inset:0; display:none; align-items:center; justify-content:center;
   background:rgba(2,6,23,.68); backdrop-filter:blur(8px); z-index:9999;">
