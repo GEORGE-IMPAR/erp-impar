@@ -1,6 +1,7 @@
 /**
- * GESTÃO DE PROJETOS - JavaScript (ERP ÍMPAR)
- * Arquivo: www.erpimpar.com.br/tv/js/gestao_projetos.js
+ * GESTÃO DE PROJETOS - JavaScript (versão JSON)
+ * Arquivo: js/gestao_projetos.js
+ * Comunicação com backend PHP que trabalha com JSON
  */
 
 // ========================================
@@ -8,8 +9,8 @@
 // ========================================
 
 const API_CONFIG = {
-    // URL da API no Kinghost
-    BASE_URL: 'https://api.erpimpar.com.br/tv',
+    // SUBSTITUIR pela URL real do seu Kinghost
+    BASE_URL: 'https://www.erpimpar.com.br/api',
     
     // Endpoints
     LISTAR: '/listar.php',
@@ -23,6 +24,9 @@ const API_CONFIG = {
 // FUNÇÕES DE API
 // ========================================
 
+/**
+ * Fazer requisição HTTP com timeout
+ */
 async function fetchWithTimeout(url, options = {}, timeout = API_CONFIG.TIMEOUT) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -30,7 +34,6 @@ async function fetchWithTimeout(url, options = {}, timeout = API_CONFIG.TIMEOUT)
     try {
         const response = await fetch(url, {
             ...options,
-            credentials: 'include', // Inclui cookies se necessário
             signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -44,6 +47,9 @@ async function fetchWithTimeout(url, options = {}, timeout = API_CONFIG.TIMEOUT)
     }
 }
 
+/**
+ * Listar projetos do backend
+ */
 async function listarProjetos() {
     try {
         const url = API_CONFIG.BASE_URL + API_CONFIG.LISTAR;
@@ -64,7 +70,7 @@ async function listarProjetos() {
             throw new Error(data.error || 'Erro desconhecido ao listar projetos');
         }
         
-        return data.data.projetos;
+        return data.data.projetos; // Retorna array de projetos
         
     } catch (error) {
         console.error('Erro ao listar projetos:', error);
@@ -72,8 +78,12 @@ async function listarProjetos() {
     }
 }
 
+/**
+ * Atualizar projeto no backend
+ */
 async function atualizarProjeto(dados) {
     try {
+        // Validação básica
         if (!dados.projeto_id || !dados.status || !dados.execucao || !dados.farol) {
             throw new Error('Dados incompletos para atualizar projeto');
         }
@@ -110,6 +120,9 @@ async function atualizarProjeto(dados) {
 // FUNÇÕES AUXILIARES
 // ========================================
 
+/**
+ * Mostrar notificação de sucesso
+ */
 function mostrarSucesso(titulo, mensagem) {
     if (typeof Swal !== 'undefined') {
         Swal.fire({
@@ -123,6 +136,9 @@ function mostrarSucesso(titulo, mensagem) {
     }
 }
 
+/**
+ * Mostrar notificação de erro
+ */
 function mostrarErro(titulo, mensagem) {
     if (typeof Swal !== 'undefined') {
         Swal.fire({
@@ -136,6 +152,9 @@ function mostrarErro(titulo, mensagem) {
     }
 }
 
+/**
+ * Mostrar loading
+ */
 function mostrarLoading(mensagem = 'Carregando...') {
     if (typeof Swal !== 'undefined') {
         Swal.fire({
@@ -148,12 +167,18 @@ function mostrarLoading(mensagem = 'Carregando...') {
     }
 }
 
+/**
+ * Fechar loading
+ */
 function fecharLoading() {
     if (typeof Swal !== 'undefined') {
         Swal.close();
     }
 }
 
+/**
+ * Obter emoji do farol
+ */
 function getFarolEmoji(farol) {
     const emojis = {
         'verde': '🟢',
@@ -163,6 +188,9 @@ function getFarolEmoji(farol) {
     return emojis[farol] || '⚪';
 }
 
+/**
+ * Obter cor do farol
+ */
 function getFarolColor(farol) {
     const cores = {
         'verde': '#22c55e',
