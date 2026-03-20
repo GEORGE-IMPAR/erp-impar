@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP ÍMPAR — Executive Intelligence</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+    margin:0;
+    font-family: Candara, sans-serif;
+    background: radial-gradient(circle at top,#020617,#020617,#0b1e4a);
+    color:#fff;
+}
+
+.container{
+    padding:20px;
+}
+
+/* HEADER */
+.header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+}
+
+.title{
+    font-size:22px;
+    font-weight:bold;
+}
+
+.clock{
+    font-size:14px;
+    opacity:0.7;
+}
+
+/* KPI CARDS */
+.cards{
+    display:grid;
+    grid-template-columns: repeat(4,1fr);
+    gap:15px;
+}
+
+.card{
+    background: linear-gradient(145deg,#0f172a,#020617);
+    padding:20px;
+    border-radius:14px;
+    box-shadow: 0 0 20px rgba(34,197,94,0.1);
+    transition:0.3s;
+}
+
+.card:hover{
+    transform:scale(1.05);
+}
+
+.card h2{
+    margin:0;
+    font-size:30px;
+    color:#22c55e;
+}
+
+.card span{
+    font-size:12px;
+    opacity:0.7;
+}
+
+/* GRID */
+.grid{
+    margin-top:20px;
+    display:grid;
+    grid-template-columns: 2fr 1fr;
+    gap:20px;
+}
+
+.chart-box{
+    background:#020617;
+    padding:20px;
+    border-radius:14px;
+}
+
+/* INSIGHTS */
+.insights{
+    margin-top:20px;
+    background: linear-gradient(145deg,#0f172a,#020617);
+    padding:20px;
+    border-radius:14px;
+}
+
+.insight{
+    margin-bottom:10px;
+    padding:10px;
+    background: rgba(255,255,255,0.05);
+    border-left:4px solid #22c55e;
+}
+
+/* TABELA */
+.table{
+    margin-top:20px;
+    background:#020617;
+    border-radius:14px;
+    overflow:auto;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th,td{
+    padding:10px;
+}
+
+th{
+    background:#0f172a;
+}
+
+tr:nth-child(even){
+    background: rgba(255,255,255,0.03);
+}
+
+/* MODO TV */
+.tv{
+    position:fixed;
+    top:10px;
+    right:10px;
+    background:#22c55e;
+    color:#000;
+    padding:8px 12px;
+    border-radius:8px;
+    cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+    <div class="title">📊 ERP ÍMPAR — Executive Intelligence</div>
+    <div class="clock" id="clock"></div>
+</div>
+
+<div class="cards">
+    <div class="card"><h2 id="kpi1">0</h2><span>Total Atividades</span></div>
+    <div class="card"><h2 id="kpi2">0</h2><span>Obras</span></div>
+    <div class="card"><h2 id="kpi3">0</h2><span>Pessoas</span></div>
+    <div class="card"><h2 id="kpi4">0</h2><span>Média Dia</span></div>
+</div>
+
+<div class="grid">
+    <div class="chart-box"><canvas id="chart1"></canvas></div>
+    <div class="chart-box"><canvas id="chart2"></canvas></div>
+</div>
+
+<div class="insights" id="insightsBox">
+    <h3>🧠 Insights Automáticos</h3>
+</div>
+
+<div class="table">
+    <table>
+        <thead>
+            <tr>
+                <th>Colaborador</th>
+                <th>Atividades</th>
+            </tr>
+        </thead>
+        <tbody id="ranking"></tbody>
+    </table>
+</div>
+
+<div class="tv" onclick="toggleTV()">TV MODE</div>
+
+</div>
+
+<script>
+
+const API = "https://api.erpimpar.com.br/atividades/dashboard_data.php";
+
+function clock(){
+    document.getElementById("clock").innerText =
+        new Date().toLocaleString();
+}
+setInterval(clock,1000);
+
+async function load(){
+
+    const res = await fetch(API);
+    const json = await res.json();
+    const dados = json.dados;
+
+    let obras={}, pessoas={}, datas={};
+
+    dados.forEach(d=>{
+        let obra=d.obra||"N/A";
+        let pessoa=d.nome||"N/A";
+        let data=d.data||d._arquivo.substring(0,10);
+
+        obras[obra]=(obras[obra]||0)+1;
+        pessoas[pessoa]=(pessoas[pessoa]||0)+1;
+        datas[data]=(datas[data]||0)+1;
+    });
+
+    // KPIs
+    kpi1.innerText=dados.length;
+    kpi2.innerText=Object.keys(obras).length;
+    kpi3.innerText=Object.keys(pessoas).length;
+    kpi4.innerText=Math.round(dados.length/Object.keys(datas).length);
+
+    // GRÁFICOS
+    new Chart(chart1,{
+        type:'line',
+        data:{labels:Object.keys(datas),datasets:[{data:Object.values(datas)}]}
+    });
+
+    new Chart(chart2,{
+        type:'bar',
+        data:{labels:Object.keys(obras),datasets:[{data:Object.values(obras)}]}
+    });
+
+    // INSIGHTS AUTOMÁTICOS
+    let topObra = Object.entries(obras).sort((a,b)=>b[1]-a[1])[0];
+    let topPessoa = Object.entries(pessoas).sort((a,b)=>b[1]-a[1])[0];
+    let topDia = Object.entries(datas).sort((a,b)=>b[1]-a[1])[0];
+
+    let insights = [
+        `📌 Obra com maior intensidade: <b>${topObra[0]}</b> (${topObra[1]} atividades)`,
+        `👤 Colaborador mais acionado: <b>${topPessoa[0]}</b> (${topPessoa[1]} registros)`,
+        `📅 Dia de maior carga: <b>${topDia[0]}</b> (${topDia[1]} atividades)`
+    ];
+
+    let box = document.getElementById("insightsBox");
+
+    insights.forEach(i=>{
+        let div=document.createElement("div");
+        div.className="insight";
+        div.innerHTML=i;
+        box.appendChild(div);
+    });
+
+    // RANKING
+    Object.entries(pessoas)
+        .sort((a,b)=>b[1]-a[1])
+        .slice(0,10)
+        .forEach(r=>{
+            let tr=document.createElement("tr");
+            tr.innerHTML=`<td>${r[0]}</td><td>${r[1]}</td>`;
+            ranking.appendChild(tr);
+        });
+
+}
+
+function toggleTV(){
+    document.body.requestFullscreen();
+}
+
+load();
+
+</script>
+
+</body>
+</html>
