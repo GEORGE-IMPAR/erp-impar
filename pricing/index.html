@@ -2,140 +2,101 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>ERP ÍMPAR — Consulta de Preços</title>
+<title>Consulta de Preços</title>
 
 <style>
 body{
   margin:0;
-  font-family:Candara, sans-serif;
-  background: linear-gradient(135deg,#020617,#0b1e4a,#0f766e);
-  color:#e5e7eb;
+  font-family:Candara;
+  background:linear-gradient(135deg,#020617,#0b1e4a,#0f766e);
+  color:#fff;
+}
+
+.header{
+  padding:15px;
+  background:rgba(0,0,0,.3);
+  display:flex;
+  justify-content:space-between;
 }
 
 .container{
   padding:20px;
-  max-width:1200px;
-  margin:auto;
-}
-
-h1{
-  font-size:28px;
-  margin-bottom:5px;
-}
-
-.subtitle{
-  opacity:.7;
-  margin-bottom:20px;
 }
 
 .card{
-  background: rgba(2,6,23,.7);
-  border:1px solid rgba(148,163,184,.3);
-  border-radius:18px;
+  background:rgba(2,6,23,.7);
   padding:15px;
+  border-radius:15px;
   margin-bottom:20px;
-  box-shadow:0 0 20px rgba(0,255,200,.08);
 }
 
-.select{
+select,button{
   width:100%;
-  padding:10px;
+  padding:12px;
+  margin-bottom:10px;
   border-radius:10px;
   border:none;
-  margin-bottom:10px;
 }
 
-.button{
-  background:linear-gradient(90deg,#22c55e,#16a34a);
-  border:none;
-  padding:12px;
-  width:100%;
-  border-radius:12px;
-  color:white;
+button{
+  background:#22c55e;
+  color:#fff;
   font-weight:bold;
-  cursor:pointer;
 }
 
 .console{
   background:black;
-  height:220px;
+  height:200px;
   overflow:auto;
   padding:10px;
   font-family:monospace;
-  border-radius:10px;
+}
+
+table{
+  width:100%;
   margin-top:10px;
 }
 
-.log{
-  margin-bottom:5px;
+td,th{
+  padding:8px;
 }
-
-.table{
-  width:100%;
-  border-collapse:collapse;
-  margin-top:15px;
-}
-
-.table th,.table td{
-  padding:10px;
-  border-bottom:1px solid rgba(255,255,255,.1);
-  text-align:left;
-}
-
-.badge{
-  padding:4px 8px;
-  border-radius:8px;
-  font-size:12px;
-}
-
-.green{background:#22c55e;}
-.red{background:#ef4444;}
-.yellow{background:#eab308;}
 </style>
+
 </head>
 
 <body>
 
+<div class="header">
+<div>ERP ÍMPAR</div>
+<div>George</div>
+</div>
+
 <div class="container">
 
-<h1>Consulta de Preços</h1>
-<div class="subtitle">Monitoramento nacional e internacional com estimativa até o Brasil</div>
-
 <div class="card">
-<select id="material" class="select">
-<option value="cobre">Cobre</option>
-<option value="aco">Chapa Galvanizada</option>
+<select id="material">
 <option value="elastomerico">Elastomérico</option>
+<option value="cobre">Cobre</option>
+<option value="aco">Chapa</option>
 </select>
 
-<select id="mercado" class="select">
-<option value="global">Global</option>
-<option value="asia">Ásia</option>
-<option value="brasil">Brasil</option>
-</select>
-
-<button class="button" onclick="iniciarBusca()">INICIAR PESQUISA</button>
+<button onclick="buscar()">Buscar</button>
 
 <div class="console" id="console"></div>
 </div>
 
 <div class="card">
-<h3>Ranking</h3>
+<button onclick="baixar()">Baixar Excel</button>
 
-<table class="table" id="tabela">
+<table>
 <thead>
 <tr>
 <th>Fornecedor</th>
-<th>País</th>
 <th>Origem</th>
-<th>Brasil Est.</th>
-<th>Atual</th>
-<th>Status</th>
+<th>Brasil</th>
 </tr>
 </thead>
-<tbody></tbody>
+<tbody id="tabela"></tbody>
 </table>
 </div>
 
@@ -143,74 +104,39 @@ h1{
 
 <script>
 function log(msg){
-  const c = document.getElementById("console");
-  c.innerHTML += "<div class='log'>" + msg + "</div>";
+  let c = document.getElementById("console");
+  c.innerHTML += msg + "<br>";
   c.scrollTop = c.scrollHeight;
 }
 
-function fator(material){
-  if(material==="cobre") return 2.4;
-  if(material==="aco") return 2.1;
-  if(material==="elastomerico") return 2.5;
-}
-
-function precoAtual(material){
-  if(material==="cobre") return 130;
-  if(material==="aco") return 13;
-  if(material==="elastomerico") return 25;
-}
-
-function status(atual, estimado){
-  if(estimado < atual*0.6) return "<span class='badge green'>MUITO BOM</span>";
-  if(estimado < atual) return "<span class='badge yellow'>VIÁVEL</span>";
-  return "<span class='badge red'>NÃO COMPENSA</span>";
-}
-
-function iniciarBusca(){
+function buscar(){
   document.getElementById("console").innerHTML="";
-  document.querySelector("#tabela tbody").innerHTML="";
+  document.getElementById("tabela").innerHTML="";
 
-  let mat = document.getElementById("material").value;
+  fetch("http://localhost:8765/buscar",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      material:document.getElementById("material").value
+    })
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    data.logs.forEach(l=>log(l));
 
-  log("🔍 Iniciando busca...");
-  log("🌐 Consultando fornecedores...");
-  
-  setTimeout(()=>{
-    simular(mat);
-  },1000);
+    data.dados.forEach(d=>{
+      document.getElementById("tabela").innerHTML += `
+      <tr>
+        <td>${d.fornecedor}</td>
+        <td>R$ ${d.origem}</td>
+        <td>R$ ${d.brasil}</td>
+      </tr>`;
+    });
+  });
 }
 
-function simular(mat){
-
-  let dados = [
-    {nome:"Fornecedor Índia", pais:"Índia", preco:3},
-    {nome:"Fornecedor Vietnã", pais:"Vietnã", preco:4},
-    {nome:"Fornecedor Brasil", pais:"Brasil", preco:20}
-  ];
-
-  dados.forEach(d=>{
-    let estimado = d.preco * fator(mat);
-    let atual = precoAtual(mat);
-
-    log("💰 "+d.nome+" → "+d.preco+" BRL");
-    log("🚢 Estimado Brasil: "+estimado.toFixed(2));
-
-    let row = `
-    <tr>
-      <td>${d.nome}</td>
-      <td>${d.pais}</td>
-      <td>R$ ${d.preco}</td>
-      <td>R$ ${estimado.toFixed(2)}</td>
-      <td>R$ ${atual}</td>
-      <td>${status(atual,estimado)}</td>
-    </tr>
-    `;
-
-    document.querySelector("#tabela tbody").innerHTML += row;
-
-  });
-
-  log("✅ Ranking finalizado!");
+function baixar(){
+  window.open("http://localhost:8765/baixar");
 }
 </script>
 
