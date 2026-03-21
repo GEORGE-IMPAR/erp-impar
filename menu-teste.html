@@ -627,6 +627,80 @@ html, body{
   font-size: 11px;
   color: #3b82f6;
   text-align: right;
+}
+.card-instagram{
+  background: linear-gradient(135deg, rgba(2,6,23,.95), rgba(11,30,74,.92));
+  border: 1px solid rgba(148,163,184,.22);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.28);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.insta-header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #e5e7eb;
+  font-weight: 700;
+}
+
+.insta-header small{
+  font-size: 11px;
+  color: rgba(229,231,235,.65);
+  font-weight: 500;
+}
+
+.insta-viewer{
+  width: 100%;
+  height: 240px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(15,23,42,.75);
+  border: 1px solid rgba(148,163,184,.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.insta-viewer img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+  transition: opacity .35s ease;
+}
+
+.insta-footer{
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#instaCaption{
+  color: rgba(229,231,235,.88);
+  font-size: 12px;
+  line-height: 1.45;
+  min-height: 38px;
+}
+
+#instaCounter{
+  color: #60a5fa;
+  font-size: 11px;
+  text-align: right;
+  font-weight: 700;
+}
+
+@media (max-width: 768px){
+  .insta-viewer{
+    height: 210px;
+  }
 }  
 </style>
 </head>
@@ -709,11 +783,12 @@ html, body{
 <!-- ✅ Banner grande (sem moldura / sem fundo / sem borda) -->
 <div class="card-instagram">
   <div class="insta-header">
-    <span>🔥 Execução em Campo — Tempo Real</span>
+    <span>📸 Obras em Campo</span>
+    <small id="instaUpdated"></small>
   </div>
 
   <div class="insta-viewer">
-    <img id="instaImg" src="" />
+    <img id="instaImg" src="" alt="Post da obra" />
   </div>
 
   <div class="insta-footer">
@@ -991,54 +1066,64 @@ const user = getSessao();
 
 let instaPosts = [];
 let instaIndex = 0;
+let instaTimer = null;
 
-function mostrarPost(){
-  if(!instaPosts.length) return;
-
-  const post = instaPosts[instaIndex];
+function mostrarPostInstagram() {
+  if (!instaPosts.length) return;
 
   const img = document.getElementById("instaImg");
   const caption = document.getElementById("instaCaption");
   const counter = document.getElementById("instaCounter");
 
+  if (!img || !caption || !counter) return;
+
+  const post = instaPosts[instaIndex];
+
   img.style.opacity = 0;
 
-  setTimeout(()=>{
-    img.src = post.img;
-    caption.innerText = post.caption;
-    counter.innerText = `${instaIndex+1}/${instaPosts.length}`;
+  setTimeout(() => {
+    img.src = post.img || "";
+    img.alt = post.caption || "Post da obra";
+    caption.textContent = post.caption || "";
+    counter.textContent = `${instaIndex + 1}/${instaPosts.length}`;
     img.style.opacity = 1;
-  },300);
+  }, 250);
 
   instaIndex = (instaIndex + 1) % instaPosts.length;
 }
 
-async function carregarInstagram(){
+async function carregarFeedInstagram() {
   try {
-    const res = await fetch("https://api.erpimpar.com.br/instagram_feed.php");
-    const txt = await res.text();
+    const res = await fetch("https://api.erpimpar.com.br/instagram_feed.json?v=" + Date.now());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    console.log("RESPOSTA BRUTA DO PHP:", txt);
+    const data = await res.json();
 
-    const data = JSON.parse(txt);
+    instaPosts = Array.isArray(data.posts) ? data.posts.filter(p => p.img) : [];
 
-    const posts = data.graphql.user.edge_owner_to_timeline_media.edges;
+    const updated = document.getElementById("instaUpdated");
+    if (updated && data.updated_at) {
+      updated.textContent = `Atualizado: ${data.updated_at}`;
+    }
 
-    instaPosts = posts.slice(0, 6).map(p => ({
-      img: p.node.display_url,
-      caption: p.node.edge_media_to_caption.edges[0]?.node.text || ""
-    }));
+    if (!instaPosts.length) {
+      console.warn("Feed Instagram vazio.");
+      return;
+    }
 
-    mostrarPost();
-    setInterval(mostrarPost, 5000);
+    instaIndex = 0;
+    mostrarPostInstagram();
 
-  } catch (erro) {
-    console.error("Erro ao carregar Instagram:", erro);
+    if (instaTimer) clearInterval(instaTimer);
+    instaTimer = setInterval(mostrarPostInstagram, 6000);
+
+  } catch (err) {
+    console.error("Erro ao carregar feed de obras:", err);
   }
 }
 
-carregarInstagram();carregarInstagram();
-
+carregarFeedInstagram();
+  
 </script>
 </body>
 </html>
