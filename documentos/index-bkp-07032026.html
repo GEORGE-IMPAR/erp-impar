@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ERP ÍMPAR – Gerador de Documentos (Rebuild V1)</title>
+  <title>ERP ÍMPDOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);AR – Gerador de Documentos (Rebuild V1)</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <script>
@@ -415,12 +415,19 @@ const payload = buildPayload();
       const resp = await postJson(API_SAVE_JSON, payload);
 
       hidePageLoader();
-      Swal.fire({
-        icon:"success",
-        title:"Sucesso!",
-        html:"Dados salvos com sucesso.",
-        confirmButtonText:"OK"
-      });
+
+      const tipo = await imparAskDocToGenerate("afterSave");
+      if(!tipo) return resp;
+
+      try{
+        await gerarDocumento(tipo, { preferExisting: true });
+      }catch(err){
+        Swal.fire({
+          icon:"error",
+          title:"Erro ao gerar documento",
+          html: err?.message || String(err)
+        });
+      }
 
       return resp;
     }catch(err){
@@ -1321,7 +1328,116 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
     font-size:14px !important;
   }
 
-}  
+}
+
+.lista-anexos{
+  margin-top:10px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.item-anexo{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(2,6,23,.55);
+  color:rgba(231,236,255,.92);
+  box-shadow:0 10px 24px rgba(0,0,0,.18);
+}
+
+.item-anexo-nome{
+  font-size:13px;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.item-anexo-remover{
+  border:none;
+  width:28px;
+  height:28px;
+  min-width:28px;
+  border-radius:999px;
+  cursor:pointer;
+  font-size:16px;
+  font-weight:900;
+  line-height:1;
+  color:#fff;
+  background:linear-gradient(135deg,#ef4444,#b91c1c);
+  box-shadow:0 8px 20px rgba(185,28,28,.35);
+}
+
+.item-anexo-remover:hover{
+  transform:scale(1.06);
+  filter:brightness(1.05);
+}
+
+.item-anexo-vazio{
+  font-size:12px;
+  color:rgba(148,163,184,.85);
+  padding:8px 2px 0;
+}    
+.upload-box {
+  margin-top: 6px;
+}
+
+.btn-upload {
+  background: #0b1e4a;
+  border: 1px solid rgba(0,255,150,.4);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .2s ease;
+}
+
+.btn-upload:hover {
+  background: #0f2f6e;
+  border-color: #00ff95;
+}
+
+.lista-anexos {
+  margin-top: 8px;
+}
+
+.anexo-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #081a38;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.anexo-remove {
+  background: #ef4444;
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+}
+.anexos-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px; /* mais respiro entre as colunas */
+  align-items: start;
+}
+
+.anexo-box {
+  width: 100%;
+  max-width: 100%;
+}
   </style>
 </head>
 <body>
@@ -1774,17 +1890,28 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
                 <input id="prazoDias" type="text" placeholder="Ex.: 30" inputmode="numeric"/>
               </div>
               <div class="c12">
-                <label for="logoEmpresa">IMPORTE O LOGO DA EMPRESA</label>
-                <input id="logoEmpresa" type="file" accept="image/*"/>
-              </div>
-              <div class="c8">
-                <label>PRÉVIA</label>
-                <div class="logo-preview">
-                  <img id="logoPreview" alt="Prévia da logo" />
-                  <div class="logo-empty" id="logoEmpty">Nenhuma logo importada</div>
-                </div>
-              </div>
+                 <label>ANEXOS DO CONTRATO</label>
+                   <div class="upload-box">
+                       <button type="button" class="btn-upload" onclick="document.getElementById('anexoContrato').click()">
+                          + Anexar
+                       </button>
+                       <input id="anexoContrato" type="file" multiple style="display:none" />
+                 </div>
+                 <div id="listaAnexosContrato" class="lista-anexos"></div>
+             </div>
+
+             <div class="c8">
+                <label>ANEXOS DA ORDEM DE SERVIÇO</label>
+                   <div class="upload-box">
+                       <button type="button" class="btn-upload" onclick="document.getElementById('anexoOS').click()">
+                           + Anexar
+                       </button>
+                       <input id="anexoOS" type="file" multiple style="display:none" />
+                   </div>
+                   <div id="listaAnexosOS" class="lista-anexos"></div>
             </div>
+            
+     </div>
 
           </form>
 
@@ -1813,7 +1940,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v5.0 • validação limpa por etapa</div>
+    <div>v1000.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -2992,6 +3119,109 @@ $("#btnFinalizar").addEventListener("click", async () => {
    - Gera DOCX via API (make_contract.php / make_os.php)
    ================================ */
 
+const WORD365_API_BASE = "https://api.erpimpar.com.br/word365";
+const WORD365_ENDPOINT_CHECK = WORD365_API_BASE + "/consultar_documento_word365.php";
+const WORD365_ENDPOINT_UPLOAD = WORD365_API_BASE + "/subir_documento_word365.php";
+const WORD365_ENDPOINT_SHARE = WORD365_API_BASE + "/compartilhar_documento_word365.php";
+
+async function fetchJsonSafe(url, options){
+  const resp = await fetch(url, options);
+  let data = null;
+  try{ data = await resp.json(); }catch(e){}
+  if(!resp.ok){
+    throw new Error(data?.message || data?.error || `Falha na API (${resp.status}).`);
+  }
+  return data || {};
+}
+
+async function consultarDocumentoWord365(codigo, tipo){
+  return await fetchJsonSafe(WORD365_ENDPOINT_CHECK, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ codigo, tipo }),
+    cache: "no-store"
+  });
+}
+
+async function subirDocumentoWord365({ codigo, tipo, filename, blob }){
+  const fd = new FormData();
+  fd.append("codigo", codigo);
+  fd.append("tipo", tipo);
+  fd.append("filename", filename);
+  fd.append("docx", blob, filename);
+
+  return await fetchJsonSafe(WORD365_ENDPOINT_UPLOAD, {
+    method: "POST",
+    body: fd,
+    cache: "no-store"
+  });
+}
+
+async function compartilharDocumentoWord365(codigo, tipo){
+  return await fetchJsonSafe(WORD365_ENDPOINT_SHARE, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ codigo, tipo }),
+    cache: "no-store"
+  });
+}
+
+async function oferecerCompartilhamentoDocumento(meta){
+  if(!meta?.codigo || !meta?.tipo) return;
+
+  const res = await Swal.fire({
+    title: "Documento aberto no Word 365",
+    html: "Quando terminar os ajustes, você pode gerar um link de compartilhamento do mesmo arquivo.",
+    icon: "success",
+    showCancelButton: true,
+    confirmButtonText: "Gerar link de compartilhamento",
+    cancelButtonText: "Fechar",
+    buttonsStyling: false,
+    customClass: {
+      popup: "impar-swal",
+      confirmButton: "impar-swal-confirm",
+      cancelButton: "impar-swal-cancel",
+      actions: "impar-swal-actions"
+    }
+  });
+
+  if(!res.isConfirmed) return;
+
+  try{
+    showImparLoading("Gerando link de compartilhamento…", "Preparando o link do documento no OneDrive.");
+    const share = await compartilharDocumentoWord365(meta.codigo, meta.tipo);
+    hideImparLoading();
+
+    const link = share?.shareUrl || share?.webUrl || "";
+    if(!link){
+      throw new Error("A API não retornou um link de compartilhamento.");
+    }
+
+    const copied = !!(navigator.clipboard && navigator.clipboard.writeText && await navigator.clipboard.writeText(link).then(()=>true).catch(()=>false));
+
+    await Swal.fire({
+      icon: "success",
+      title: copied ? "Link copiado" : "Link gerado",
+      html: copied
+        ? "O link de compartilhamento foi copiado para a área de transferência."
+        : `Link gerado:<br><br><a href="${link}" target="_blank" rel="noopener">${link}</a>`,
+      confirmButtonText: "OK",
+      buttonsStyling: false,
+      customClass: {
+        popup: "impar-swal",
+        confirmButton: "impar-swal-confirm"
+      }
+    });
+  }catch(err){
+    hideImparLoading();
+    Swal.fire({
+      icon:"error",
+      title:"Erro ao compartilhar",
+      html: err?.message || String(err)
+    });
+  }
+}
+
 function getProjetoMetaForFilename(){
   const codigo = (document.getElementById("codigoProjeto")?.value || "").trim();
   const nomeObra = (document.getElementById("nomeObra")?.value || "").trim();
@@ -3102,36 +3332,135 @@ async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
   setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
 }
   
-async function gerarDocumento(tipo){
-  const {codigo, nomeObra} = getProjetoMetaForFilename();
+async function gerarDocumento(tipo) {
+  const { codigo, nomeObra } = getProjetoMetaForFilename();
 
-  const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
-  const filenameBase = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  const filename = `${filenameBase} - ${codigo} ${nomeSafe}.docx`;
-
-showImparLoading("Gerando documento…", `Preparando ${filenameBase} do projeto ${codigo}.`);
-
-try {
-  if (tipo === "contrato") {
-    if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarContrato !== "function") {
-     throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_contrato_docx.js está incluído no HTML.");
-   }
-    await window.ERP_DOCX.gerarContrato(codigo);
-    return true;
+  if (!codigo) {
+    Swal.fire({
+      icon: "warning",
+      title: "Informe o código do projeto",
+      html: "Preencha o campo <b>CÓDIGO</b> para gerar o documento."
+    });
+    return false;
   }
-  if (tipo === "os") {
-    if (!window.ERP_DOCX || typeof window.ERP_DOCX.gerarOSDocx !== "function") {
-      throw new Error("Módulo ERP_DOCX não carregado. Verifique se gerar_os_docx.js está incluído no HTML.");
+
+  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
+
+  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
+
+  try {
+    // 1) Consulta se o documento já existe no OneDrive
+    const consultaResp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ codigo, tipo }),
+      cache: "no-store"
+    });
+
+    const consultaData = await consultaResp.json();
+
+    if (!consultaResp.ok || !consultaData?.ok) {
+      throw new Error(consultaData?.message || `Falha ao consultar documento (HTTP ${consultaResp.status}).`);
     }
-    await window.ERP_DOCX.gerarOSDocx(codigo);
+
+    // 2) Se já existe no OneDrive, NÃO abre Word de novo.
+    //    Vai direto para a etapa final: baixar / compartilhar
+    if (consultaData.exists) {
+      hideImparLoading();
+
+      if (window.DOC_FINAL_ACTIONS && typeof window.DOC_FINAL_ACTIONS.abrirModalDocumentoFinal === "function") {
+        await DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+        return true;
+      }
+
+      throw new Error("Módulo de finalização não carregado.");
+    }
+
+    // 3) Se ainda não existe, sobe os anexos do tipo escolhido
+    const uploadResult = await uploadAnexosWord365({
+      codigo,
+      tipo,
+      arquivos
+    });
+
+    if (tipo === "contrato") {
+      window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
+    } else {
+      window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
+    }
+
+    // 4) Gera o DOCX em memória
+    if (!window.ERP_DOCX) {
+      throw new Error("Módulo ERP_DOCX não carregado.");
+    }
+
+    let ret;
+
+    if (tipo === "contrato") {
+      if (typeof window.ERP_DOCX.gerarContrato !== "function") {
+        throw new Error("Função gerarContrato não encontrada.");
+      }
+      ret = await window.ERP_DOCX.gerarContrato(codigo);
+    } else {
+      if (typeof window.ERP_DOCX.gerarOS !== "function") {
+        throw new Error("Função gerarOS não encontrada.");
+      }
+      ret = await window.ERP_DOCX.gerarOS(codigo);
+    }
+
+    if (!ret?.blob) {
+      throw new Error(`${nomeDoc} gerado sem blob.`);
+    }
+
+    // 5) Define nome do arquivo
+    const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
+    const filenameBase = tipo === "contrato" ? "CONTRATO" : "OS";
+    const filename = `${codigo}_${filenameBase}_${nomeSafe}.docx`;
+
+    // 6) Sobe para o OneDrive
+    const salvo = await subirDocumentoWord365({
+      codigo,
+      tipo,
+      filename: ret.filename || filename,
+      blob: ret.blob
+    });
+
+    const wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
+
+    if (!wordUrl) {
+      throw new Error("A API não retornou a URL do Word.");
+    }
+
+    // 7) Abre no Word Web para edição
+    window.open(wordUrl, "_blank", "noopener");
+
+    hideImparLoading();
+
+    await Swal.fire({
+      icon: "success",
+      title: "Documento pronto",
+      html: `${nomeDoc} aberto no Word 365 para edição.<br><br>Após concluir as alterações no Word, volte ao sistema e clique em <b>FINALIZAR</b> novamente para baixar ou compartilhar a versão final.`,
+      confirmButtonText: "OK"
+    });
+
     return true;
+
+  } catch (err) {
+    hideImparLoading();
+
+    Swal.fire({
+      icon: "error",
+      title: "Erro ao gerar documento",
+      html: err?.message || String(err)
+    });
+
+    return false;
   }
-  // fallback (não deveria acontecer)
-  throw new Error("Tipo de documento inválido.");
-} finally {
-  hideImparLoading();
-  }
-}  
+}
+  
 /* ===== Disparos =====
    1) Botão "GERAR DOCUMENTOS" (Etapa 1)
    2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
@@ -3197,10 +3526,124 @@ try {
     bindGerarDepoisSalvar();
   }
 })();
+  
+let anexosContrato = [];
+let anexosOS = [];
+
+function renderListaAnexos(tipo){
+  const lista = tipo === "contrato"
+    ? document.getElementById("listaAnexosContrato")
+    : document.getElementById("listaAnexosOS");
+
+  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
+
+  if(!lista) return;
+
+  lista.innerHTML = "";
+
+  if(!arquivos.length){
+    const vazio = document.createElement("div");
+    vazio.className = "item-anexo-vazio";
+    vazio.textContent = "Nenhum anexo selecionado.";
+    lista.appendChild(vazio);
+    return;
+  }
+
+  arquivos.forEach((file, index) => {
+    const row = document.createElement("div");
+    row.className = "anexo-item";
+
+    const nome = document.createElement("span");
+    nome.textContent = file.name;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "anexo-remove";
+    btn.textContent = "×";
+    btn.addEventListener("click", () => removerAnexo(tipo, index));
+
+    row.appendChild(nome);
+    row.appendChild(btn);
+    lista.appendChild(row);
+  });
+}
+
+function removerAnexo(tipo, index){
+  if(tipo === "contrato"){
+    anexosContrato.splice(index, 1);
+    renderListaAnexos("contrato");
+    return;
+  }
+
+  anexosOS.splice(index, 1);
+  renderListaAnexos("os");
+}
+
+function bindAnexosVisual(){
+  const inputContrato = document.getElementById("anexoContrato");
+  const inputOS = document.getElementById("anexoOS");
+
+  if(inputContrato){
+    inputContrato.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      anexosContrato = [...anexosContrato, ...files];
+      renderListaAnexos("contrato");
+      e.target.value = "";
+    });
+  }
+
+  if(inputOS){
+    inputOS.addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      anexosOS = [...anexosOS, ...files];
+      renderListaAnexos("os");
+      e.target.value = "";
+    });
+  }
+
+  renderListaAnexos("contrato");
+  renderListaAnexos("os");
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", bindAnexosVisual);
+} else {
+  bindAnexosVisual();
+}
+
+async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
+  if (!arquivos || !arquivos.length) {
+    return { ok: true, enviados: [] };
+  }
+
+  const formData = new FormData();
+  formData.append("codigo", codigo);
+  formData.append("tipo", tipo);
+
+  arquivos.forEach((file) => {
+    formData.append("anexos[]", file, file.name);
+  });
+
+  const resp = await fetch("https://api.erpimpar.com.br/word365/upload_anexos_word365.php", {
+    method: "POST",
+    body: formData,
+    cache: "no-store"
+  });
+
+  const data = await resp.json();
+
+  if (!resp.ok || !data?.ok) {
+    throw new Error(data?.message || "Falha ao enviar anexos.");
+  }
+
+  return data;
+}
+  
 </script>
 
 <script src="./gerar_contrato_docx.js"></script>
 <script src="./gerar_os_docx.js"></script>
-
+<script src="./documento_final_actions.js"></script>
+  
 </body>
 </html>
