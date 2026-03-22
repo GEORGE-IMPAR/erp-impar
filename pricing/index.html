@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ERP ÍMPAR — Consulta de Preços (RENDER)</title>
+  <title>ERP ÍMPAR — Consulta de Preços</title>
 
   <style>
     :root{
@@ -561,160 +561,164 @@
     </div>
   </div>
 
-  <script>
-    const API_BASE = "https://consulta-precos-impar-api.onrender.com";
+<script>
+  const API_BASE = "https://consulta-precos-impar-api.onrender.com";
 
-    const refs = {
-      cobre: "R$ 130,00/kg flexível • R$ 150,00/kg rígido",
-      aco_galvanizado: "R$ 13,00/kg",
-      elastomerico: "R$ 13,85/m até R$ 103,31/m"
-    };
+  const refs = {
+    cobre: "R$ 130,00/kg flexível • R$ 150,00/kg rígido",
+    aco_galvanizado: "R$ 13,00/kg",
+    elastomerico: "R$ 13,85/m até R$ 103,31/m"
+  };
 
-    function setRef(){
-      const material = document.getElementById("material").value;
-      const mercado = document.getElementById("mercado").value;
+  function setRef(){
+    const material = document.getElementById("material").value;
+    const mercado = document.getElementById("mercado").value;
 
-      document.getElementById("refAtual").value = refs[material] || "";
-      document.getElementById("mMaterial").textContent =
-        material === "cobre" ? "Cobre" :
-        material === "aco_galvanizado" ? "Chapa galvanizada" : "Elastomérico";
+    document.getElementById("refAtual").value = refs[material] || "";
+    document.getElementById("mMaterial").textContent =
+      material === "cobre" ? "Cobre" :
+      material === "aco_galvanizado" ? "Chapa galvanizada" : "Elastomérico";
 
-      document.getElementById("mMercado").textContent =
-        mercado === "asia" ? "Ásia" :
-        mercado === "brasil" ? "Brasil" : "Global";
+    document.getElementById("mMercado").textContent =
+      mercado === "asia" ? "Ásia" :
+      mercado === "brasil" ? "Brasil" : "Global";
+  }
+
+  function logLine(text, cls = "c-info"){
+    const c = document.getElementById("console");
+    const div = document.createElement("div");
+    div.className = `console-line ${cls}`;
+    div.textContent = text;
+    c.appendChild(div);
+    c.scrollTop = c.scrollHeight;
+  }
+
+  function limparConsoleAuto(){
+    document.getElementById("console").innerHTML = "";
+  }
+
+  function moeda(v){
+    if(v === null || v === undefined || v === "") return "--";
+    return "R$ " + Number(v).toFixed(2).replace(".", ",");
+  }
+
+  function refNum(material){
+    if(material === "cobre") return 130;
+    if(material === "aco_galvanizado") return 13;
+    if(material === "elastomerico") return 25;
+    return null;
+  }
+
+  function statusHtml(atual, estimado){
+    if(atual == null || estimado == null) return `<span class="status st-mid">COTAR</span>`;
+    if(estimado < atual * 0.75) return `<span class="status st-good">MUITO BOM</span>`;
+    if(estimado < atual) return `<span class="status st-mid">VIÁVEL</span>`;
+    return `<span class="status st-bad">NÃO COMPENSA</span>`;
+  }
+
+  function badgeTipoCobre(tipo){
+    if(tipo === "flexivel") return ` <span style="color:#22c55e;font-weight:800;">• FLEXÍVEL</span>`;
+    if(tipo === "rigido") return ` <span style="color:#60a5fa;font-weight:800;">• RÍGIDO</span>`;
+    return "";
+  }
+
+  function renderTabela(rows, material){
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
+
+    if(!rows || !rows.length){
+      tbody.innerHTML = `<tr><td colspan="5" style="color:#94a3b8">Nenhum resultado retornado.</td></tr>`;
+      document.getElementById("mQtd").textContent = "0";
+      document.getElementById("mBest").textContent = "--";
+      return;
     }
 
-    function logLine(text, cls="c-info"){
-      const c = document.getElementById("console");
-      const div = document.createElement("div");
-      div.className = `console-line ${cls}`;
-      div.textContent = text;
-      c.appendChild(div);
-      c.scrollTop = c.scrollHeight;
-    }
+    const atual = refNum(material);
+    let best = null;
 
-    function limparConsoleAuto(){
-      document.getElementById("console").innerHTML = "";
-    }
+    rows.forEach(r => {
+      const origem = Number(r.origem || 0);
+      const brasil = Number(r.brasil || 0);
 
-    function moeda(v){
-      if(v === null || v === undefined || v === "") return "--";
-      return "R$ " + Number(v).toFixed(2).replace(".", ",");
-    }
+      if(best === null || brasil < best) best = brasil;
 
-    function refNum(material){
-      if(material === "cobre") return 130;
-      if(material === "aco_galvanizado") return 13;
-      if(material === "elastomerico") return 25;
-      return null;
-    }
+      const fornecedorLabel =
+        material === "cobre"
+          ? `${r.fornecedor || "-"}${badgeTipoCobre(r.tipo_cobre)}`
+          : `${r.fornecedor || "-"}`;
 
-    function statusHtml(atual, estimado){
-      if(atual == null || estimado == null) return `<span class="status st-mid">COTAR</span>`;
-      if(estimado < atual * 0.75) return `<span class="status st-good">MUITO BOM</span>`;
-      if(estimado < atual) return `<span class="status st-mid">VIÁVEL</span>`;
-      return `<span class="status st-bad">NÃO COMPENSA</span>`;
-    }
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fornecedorLabel}</td>
+        <td>${r.pais || "-"}</td>
+        <td>${moeda(origem)}</td>
+        <td>${moeda(brasil)}</td>
+        <td>${statusHtml(atual, brasil)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
 
-    function renderTabela(rows, material){
-      const tbody = document.getElementById("tbody");
-      tbody.innerHTML = "";
+    document.getElementById("mQtd").textContent = String(rows.length);
+    document.getElementById("mBest").textContent = best != null ? moeda(best) : "--";
+  }
 
-      if(!rows || !rows.length){
-        tbody.innerHTML = `<tr><td colspan="5" style="color:#94a3b8">Nenhum resultado retornado.</td></tr>`;
-        document.getElementById("mQtd").textContent = "0";
-        document.getElementById("mBest").textContent = "--";
+  async function iniciarBusca(){
+    const material = document.getElementById("material").value;
+    const mercado = document.getElementById("mercado").value;
+    const modo = document.getElementById("modo").value;
+
+    setRef();
+    limparConsoleAuto();
+
+    logLine("════════ ERP ÍMPAR — CONSULTA DE PREÇOS ════════", "c-info");
+    logLine(`▶ Material: ${material}`, "c-info");
+    logLine(`▶ Mercado: ${mercado}`, "c-info");
+    logLine(`▶ Retorno: ${modo}`, "c-info");
+    logLine("🔍 Iniciando busca no servidor...", "c-info");
+
+    try{
+      const response = await fetch(`${API_BASE}/buscar`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ material, mercado, modo })
+      });
+
+      const raw = await response.text();
+
+      let data = null;
+      try{
+        data = JSON.parse(raw);
+      }catch(parseErr){
+        logLine("❌ Falha ao consultar a API do servidor.", "c-err");
+        logLine(`⚠ Detalhe: ${parseErr.message}`, "c-warn");
+        logLine("⚠ Resposta bruta da API:", "c-warn");
+        logLine(raw.substring(0, 1200), "c-warn");
         return;
       }
 
-      const atual = refNum(material);
-      let best = null;
-
-      rows.forEach(r => {
-        const origem = Number(r.origem || 0);
-        const brasil = Number(r.brasil || 0);
-
-        if(best === null || brasil < best) best = brasil;
-
-const tipoCobre = material === "cobre"
-  ? (r.tipo_cobre === "flexivel" ? " • FLEXÍVEL" :
-     r.tipo_cobre === "rigido" ? " • RÍGIDO" : "")
-  : "";
-
-const tr = document.createElement("tr");
-tr.innerHTML = `
-  <td>${r.fornecedor || "-"}${tipoCobre}</td>
-  <td>${r.pais || "-"}</td>
-  <td>${moeda(origem)}</td>
-  <td>${moeda(brasil)}</td>
-  <td>${statusHtml(atual, brasil)}</td>
-`;
-        tbody.appendChild(tr);
+      (data.logs || []).forEach(line => {
+        const cls =
+          line.startsWith("✅") ? "c-ok" :
+          line.startsWith("⚠") ? "c-warn" :
+          line.startsWith("❌") ? "c-err" : "c-info";
+        logLine(line, cls);
       });
 
-      document.getElementById("mQtd").textContent = String(rows.length);
-      document.getElementById("mBest").textContent = best != null ? moeda(best) : "--";
+      renderTabela(data.dados || [], material);
+    }catch(err){
+      logLine("❌ Falha ao consultar a API do servidor.", "c-err");
+      logLine(`⚠ Detalhe: ${err.message}`, "c-warn");
     }
+  }
 
-    async function iniciarBusca(){
-      const material = document.getElementById("material").value;
-      const mercado = document.getElementById("mercado").value;
-      const modo = document.getElementById("modo").value;
+  function abrirExcel(){
+    window.open(`${API_BASE}/baixar`, "_blank");
+  }
 
-      setRef();
-      limparConsoleAuto();
+  document.getElementById("material").addEventListener("change", setRef);
+  document.getElementById("mercado").addEventListener("change", setRef);
 
-      logLine("════════ ERP ÍMPAR — CONSULTA DE PREÇOS ════════", "c-info");
-      logLine(`▶ Material: ${material}`, "c-info");
-      logLine(`▶ Mercado: ${mercado}`, "c-info");
-      logLine(`▶ Retorno: ${modo}`, "c-info");
-      logLine("🔍 Iniciando busca no servidor...", "c-info");
-
-      try{
-        const response = await fetch(`${API_BASE}/get_quote.php`, {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ material, mercado, modo })
-        });
-
-        const raw = await response.text();
-
-        let data = null;
-        try{
-          data = JSON.parse(raw);
-        }catch(parseErr){
-          logLine("❌ Falha ao consultar a API do servidor.", "c-err");
-          logLine(`⚠ Detalhe: ${parseErr.message}`, "c-warn");
-          logLine("⚠ Resposta bruta da API:", "c-warn");
-          logLine(raw.substring(0, 1200), "c-warn");
-          return;
-        }
-
-        (data.logs || []).forEach(line => {
-          const cls =
-            line.startsWith("✅") ? "c-ok" :
-            line.startsWith("⚠") ? "c-warn" :
-            line.startsWith("❌") ? "c-err" : "c-info";
-          logLine(line, cls);
-        });
-
-        renderTabela(data.dados || [], material);
-      }catch(err){
-        logLine("❌ Falha ao consultar a API do servidor.", "c-err");
-        logLine(`⚠ Detalhe: ${err.message}`, "c-warn");
-      }
-    }
-
-    function abrirExcel(){
-      window.open(`${API_BASE}/export_quote_excel.php`, "_blank");
-    }
-
-    document.getElementById("material").addEventListener("change", setRef);
-    document.getElementById("mercado").addEventListener("change", setRef);
-
-    setRef();
-    logLine("ERP ÍMPAR pronto para consulta.", "c-ok");
-    logLine("Aguardando início da pesquisa...", "c-info");
-  </script>
-</body>
-</html>
+  setRef();
+  logLine("ERP ÍMPAR pronto para consulta.", "c-ok");
+  logLine("Aguardando início da pesquisa...", "c-info");
+</script>
