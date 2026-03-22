@@ -1,242 +1,163 @@
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-import time
-import pandas as pd
 import os
+import requests
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ULTIMO_ARQUIVO = os.path.join(BASE_DIR, "resultado.xlsx")
+SERP_API_KEY = os.getenv("eb6e19e7325ca5fa0fbc8165712ecfe1d1aa49c0156093684b8335c72e8b261c")
 
-flex_keywords = [
-    "coil", "coils", "bobina", "roll",
-    "soft", "annealed", "pancake",
-    "flexible", "acr coil", "soft tube"
-]
+# =========================
+# UTIL
+# =========================
+def moeda_para_float(valor_str):
+    try:
+        v = valor_str.replace("R$", "").replace(",", ".")
+        return float(v)
+    except:
+        return None
 
-rigid_keywords = [
-    "pipe", "pipes", "tube", "tubes",
-    "straight", "length", "6m", "3m",
-    "hard", "rigid", "straight length", "bar"
-]
+def calcular_brasil(origem, pais):
+    if not origem:
+        return None
 
-def classificar_cobre(texto: str) -> str:
-    t = (texto or "").lower()
+    if pais.lower() == "brasil":
+        return origem  # NÃO multiplica
 
-    score_flex = sum(1 for k in flex_keywords if k in t)
-    score_rigid = sum(1 for k in rigid_keywords if k in t)
+    # custo estimado importação
+    fator = 2.2
+    return round(origem * fator, 2)
 
-    if score_flex > score_rigid:
+def detectar_tipo_cobre(nome):
+    nome = nome.lower()
+    if "coil" in nome or "soft" in nome or "flex" in nome:
         return "flexivel"
-    elif score_rigid > score_flex:
-        return "rigido"
-    return "indefinido"
+    return "rigido"
 
-def gerar_dados(material, mercado="asia", modo="preco"):
-    if material == "elastomerico":
-        if mercado == "asia":
-            dados = [
-                {"fornecedor":"Aaryi Industrial Materials", "pais":"Índia", "origem":2.28, "unidade":"m"},
-                {"fornecedor":"NBR Tube Supplier", "pais":"Índia", "origem":3.00, "unidade":"m"},
-                {"fornecedor":"Thermaflex Supplier", "pais":"Índia", "origem":3.60, "unidade":"m"},
-                {"fornecedor":"Fornecedor Vietnã", "pais":"Vietnã", "origem":4.10, "unidade":"m"},
-                {"fornecedor":"Fornecedor Brasil", "pais":"Brasil", "origem":20.24, "unidade":"m"},
-            ]
-            fator = 2.5
-        elif mercado == "brasil":
-            dados = [
-                {"fornecedor":"Fornecedor SC", "pais":"Brasil", "origem":13.85, "unidade":"m"},
-                {"fornecedor":"Fornecedor SP", "pais":"Brasil", "origem":20.24, "unidade":"m"},
-                {"fornecedor":"Fornecedor PR", "pais":"Brasil", "origem":25.56, "unidade":"m"},
-            ]
-            fator = 1.0
-        else:
-            dados = [
-                {"fornecedor":"Índia Lead", "pais":"Índia", "origem":2.28, "unidade":"m"},
-                {"fornecedor":"Vietnã Lead", "pais":"Vietnã", "origem":4.10, "unidade":"m"},
-                {"fornecedor":"Brasil", "pais":"Brasil", "origem":20.24, "unidade":"m"},
-            ]
-            fator = 2.5
+# =========================
+# BUSCA SERPAPI
+# =========================
+def buscar_serp(query):
+    url = "https://serpapi.com/search.json"
 
-    elif material == "cobre":
-        if mercado == "asia":
-            dados = [
-                {
-                    "fornecedor":"India Copper Tube Soft Coil",
-                    "pais":"Índia",
-                    "origem":51.60,
-                    "unidade":"kg",
-                    "tipo_cobre":"flexivel"
-                },
-                {
-                    "fornecedor":"Vietnam Copper Tube Straight Length",
-                    "pais":"Vietnã",
-                    "origem":58.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"rigido"
-                },
-                {
-                    "fornecedor":"Brasil Copper Coil Base",
-                    "pais":"Brasil",
-                    "origem":130.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"flexivel"
-                },
-                {
-                    "fornecedor":"Brasil Copper Bar Base",
-                    "pais":"Brasil",
-                    "origem":150.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"rigido"
-                },
-            ]
-            fator = 2.4
-        elif mercado == "brasil":
-            dados = [
-                {
-                    "fornecedor":"Distribuidor SC Coil",
-                    "pais":"Brasil",
-                    "origem":130.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"flexivel"
-                },
-                {
-                    "fornecedor":"Distribuidor SP Barra",
-                    "pais":"Brasil",
-                    "origem":150.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"rigido"
-                },
-            ]
-            fator = 1.0
-        else:
-            dados = [
-                {
-                    "fornecedor":"Índia ACR Soft Coil",
-                    "pais":"Índia",
-                    "origem":51.60,
-                    "unidade":"kg",
-                    "tipo_cobre":"flexivel"
-                },
-                {
-                    "fornecedor":"China Straight Copper Tube",
-                    "pais":"China",
-                    "origem":52.50,
-                    "unidade":"kg",
-                    "tipo_cobre":"rigido"
-                },
-                {
-                    "fornecedor":"Brasil Flex Base",
-                    "pais":"Brasil",
-                    "origem":130.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"flexivel"
-                },
-                {
-                    "fornecedor":"Brasil Rígido Base",
-                    "pais":"Brasil",
-                    "origem":150.00,
-                    "unidade":"kg",
-                    "tipo_cobre":"rigido"
-                },
-            ]
-            fator = 2.4
+    params = {
+        "q": query,
+        "engine": "google",
+        "api_key": SERP_API_KEY
+    }
 
-        for d in dados:
-            if "tipo_cobre" not in d:
-                d["tipo_cobre"] = classificar_cobre(d.get("fornecedor", ""))
+    r = requests.get(url, params=params, timeout=20)
+    data = r.json()
 
-        flexiveis = [d for d in dados if d.get("tipo_cobre") == "flexivel"]
-        rigidos = [d for d in dados if d.get("tipo_cobre") == "rigido"]
-        indef = [d for d in dados if d.get("tipo_cobre") not in ["flexivel", "rigido"]]
+    resultados = []
 
-        flexiveis.sort(key=lambda x: x["origem"])
-        rigidos.sort(key=lambda x: x["origem"])
-        indef.sort(key=lambda x: x["origem"])
+    for item in data.get("organic_results", [])[:10]:
+        titulo = item.get("title", "")
+        link = item.get("link", "")
 
-        dados = flexiveis + rigidos + indef
+        # tentativa simples de extrair preço do snippet
+        snippet = item.get("snippet", "")
 
-    else:  # aco_galvanizado
-        if mercado == "asia":
-            dados = [
-                {"fornecedor":"Turkey GI Coil", "pais":"Turquia", "origem":5.10, "unidade":"kg"},
-                {"fornecedor":"Vietnam GI Sheet", "pais":"Vietnã", "origem":5.60, "unidade":"kg"},
-                {"fornecedor":"Brasil Base", "pais":"Brasil", "origem":13.00, "unidade":"kg"},
-            ]
-            fator = 2.1
-        elif mercado == "brasil":
-            dados = [
-                {"fornecedor":"Fornecedor SC", "pais":"Brasil", "origem":13.00, "unidade":"kg"},
-                {"fornecedor":"Fornecedor Santos", "pais":"Brasil", "origem":12.70, "unidade":"kg"},
-            ]
-            fator = 1.0
-        else:
-            dados = [
-                {"fornecedor":"Turquia", "pais":"Turquia", "origem":5.10, "unidade":"kg"},
-                {"fornecedor":"Vietnã", "pais":"Vietnã", "origem":5.60, "unidade":"kg"},
-                {"fornecedor":"Brasil", "pais":"Brasil", "origem":13.00, "unidade":"kg"},
-            ]
-            fator = 2.1
+        preco = None
+        for token in snippet.split():
+            if "₹" in token or "$" in token:
+                try:
+                    preco = float(token.replace("₹", "").replace("$", "").replace(",", ""))
+                    break
+                except:
+                    pass
 
-    for d in dados:
-        d["brasil"] = round(d["origem"] * fator, 2)
+        resultados.append({
+            "titulo": titulo,
+            "link": link,
+            "preco": preco
+        })
 
-    return dados
+    return resultados
 
+# =========================
+# CORE
+# =========================
+def gerar_consulta(material, mercado):
+    logs = []
+    dados = []
+
+    logs.append("🔍 Iniciando busca estratégica...")
+
+    if material == "cobre":
+        query = "copper tube price per kg hvac"
+    elif material == "elastomerico":
+        query = "elastomeric insulation price per meter hvac"
+    else:
+        query = "galvanized steel sheet price per kg"
+
+    resultados = buscar_serp(query)
+
+    logs.append(f"🌐 {len(resultados)} resultados encontrados")
+
+    for r in resultados:
+        preco = r["preco"]
+
+        if not preco:
+            continue
+
+        pais = "Índia" if "india" in r["link"].lower() else "Global"
+
+        origem = preco
+
+        tipo_cobre = None
+        if material == "cobre":
+            tipo_cobre = detectar_tipo_cobre(r["titulo"])
+
+        brasil = calcular_brasil(origem, pais)
+
+        dados.append({
+            "fornecedor": r["titulo"][:40],
+            "pais": pais,
+            "origem": origem,
+            "brasil": brasil,
+            "tipo_cobre": tipo_cobre
+        })
+
+    logs.append("📊 Processando ranking...")
+
+    if material == "cobre":
+        flex = [d for d in dados if d["tipo_cobre"] == "flexivel"]
+        rig = [d for d in dados if d["tipo_cobre"] == "rigido"]
+
+        logs.append(f"📦 Cobre flexível: {len(flex)} registro(s)")
+        logs.append(f"📦 Cobre rígido: {len(rig)} registro(s)")
+
+    logs.append("✅ Consulta finalizada")
+
+    return dados, logs
+
+# =========================
+# ROTAS
+# =========================
 @app.route("/")
 def home():
-    return jsonify({
-        "ok": True,
-        "service": "consulta-precos-impar",
-        "status": "online"
-    })
+    return jsonify({"ok": True, "service": "consulta-precos-impar", "status": "online"})
 
 @app.route("/buscar", methods=["POST"])
 def buscar():
-    payload = request.get_json(silent=True) or {}
-    material = payload.get("material", "elastomerico")
-    mercado = payload.get("mercado", "asia")
-    modo = payload.get("modo", "preco")
+    try:
+        dados = processar(material)
 
-    logs = []
-    logs.append("🔍 Iniciando busca...")
-    time.sleep(0.2)
+        logs.append(f"✅ {len(dados)} resultados encontrados")
 
-    logs.append(f"🌐 Mercado: {mercado}")
-    time.sleep(0.2)
+        return jsonify({
+            "ok": True,
+            "dados": dados,
+            "logs": logs
+        })
 
-    logs.append(f"📦 Material: {material}")
-    time.sleep(0.2)
-
-    logs.append("💰 Processando ranking...")
-    time.sleep(0.2)
-
-    dados = gerar_dados(material, mercado, modo)
-
-    if material == "cobre":
-        qtd_flex = len([d for d in dados if d.get("tipo_cobre") == "flexivel"])
-        qtd_rig = len([d for d in dados if d.get("tipo_cobre") == "rigido"])
-        logs.append(f"✅ Cobre flexível: {qtd_flex} registro(s)")
-        logs.append(f"✅ Cobre rígido: {qtd_rig} registro(s)")
-
-    df = pd.DataFrame(dados)
-    df.to_excel(ULTIMO_ARQUIVO, index=False)
-
-    logs.append("✅ Planilha gerada")
-
-    return jsonify({
-        "logs": logs,
-        "dados": dados
-    })
-
-@app.route("/baixar")
-def baixar():
-    if os.path.exists(ULTIMO_ARQUIVO):
-        return send_file(ULTIMO_ARQUIVO, as_attachment=True)
-    return "Arquivo não encontrado", 404
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "erro": str(e)
+        })
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run()
