@@ -96,25 +96,33 @@
       line-height:1.1;
     }
 
-    .header-menu-btn{
-      display:inline-flex;
+    .tag-top{
+      margin-left:auto;
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:rgba(15,23,42,.85);
+      border:1px solid rgba(148,163,184,.6);
+      color:var(--soft);
+      display:flex;
       align-items:center;
       gap:8px;
-      padding:8px 14px;
-      border-radius:999px;
-      border:1px solid rgba(148,163,184,.55);
-      background:rgba(15,23,42,.88);
-      color:var(--text);
-      text-decoration:none;
-      font-size:12px;
-      font-weight:700;
-      box-shadow:0 10px 22px rgba(0,0,0,.22);
-      transition:all .2s ease;
+      flex-wrap:wrap;
+    }
+    .pill-btn{
+      border:none;
+      background:transparent;
+      color:inherit;
+      font:inherit;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      cursor:pointer;
+      padding:0;
       white-space:nowrap;
     }
-    .header-menu-btn:hover{
+    .pill-btn:hover{
       filter:brightness(1.08);
-      transform:translateY(-1px);
     }
 
     main{
@@ -453,7 +461,7 @@
       .header-inner{
         flex-wrap:wrap;
       }
-      .header-menu-btn{
+      .tag-top{
         margin-left:auto;
       }
     }
@@ -467,14 +475,13 @@
       <div class="brand-text">
         <div class="brand-kicker">PLATAFORMA</div>
         <div class="brand-title">ERP ÍMPAR</div>
-        <div class="brand-sub"Gestão à vista</div>
+        <div class="brand-sub">Gestão à Vista</div>
       </div>
     </div>
 
-    <a href="../menu.html" class="header-menu-btn" aria-label="Voltar ao menu principal">
-      <span>🏠</span>
-      <span>Menu principal</span>
-    </a>
+    <div class="tag-top">
+      <button class="pill-btn" id="btnVoltarMenu" type="button"><span>🏠</span> Menu principal</button>
+    </div>
   </div>
 </header>
 
@@ -494,6 +501,14 @@
           <div class="subtitle">Atualize o projeto, visualize na TV e acompanhe o histórico por obra</div>
         </div>
 
+        <div class="topbox-right">
+          <div class="rf-pill" aria-hidden="true">
+            <span class="rf-dot r">R</span>
+            <span class="rf-line"></span>
+            <span class="rf-dot f">F</span>
+          </div>
+        </div>
+      </div>
 
       <div class="content-grid">
         <div class="menu-stack">
@@ -547,76 +562,75 @@
 const API_BASE = 'https://api.erpimpar.com.br/tv';
 let projetosCache = [];
 
+// ===== Logged user (ERP ÍMPAR) — regra trazida do arquivo de referência =====
+function getLoggedUser(){
+  const primaryKey = "ERPIMPAR_USER";
+  const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
+  const candidates = [];
+  if(rawPrimary) candidates.push(rawPrimary);
+
+  const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN","ERPIMPARUSER","USER"];
+  for(const k of keys){
+    const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
+    if(raw) candidates.push(raw);
+  }
+
+  for(const raw of candidates){
+    try{
+      const u = JSON.parse(raw);
+      const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || u.userNome || "";
+      const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
+      if(nome || email) return { Nome:nome, Email:email };
+    }catch(e){
+      if(raw.includes("@")){
+        const parts = raw.split("|");
+        return { Nome:(parts[0] || "Usuário"), Email:(parts[1] || raw) };
+      }
+    }
+  }
+
+  return { Nome:"Usuário", Email:"—" };
+}
+
+function applyLoggedUser(){
+  const u = (typeof window.getLoggedUser === "function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
+  const nomeTxt = (u.Nome || "Usuário");
+  const emailTxt = (u.Email || "—");
+
+  const nameIds = ["usuarioNome","userNome","userNome2","userNome3","userNome4","userNome5","userName","userNameTxt"];
+  const mailIds = ["usuarioEmail","userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail","userEmailTxt"];
+
+  nameIds.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = nomeTxt;
+  });
+  mailIds.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = emailTxt;
+  });
+
+  return { nome:nomeTxt, email:emailTxt };
+}
+
+window.getLoggedUser = getLoggedUser;
+window.applyLoggedUser = applyLoggedUser;
+
 window.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('impar-enter');
+  applyLoggedUser();
 
-  const usuario = obterUsuarioLogado();
-  document.getElementById('usuarioNome').textContent = usuario.nome || 'Usuário';
-  document.getElementById('usuarioEmail').textContent = usuario.email || '—';
+  const btnMenu = document.getElementById('btnVoltarMenu');
+  if (btnMenu) {
+    btnMenu.addEventListener('click', () => {
+      window.location.href = './index.html';
+    });
+  }
 
   carregarProjetosHistorico();
   document.getElementById('obraHistorico').addEventListener('change', (e) => {
     carregarHistoricoObra(e.target.value);
   });
 });
-
-
-function obterUsuarioLogado(){
-  const storages = [localStorage, sessionStorage];
-
-  const keysNome = [
-    'usuarioNome', 'nomeUsuario', 'userName', 'username', 'nome', 'usuario'
-  ];
-  const keysEmail = [
-    'usuarioEmail', 'emailUsuario', 'userEmail', 'email', 'mail'
-  ];
-  const keysObjeto = [
-    'usuarioLogado', 'usuarioAtual', 'currentUser', 'user', 'authUser', 'loggedUser'
-  ];
-
-  const ler = (storage, key) => {
-    try { return storage.getItem(key); } catch { return null; }
-  };
-
-  for (const storage of storages){
-    for (const key of keysObjeto){
-      const raw = ler(storage, key);
-      if (!raw) continue;
-      try{
-        const obj = JSON.parse(raw);
-        const nome = obj?.nome || obj?.name || obj?.usuario || obj?.username || obj?.displayName || '';
-        const email = obj?.email || obj?.mail || obj?.userEmail || '';
-        if (nome || email) return { nome, email };
-      }catch(e){}
-    }
-  }
-
-  let nome = '';
-  let email = '';
-
-  for (const storage of storages){
-    if (!nome){
-      for (const key of keysNome){
-        const value = ler(storage, key);
-        if (value && value.trim()){
-          nome = value.trim();
-          break;
-        }
-      }
-    }
-    if (!email){
-      for (const key of keysEmail){
-        const value = ler(storage, key);
-        if (value && value.trim()){
-          email = value.trim();
-          break;
-        }
-      }
-    }
-  }
-
-  return { nome, email };
-}
 
 function compareProjetos(a, b){
   const idA = Number(a.id);
