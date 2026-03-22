@@ -3,512 +3,21 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ERP ÍMPDOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);AR – Gerador de Documentos (Rebuild V1)</title>
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-  <script>
-  // ===== PATCH ÍMPAR: bases padrão (não quebra se faltar config) =====
-  // Ajuste se teu caminho real for diferente:
-  // Pelo print do KingHost, existe /www/api/storage/docs
-  // Então a URL pública costuma ser: https://api.erpimpar.com.br/storage/docs
-  window.DOCS_BASE = window.DOCS_BASE || "https://api.erpimpar.com.br/storage/docs";
-</script>
-
-<script>
-  // ===== PATCH ÍMPAR: loading universal (não quebra nada) =====
-  window.showImparLoading = window.showImparLoading || function (msg) {
-    let el = document.getElementById("imparLoadingOverlay");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "imparLoadingOverlay";
-      el.style.cssText = `
-        position:fixed; inset:0; z-index:99999;
-        background:rgba(0,0,0,.55);
-        display:flex; align-items:center; justify-content:center;
-        backdrop-filter: blur(6px);
-      `;
-      el.innerHTML = `
-        <div style="
-          min-width:320px; max-width:520px;
-          background:linear-gradient(180deg, rgba(10,20,35,.96), rgba(10,20,35,.86));
-          border:1px solid rgba(255,255,255,.10);
-          border-radius:18px;
-          padding:22px 20px;
-          box-shadow:0 20px 60px rgba(0,0,0,.45);
-          font-family: Candara, Arial, sans-serif;
-          color:#eaf6ff;
-          text-align:center;
-        ">
-          <div style="
-            width:44px;height:44px;margin:0 auto 12px auto;
-            border:4px solid rgba(255,255,255,.18);
-            border-top-color: rgba(55, 255, 170, .95);
-            border-radius:50%;
-            animation: spinImpar 0.9s linear infinite;
-          "></div>
-          <div id="imparLoadingMsg" style="font-weight:800; font-size:16px">${msg || "Processando..."}</div>
-          <div style="opacity:.75; margin-top:6px; font-size:13px">Aguarde…</div>
-        </div>
-      `;
-      document.body.appendChild(el);
-
-      // animação
-      const st = document.createElement("style");
-      st.textContent = `@keyframes spinImpar { to { transform: rotate(360deg); } }`;
-      document.head.appendChild(st);
-    }
-    const msgEl = document.getElementById("imparLoadingMsg");
-    if (msgEl) msgEl.textContent = msg || "Processando...";
-    el.style.display = "flex";
-  };
-
-  window.hideImparLoading = window.hideImparLoading || function () {
-    const el = document.getElementById("imparLoadingOverlay");
-    if (el) el.style.display = "none";
-  };
-</script>
-
-<script>
-  // SweetAlert2 — aplica tema ÍMPAR globalmente (igual módulo Solicitação)
-  if (window.Swal && Swal.mixin) {
-    window.Swal = Swal.mixin({
-      customClass: {
-        popup: "impar-swal",
-        confirmButton: "impar-swal-confirm",
-        cancelButton: "impar-swal-cancel"
-       },
-      buttonsStyling: false
-    });
-  }
-  // Transição de entrada (slide suave)
-  window.addEventListener("DOMContentLoaded", () => {
-    document.body.classList.add("impar-enter");
-  });
-</script>
-
-<script>
-
-  const API_SAVE_JSON = "https://api.erpimpar.com.br/storage/docs/save_json.php";
-
-  // ===== Loader padrão ERP (igual menu) =====
-  function showPageLoader(title, sub){
-    const el = document.getElementById("pageLoader");
-    if(!el) return;
-    el.querySelector(".loader-title").textContent = title || "Processando…";
-    el.querySelector(".loader-sub").textContent = sub || "Aguarde…";
-    el.classList.remove("hidden");
-    el.setAttribute("aria-hidden","false");
-  }
-  function hidePageLoader(){
-    const el = document.getElementById("pageLoader");
-    if(!el) return;
-    el.classList.add("hidden");
-    el.setAttribute("aria-hidden","true");
-  }
-
-  // ===== Logged user (ERP ÍMPAR) — GABARITO (menu/solicitação) =====
-  function getLoggedUser(){
-    const primaryKey = "ERPIMPAR_USER";
-    const rawPrimary = (localStorage.getItem(primaryKey) || sessionStorage.getItem(primaryKey) || "").trim();
-    const candidates = [];
-    if(rawPrimary) candidates.push(rawPrimary);
-
-    // Compat: chaves antigas do ERP
-    const keys = ["usuarioLogado","impar_user","imparUser","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
-    for(const k of keys){
-      const raw = (localStorage.getItem(k) || sessionStorage.getItem(k) || "").trim();
-      if(raw) candidates.push(raw);
-    }
-
-    for(const raw of candidates){
-      try{
-        const u = JSON.parse(raw);
-        const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || "";
-        const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
-        if(nome || email) return { Nome:nome, Email:email };
-      }catch(e){
-        if(raw.includes("@")) return { Nome:"Usuário", Email: raw };
-      }
-    }
-    return { Nome:"Usuário", Email:"—" };
-  }
-
-  // Alias para compatibilidade (algumas versões chamam getLoggeduser)
-  
-  // Garantia: função global getLoggedUser (compatível com o RP/SSO)
-  if (typeof window.getLoggedUser !== "function") {
-    window.getLoggedUser = function getLoggedUser() {
-      const keys = ["ERPIMPAR_USER","usuarioLogado","impar_user","ERPIMPARUSER","USER","user"];
-      let raw = "";
-      for (const store of [window.localStorage, window.sessionStorage]) {
-        for (const k of keys) {
-          try {
-            raw = store.getItem(k) || "";
-            if (raw) break;
-          } catch (e) {}
-        }
-        if (raw) break;
-      }
-      if (!raw) return { Nome: "Usuário", Email: "—" };
-      try {
-        const u = JSON.parse(raw);
-        return {
-          Nome: u.Nome || u.nome || u.userNome || u.name || "Usuário",
-          Email: u.Email || u.email || u.userEmail || u.mail || "—"
-        };
-      } catch (e) {
-        if (raw.includes("@")) {
-          const parts = raw.split("|");
-          return { Nome: (parts[0] || "Usuário"), Email: (parts[1] || raw) };
-        }
-        return { Nome: "Usuário", Email: "—" };
-      }
-    };
-  }
-
-
-  function getLoggeduser(){
-    return (typeof window.getLoggedUser==="function") ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"};
-  }
-
-
-  function applyLoggedUser(){
-    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
-    const nomeTxt = (u.Nome || "Usuário");
-    const emailTxt = (u.Email || "—");
-
-    const nameIds = ["userNome","userNome2","userNome3","userNome4","userNome5","userName","userNameTxt"];
-    const mailIds = ["userEmail","userEmail2","userEmail3","userEmail4","userEmail5","userMail","userEmailTxt"];
-
-    nameIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = nomeTxt; });
-    mailIds.forEach(id => { const el=document.getElementById(id); if(el) el.textContent = emailTxt; });
-
-    return { nome:nomeTxt, email:emailTxt };
-  }
-
-  // expõe global (evita erro de escopo no FINALIZAR)
-  window.getLoggedUser = getLoggedUser;
-  window.getLoggeduser = getLoggedUser; // compat com typo
-  window.applyLoggedUser = applyLoggedUser;
-
-  // aplica usuário logo na entrada (padrão RP)
-  (function(){
-    try{
-      if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyLoggedUser);
-      else applyLoggedUser();
-    }catch(e){}
-  })();
-  // ===== /Logged user =====
-
-(function(){
- const dataEl=document.getElementById("dataContrato");
- const dataExtEl=document.getElementById("dataExtenso");
- function dataPorExtensoISO(iso){if(!iso)return"";const[y,m,d]=iso.split("-").map(x=>parseInt(x,10));const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];return `${d} de ${meses[m-1]} de ${y}`}
- if(dataEl){dataEl.addEventListener("change",()=>{const iso=dataEl.value;if(dataExtEl){dataExtEl.value=iso?dataPorExtensoISO(iso):"";}})}
-})();
-
-  // ===== Helpers: Modal ÍMPAR (Salvar JSON) =====
-  
-  // Alias para manter compatibilidade com versões antigas (evita erro no console)
-  function openModalGeracao(){
-    try{ openSalvarModal(); }catch(e){}
-  }
-function upper(v){
-  if (v === null || v === undefined) return "";
-  return String(v).toUpperCase().trim();
-}
-function openSalvarModal(){
-    const m = document.getElementById("modalImparSalvar");
-    if(!m) return;
-    m.setAttribute("aria-hidden","false");
-    // reset visual
-    const okBtn = document.getElementById("btnModalSalvarOk");
-    const body = document.getElementById("modalSalvarBody");
-    const loading = document.getElementById("modalSalvarLoading");
-    const title = document.getElementById("modalSalvarTitulo");
-    const sub = document.getElementById("modalSalvarSub");
-    const msg = document.getElementById("modalSalvarMsg");
-    if(okBtn) okBtn.style.display = "none";
-    if(body) body.style.display = "none";
-    if(loading) loading.style.display = "flex";
-    if(title) title.textContent = "Salvando...";
-    if(sub) sub.textContent = "Gravando o JSON do projeto no servidor.";
-    if(msg) msg.textContent = "";
-  }
-  function closeSalvarModal(){
-    const m = document.getElementById("modalImparSalvar");
-    if(!m) return;
-    m.setAttribute("aria-hidden","true");
-  }
-  function showSalvarSuccess(){
-    const okBtn = document.getElementById("btnModalSalvarOk");
-    const body = document.getElementById("modalSalvarBody");
-    const loading = document.getElementById("modalSalvarLoading");
-    const title = document.getElementById("modalSalvarTitulo");
-    const sub = document.getElementById("modalSalvarSub");
-    const msg = document.getElementById("modalSalvarMsg");
-    if(loading) loading.style.display = "none";
-    if(body) body.style.display = "block";
-    if(title) title.textContent = "Sucesso!";
-    if(sub) sub.textContent = "JSON salvo no padrão ÍMPAR";;
-    if(msg) msg.textContent = "Documento salvo com sucesso. Os dados foram registrados e estão prontos para gerar Contrato ou Ordem de Serviço.";
-    if(okBtn) okBtn.style.display = "inline-flex";
-  }
-  function showSalvarError(text){
-    const okBtn = document.getElementById("btnModalSalvarOk");
-    const body = document.getElementById("modalSalvarBody");
-    const loading = document.getElementById("modalSalvarLoading");
-    const title = document.getElementById("modalSalvarTitulo");
-    const sub = document.getElementById("modalSalvarSub");
-    const msg = document.getElementById("modalSalvarMsg");
-    if(loading) loading.style.display = "none";
-    if(body) body.style.display = "block";
-    if(title) title.textContent = "Erro ao salvar";
-    if(sub) sub.textContent = "Verifique a API e tente novamente.";
-    if(msg) msg.textContent = text || "Erro desconhecido.";
-    if(okBtn) okBtn.style.display = "inline-flex";
-  }
-  (function(){
-    const okBtn = document.getElementById("btnModalSalvarOk");
-    const m = document.getElementById("modalImparSalvar");
-    const backdrop = document.querySelector("#modalImparSalvar .impar-modal-backdrop");
-    if(okBtn) okBtn.addEventListener("click", closeSalvarModal);
-    if(backdrop) backdrop.addEventListener("click", closeSalvarModal);
-    if(m) m.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeSalvarModal(); });
-  })();
-
-  async function postJson(url, data){
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(data)
-    });
-    const txt = await res.text();
-    let js=null;
-    try{ js = JSON.parse(txt); }catch(e){}
-    if(!res.ok){
-      const msg = (js && js.error) ? js.error : (txt || "Erro no servidor");
-      throw new Error(msg);
-    }
-    return js || { ok:true, raw:txt };
-  }
-
-  // ===== Payload: tenta capturar pelos IDs existentes =====
-  function getVal(id){
-    const el = document.getElementById(id);
-    if(!el) return "";
-    return (el.value ?? "").toString().trim();
-  }
-  function buildPayload(){
-    
-    const u = (typeof window.getLoggedUser==="function" ? window.getLoggedUser() : {Nome:"Usuário",Email:"—"});
-    const codigo = (window.projectCode || getVal("codigoProjeto") || getVal("codigo") || "").trim();
-
-// Etapa 1/2
-const nomeObra = upper(
-  getVal("nomeObra") || getVal("nome_obra") || getVal("nomeObraInput")
-);
-
-const servico = upper(
-  getVal("servicoObra") || getVal("servico") || getVal("servico_obra")
-);
-
-const enderecoObra = upper(
-  getVal("enderecoObra") || getVal("endereco") || getVal("endereco_obra")
-);
-
-const projetista = upper(
-  getVal("projetista") || getVal("projetistaObra") || ""
-);
-    
-    // Etapa 3 - Contratante
-    const nomeContratante = getVal("nomeContratante");
-    const contatoContratante = getVal("contatoContratante");
-    const cpfContatoContratante = getVal("cpfContatoContratante");
-    const telefoneContratante = getVal("telefoneContratante");
-    const cepContratante = getVal("cepContratante");
-    const cpfCnpjContratante = getVal("cpfCnpjContratante") || getVal("cpfCnpj");
-    const logradouroContratante = getVal("logradouroContratante");
-    const numeroContratante = getVal("numeroContratante");
-    const bairroContratante = getVal("bairroContratante");
-    const cidadeContratante = getVal("cidadeContratante");
-    const ufContratante = getVal("ufContratante");
-    const complementoContratante = getVal("complementoContratante");
-    const emailContratante = getVal("emailContratante");
-
-    // Etapa 4 - Contratada
-    const nomeContratada = getVal("nomeContratada");
-    const contatoContratada = getVal("contatoContratada");
-    const cpfContatoContratada = getVal("cpfContatoContratada");
-    const telefoneContratada = getVal("telefoneContratada");
-    const cepContratada = getVal("cepContratada");
-    const cpfCnpjContratada = getVal("cpfCnpjContratada");
-    const logradouroContratada = getVal("logradouroContratada");
-    const numeroContratada = getVal("numeroContratada");
-    const bairroContratada = getVal("bairroContratada");
-    const cidadeContratada = getVal("cidadeContratada");
-    const ufContratada = getVal("ufContratada");
-    const complementoContratada = getVal("complementoContratada");
-    const emailContratada = getVal("emailContratada");
-
-    // Etapa 5
-    const clausulas = getVal("clausulas") || getVal("clausulasCondicoes") || "";
-    const condicoesPagamento = getVal("condPagamento") || getVal("condicoesPagamento") || getVal("condicoes") || "";
-    const valor = getVal("valorContrato") || getVal("valor") || "";
-    const valorExtenso = getVal("valorExtenso") || getVal("Extenso_Valor") || "";
-    const prazoDias = getVal("prazoDias") || getVal("prazo") || "";
-    const dataContrato = getVal("dataContrato") || getVal("data") || "";
-    const dataExtenso = getVal("dataExtenso") || getVal("data_por_extenso") || "";
-
-    return {
-      codigo,
-      nomeObra, servico, enderecoObra, projetista,
-
-      nomeContratante, contatoContratante, cpfContatoContratante, telefoneContratante, emailContratante,
-      cpfCnpjContratante, cepContratante, logradouroContratante, numeroContratante,
-      complementoContratante, bairroContratante, cidadeContratante, ufContratante,
-
-      nomeContratada, contatoContratada, cpfContatoContratada, telefoneContratada, emailContratada,
-      cpfCnpjContratada, cepContratada, logradouroContratada, numeroContratada,
-      complementoContratada, bairroContratada, cidadeContratada, ufContratada,
-
-      clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
-      dataContrato, dataExtenso,
-
-      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.Nome||"Usuário"), usuario_email: (u.Email||"—") }
-    };
-  }
-
-
-  // ===== FINALIZAR: salva JSON e mostra modal sucesso (padrão ÍMPAR) =====
-  async function onFinalizarSalvarJson(){
-    try{
-      // garante usuário aplicado (todas etapas)
-      try{ applyLoggedUser(); }catch(e){}
-
-      // validação defensiva (se existir)
-      try{ if(typeof validateCurrentStep === "function"){ validateCurrentStep(); } }catch(e){}
-
-      
-      // valida etapa 5 antes de finalizar (consistência total)
-      try{
-        if(typeof validateStep5 === "function"){
-          if(!validateStep5()){
-            try{ if(window.showStep) showStep(5); }catch(e){}
-            return;
-          }
-        }
-      }catch(e){}
-const payload = buildPayload();
-      if(!payload || !payload.codigo){
-        if(window.showStep) showStep(1);
-        try{
-          const inp = document.getElementById("codigoProjeto") || document.getElementById("codigo");
-          if(inp){ inp.classList.add("input-error"); inp.focus(); }
-        }catch(e){}
-        Swal.fire({ icon:"warning", title:"Campo obrigatório", text:"Informe o código do projeto para finalizar." });
-        return;
-      }
-
-      showPageLoader("Salvando…", "Gravando o JSON do projeto no servidor.");
-
-      const resp = await postJson(API_SAVE_JSON, payload);
-
-      hidePageLoader();
-
-      const tipo = await imparAskDocToGenerate("afterSave");
-      if(!tipo) return resp;
-
-      try{
-        await gerarDocumento(tipo, { preferExisting: true });
-      }catch(err){
-        Swal.fire({
-          icon:"error",
-          title:"Erro ao gerar documento",
-          html: err?.message || String(err)
-        });
-      }
-
-      return resp;
-    }catch(err){
-      hidePageLoader();
-      Swal.fire({
-        icon:"error",
-        title:"Erro ao salvar",
-        html:(err && (err.message || err.toString())) ? (err.message || err.toString()) : "Falha ao salvar o JSON."
-      });
-      console.error(err);
-    }
-  }
-
-
-  // Alias de compatibilidade: versões antigas chamavam finalizeFlow()
-  async function finalizeFlow(){
-    return await onFinalizarSalvarJson();
-  }
-
-
-  // liga no botão FINALIZAR
-  (function(){
-    const btn = document.getElementById("btnFinalizar");
-    if(btn){
-      btn.addEventListener("click", onFinalizarSalvarJson);
-    }
-  })();
-
-
-  // ===== Override seguro: remove listeners antigos do FINALIZAR e aplica o novo =====
-  (function(){
-    const btn = document.getElementById("btnFinal") || document.getElementById("btnFinalizar");
-    if(!btn) return;
-    const clone = btn.cloneNode(true);
-    btn.parentNode.replaceChild(clone, btn);
-    clone.addEventListener("click", onFinalizarSalvarJson);
-  })();
-
-
-  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
-  (function(){
-function bind(){
-      const candidates = [];
-      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
-      if(byId) candidates.push(byId);
-      document.querySelectorAll("button, a").forEach(el=>{
-        const t = (el.textContent || "").toUpperCase();
-        if(t.includes("FINALIZAR")) candidates.push(el);
-      });
-      const unique = Array.from(new Set(candidates));
-      unique.forEach(btn=>{
-        try{
-          const clone = btn.cloneNode(true);
-          btn.parentNode.replaceChild(clone, btn);
-          clone.addEventListener("click", onFinalizarSalvarJson);
-          // garante aparência não alterada
-        }catch(e){}
-      });
-    }
-    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
-    else bind();
-  })();
-
-</script>
+  <title>ERP ÍMPAR — Gestão à Vista</title>
   <style>
     :root{
       --bg1:#0b1e4a;
       --bg2:#0e3b6e;
       --bg3:#0f766e;
-
       --panel: rgba(2,6,23,.66);
       --panel2: rgba(2,6,23,.78);
       --border: rgba(148,163,184,.45);
-
       --text: #e5e7eb;
       --soft: rgba(229,231,235,.78);
-
-      --blue:#3b82f6;
       --green:#22c55e;
+      --yellow:#facc15;
       --red:#ef4444;
-
+      --blue:#3b82f6;
       --radius: 18px;
     }
 
@@ -521,19 +30,14 @@ function bind(){
       background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));
       display:flex;
       flex-direction:column;
+      opacity:0;
     }
 
-    /* Entrada suave */
-    body{opacity:0}
     @keyframes imparEnter{
       0%{opacity:0; transform: translateY(28px) scale(.98); filter: blur(10px);}
       100%{opacity:1; transform: translateY(0) scale(1); filter: blur(0);}
     }
     body.impar-enter{animation:imparEnter .75s cubic-bezier(.16,1,.3,1) both;}
-    @media (prefers-reduced-motion: reduce){
-      body{opacity:1}
-      body.impar-enter{animation:none}
-    }
 
     header{
       padding:14px 14px 10px;
@@ -542,12 +46,11 @@ function bind(){
     }
     .header-inner{
       width:100%;
-      max-width:1200px;
+      max-width:1240px;
       display:flex;
       align-items:flex-start;
       justify-content:space-between;
       gap:12px;
-      flex-wrap:wrap;
     }
     .brand{
       display:flex;
@@ -567,36 +70,52 @@ function bind(){
       content:""; position:absolute; inset:-6px;
       background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 55%);
     }
-    .brand-text{display:flex; flex-direction:column; gap:2px; min-width:0;}
-    .brand-kicker{font-size:12px; letter-spacing:.22em; text-transform:uppercase; font-weight:800; opacity:.9;}
-    .brand-title{font-size:18px; font-weight:900; line-height:1.05;}
-    .brand-sub{font-size:14px; font-weight:800; opacity:.92; line-height:1.1;}
-    .brand-tagline{font-size:12px; opacity:.75; line-height:1.2; max-width:65ch; white-space:normal;}
-
-    .tag-top{
-      margin-left:auto;
-      font-size:11px;
-      padding:6px 10px;
-      border-radius:999px;
-      background:rgba(15,23,42,.85);
-      border:1px solid rgba(148,163,184,.6);
-      color:var(--soft);
+    .brand-text{
       display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width:0;
+      line-height:1.05;
+    }
+    .brand-kicker{
+      font-size:12px;
+      letter-spacing:.18em;
+      text-transform:uppercase;
+      font-weight:800;
+      opacity:.96;
+    }
+    .brand-title{
+      font-size:24px;
+      font-weight:900;
+      line-height:1;
+    }
+    .brand-sub{
+      font-size:14px;
+      font-weight:800;
+      opacity:.95;
+      line-height:1.1;
+    }
+
+    .header-menu-btn{
+      display:inline-flex;
       align-items:center;
       gap:8px;
+      padding:8px 14px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.55);
+      background:rgba(15,23,42,.88);
+      color:var(--text);
+      text-decoration:none;
+      font-size:12px;
+      font-weight:700;
+      box-shadow:0 10px 22px rgba(0,0,0,.22);
+      transition:all .2s ease;
+      white-space:nowrap;
     }
-    .pill-btn{
-      border:none;
-      background:transparent;
-      color:inherit;
-      font:inherit;
-      display:flex;
-      align-items:center;
-      gap:6px;
-      cursor:pointer;
-      padding:0;
+    .header-menu-btn:hover{
+      filter:brightness(1.08);
+      transform:translateY(-1px);
     }
-    .pill-btn:hover{filter:brightness(1.08)}
 
     main{
       flex:1 0 auto;
@@ -606,7 +125,7 @@ function bind(){
     }
     .layout{
       width:100%;
-      max-width:1200px;
+      max-width:1240px;
       display:flex;
       justify-content:center;
     }
@@ -619,7 +138,6 @@ function bind(){
       padding:18px;
     }
 
-    /* Topbox (padrão) */
     .topbox{
       display:flex;
       align-items:center;
@@ -631,3019 +149,570 @@ function bind(){
       background:linear-gradient(120deg, rgba(2,6,23,.78), rgba(2,6,23,.35));
       box-shadow:0 18px 60px rgba(0,0,0,.35);
       flex-wrap:wrap;
+      margin-bottom:18px;
+    }
+
+    .topbox-left{
+      min-width:220px;
     }
     .topbox-left .title{
       font-size:18px;
-      font-weight:900;
+      font-weight:800;
       margin-bottom:4px;
     }
-    .user-label{
-      font-size:11px;
-      letter-spacing:.12em;
-      text-transform:uppercase;
-      color:rgba(156,163,175,.92);
-      margin-bottom:2px;
+    .login-label{
+      font-size:12px;
       font-weight:800;
-    }
-    .user-values{
-      font-size:12px;
-      color:#cfd8ff;
-      line-height:1.25;
-      font-weight:700;
-    }
-    .topbox-center{
-      flex:1 1 240px;
-      min-width:240px;
-      text-align:center;
-      padding:0 10px;
-    }
-    .code-line{
-      font-size:20px;
-      font-weight:900;
-      letter-spacing:.4px;
-      color:rgba(229,231,235,.98);
-    }
-    .sub-line{
-      margin-top:4px;
-      font-size:16px;
-      color:rgba(229,231,235,.92);
-      opacity:.95;
-    }
-
-    /* Stepper */
-    .stepper-wrap{display:flex; align-items:center; justify-content:flex-end; flex:0 0 auto;}
-    .stepper{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:6px 8px;
-      border-radius:999px;
-      background:rgba(2,6,23,.35);
-      border:1px solid rgba(255,255,255,.06);
-      overflow:auto;
-      max-width:100%;
-    }
-    .dot{
-      width:24px;height:24px;border-radius:999px;
-      display:flex; align-items:center; justify-content:center;
-      font-size:11px; font-weight:900;
-      background:#0b1220;
-      color:#cbd5e1;
-      border:1px solid rgba(148,163,184,.25);
-      box-shadow:0 10px 24px rgba(0,0,0,.25);
-      flex:0 0 auto;
-    }
-    .dot.active{
-      background:linear-gradient(135deg,#22c55e,#16a34a);
-      color:#020617;
-      border-color:rgba(34,197,94,.6);
-      box-shadow:0 14px 34px rgba(22,163,74,.45);
-    }
-    .line{
-      width:56px;height:3px;border-radius:999px;
-      background:rgba(148,163,184,.18);
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
-      flex:0 0 auto;
-    }
-    .line.active{
-      background:linear-gradient(90deg,#22c55e,#16a34a);
-      box-shadow:0 10px 24px rgba(22,163,74,.35);
-    }
-
-    .hint{
-      margin:10px 2px 10px;
-      font-size:14px;
-      color:rgba(231,236,255,.92);
-      opacity:.95;
-      line-height:1.35;
-      text-shadow:0 2px 10px rgba(0,0,0,.35);
-    }
-
-    .card{
-      margin-top:10px;
-      border-radius:16px;
-      border:1px solid rgba(148,163,184,.35);
-      background:rgba(2,6,23,.55);
-      padding:14px;
-      display:flex;
-      flex-direction:column;
-      min-height:280px;
-      box-shadow:0 18px 48px rgba(0,0,0,.22);
-      backdrop-filter: blur(10px);
-    }
-
-    label{
-      display:block;
-      font-size:11px;
-      text-transform:uppercase;
-      letter-spacing:.08em;
-      color:#9ca3af;
-      margin-bottom:6px;
-      font-weight:900;
-    }
-    .req-star{
-      color:#fbbf24;
-      font-weight:900;
-      text-shadow:0 0 10px rgba(251,191,36,.35);
-      margin-left:2px;
-    }
-    input{
-      width:100%;
-      padding:10px 12px;
-      border-radius:12px;
-      border:1px solid #111827;
-      background:#020617;
-      color:var(--text);
-      font-size:14px;
-      outline:none;
-      transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
-    }
-    input:focus{
-      border-color:var(--blue);
-      box-shadow:0 0 0 1px rgba(59,130,246,.95), 0 0 18px rgba(59,130,246,.40), 0 0 46px rgba(29,78,216,.25);
-    }
-    .field-help{
-      margin-top:8px;
-      min-height:14px;
-      font-size:12px;
-      color:#94a3b8;
-    }
-    .field-help.ok{color:#86efac; font-weight:800;}
-    .field-help.err{color:#fca5a5; font-weight:900;}
-
-    /* Efeito premium: vermelho + tremor */
-    @keyframes shakeX{
-      0%,100%{transform:translateX(0)}
-      20%{transform:translateX(-10px)}
-      40%{transform:translateX(10px)}
-      60%{transform:translateX(-8px)}
-      80%{transform:translateX(8px)}
-    }
-    .input-error{
-      border:2px solid rgba(239,68,68,.95) !important;
-      border-color:rgba(239,68,68,.95) !important;
-      box-shadow:0 0 0 1px rgba(239,68,68,.95), 0 0 18px rgba(239,68,68,.35), 0 0 46px rgba(239,68,68,.25) !important;
-      animation:shakeX .38s ease-in-out;
-    }
-
-    .actions{
-      margin-top:auto;
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      justify-content:space-between;
-      padding-top:14px;
-    }
-    .actions-left{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      justify-content:flex-start;
-    }
-    .actions-right{
-      margin-left:auto;
-      display:flex;
-      justify-content:flex-end;
-    }
-
-    .btn{
-      border:none;
-      border-radius:999px;
-      padding:10px 16px;
-      font-size:12px;
-      text-transform:uppercase;
-      letter-spacing:.12em;
-      font-weight:900;
-      cursor:pointer;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:10px;
-      min-width:220px;
-      transition: transform .22s cubic-bezier(.16,1,.3,1),
-                  box-shadow .22s cubic-bezier(.16,1,.3,1),
-                  filter .22s cubic-bezier(.16,1,.3,1);
-      will-change: transform;
-    }
-
-/* =========================================================
-   TRANSIÇÃO DE ENTRADA — estilo slide (menu → solicitação)
-   ========================================================= */
-body { opacity: 0; }
-@keyframes imparEnter {
-  0% { opacity:0; transform: translateY(34px) scale(.97); filter: blur(10px); }
-  100% { opacity:1; transform: translateY(0) scale(1); filter: blur(0); }
-}
-body.impar-enter { animation: imparEnter .80s cubic-bezier(.16,1,.3,1) both; }
-@media (prefers-reduced-motion: reduce) {
-  body { opacity: 1; }
-  body.impar-enter { animation:none; }
-}
-
-    .btn-primary{
-      background:linear-gradient(135deg,#22c55e,#16a34a);
-      color:#020617;
-      box-shadow:0 10px 30px rgba(22,163,74,.6);
-    }
-    .btn-secondary{
-      background:#111827;
       color:#fff;
-      border:1px solid #374151;
+      opacity:.95;
+      text-transform:uppercase;
+      letter-spacing:.04em;
     }
-
-
-/* ===== Botões verdes — hover/focus premium (zoom + brilho) ===== */
-.btn-primary{
-  transition: transform .22s cubic-bezier(.16,1,.3,1),
-              box-shadow .22s cubic-bezier(.16,1,.3,1),
-              filter .22s cubic-bezier(.16,1,.3,1);
-  will-change: transform;
-}
-.btn-primary:hover{
-  transform: translateY(-1px) scale(1.035);
-  filter: saturate(1.18) brightness(1.08);
-  box-shadow:
-    0 0 0 1px rgba(34,197,94,.95),
-    0 0 22px rgba(34,197,94,.55),
-    0 18px 45px rgba(22,163,74,.55);
-}
-.btn-primary:active{
-  transform: translateY(0) scale(.99);
-  filter: saturate(1.08) brightness(1.03);
-}
-.btn-primary:focus-visible{
-  outline:none;
-  transform: translateY(-1px) scale(1.035);
-  box-shadow:
-    0 0 0 2px rgba(2,6,23,.90),
-    0 0 0 4px rgba(34,197,94,.75),
-    0 0 26px rgba(34,197,94,.55);
-}
-    .btn-primary.is-loading,
-    .btn-secondary.is-loading{
-      pointer-events:none;
+    .login-name{
+      font-size:13px;
+      font-weight:800;
+      color:#fff;
+      margin-top:2px;
+      word-break:break-word;
+    }
+    .login-email{
+      font-size:13px;
+      color:#fff;
       opacity:.92;
-      filter:saturate(1.02) brightness(1.01);
+      word-break:break-word;
     }
-    .mini-spinner{
-      width:14px;height:14px;
+
+    .topbox-center{
+      flex:1 1 340px;
+      text-align:center;
+      min-width:260px;
+    }
+    .topbox-center .main-title{
+      font-size:18px;
+      font-weight:800;
+      margin-bottom:4px;
+      color:#fff;
+    }
+    .topbox-center .subtitle{
+      font-size:12px;
+      opacity:.82;
+    }
+
+    .topbox-right{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      min-width:120px;
+    }
+    .rf-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding:6px 10px;
       border-radius:999px;
-      border:2px solid rgba(2,6,23,.35);
-      border-top-color:rgba(2,6,23,.85);
-      display:inline-block;
-      animation:spin .8s linear infinite;
+      border:1px solid rgba(148,163,184,.28);
+      background:rgba(2,6,23,.55);
     }
-    @keyframes spin{to{transform:rotate(360deg)}}
+    .rf-dot{
+      width:22px;
+      height:22px;
+      border-radius:999px;
+      display:grid;
+      place-items:center;
+      font-size:11px;
+      font-weight:900;
+      color:#04111f;
+    }
+    .rf-dot.r{ background:var(--green); }
+    .rf-dot.f{ background:#111827; color:#fff; border:1px solid rgba(255,255,255,.16); }
+    .rf-line{
+      width:44px;
+      height:2px;
+      background:linear-gradient(90deg, rgba(34,197,94,.95), rgba(34,197,94,.35));
+      border-radius:999px;
+    }
 
-.pill-btn{
-  transition: transform .2s cubic-bezier(.16,1,.3,1), box-shadow .2s cubic-bezier(.16,1,.3,1);
-}
-.pill-btn:hover{ transform: translateY(-1px) scale(1.02); box-shadow: 0 12px 28px rgba(0,0,0,.28); }
-.pill-btn:focus-visible{ outline:none; box-shadow: 0 0 0 2px rgba(2,6,23,.9), 0 0 0 4px rgba(47,123,255,.55); }
+    .content-grid{
+      display:grid;
+      grid-template-columns:minmax(320px, 1fr) minmax(380px, 1.05fr);
+      gap:18px;
+      align-items:start;
+    }
 
-    .arrow{ display:inline-block; font-weight:900; }
-    .arrow-left{ transform: rotate(180deg); }
+    .panel{
+      border-radius:16px;
+      border:1px solid var(--border);
+      background:var(--panel);
+      box-shadow:0 18px 40px rgba(0,0,0,.30);
+      overflow:hidden;
+    }
 
+    .menu-stack{
+      display:grid;
+      gap:14px;
+    }
 
-    /* Panes */
-    .step-pane{display:none;}
-    .step-pane.active{display:block;}
-    @keyframes paneIn{from{opacity:0; transform:translateY(10px) scale(.99);} to{opacity:1; transform:translateY(0) scale(1);}}
-    .pane-in{animation:paneIn .22s ease-out both;}
+    .menu-card{
+      padding:24px;
+      border-radius:16px;
+      border:2px solid rgba(148,163,184,.30);
+      background:linear-gradient(135deg, rgba(15,23,42,.82), rgba(15,23,42,.56));
+      cursor:pointer;
+      transition:all .25s ease;
+      text-decoration:none;
+      color:inherit;
+      display:block;
+      min-height:178px;
+    }
+    .menu-card:hover{
+      transform:translateY(-4px);
+      border-color:var(--green);
+      box-shadow:0 20px 40px rgba(0,0,0,.4), 0 0 20px rgba(34,197,94,.22);
+    }
+    .menu-card.tv{
+      background:linear-gradient(135deg, rgba(15,23,42,.50), rgba(15,118,110,.32));
+    }
+    .menu-card-icon{
+      font-size:48px;
+      margin-bottom:14px;
+    }
+    .menu-card-title{
+      font-size:20px;
+      font-weight:800;
+      margin-bottom:8px;
+      color:#fff;
+    }
+    .menu-card-desc{
+      font-size:13px;
+      opacity:.84;
+      line-height:1.55;
+    }
 
-    /* Placeholder */
-    .coming{
+    .history-panel{
+      min-height:386px;
       display:flex;
       flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      text-align:center;
+    }
+    .history-header{
+      display:flex;
       gap:10px;
-      min-height:220px;
-      padding:10px;
+      align-items:center;
+      padding:14px 14px 10px;
+      flex-wrap:wrap;
     }
-    .coming .big{
-      font-size:18px;
-      font-weight:1000;
-      letter-spacing:.02em;
-    }
-    .coming .small{
+    .history-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 12px;
+      border-radius:999px;
+      background:rgba(2,6,23,.88);
+      border:1px solid rgba(148,163,184,.35);
       font-size:13px;
-      color:rgba(229,231,235,.82);
-      max-width:70ch;
-      line-height:1.35;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .history-select{
+      flex:1;
+      min-width:240px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:1px solid rgba(59,130,246,.55);
+      background:rgba(2,6,23,.92);
+      color:#fff;
+      font-size:14px;
+      font-weight:700;
+      box-shadow:0 0 0 2px rgba(59,130,246,.22) inset;
+    }
+    .history-select:focus{
+      outline:none;
+      border-color:#3b82f6;
+      box-shadow:0 0 0 3px rgba(59,130,246,.24);
     }
 
-    footer{
-      margin-top:auto;
-      background:#020617;
-      color:#9ca3af;
-      padding:8px 12px;
-      font-size:10px;
+    .history-body{
+      padding:8px 14px 14px;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      min-height:300px;
     }
-    .rodape-inner{
-      max-width:1200px;
-      margin:0 auto;
+    .history-current{
+      margin-bottom:12px;
+      padding:14px;
+      border-radius:14px;
+      background:linear-gradient(135deg, rgba(2,6,23,.88), rgba(15,118,110,.18));
+      border:1px solid rgba(34,197,94,.28);
+    }
+    .history-current-label{
+      font-size:10px;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:var(--green);
+      font-weight:800;
+      margin-bottom:6px;
+    }
+    .history-current-text{
+      font-size:14px;
+      line-height:1.45;
+      color:#fff;
+      white-space:pre-wrap;
+    }
+    .history-list{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      border-radius:14px;
+      border:1px solid rgba(148,163,184,.20);
+      background:rgba(2,6,23,.70);
+      padding:12px;
+    }
+    .history-list::-webkit-scrollbar{
+      width:10px;
+    }
+    .history-list::-webkit-scrollbar-thumb{
+      background:rgba(34,197,94,.35);
+      border-radius:999px;
+    }
+    .history-item{
+      padding:12px;
+      border-radius:12px;
+      background:rgba(15,23,42,.82);
+      border:1px solid rgba(148,163,184,.18);
+      margin-bottom:10px;
+    }
+    .history-item:last-child{margin-bottom:0}
+    .history-meta{
       display:flex;
       justify-content:space-between;
       gap:12px;
       flex-wrap:wrap;
+      font-size:11px;
+      color:var(--soft);
+      margin-bottom:8px;
     }
-
-@media (max-width: 900px){
-  .topbox-center{text-align:left}
-  .btn{width:100%; min-width:unset;}
-  input{font-size:16px} /* evita zoom no iPhone */
-
-  /* FIX MOBILE — stepper não pode "vazar" do card/topbox */
-  .topbox{overflow:hidden;}
-  .stepper-wrap{width:100%; max-width:100%; justify-content:center;}
-  .stepper{
-    width:100%;
-    max-width:100%;
-    justify-content:center;
-    overflow-x:auto;
-    overflow-y:hidden;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* compacta um pouco no mobile */
-  .dot{width:16px; height:22px; font-size:11px;}
-  .line{width:22px}
-}
-  
-    .btn:focus{
-      outline:none;
-      box-shadow:
-        0 0 0 2px rgba(2,6,23,.90),
-        0 0 0 4px rgba(34,197,94,.80),
-        0 0 28px rgba(34,197,94,.70),
-        0 22px 55px rgba(22,163,74,.65) !important;
+    .history-user{
+      font-weight:800;
+      color:var(--green);
     }
-
-
-    /* Etapa 3 – grid do miolo (sem mexer no layout geral) */
-    .grid24{
-      display:grid;
-      grid-template-columns: repeat(24, minmax(0, 1fr));
-      gap:14px;
-      align-items:start;
+    .history-status{
+      font-size:13px;
+      line-height:1.5;
+      color:#fff;
+      white-space:pre-wrap;
     }
-    .grid24 > div{min-width:0;}
-    .c12{grid-column: span 12;}
-    .c8{grid-column: span 8;}
-    .c6{grid-column: span 6;}
-    .c5{grid-column: span 5;}
-    .c4{grid-column: span 4;}
-    .c3{grid-column: span 3;}
-    .c2{grid-column: span 2;}
-
-    @media (max-width: 900px){
-      .grid24{grid-template-columns: 1fr; gap:12px;}
-      .c12,.c8,.c6,.c5,.c4,.c3,.c2{grid-column: 1 / -1;}
-    }
-
-
-    /* Campos preenchidos automaticamente via CEP */
-    input[data-autofill="1"]{
-      background: rgba(2,6,23,.72);
-      border-color: rgba(34,197,94,.22);
-      box-shadow: inset 0 0 0 1px rgba(34,197,94,.18);
-      color: rgba(229,231,235,.92);
-    }
-    input[data-autofill="1"][data-auto-set="1"]{
-      background: rgba(16,185,129,.10);
-      border-color: rgba(16,185,129,.55);
-      box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 0 18px rgba(16,185,129,.18);
-    }
-
-    /* Overlay spinner (Atualizando endereço...) */
-    .overlay-loading{
-      position: fixed;
-      inset: 0;
-      background: rgba(2,6,23,.55);
-      backdrop-filter: blur(6px);
-      display:none;
+    .history-empty, .history-loading{
+      flex:1;
+      min-height:220px;
+      display:flex;
       align-items:center;
       justify-content:center;
-      z-index: 9999;
-      padding: 16px;
-    }
-    .overlay-loading.show{display:flex;}
-    .overlay-card{
-      width: min(520px, 92vw);
-      border-radius: 18px;
-      border: 1px solid rgba(148,163,184,.35);
-      background: rgba(2,6,23,.78);
-      box-shadow: 0 24px 70px rgba(0,0,0,.55);
-      padding: 18px 18px 16px;
       text-align:center;
-    }
-    .overlay-title{
-      font-size: 14px;
-      font-weight: 1000;
-      letter-spacing: .10em;
-      text-transform: uppercase;
-      color: rgba(231,236,255,.95);
-      margin-top: 10px;
-    }
-    .overlay-sub{
-      font-size: 13px;
-      color: rgba(229,231,235,.82);
-      margin-top: 8px;
-    }
-    .spinner-lg{
-      width: 54px;
-      height: 54px;
-      border-radius: 999px;
-      border: 4px solid rgba(148,163,184,.25);
-      border-top-color: rgba(34,197,94,.95);
-      animation: spin .9s linear infinite;
-      margin: 0 auto;
-      box-shadow: 0 0 0 1px rgba(34,197,94,.18), 0 0 26px rgba(34,197,94,.20);
+      font-size:14px;
+      opacity:.78;
+      padding:24px;
     }
 
-
-    textarea{
-      width:100%;
-      resize: vertical;
-      padding: 14px 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(148,163,184,.22);
-      background: rgba(2,6,23,.55);
-      color: rgba(231,236,255,.92);
-      outline: none;
-    }
-    textarea::placeholder{color: rgba(148,163,184,.65);}
-    textarea:focus{
-      border-color:var(--blue);
-      box-shadow:0 0 0 1px rgba(59,130,246,.95), 0 0 18px rgba(59,130,246,.40), 0 0 46px rgba(29,78,216,.25);
+    footer{
+      padding:12px;
+      text-align:center;
+      font-size:11px;
+      opacity:.7;
     }
 
-
-    /* Etapa 5 - data picker ícone e preview de logo */
-    input[type="date"]{
-      padding-right: 42px;
-    }
-    input[type="date"]::-webkit-calendar-picker-indicator{
-      opacity: .9;
-      cursor: pointer;
-      filter: invert(1);
-    }
-    .hint{
-      font-size: 12px;
-      color: rgba(229,231,235,.72);
-      margin-top: 6px;
-    }
-    .logo-preview{
-      position: relative;
-      width: 100%;
-      height: 54px;
-      border-radius: 12px;
-      border: 1px solid rgba(148,163,184,.28);
-      background: rgba(2,6,23,.55);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    .logo-preview img{
-      max-height: 42px;
-      max-width: 92%;
-      display: none;
-      filter: drop-shadow(0 8px 14px rgba(0,0,0,.35));
-    }
-    .logo-empty{
-      font-size: 12px;
-      color: rgba(229,231,235,.65);
+    @media (max-width: 980px){
+      .content-grid{
+        grid-template-columns:1fr;
+      }
+      .history-panel{
+        min-height:0;
+      }
     }
 
-
-#step5 textarea:focus,
-#step5 input:focus{
-  outline:none;
-  border-color: rgba(34,197,94,.85);
-  box-shadow:0 0 0 2px rgba(2,6,23,.90),0 0 0 4px rgba(34,197,94,.80),0 0 28px rgba(34,197,94,.65),0 22px 55px rgba(22,163,74,.55);
-}
-
-/* ===== Modal ÍMPAR ===== */
-.impar-modal{position:fixed; inset:0; display:none; z-index:9999;}
-.impar-modal[aria-hidden="false"]{display:block;}
-.impar-modal-backdrop{position:absolute; inset:0; background:rgba(0,0,0,.55); backdrop-filter: blur(6px);}
-.impar-modal-card{
-  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-  width:min(720px, calc(100% - 32px));
-  border-radius:22px;
-  border:1px solid rgba(148,163,184,.22);
-  background: radial-gradient(1200px 600px at 10% 10%, rgba(59,130,246,.14), transparent 55%),
-              radial-gradient(900px 500px at 90% 20%, rgba(34,197,94,.12), transparent 55%),
-              rgba(2,6,23,.92);
-  box-shadow: 0 30px 80px rgba(0,0,0,.55);
-  padding:22px 22px 18px;
-}
-.impar-modal-head{display:flex; gap:14px; align-items:flex-start; padding-bottom:10px;}
-.impar-modal-icon{
-  width:46px; height:46px; border-radius:14px;
-  display:flex; align-items:center; justify-content:center;
-  background: rgba(59,130,246,.15);
-  border:1px solid rgba(59,130,246,.35);
-  box-shadow: 0 0 24px rgba(59,130,246,.25);
-  font-size:22px;
-}
-.impar-modal-title{font-size:22px; font-weight:800; letter-spacing:.2px; color:rgba(255,255,255,.92);}
-.impar-modal-subtitle{margin-top:4px; font-size:13px; color:rgba(229,231,235,.72);}
-.impar-modal-footer{display:flex; justify-content:flex-end; padding-top:10px;}
-.impar-modal-loading{
-  position:absolute; inset:0; border-radius:22px;
-  background:rgba(2,6,23,.82);
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
-}
-.impar-modal-loading-text{color:rgba(229,231,235,.85); font-size:13px;}
-.impar-modal-body{padding:8px 0 0;}
-.impar-modal-message{color:rgba(229,231,235,.88); font-size:14px; line-height:1.35;}
-
-
-/* ===== Override: foco azul brilhante (garantia) ===== */
-button:focus, .btn:focus, .btn:focus-visible,
-input:focus, textarea:focus, select:focus,
-input:focus-visible, textarea:focus-visible, select:focus-visible{
-  outline:none !important;
-  border-color: rgba(59,130,246,.95) !important;
-  box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 0 18px rgba(59,130,246,.45) !important;
-}
-
-
-    /* =========================================================
-       SWEETALERT2 — Tema ÍMPAR Premium (igual Solicitação)
-       ========================================================= */
-    .impar-swal{
-      background: rgba(2,6,23,.92) !important;
-      color: #e5e7eb !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      border-radius: 18px !important;
-      box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
-      backdrop-filter: blur(14px);
+    @media (max-width:700px){
+      .header-inner{
+        align-items:flex-start;
+      }
+      .brand-title{font-size:20px}
+      .brand-sub{font-size:13px}
+      .topbox{
+        align-items:flex-start;
+      }
+      .topbox-center{
+        text-align:left;
+      }
+      .topbox-right{
+        justify-content:flex-start;
+      }
     }
-    .impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800; }
-    .impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
-/* ===== SweetAlert2 — Tema ÍMPAR Premium ===== */
-.impar-swal{
-  background: rgba(2,6,23,.92) !important;
-  color: #e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
-  border-radius: 18px !important;
-  box-shadow: 0 30px 80px rgba(0,0,0,.55) !important;
-  backdrop-filter: blur(14px);
-}
-.impar-swal .swal2-title{ color:#e5e7eb !important; font-weight:800 !important; }
-.impar-swal .swal2-html-container{ color: rgba(229,231,235,.88) !important; }
 
-/* botões (aqui é o ponto crítico) */
-.impar-swal .swal2-actions .swal2-confirm,
-.impar-swal .swal2-actions .swal2-deny,
-.impar-swal .swal2-actions .swal2-cancel{
-  border:0 !important;
-  border-radius:12px !important;
-  padding:10px 16px !important;
-  font-weight:900 !important;
-  letter-spacing:.3px !important;
-  cursor:pointer !important;
-  box-shadow:none !important;
-}
-
-.impar-swal .swal2-confirm{
-  background: linear-gradient(135deg,#22c55e,#16a34a) !important;
-  color:#020617 !important;
-}
-
-.impar-swal .swal2-deny{
-  background: rgba(148,163,184,.18) !important;
-  color:#e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
-}
-
-/* base para TODOS os botões */
-.impar-swal-confirm,
-.impar-swal-deny,
-.impar-swal-cancel{
-  border:0 !important;
-  border-radius:12px !important;
-  padding:10px 16px !important;
-  font-weight:900 !important;
-  letter-spacing:.3px !important;
-  cursor:pointer !important;
-  box-shadow:none !important;
-}
-
-/* espaçamento entre botões */
-.impar-swal-actions{
-  gap: 12px !important;              /* <<<<<< espaço entre eles */
-  margin-top: 14px !important;
-}
-
-/* tamanhos para não “apertar” */
-.impar-swal-confirm,
-.impar-swal-deny,
-.impar-swal-cancel{
-  min-width: 170px !important;
-}
-
-/* cores */
-.impar-swal-confirm{
-  background: linear-gradient(135deg,#22c55e,#16a34a) !important;
-  color:#020617 !important;
-}
-
-.impar-swal-deny{
-  background: rgba(148,163,184,.14) !important;
-  color:#e5e7eb !important;
-  border: 1px solid rgba(255,255,255,.12) !important;
-}
-
-/* Cancelar VERMELHO */
-.impar-swal-cancel{
-  background: linear-gradient(135deg,#ef4444,#b91c1c) !important;
-  color:#fff !important;
-}
-
-    /* =========================================================
-       PAGE LOADER — padrão ERP (spinner pequeno + texto)
-       ========================================================= */
-    #pageLoader{
-      position:fixed; inset:0; z-index:99999;
-      display:flex; align-items:center; justify-content:center;
-      background: rgba(2,6,23,.55);
-      backdrop-filter: blur(10px);
+    @media (max-width:600px){
+      .menu-card{min-height:auto}
+      .history-header{flex-direction:column; align-items:stretch}
+      .history-select{min-width:0; width:100%}
+      .header-inner{
+        flex-wrap:wrap;
+      }
+      .header-menu-btn{
+        margin-left:auto;
+      }
     }
-    #pageLoader.hidden{ display:none; }
-    #pageLoader .loader-card{
-      width:min(720px, 92vw);
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(2,6,23,.78);
-      box-shadow: 0 30px 90px rgba(0,0,0,.55);
-      padding: 18px 18px;
-      display:flex; gap:14px; align-items:center;
-    }
-    #pageLoader .loader-spin{
-      width:22px; height:22px; border-radius:999px;
-      border: 2px solid rgba(148,163,184,.35);
-      border-top-color: rgba(226,232,240,.95);
-      animation: imparSpin .85s linear infinite;
-      flex: 0 0 auto;
-    }
-    #pageLoader .loader-title{ font-weight:900; letter-spacing:.3px; }
-    #pageLoader .loader-sub{ font-size:12px; color: rgba(226,232,240,.78); margin-top:2px; }
-    @keyframes imparSpin { to { transform: rotate(360deg); } }
-
-    /* ================================
-   FIX MOBILE — SweetAlert centralizado
-   ================================ */
-@media (max-width: 900px){
-
-  .swal2-container{
-    align-items:center !important;
-    justify-content:center !important;
-    padding:16px !important;
-  }
-
-  .swal2-popup{
-    width:92% !important;
-    max-width:420px !important;
-    max-height:80vh !important;
-    /* top: 140px !important;  empurra mais para baixo no celular */
-    overflow-y:auto !important;
-    border-radius:18px !important;
-  }
-
-}
-/* ================================
-   FIX MOBILE — botões etapa final
-   ================================ */
-@media (max-width: 900px){
-
-  #btnFinalizar{
-    min-width:160px !important;
-    padding:12px 18px !important;
-    font-size:14px !important;
-  }
-
-}
-
-.lista-anexos{
-  margin-top:10px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-.item-anexo{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid rgba(148,163,184,.22);
-  background:rgba(2,6,23,.55);
-  color:rgba(231,236,255,.92);
-  box-shadow:0 10px 24px rgba(0,0,0,.18);
-}
-
-.item-anexo-nome{
-  font-size:13px;
-  font-weight:700;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-
-.item-anexo-remover{
-  border:none;
-  width:28px;
-  height:28px;
-  min-width:28px;
-  border-radius:999px;
-  cursor:pointer;
-  font-size:16px;
-  font-weight:900;
-  line-height:1;
-  color:#fff;
-  background:linear-gradient(135deg,#ef4444,#b91c1c);
-  box-shadow:0 8px 20px rgba(185,28,28,.35);
-}
-
-.item-anexo-remover:hover{
-  transform:scale(1.06);
-  filter:brightness(1.05);
-}
-
-.item-anexo-vazio{
-  font-size:12px;
-  color:rgba(148,163,184,.85);
-  padding:8px 2px 0;
-}    
-.upload-box {
-  margin-top: 6px;
-}
-
-.btn-upload {
-  background: #0b1e4a;
-  border: 1px solid rgba(0,255,150,.4);
-  color: #fff;
-  padding: 8px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all .2s ease;
-}
-
-.btn-upload:hover {
-  background: #0f2f6e;
-  border-color: #00ff95;
-}
-
-.lista-anexos {
-  margin-top: 8px;
-}
-
-.anexo-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #081a38;
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-top: 6px;
-  font-size: 13px;
-}
-
-.anexo-remove {
-  background: #ef4444;
-  border: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  color: #fff;
-  cursor: pointer;
-}
-.anexos-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 28px; /* mais respiro entre as colunas */
-  align-items: start;
-}
-
-.anexo-box {
-  width: 100%;
-  max-width: 100%;
-}
   </style>
 </head>
 <body>
 <header>
   <div class="header-inner">
     <div class="brand">
-      <div class="logo-orb" aria-hidden="true"></div>
+      <div class="logo-orb"></div>
       <div class="brand-text">
         <div class="brand-kicker">PLATAFORMA</div>
         <div class="brand-title">ERP ÍMPAR</div>
-        <div class="brand-sub">Gerador de Documentos</div>
+        <div class="brand-sub">Lista de Atividades</div>
       </div>
     </div>
-    <div class="tag-top">
-      <button class="pill-btn" id="btnVoltarMenu" type="button"><span>🏠</span> Menu principal</button>
-    </div>
+
+    <a href="../menu.html" class="header-menu-btn" aria-label="Voltar ao menu principal">
+      <span>🏠</span>
+      <span>Menu principal</span>
+    </a>
   </div>
 </header>
 
 <main>
   <div class="layout">
     <div class="container">
-
-      <!-- STEP 1 -->
-      <section class="step-pane active pane-in" id="step1" data-step="1">
-        <div class="topbox">
-          <div class="topbox-left">
-            <div class="title">Gerador de Documentos - ÍMPAR</div>
-            <div class="user-label">Usuário</div>
-            <div class="user-values">
-              <strong id="userNome">Usuário</strong><br/>
-              <span id="userEmail">email@imparsistemas.com</span>
-            </div>
-          </div>
-
-          <div class="topbox-center">
-            <div class="code-line">Etapa 1</div>
-            <div class="sub-line">Identificação do projeto</div>
-          </div>
-
-          <div class="stepper-wrap">
-            <div class="stepper" aria-label="Etapas">
-              <div class="dot active" id="dot1">1</div><div class="line" id="line12"></div>
-              <div class="dot" id="dot2">2</div><div class="line" id="line23"></div>
-              <div class="dot" id="dot3">3</div><div class="line" id="line34"></div>
-              <div class="dot" id="dot4">4</div><div class="line" id="line45"></div>
-              <div class="dot" id="dot5">5</div>
-            </div>
-          </div>
+      <div class="topbox">
+        <div class="topbox-left">
+          <div class="title">Atividades do Dia</div>
+          <div class="login-label">LOGADO COMO</div>
+          <div class="login-name" id="usuarioNome">—</div>
+          <div class="login-email" id="usuarioEmail">—</div>
         </div>
 
-        <div class="hint">
-          Informar o <b>código do projeto</b> no campo abaixo. Esse código será a chave para busca de documentos e utilizado para outras funcionalidades importantes na empresa.
+        <div class="topbox-center">
+          <div class="main-title">📺 Gestão à Vista — Sistema de Monitoramento</div>
+          <div class="subtitle">Atualize o projeto, visualize na TV e acompanhe o histórico por obra</div>
         </div>
 
-        <div class="card">
-          <form id="formEtapa1" autocomplete="off">
-            <div>
-              <label for="codigoProjeto">CÓDIGO <span class="req-star">*</span></label>
-              <input id="codigoProjeto" type="text" inputmode="text" maxlength="20" placeholder="Digite o código do projeto (ex.: 036)"/>
-              <div class="field-help" id="codigoHelp"></div>
-            </div>
-
-            <div class="actions">
-              <div class="actions-left">
-                <button class="btn btn-primary" id="btnAtualizar" type="button">ATUALIZAR DOCUMENTOS</button>
-                <button class="btn btn-primary" id="btnGerar" type="button">GERAR DOCUMENTOS</button>
-              </div>
-              <div class="actions-right">
-                <button class="btn btn-primary" id="btnContinuar1" type="button">
-                  <span>CONTINUAR</span>
-                  <span class="arrow-right">➜</span>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      
-      <!-- STEP 2 -->
-      <section class="step-pane" id="step2" data-step="2">
-        <div class="topbox">
-          <div class="topbox-left">
-            <div class="title">Gerador de Documentos - ÍMPAR</div>
-            <div class="user-label">Usuário</div>
-            <div class="user-values">
-              <strong id="userNome2">Usuário</strong><br/>
-              <span id="userEmail2">email@imparsistemas.com</span>
-            </div>
-          </div>
-
-          <div class="topbox-center">
-            <div class="code-line">Código: <span id="codigoResumo">AC00022</span></div>
-            <div class="sub-line">Etapa 2 — Informações da Obra</div>
-          </div>
-
-          <div class="stepper-wrap">
-            <div class="stepper" aria-label="Etapas">
-              <div class="dot active">1</div><div class="line active"></div>
-              <div class="dot active">2</div><div class="line"></div>
-              <div class="dot">3</div><div class="line"></div>
-              <div class="dot">4</div><div class="line"></div>
-              <div class="dot">5</div>
-            </div>
+        <div class="topbox-right">
+          <div class="rf-pill" aria-hidden="true">
+            <span class="rf-dot r">R</span>
+            <span class="rf-line"></span>
+            <span class="rf-dot f">F</span>
           </div>
         </div>
+      </div>
 
-        <div class="hint">
-          Preencha as informações básicas da obra. Campos com <b>*</b> são obrigatórios.
-          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
+      <div class="content-grid">
+        <div class="menu-stack">
+          <a href="gestao_projetos_app.html" class="menu-card">
+            <div class="menu-card-icon">📊</div>
+            <div class="menu-card-title">Atualizar Projeto</div>
+            <div class="menu-card-desc">
+              Atualizar status, farol e informações do projeto.
+              <strong>Para coordenadores.</strong>
+            </div>
+          </a>
+
+          <a href="gestao_projetos_tv.html" class="menu-card tv">
+            <div class="menu-card-icon">📺</div>
+            <div class="menu-card-title">Dashboard TV</div>
+            <div class="menu-card-desc">
+              Visualização em tela cheia para TV, com paginação sequencial e atualização em tempo real.
+            </div>
+          </a>
         </div>
 
-        <div class="card">
-          <form id="formEtapa2" autocomplete="off">
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
-              <div>
-                <label for="nomeObra">NOME DA OBRA <span class="req-star">*</span></label>
-                <input id="nomeObra" type="text" placeholder="Ex.: Residencial João Lohn"/>
-              </div>
-
-              <div>
-                <label for="projetista">PROJETISTA</label>
-                <input id="projetista" type="text" placeholder="Ex.: Nome do projetista (opcional)"/>
-              </div>
-
-              <div style="grid-column: 1 / -1;">
-                <label for="servico">SERVIÇO <span class="req-star">*</span></label>
-                <input id="servico" type="text" placeholder="Ex.: Instalação de HVAC / Manutenção / Retrofit"/>
-              </div>
-
-              <div style="grid-column: 1 / -1;">
-                <label for="endereco">ENDEREÇO DA OBRA <span class="req-star">*</span></label>
-                <input id="endereco" type="text" placeholder="Rua, número, bairro, cidade/UF"/>
-              </div>
-            </div>
-
-            <div class="actions">
-              <div class="actions-left">
-                <button class="btn btn-primary" id="btnVoltar2" type="button">
-                  <span class="arrow arrow-left">➜</span>
-                  <span>VOLTAR</span>
-                </button>
-              </div>
-              <div class="actions-right">
-                <button class="btn btn-primary" id="btnContinuar2" type="button">
-                  <span>CONTINUAR</span>
-                  <span class="arrow">➜</span>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      <!-- STEP 3 (placeholder) -->
-      
-     <section class="step-pane" id="step3" data-step="3">
-        <div class="topbox">
-          <div class="topbox-left">
-            <div class="title">Gerador de Documentos - ÍMPAR</div>
-            <div class="user-label">Usuário</div>
-            <div class="user-values">
-              <strong id="userNome3">Usuário</strong><br/>
-              <span id="userEmail3">email@imparsistemas.com</span>
-            </div>
+        <section class="panel history-panel">
+          <div class="history-header">
+            <div class="history-pill">📜 Histórico da obra</div>
+            <select id="obraHistorico" class="history-select">
+              <option value="">Selecione uma obra</option>
+            </select>
           </div>
 
-          <div class="topbox-center">
-            <div class="code-line">Código: <span id="codigoResumo3"></span></div>
-            <div class="sub-line">Etapa 3 — Dados do Contratante</div>
-          </div>
+          <div class="history-body">
+            <div class="history-current" id="historyCurrentBox" style="display:none;">
+              <div class="history-current-label">Último status atual (TV)</div>
+              <div class="history-current-text" id="historyCurrentText">—</div>
+            </div>
 
-          <div class="stepper-wrap">
-            <div class="stepper" aria-label="Etapas">
-              <div class="dot active">1</div><div class="line active"></div>
-              <div class="dot active">2</div><div class="line active"></div>
-              <div class="dot active">3</div><div class="line"></div>
-              <div class="dot">4</div><div class="line"></div>
-              <div class="dot">5</div>
+            <div class="history-list" id="historicoContainer">
+              <div class="history-empty">Selecione uma obra para visualizar o histórico das atualizações.</div>
             </div>
           </div>
-        </div>
-
-        <div class="hint">
-          Preencha os dados do contratante. Campos com <b>*</b> são obrigatórios.
-          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
-        </div>
-
-        <div class="card">
-          <form id="formEtapa3" autocomplete="off">
-            <div class="grid24">
-              <!-- Linha 1 -->
-              <div class="c12">
-                <label for="nomeContratante">NOME <span class="req-star">*</span></label>
-                <input id="nomeContratante" type="text" placeholder="Ex.: João da Silva / Empresa LTDA"/>
-              </div>
-              <div class="c8">
-                <label for="contatoContratante">CONTATO <span class="req-star">*</span></label>
-                <input id="contatoContratante" type="text" placeholder="Ex.: Responsável / Referência"/>
-              </div>
-              <div class="c4">
-                <label for="cpfContatoContratante">CPF DO CONTATO</label>
-                <input id="cpfContatoContratante" type="text" placeholder="000.000.000-00"/>
-              </div>
-
-              <!-- Linha 2 -->
-              <div class="c5">
-                <label for="telefoneContratante">TELEFONE <span class="req-star">*</span></label>
-                <input id="telefoneContratante" type="text" placeholder="(00) 00000-0000"/>
-              </div>
-              <div class="c3">
-                <label for="cepContratante">CEP <span class="req-star">*</span></label>
-                <input id="cepContratante" type="text" placeholder="00000-000"/>
-              </div>
-              <div class="c4">
-                <label for="cpfCnpjContratante">CPF/CNPJ <span class="req-star">*</span></label>
-                <input id="cpfCnpjContratante" type="text" placeholder="Somente números"/>
-              </div>
-              <div class="c12">
-                <label for="logradouroContratante">LOGRADOURO <span class="req-star">*</span></label>
-                <input id="logradouroContratante" type="text" placeholder="Rua / Av. + Nome"/ readonly data-autofill="1">
-              </div>
-
-              <!-- Linha 3 -->
-              <div class="c2">
-                <label for="numeroContratante">Nº <span class="req-star">*</span></label>
-                <input id="numeroContratante" type="text" placeholder="123"/>
-              </div>
-              <div class="c5">
-                <label for="bairroContratante">BAIRRO <span class="req-star">*</span></label>
-                <input id="bairroContratante" type="text" placeholder="Ex.: Centro"/ readonly data-autofill="1">
-              </div>
-              <div class="c5">
-                <label for="cidadeContratante">CIDADE <span class="req-star">*</span></label>
-                <input id="cidadeContratante" type="text" placeholder="Ex.: Florianópolis"/ readonly data-autofill="1">
-              </div>
-              <div class="c2">
-                <label for="ufContratante">UF <span class="req-star">*</span></label>
-                <input id="ufContratante" type="text" placeholder="SC" maxlength="2"/ readonly data-autofill="1">
-              </div>
-              <div class="c4">
-                <label for="complementoContratante">COMPLEMENTO</label>
-                <input id="complementoContratante" type="text" placeholder="Apto / Sala (opcional)"/>
-              </div>
-              <div class="c6">
-                <label for="emailContratante">E-MAIL <span class="req-star">*</span></label>
-                <input id="emailContratante" type="email" placeholder="email@dominio.com"/>
-              </div>
-            </div>
-
-            <div class="actions">
-              <div class="actions-left">
-                <button class="btn btn-primary" id="btnVoltar3" type="button">
-                  <span class="arrow arrow-left">➜</span>
-                  <span>VOLTAR</span>
-                </button>
-              </div>
-              <div class="actions-right">
-                <button class="btn btn-primary" id="btnContinuar3" type="button">
-                  <span>CONTINUAR</span>
-                  <span class="arrow arrow-right">➜</span>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      <!-- STEP 4 (placeholder) -->
-      
-     <section class="step-pane" id="step4" data-step="4">
-        <div class="topbox">
-          <div class="topbox-left">
-            <div class="title">Gerador de Documentos - ÍMPAR</div>
-            <div class="user-label">Usuário</div>
-            <div class="user-values">
-              <strong id="userNome4">Usuário</strong><br/>
-              <span id="userEmail4">email@imparsistemas.com</span>
-            </div>
-          </div>
-
-          <div class="topbox-center">
-            <div class="code-line">Código: <span id="codigoResumo4"></span></div>
-            <div class="sub-line">Etapa 4 — Dados do Contratada</div>
-          </div>
-
-          <div class="stepper-wrap">
-            <div class="stepper" aria-label="Etapas">
-              <div class="dot active">1</div><div class="line active"></div>
-              <div class="dot active">2</div><div class="line active"></div>
-              <div class="dot active">3</div><div class="line active"></div>
-              <div class="dot active">4</div><div class="line"></div>
-              <div class="dot">5</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="hint">
-          Preencha os dados do contratada. Campos com <b>*</b> são obrigatórios.
-          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
-        </div>
-
-        <div class="card">
-          <form id="formEtapa4" autocomplete="off">
-            <div class="grid24">
-              <!-- Linha 1 -->
-              <div class="c12">
-                <label for="nomeContratada">NOME <span class="req-star">*</span></label>
-                <input id="nomeContratada" type="text" placeholder="Ex.: João da Silva / Empresa LTDA"/>
-              </div>
-              <div class="c8">
-                <label for="contatoContratada">CONTATO <span class="req-star">*</span></label>
-                <input id="contatoContratada" type="text" placeholder="Ex.: Responsável / Referência"/>
-              </div>
-              <div class="c4">
-                <label for="cpfContatoContratada">CPF DO CONTATO <span class="req-star">*</span></label>
-                <input id="cpfContatoContratada" type="text" placeholder="000.000.000-00"/>
-              </div>
-
-              <!-- Linha 2 -->
-              <div class="c5">
-                <label for="telefoneContratada">TELEFONE <span class="req-star">*</span></label>
-                <input id="telefoneContratada" type="text" placeholder="(00) 00000-0000"/>
-              </div>
-              <div class="c3">
-                <label for="cepContratada">CEP <span class="req-star">*</span></label>
-                <input id="cepContratada" type="text" placeholder="00000-000"/>
-              </div>
-              <div class="c4">
-                <label for="cpfCnpjContratada">CPF/CNPJ <span class="req-star">*</span></label>
-                <input id="cpfCnpjContratada" type="text" placeholder="Somente números"/>
-              </div>
-              <div class="c12">
-                <label for="logradouroContratada">LOGRADOURO <span class="req-star">*</span></label>
-                <input id="logradouroContratada" type="text" placeholder="Rua / Av. + Nome"/ readonly data-autofill="1">
-              </div>
-
-              <!-- Linha 3 -->
-              <div class="c2">
-                <label for="numeroContratada">Nº <span class="req-star">*</span></label>
-                <input id="numeroContratada" type="text" placeholder="123"/>
-              </div>
-              <div class="c5">
-                <label for="bairroContratada">BAIRRO <span class="req-star">*</span></label>
-                <input id="bairroContratada" type="text" placeholder="Ex.: Centro"/ readonly data-autofill="1">
-              </div>
-              <div class="c5">
-                <label for="cidadeContratada">CIDADE <span class="req-star">*</span></label>
-                <input id="cidadeContratada" type="text" placeholder="Ex.: Florianópolis"/ readonly data-autofill="1">
-              </div>
-              <div class="c2">
-                <label for="ufContratada">UF <span class="req-star">*</span></label>
-                <input id="ufContratada" type="text" placeholder="SC" maxlength="2"/ readonly data-autofill="1">
-              </div>
-              <div class="c4">
-                <label for="complementoContratada">COMPLEMENTO</label>
-                <input id="complementoContratada" type="text" placeholder="Apto / Sala (opcional)"/>
-              </div>
-              <div class="c6">
-                <label for="emailContratada">E-MAIL <span class="req-star">*</span></label>
-                <input id="emailContratada" type="email" placeholder="email@dominio.com"/>
-              </div>
-            </div>
-
-            <div class="actions">
-              <div class="actions-left">
-                <button class="btn btn-primary" id="btnVoltar4" type="button">
-                  <span class="arrow arrow-left">➜</span>
-                  <span>VOLTAR</span>
-                </button>
-              </div>
-              <div class="actions-right">
-                <button class="btn btn-primary" id="btnContinuar4" type="button">
-                  <span>CONTINUAR</span>
-                  <span class="arrow arrow-right">➜</span>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      <!-- STEP 5 -->
-     <section class="step-pane" id="step5" data-step="5">
-        <div class="topbox">
-          <div class="topbox-left">
-            <div class="title">Gerador de Documentos - ÍMPAR</div>
-            <div class="user-label">Usuário</div>
-            <div class="user-values">
-              <strong id="userNome5">Usuário</strong><br/>
-              <span id="userEmail5">email@imparsistemas.com</span>
-            </div>
-          </div>
-
-          <div class="topbox-center">
-            <div class="code-line">Código: <span id="codigoResumo5"></span></div>
-            <div class="sub-line">Etapa 5 — Dados finais do documento</div>
-          </div>
-
-
-          <div class="stepper-wrap">
-            <div class="stepper" aria-label="Etapas">
-              <div class="dot active">1</div><div class="line active"></div>
-              <div class="dot active">2</div><div class="line active"></div>
-              <div class="dot active">3</div><div class="line active"></div>
-              <div class="dot active">4</div><div class="line active"></div>
-              <div class="dot active">5</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="hint">
-          Preencha as informações finais do documento. Campos com <b>*</b> são obrigatórios.
-          <b>Sem mensagens</b>: se faltar algo, o campo <b>fica vermelho e treme</b>.
-        </div>
-
-          <form id="formEtapa5" autocomplete="off">
-            <div class="grid24">
-              <!-- Linha 1 -->
-              <div class="c12">
-                <label for="clausulas">CLÁUSULAS E CONDIÇÕES <span class="req-star">*</span></label>
-                <textarea id="clausulas" rows="4" placeholder="Descreva cláusulas e condições"></textarea>
-              </div>
-              <div class="c12">
-                <label for="condPagamento">CONDIÇÕES DE PAGAMENTO <span class="req-star">*</span></label>
-                <textarea id="condPagamento" rows="4" placeholder="Descreva as condições de pagamento"></textarea>
-              </div>
-
-              <!-- Linha 2 -->
-              <div class="c3">
-                <label for="valorContrato">VALOR (R$) <span class="req-star">*</span></label>
-                <input id="valorContrato" type="text" placeholder="R$ 0,00" inputmode="numeric"/>
-              </div>
-              <div class="c12">
-                <label for="valorExtenso">VALOR POR EXTENSO</label>
-                <input id="valorExtenso" type="text" placeholder="(gerado automaticamente)" readonly data-autofill="1"/>
-              </div>
-              <div class="c4">
-                <label for="dataContrato">DATA <span class="req-star">*</span></label>
-                <input id="dataContrato" type="date"/>
-              </div>
-              <div class="c5">
-                <label for="dataExtenso">DATA POR EXTENSO</label>
-                <input id="dataExtenso" type="text" placeholder="(gerado automaticamente)" readonly data-autofill="1"/>
-              </div>
-              <!-- Linha 3 -->
-              <div class="c3">
-                <label for="prazoDias">PRAZO (dias) <span class="req-star">*</span></label>
-                <input id="prazoDias" type="text" placeholder="Ex.: 30" inputmode="numeric"/>
-              </div>
-              <div class="c12">
-                 <label>ANEXOS DO CONTRATO</label>
-                   <div class="upload-box">
-                       <button type="button" class="btn-upload" onclick="document.getElementById('anexoContrato').click()">
-                          + Anexar
-                       </button>
-                       <input id="anexoContrato" type="file" multiple style="display:none" />
-                 </div>
-                 <div id="listaAnexosContrato" class="lista-anexos"></div>
-             </div>
-
-             <div class="c8">
-                <label>ANEXOS DA ORDEM DE SERVIÇO</label>
-                   <div class="upload-box">
-                       <button type="button" class="btn-upload" onclick="document.getElementById('anexoOS').click()">
-                           + Anexar
-                       </button>
-                       <input id="anexoOS" type="file" multiple style="display:none" />
-                   </div>
-                   <div id="listaAnexosOS" class="lista-anexos"></div>
-            </div>
-            
-     </div>
-
-          </form>
-
-          <div class="actions">
-            <div class="actions-left">
-              <button class="btn btn-primary" id="btnVoltar5" type="button">
-                <span class="arrow arrow-left">➜</span>
-                <span>VOLTAR</span>
-              </button>
-            </div>
-            <div class="actions-right">
-              <button class="btn btn-primary" id="btnFinalizar" type="button" style="min-width:220px;">
-                <span>FINALIZAR</span>
-                <span class="arrow arrow-right">➜</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
+        </section>
+      </div>
     </div>
   </div>
 </main>
 
 <footer>
-  <div class="rodape-inner">
-    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v2.0 • validação limpa por etapa</div>
-  </div>
+  ERP ÍMPAR © 2026 — Sistema de Gestão à Vista
 </footer>
 
-  <div class="overlay-loading" id="overlayLoading" aria-hidden="true">
-    <div class="overlay-card">
-      <div class="spinner-lg" aria-hidden="true"></div>
-      <div class="overlay-title">Atualizando endereço</div>
-      <div class="overlay-sub">Consultando CEP e preenchendo logradouro, bairro, cidade e UF...</div>
-    </div>
-  </div>
-
-
 <script>
-  // SweetAlert2 removido no Rebuild V1 (sem mensagens de validação)
+const API_BASE = 'https://api.erpimpar.com.br/tv';
+let projetosCache = [];
 
-  // Tema do Swal (inline simples, sem depender de CSS externo)
-  
-  // Helpers
-  const $ = (sel, root=document) => root.querySelector(sel);
+window.addEventListener('DOMContentLoaded', () => {
+  document.body.classList.add('impar-enter');
 
-  let currentStep = 1;
-  let projectCode = "";
+  const usuario = obterUsuarioLogado();
+  document.getElementById('usuarioNome').textContent = usuario.nome || 'Usuário';
+  document.getElementById('usuarioEmail').textContent = usuario.email || '—';
 
-  function setStepper(step){
-    // stepper principal (step1) - atualiza dots/lines se quiser
-    // (mantemos simples agora: só step1 ativo)
-  }
-
-  function showStep(step){
-    currentStep = step;
-    document.querySelectorAll(".step-pane").forEach(p => p.classList.remove("active","pane-in"));
-    const pane = document.getElementById("step"+step);
-    if (pane){
-      pane.classList.add("active","pane-in");
-      const r3 = document.getElementById("codigoResumo3");
-      if(r3 && projectCode) r3.textContent = projectCode;
-      window.scrollTo({top:0, behavior:"smooth"});
-    }
-    if (pane){
-      pane.classList.add("active","pane-in");
-      const r4 = document.getElementById("codigoResumo4");
-      if(r4 && projectCode) r4.textContent = projectCode;
-      window.scrollTo({top:0, behavior:"smooth"});
-    }
-    if (pane){
-      pane.classList.add("active","pane-in");
-      const r5 = document.getElementById("codigoResumo5");
-      if(r5 && projectCode) r5.textContent = projectCode;
-      window.scrollTo({top:0, behavior:"smooth"});
-    }
-
-    // Etapa 5 — garante campos derivados sempre atualizados ao entrar na etapa
-    if(step === 5){
-      try{
-        const valor = document.getElementById("valorContrato");
-        const vext  = document.getElementById("valorExtenso");
-        if(valor && vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
-      }catch(e){}
-      try{
-        const data = document.getElementById("dataContrato");
-        const dext = document.getElementById("dataExtenso");
-        if(data && dext) dext.value = dateToExtensoPt(data.value);
-      }catch(e){}
-      try{ if(typeof wireStep5Logo === "function") wireStep5Logo(); }catch(e){}
-    }
-
-  
-    // Hook: ao entrar na Etapa 5, garante listeners + sincronização (máscara/por extenso/prévia)
-    if(step===5){
-      try{ wireStep5Logo(); }catch(e){}
-      try{ wireStep5(); }catch(e){}
-    }
-
-}
+  carregarProjetosHistorico();
+  document.getElementById('obraHistorico').addEventListener('change', (e) => {
+    carregarHistoricoObra(e.target.value);
+  });
+});
 
 
-  function clearError(el){
-    if(!el) return;
-    el.classList.remove("input-error");
-  }
-  function markError(el){
-    if(!el) return;
-    el.classList.remove("input-error");
-    // força reflow pra reiniciar animação
-    void el.offsetWidth;
-    el.classList.add("input-error");
-  }
+function obterUsuarioLogado(){
+  const storages = [localStorage, sessionStorage];
 
-  function normalizeCode(v){
-    return (v||"").trim();
-  }
+  const keysNome = [
+    'usuarioNome', 'nomeUsuario', 'userName', 'username', 'nome', 'usuario'
+  ];
+  const keysEmail = [
+    'usuarioEmail', 'emailUsuario', 'userEmail', 'email', 'mail'
+  ];
+  const keysObjeto = [
+    'usuarioLogado', 'usuarioAtual', 'currentUser', 'user', 'authUser', 'loggedUser'
+  ];
 
-  function validateStep1(){
-    const input = $("#codigoProjeto");
-    const help = $("#codigoHelp");
-    const raw = normalizeCode(input.value);
-
-    clearError(input);
-    help.textContent = "";
-    help.className = "field-help";
-
-    if(!raw){
-      markError(input);
-      help.textContent = "";
-      help.classList.add("err");
-      input.focus();
-      return false;
-    }
-
-    // regra mínima e segura: pelo menos 2 chars, alfanum + - _
-    const ok = /^[A-Za-z0-9_-]{2,20}$/.test(raw);
-    if(!ok){
-      markError(input);
-      help.textContent = "";
-      help.classList.add("err");
-      input.focus();
-      return false;
-    }
-
-    help.textContent = "";
-    help.classList.add("ok");
-
-    // preenche resumo da etapa 2 (se existir)
-    const resumo = $("#codigoResumo");
-    projectCode = raw;
-    if(resumo) resumo.textContent = raw;
-    const resumo3 = $("#codigoResumo3");
-    if(resumo3) resumo3.textContent = raw;
-    return true;
-    const resumo4 = $("#codigoResumo4");
-    if(resumo4) resumo4.textContent = raw;
-    const resumo5 = $("#codigoResumo5");
-    if(resumo5) resumo5.textContent = raw;
-    return true;
-  }
-
-  function validateStep4(){
-    const requiredIds = [
-      "nomeContratada","contatoContratada","cpfContatoContratada","telefoneContratada","cepContratada",
-      "cpfCnpjContratada","logradouroContratada","numeroContratada","bairroContratada",
-      "cidadeContratada","ufContratada","emailContratada"
-    ];
-    let firstBad = null;
-    requiredIds.forEach(id=>{
-      const el = document.getElementById(id);
-      if(!el) return;
-      clearError(el);
-      const v = (el.value||"").trim();
-      if(!v){
-        markError(el);
-        if(!firstBad) firstBad = el;
-      }
-    });
-    if(firstBad){ firstBad.focus(); return false; }
-    
-    // Checagens de formato (sem mensagens)
-    const tel = document.getElementById("telefoneContratada");
-    if(tel){
-      const d = onlyDigits(tel.value);
-      if(d.length < 10 || d.length > 11){ markError(tel); tel.focus(); return false; }
-    }
-
-    const cep = document.getElementById("cepContratada");
-    if(cep){
-      const c = onlyDigits(cep.value);
-      if(c.length !== 8){ markError(cep); cep.focus(); return false; }
-    }
-
-    const doc = document.getElementById("cpfCnpjContratada");
-    const cpfContato = document.getElementById("cpfContatoContratada");
-    if(doc){
-      const d = onlyDigits(doc.value);
-      const ok = (d.length === 11 && isValidCPF(d)) || (d.length === 14 && isValidCNPJ(d));
-      if(!ok){ markError(doc); doc.focus(); return false; }
-
-    if(cpfContato){
-      const d = onlyDigits(cpfContato.value);
-      const ok = (d.length === 11 && isValidCPF(d));
-      if(!ok){ markError(cpfContato); cpfContato.focus(); return false; }
-    }
-    }
-
-    const uf = document.getElementById("ufContratada");
-    if(uf){
-      const u = (uf.value||"").trim();
-      if(u.length !== 2){ markError(uf); uf.focus(); return false; }
-    }
-
-    return true;
-
-  }
-
-
-  function validateStep3(){
-    const requiredIds = [
-      "nomeContratante","contatoContratante","telefoneContratante","cepContratante",
-      "cpfCnpjContratante","logradouroContratante","numeroContratante","bairroContratante",
-      "cidadeContratante","ufContratante","emailContratante"
-    ];
-    let firstBad = null;
-    requiredIds.forEach(id=>{
-      const el = document.getElementById(id);
-      if(!el) return;
-      clearError(el);
-      const v = (el.value||"").trim();
-      if(!v){
-        markError(el);
-        if(!firstBad) firstBad = el;
-      }
-    });
-    if(firstBad){ firstBad.focus(); return false; }
-    
-    // Checagens de formato (sem mensagens)
-    const tel = document.getElementById("telefoneContratante");
-    if(tel){
-      const d = onlyDigits(tel.value);
-      if(d.length < 10 || d.length > 11){ markError(tel); tel.focus(); return false; }
-    }
-
-    const cep = document.getElementById("cepContratante");
-    if(cep){
-      const c = onlyDigits(cep.value);
-      if(c.length !== 8){ markError(cep); cep.focus(); return false; }
-    }
-
-    const doc = document.getElementById("cpfCnpjContratante");
-    const cpfContato = document.getElementById("cpfContatoContratante");
-    if(doc){
-      const d = onlyDigits(doc.value);
-      const ok = (d.length === 11 && isValidCPF(d)) || (d.length === 14 && isValidCNPJ(d));
-      if(!ok){ markError(doc); doc.focus(); return false; }
-
-    //if(cpfContato){
-    //  const d = onlyDigits(cpfContato.value);
-    //  const ok = (d.length === 11 && isValidCPF(d));
-    //  if(!ok){ markError(cpfContato); cpfContato.focus(); return false; }
-    //}
-    }
-
-    const uf = document.getElementById("ufContratante");
-    if(uf){
-      const u = (uf.value||"").trim();
-      if(u.length !== 2){ markError(uf); uf.focus(); return false; }
-    }
-
-    return true;
-
-  }
-
-  function validateStep2(){
-
-    const requiredIds = ["nomeObra","servico","endereco"];
-    let firstBad = null;
-    requiredIds.forEach(id=>{
-      const el = document.getElementById(id);
-      if(!el) return;
-      clearError(el);
-      const v = (el.value||"").trim();
-      if(!v){
-        markError(el);
-        if(!firstBad) firstBad = el;
-      }
-    });
-    if(firstBad){
-      firstBad.focus();
-      return false;
-    }
-    return true;
-
-  }
-
-
-  // =========================
-  // Etapa 3 e 4 — Máscaras/Validações (sem mexer no layout)
-  // =========================
-  const onlyDigits = (s) => (s || "").replace(/\D+/g, "");
-  const setLoading = (on) => {
-    const ov = document.getElementById("overlayLoading");
-    if(!ov) return;
-    ov.classList.toggle("show", !!on);
-    ov.setAttribute("aria-hidden", on ? "false" : "true");
+  const ler = (storage, key) => {
+    try { return storage.getItem(key); } catch { return null; }
   };
 
-  function maskTelefone(v){
-    const d = onlyDigits(v).slice(0, 11);
-    if(d.length === 0) return "";
-    if(d.length <= 2) return `(${d}`;
-    if(d.length <= 6) return `(${d.slice(0,2)}) ${d.slice(2)}`;
-    if(d.length <= 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
-    return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
-  }
-
-  function maskCEP(v){
-    const d = onlyDigits(v).slice(0, 8);
-    if(d.length <= 5) return d;
-    return `${d.slice(0,5)}-${d.slice(5)}`;
-  }
-
-  function maskCPF(v){
-    const d = onlyDigits(v).slice(0, 11);
-    if(d.length <= 3) return d;
-    if(d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`;
-    if(d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
-    return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
-  }
-
-  function maskCNPJ(v){
-    const d = onlyDigits(v).slice(0, 14);
-    if(d.length <= 2) return d;
-    if(d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`;
-    if(d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`;
-    if(d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
-    return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
-  }
-
-  function isValidCPF(v){
-    const d = onlyDigits(v);
-    if(d.length !== 11) return false;
-    if(/^(\d)\1{10}$/.test(d)) return false;
-    let sum = 0;
-    for(let i=0;i<9;i++) sum += parseInt(d[i],10) * (10-i);
-    let r = (sum * 10) % 11; if(r === 10) r = 0;
-    if(r !== parseInt(d[9],10)) return false;
-    sum = 0;
-    for(let i=0;i<10;i++) sum += parseInt(d[i],10) * (11-i);
-    r = (sum * 10) % 11; if(r === 10) r = 0;
-    return r === parseInt(d[10],10);
-  }
-
-  function isValidCNPJ(v){
-    const d = onlyDigits(v);
-    if(d.length !== 14) return false;
-    if(/^(\d)\1{13}$/.test(d)) return false;
-    const calc = (base) => {
-      const w = base.length === 12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2];
-      let s = 0;
-      for(let i=0;i<w.length;i++) s += parseInt(base[i],10) * w[i];
-      const mod = s % 11;
-      return mod < 2 ? 0 : 11 - mod;
-    };
-    const d1 = calc(d.slice(0,12));
-    const d2 = calc(d.slice(0,12) + String(d1));
-    return d1 === parseInt(d[12],10) && d2 === parseInt(d[13],10);
-  }
-
-  function applyAutoFilledStyle(autoSet){
-    ["logradouroContratante","bairroContratante","cidadeContratante","ufContratante"].forEach(id=>{
-      const el = document.getElementById(id);
-      if(!el) return;
-      if(autoSet) el.setAttribute("data-auto-set","1");
-      else el.removeAttribute("data-auto-set");
-    });
-  }
-
-  function applyAutoFilledStyle4(autoSet){
-    ["logradouroContratada","bairroContratada","cidadeContratada","ufContratada"].forEach(id=>{
-      const el = document.getElementById(id);
-      if(!el) return;
-      if(autoSet) el.setAttribute("data-auto-set","1");
-      else el.removeAttribute("data-auto-set");
-    });
-  }
-
-  async function fetchCEPAndFill(){
-    const cepEl = document.getElementById("cepContratante");
-    if(!cepEl) return false;
-    const cep = onlyDigits(cepEl.value);
-    clearError(cepEl);
-    applyAutoFilledStyle(false);
-
-    if(cep.length !== 8){
-      markError(cepEl);
-      return false;
-    }
-
-    setLoading(true);
-    try{
-      const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {cache:"no-store"});
-      if(!resp.ok) throw new Error("CEP request failed");
-      const data = await resp.json();
-      if(data.erro){
-        markError(cepEl);
-        return false;
-      }
-
-      const logEl = document.getElementById("logradouroContratante");
-      const baiEl = document.getElementById("bairroContratante");
-      const cidEl = document.getElementById("cidadeContratante");
-      const ufEl  = document.getElementById("ufContratante");
-
-      if(logEl) logEl.value = (data.logradouro || "").trim();
-      if(baiEl) baiEl.value = (data.bairro || "").trim();
-      if(cidEl) cidEl.value = (data.localidade || "").trim();
-      if(ufEl)  ufEl.value  = (data.uf || "").trim().toUpperCase();
-
-      applyAutoFilledStyle(true);
-      return true;
-    }catch(e){
-      markError(cepEl);
-      return false;
-    }finally{
-      setLoading(false);
-    }
-  }
-
-  async function fetchCEPAndFill4(){
-    const cepEl = document.getElementById("cepContratada");
-    if(!cepEl) return false;
-    const cep = onlyDigits(cepEl.value);
-    clearError(cepEl);
-    applyAutoFilledStyle4(false);
-
-    if(cep.length !== 8){
-      markError(cepEl);
-      return false;
-    }
-
-    setLoading(true);
-    try{
-      const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`, {cache:"no-store"});
-      if(!resp.ok) throw new Error("CEP request failed");
-      const data = await resp.json();
-      if(data.erro){
-        markError(cepEl);
-        return false;
-      }
-
-      const logEl = document.getElementById("logradouroContratada");
-      const baiEl = document.getElementById("bairroContratada");
-      const cidEl = document.getElementById("cidadeContratada");
-      const ufEl  = document.getElementById("ufContratada");
-
-      if(logEl) logEl.value = (data.logradouro || "").trim();
-      if(baiEl) baiEl.value = (data.bairro || "").trim();
-      if(cidEl) cidEl.value = (data.localidade || "").trim();
-      if(ufEl)  ufEl.value  = (data.uf || "").trim().toUpperCase();
-
-      applyAutoFilledStyle4(true);
-      return true;
-    }catch(e){
-      markError(cepEl);
-      return false;
-    }finally{
-      setLoading(false);
-    }
-  }
-
-
-  function wireStep4MasksAndRules(){
-    const tel = document.getElementById("telefoneContratada");
-    const cep = document.getElementById("cepContratada");
-    const doc = document.getElementById("cpfCnpjContratada");
-    const cpfContato = document.getElementById("cpfContatoContratada");
-    const num = document.getElementById("numeroContratada");
-    const uf  = document.getElementById("ufContratada");
-
-    if(tel){
-      tel.setAttribute("inputmode","numeric");
-      tel.addEventListener("input", () => { tel.value = maskTelefone(tel.value); clearError(tel); });
-      tel.addEventListener("blur", () => {
-        tel.value = maskTelefone(tel.value);
-        const d = onlyDigits(tel.value);
-        if(d.length < 10 || d.length > 11) markError(tel);
-      });
-    }
-
-    if(cep){
-      cep.setAttribute("inputmode","numeric");
-      cep.addEventListener("input", () => { cep.value = maskCEP(cep.value); clearError(cep); });
-      cep.addEventListener("blur", async () => {
-        cep.value = maskCEP(cep.value);
-        await fetchCEPAndFill4();
-      });
-    }
-
-    if(doc){
-      doc.setAttribute("inputmode","numeric");
-      doc.addEventListener("input", () => {
-        const d = onlyDigits(doc.value);
-        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
-        clearError(doc);
-      });
-      doc.addEventListener("blur", () => {
-        const d = onlyDigits(doc.value);
-        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
-        const ok = (d.length == 11 && isValidCPF(d)) || (d.length == 14 && isValidCNPJ(d));
-        if(!ok) markError(doc);
-      });
-    }
-
-    if(cpfContato){
-      cpfContato.setAttribute("inputmode","numeric");
-      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(onlyDigits(cpfContato.value)); clearError(cpfContato); });
-      cpfContato.addEventListener("blur", () => {
-        cpfContato.value = maskCPF(cpfContato.value);
-        const d = onlyDigits(cpfContato.value);
-        const ok = (d.length === 11) && isValidCPF(d);
-        if(!ok) markError(cpfContato);
-      });
-    }
-
-    if(num){
-      num.setAttribute("inputmode","numeric");
-      num.addEventListener("input", () => { num.value = onlyDigits(num.value).slice(0, 8); clearError(num); });
-      num.addEventListener("blur", () => { if(!onlyDigits(num.value)) markError(num); });
-    }
-
-    if(uf){
-      uf.addEventListener("input", () => { uf.value = (uf.value||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2); clearError(uf); });
-      uf.addEventListener("blur", () => { if((uf.value||"").length !== 2) markError(uf); });
-    }
-  }
-
-  function wireStep3MasksAndRules(){
-    const tel = document.getElementById("telefoneContratante");
-    const cep = document.getElementById("cepContratante");
-    const doc = document.getElementById("cpfCnpjContratante");
-    const cpfContato = document.getElementById("cpfContatoContratante");
-    const num = document.getElementById("numeroContratante");
-    const uf  = document.getElementById("ufContratante");
-
-    if(tel){
-      tel.setAttribute("inputmode","numeric");
-      tel.addEventListener("input", () => { tel.value = maskTelefone(tel.value); clearError(tel); });
-      tel.addEventListener("blur", () => {
-        tel.value = maskTelefone(tel.value);
-        const d = onlyDigits(tel.value);
-        if(d.length < 10 || d.length > 11) markError(tel);
-      });
-    }
-
-    if(cep){
-      cep.setAttribute("inputmode","numeric");
-      cep.addEventListener("input", () => { cep.value = maskCEP(cep.value); clearError(cep); });
-      cep.addEventListener("blur", async () => {
-        cep.value = maskCEP(cep.value);
-        await fetchCEPAndFill();
-      });
-    }
-
-    if(doc){
-      doc.setAttribute("inputmode","numeric");
-      doc.addEventListener("input", () => {
-        const d = onlyDigits(doc.value);
-        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
-        clearError(doc);
-      });
-      doc.addEventListener("blur", () => {
-        const d = onlyDigits(doc.value);
-        doc.value = (d.length <= 11) ? maskCPF(d) : maskCNPJ(d);
-        const ok = (d.length == 11 && isValidCPF(d)) || (d.length == 14 && isValidCNPJ(d));
-        if(!ok) markError(doc);
-      });
-    }
-
-    if(cpfContato){
-      cpfContato.setAttribute("inputmode","numeric");
-      cpfContato.addEventListener("input", () => { cpfContato.value = maskCPF(onlyDigits(cpfContato.value)); clearError(cpfContato); });
-      cpfContato.addEventListener("blur", () => {
-        cpfContato.value = maskCPF(cpfContato.value);
-        const d = onlyDigits(cpfContato.value);
-        const ok = (d.length === 11) && isValidCPF(d);
-        if(!ok) markError(cpfContato);
-      });
-    }
-
-    if(num){
-      num.setAttribute("inputmode","numeric");
-      num.addEventListener("input", () => { num.value = onlyDigits(num.value).slice(0, 8); clearError(num); });
-      num.addEventListener("blur", () => { if(!onlyDigits(num.value)) markError(num); });
-    }
-
-    if(uf){
-      uf.addEventListener("input", () => { uf.value = (uf.value||"").replace(/[^A-Za-z]/g,"").toUpperCase().slice(0,2); clearError(uf); });
-      uf.addEventListener("blur", () => { if((uf.value||"").length !== 2) markError(uf); });
-    }
-  }
-
-
-  
-  // =========================
-  // Etapa 5 — Máscaras / Extenso / Validação
-  // =========================
-  function formatBRL(cents){
-    const v = Math.max(0, Number(cents)||0)/100;
-    const s = v.toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2});
-    return "R$ " + s;
-  }
-  function parseBRLToCents(str){
-    const d = (str||"").toString().replace(/\D+/g,"");
-    if(!d) return 0;
-    // últimos 2 dígitos = centavos
-    return Number(d);
-  }
-  function maskMoneyBRL(inputEl){
-    const cents = parseBRLToCents(inputEl.value);
-    inputEl.value = formatBRL(cents);
-    return cents;
-  }
-
-  function numToWordsPt(n){
-    // básico até milhões (suficiente para contratos comuns)
-    const u = ["zero","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
-    const d = ["","dez","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
-    const c = ["","cem","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
-    const join = (a,b)=> a && b ? a+" e "+b : (a||b);
-
-    function below100(x){
-      if(x<20) return u[x];
-      const ده = Math.floor(x/10), r=x%10;
-      return join(d[ده], r?u[r]:"");
-    }
-    function below1000(x){
-      if(x===0) return "";
-      if(x===100) return "cem";
-      const cen = Math.floor(x/100), r=x%100;
-      return join(c[cen], r?below100(r):"");
-    }
-    if(n===0) return "zero";
-    let res="";
-    const milhoes = Math.floor(n/1_000_000); n%=1_000_000;
-    const milhares = Math.floor(n/1000); n%=1000;
-    const centenas = n;
-
-    if(milhoes){
-      res = join(res, milhoes===1 ? "um milhão" : (below1000(milhoes)+" milhões"));
-    }
-    if(milhares){
-      res = join(res, milhares===1 ? "mil" : (below1000(milhares)+" mil"));
-    }
-    if(centenas){
-      res = join(res, below1000(centenas));
-    }
-    return res;
-  }
-
-  function moneyToExtensoBRL(cents){
-    const inteiro = Math.floor((Number(cents)||0)/100);
-    const cent = (Number(cents)||0)%100;
-    const reais = inteiro===1 ? "real" : "reais";
-    const centavos = cent===1 ? "centavo" : "centavos";
-    let out = `${numToWordsPt(inteiro)} ${reais}`;
-    if(cent>0){
-      out += ` e ${numToWordsPt(cent)} ${centavos}`;
-    }
-    return out;
-  }
-
-  function dateToExtensoPt(dateStr){
-    if(!dateStr) return "";
-    const [y,m,d] = dateStr.split("-").map(Number);
-    if(!y||!m||!d) return "";
-    const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-    return `${d} de ${meses[m-1]} de ${y}`;
-  }
-
-  function wireStep5(){
-    const valor = document.getElementById("valorContrato");
-    const prazo = document.getElementById("prazoDias");
-    const data  = document.getElementById("dataContrato");
-    const vext  = document.getElementById("valorExtenso");
-    const dext  = document.getElementById("dataExtenso");
-
-    // Sempre sincroniza campos derivados ao entrar na etapa 5 (ou re-entrar)
-    try{
-      if(valor){
-        maskMoneyBRL(valor);
-        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
-      }
-      if(data && dext){
-        dext.value = dateToExtensoPt(data.value);
-      }
-    }catch(e){}
-
-    // Evita duplicar listeners caso a etapa 5 seja reaberta
-    if(valor && valor.dataset.wiredStep5 !== "1"){
-      valor.dataset.wiredStep5 = "1";
-      valor.addEventListener("input", ()=>{
-        clearError(valor);
-        maskMoneyBRL(valor);
-        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
-      });
-      valor.addEventListener("blur", ()=>{
-        maskMoneyBRL(valor);
-        if(vext) vext.value = moneyToExtensoBRL(parseBRLToCents(valor.value));
-        if(parseBRLToCents(valor.value) <= 0) markError(valor);
-      });
-    }
-
-    if(prazo && prazo.dataset.wiredStep5 !== "1"){
-      prazo.dataset.wiredStep5 = "1";
-      prazo.addEventListener("input", ()=>{ clearError(prazo); prazo.value = (prazo.value||"").replace(/\D+/g,"").slice(0,4); });
-      prazo.addEventListener("blur", ()=>{ if(!prazo.value.trim()) markError(prazo); });
-    }
-
-    if(data && data.dataset.wiredStep5 !== "1"){
-      data.dataset.wiredStep5 = "1";
-      data.addEventListener("input", ()=>{ clearError(data); if(dext) dext.value = dateToExtensoPt(data.value); });
-      data.addEventListener("blur", ()=>{ if(!data.value) markError(data); else if(dext) dext.value = dateToExtensoPt(data.value); });
-    }
-  }
-
-  function validateStep5(){
-    const requiredIds = ["valorContrato","prazoDias","dataContrato","condPagamento","clausulas"];
-    let firstBad=null;
-    requiredIds.forEach(id=>{
-      const el=document.getElementById(id);
-      if(!el) return;
-      clearError(el);
-      const v=(el.value||"").trim();
-      if(!v){
-        markError(el);
-        if(!firstBad) firstBad=el;
-      }
-    });
-    if(firstBad){ firstBad.focus(); return false; }
-
-    const cents = parseBRLToCents(document.getElementById("valorContrato").value);
-    if(cents<=0){ markError(document.getElementById("valorContrato")); document.getElementById("valorContrato").focus(); return false; }
-
-    const prazo = Number((document.getElementById("prazoDias").value||"").trim());
-    if(!prazo || prazo<=0){ markError(document.getElementById("prazoDias")); document.getElementById("prazoDias").focus(); return false; }
-
-    return true;
-  }
-
-  
-  // Etapa 5 — Importar logo (prévia)
-  function wireStep5Logo(){
-    const input = document.getElementById("logoEmpresa");
-    const img = document.getElementById("logoPreview");
-    const empty = document.getElementById("logoEmpty");
-    if(!input || !img) return;
-
-
-    if(input.dataset.wiredLogo === "1") return;
-    input.dataset.wiredLogo = "1";
-    input.addEventListener("change", () => {
-      const file = input.files && input.files[0];
-      if(!file){
-        img.src = "";
-        img.style.display = "none";
-        if(empty) empty.style.display = "block";
-        window.__logoDataUrl = null;
-        return;
-      }
-      if(!file.type.startsWith("image/")){
-        input.value = "";
-        img.src = "";
-        img.style.display = "none";
-        if(empty) empty.style.display = "block";
-        window.__logoDataUrl = null;
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        window.__logoDataUrl = String(reader.result || "");
-        img.src = window.__logoDataUrl;
-        img.style.display = "block";
-        if(empty) empty.style.display = "none";
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-
-function wire(){
-    // Entrada
-    window.addEventListener("DOMContentLoaded", () => {
-      document.body.classList.add("impar-enter");
-      wireStep3MasksAndRules(); 
-    });
-
-    window.addEventListener("DOMContentLoaded", () => {
-      document.body.classList.add("impar-enter");
-      wireStep4MasksAndRules();
-      wireStep5Logo();
-      wireStep5(); 
-    });
-
-    // Menu principal (placeholder)
-  document.getElementById("btnVoltarMenu").addEventListener("click", ()=>{
-    window.location.href = "../index.html";
-  });
-
-    $("#btnAtualizar").addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await openProjectPicker();
-    });
-    $("#btnGerar").addEventListener("click", () => {
-      /* placeholder */ console.log("Gerar documentos (placeholder)");
-      if(!validateStep1()){
-        // Sem mensagens — apenas borda vermelha + tremor (UX ÍMPAR)
-        return;
-      }
-    });
-
-    // Validação on-blur (padrão premium)
-    $("#codigoProjeto").addEventListener("blur", () => validateStep1());
-    $("#codigoProjeto").addEventListener("input", () => clearError($("#codigoProjeto")));
-
-    $("#btnContinuar1").addEventListener("click", () => {
-      if(!validateStep1()){
-        // Sem mensagens — apenas borda vermelha + tremor (UX ÍMPAR)
-        return;
-      }
-      showStep(2);
-    });
-
-    // Step 2
-    $("#btnVoltar2").addEventListener("click", () => showStep(1));
-    $("#btnContinuar2").addEventListener("click", () => {
-      if(!validateStep2()) return; // sem mensagens
-      showStep(3);
-    });
-
-    // Step 3
-    $("#btnVoltar3").addEventListener("click", () => showStep(2));
-    $("#btnContinuar3").addEventListener("click", () => {
-      if(!validateStep3()) return; // sem mensagens
-      showStep(4);
-    });
-
-    // Step 4
-    $("#btnVoltar4").addEventListener("click", () => showStep(3));
-    $("#btnContinuar4").addEventListener("click", () => {
-      if(!validateStep4()) return;
-      showStep(5);
-    });
-
-    // Step 5
-    $("#btnVoltar5").addEventListener("click", () => showStep(4));
-$("#btnFinalizar").addEventListener("click", async () => {
-
-  if(!validateStep5()) return;
-
-  const overlay = document.getElementById("overlaySaving");
-  overlay.style.display = "flex";
-
-  // pequena pausa estética (UX premium)
-  await new Promise(r => setTimeout(r, 9000));
-
-  // aqui você chama sua função real de salvar
-  const ok = await salvarProjetoJSON(); // <-- sua função já existente
-
-  overlay.style.display = "none";
-
-  if(ok){
-    showSuccessModal("Sucesso!", "Dados salvos com sucesso.");
-  }else{
-    showErrorModal("Erro", "Não foi possível salvar os dados.");
-  }
-
-});
-
-
-  }
-
-  wire();
-
-(function(){
- const dataEl=document.getElementById("dataContrato");
- const dataExtEl=document.getElementById("dataExtenso");
- function dataPorExtensoISO(iso){if(!iso)return"";const[y,m,d]=iso.split("-").map(x=>parseInt(x,10));const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];return `${d} de ${meses[m-1]} de ${y}`}
- if(dataEl){dataEl.addEventListener("change",()=>{const iso=dataEl.value;if(dataExtEl){dataExtEl.value=iso?dataPorExtensoISO(iso):"";}})}
-})();
-
-  // ===== Binder robusto: acha o botão FINALIZAR mesmo sem id e aplica o handler =====
-  (function(){
-    function bind(){
-      const candidates = [];
-      const byId = document.getElementById("btnFinalizar") || document.getElementById("btnFinal");
-      if(byId) candidates.push(byId);
-      document.querySelectorAll("button, a").forEach(el=>{
-        const t = (el.textContent || "").toUpperCase();
-        if(t.includes("FINALIZAR")) candidates.push(el);
-      });
-      const unique = Array.from(new Set(candidates));
-      unique.forEach(btn=>{
-        try{
-          const clone = btn.cloneNode(true);
-          btn.parentNode.replaceChild(clone, btn);
-          clone.addEventListener("click", onFinalizarSalvarJson);
-          // garante aparência não alterada
-        }catch(e){}
-      });
-    }
-    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
-    else bind();
-  })();
-
-</script>
-
-  <!-- ===== Modal ÍMPAR: Salvar JSON ===== -->
-  <div id="modalImparSalvar" class="impar-modal" aria-hidden="true">
-    <div class="impar-modal-backdrop"></div>
-    <div class="impar-modal-card" role="dialog" aria-modal="true" aria-labelledby="modalSalvarTitulo">
-      <div class="impar-modal-head">
-        <div id="modalSalvarIcon" class="impar-modal-icon">💾</div>
-        <div class="impar-modal-titles">
-          <div id="modalSalvarTitulo" class="impar-modal-title">Salvando...</div>
-          <div id="modalSalvarSub" class="impar-modal-subtitle">Gravando o JSON do projeto no servidor.</div>
-        </div>
-      </div>
-
-      <div id="modalSalvarBody" class="impar-modal-body" style="display:none;">
-        <div class="impar-modal-message" id="modalSalvarMsg"></div>
-      </div>
-
-      <div class="impar-modal-footer">
-        <button id="btnModalSalvarOk" class="btn btn-primary" style="display:none;">OK</button>
-      </div>
-
-      <div id="modalSalvarLoading" class="impar-modal-loading">
-        <div class="spinner"></div>
-        <div class="impar-modal-loading-text" id="modalSalvarLoadingText">Salvando dados...</div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- Loader padrão ERP (usado no FINALIZAR) -->
-  <div id="pageLoader" class="hidden" aria-hidden="true">
-    <div class="loader-card">
-      <div class="loader-spin" aria-hidden="true"></div>
-      <div>
-        <div class="loader-title">Processando…</div>
-        <div class="loader-sub">Aguarde…</div>
-      </div>
-    </div>
-  </div>
-
-
-<!-- ===== Modal ÍMPAR: Consultar projetos (Atualizar) ===== -->
-<div id="imparProjectPicker" style="position:fixed; inset:0; z-index:1000000; display:none; align-items:center; justify-content:center; padding:18px; background: rgba(0,0,0,.62);">
-  <div role="dialog" aria-modal="true" style="width:min(980px,96vw); max-height:86vh; overflow:hidden; border-radius:18px; border:1px solid rgba(148,163,184,.28); background: linear-gradient(180deg, rgba(2,6,23,.94), rgba(2,6,23,.78)); box-shadow: 0 28px 90px rgba(0,0,0,.58); font-family:Candara,system-ui;">
-    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 14px 10px 14px; border-bottom:1px solid rgba(148,163,184,.18);">
-      <div>
-        <div style="font-size:18px; font-weight:900; color:rgba(226,232,240,.96);">Consultar projetos salvos</div>
-        <div style="margin-top:2px; font-size:13px; color:rgba(226,232,240,.76);">Selecione um item para carregar e preencher as 5 etapas.</div>
-      </div>
-      <div style="display:flex; gap:10px; align-items:center;">
-        <button id="imparPickerRefresh" type="button" style="border:1px solid rgba(148,163,184,.28); background: rgba(2,6,23,.35); color: rgba(226,232,240,.92); padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:900;">Atualizar</button>
-        <button id="imparPickerClose" type="button" style="border:1px solid rgba(148,163,184,.28); background: linear-gradient(135deg,#0b1e4a,#0f766e); color:#fff; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:900;">Fechar</button>
-      </div>
-    </div>
-
-    <div style="padding:12px 14px 14px 14px; overflow:auto; max-height:74vh;">
-      <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
-        <input id="imparPickerSearch" type="text" placeholder="Buscar por código ou obra..." style="flex:1; padding:12px 12px; border-radius:12px; border:1px solid rgba(148,163,184,.28); background: rgba(2,6,23,.35); color: rgba(226,232,240,.92); outline:none;"/>
-      </div>
-
-      <div id="imparPickerStatus" style="font-size:13px; color: rgba(226,232,240,.78); margin: 8px 0 10px 0;">Carregando…</div>
-
-      <div id="imparPickerList" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:10px;"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-/* =========================================================
-   ATUALIZAR (do zero) – Project Picker oficial ÍMPAR
-   - Modal simples (sem blur/backdrop-filter)
-   - Lista: código + nome da obra + serviço (se existir)
-   - Carrega JSON e preenche campos (5 etapas)
-   ========================================================= */
-
-(function(){
-  // --- Config: base onde ficam list_json.php e /data/<codigo>.json
-  const DOCS_BASE = "https://api.erpimpar.com.br/storage/docs"; // ajuste aqui se mudar no futuro
-  const LIST_URL  = () => `${DOCS_BASE}/list_json.php?ts=${Date.now()}`;
-  const DATA_URL  = (codigo) => `${DOCS_BASE}/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
-
-  const ID_OV   = "imparProjectPicker";
-  const ID_LIST = "imparPickerList";
-  const ID_ST   = "imparPickerStatus";
-  const ID_Q    = "imparPickerSearch";
-  const ID_BTN_CLOSE = "imparPickerClose";
-  const ID_BTN_REFRESH = "imparPickerRefresh";
-
-  let _itemsCache = [];
-
-  function $(sel){ return document.querySelector(sel); }
-  function byId(id){ return document.getElementById(id); }
-
-  function openOverlay(){
-    const ov = byId(ID_OV);
-    if(!ov) return;
-    ov.style.display = "flex";
-  }
-  function closeOverlay(){
-    const ov = byId(ID_OV);
-    if(!ov) return;
-    ov.style.display = "none";
-  }
-
-  async function fetchList(){
-    const st = byId(ID_ST);
-    const list = byId(ID_LIST);
-    if(st) st.textContent = "Carregando projetos…";
-    if(list) list.innerHTML = "";
-
-    const r = await fetch(LIST_URL(), { cache: "no-store" });
-    const j = await r.json();
-    if(!j || !j.ok) throw new Error(j?.error || "Falha ao listar projetos");
-    return j.items || [];
-  }
-
-  function renderList(items){
-    const list = byId(ID_LIST);
-    const st = byId(ID_ST);
-    const q = (byId(ID_Q)?.value || "").toLowerCase().trim();
-
-    const filtered = (items || []).filter(it => {
-      const cod = String(it.codigo || "").toLowerCase();
-      const obra = String(it.nomeObra || "").toLowerCase();
-      return !q || cod.includes(q) || obra.includes(q);
-    });
-
-    if(st) st.textContent = `${filtered.length} item(ns) encontrado(s).`;
-    if(!list) return;
-
-    list.innerHTML = filtered.map(it => {
-      const cod  = it.codigo || "";
-      const obra = it.nomeObra || "—";
-      const serv = it.servico || "";
-      return `
-        <button type="button" class="imparPickItem" data-codigo="${cod}" style="
-          text-align:left; padding:12px 12px;
-          border-radius:14px;
-          border:1px solid rgba(148,163,184,.25);
-          background: linear-gradient(180deg, rgba(2,6,23,.40), rgba(2,6,23,.28));
-          color: rgba(226,232,240,.92);
-          cursor:pointer;
-          transition: transform .14s ease, border-color .18s ease, box-shadow .18s ease;
-        ">
-          <div style="font-weight:900; font-size:14px;">${cod}</div>
-          <div style="margin-top:4px; font-size:13px; opacity:.92;">${obra}</div>
-          ${serv ? `<div style="margin-top:6px; font-size:12px; opacity:.72; line-height:1.2;">${serv}</div>` : ``}
-        </button>
-      `;
-    }).join("");
-
-    list.querySelectorAll(".imparPickItem").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const codigo = btn.getAttribute("data-codigo");
-        try{
-          closeOverlay();
-          await loadProjectJson(codigo);
-        }catch(err){
-          console.error(err);
-          if (window.Swal) {
-            Swal.fire({ icon:"error", title:"Erro", html: err?.message || String(err) });
-          } else {
-            alert(err?.message || String(err));
-          }
-        }
-      });
-    });
-  }
-
-  function setFieldValue(el, value){
-    if(!el) return;
-    const v = value ?? "";
-    if(el.type === "checkbox"){
-      el.checked = !!v;
-      return;
-    }
-    el.value = v;
-    // dispara eventos para máscaras e cálculos (se existirem)
-    el.dispatchEvent(new Event("input", {bubbles:true}));
-    el.dispatchEvent(new Event("change", {bubbles:true}));
-  }
-
-  function applyJsonToFormLoose(data){
-    if(!data || typeof data !== "object") return;
-
-    // mapeamento mínimo (payload -> ids reais)
-    const map = {
-      codigo: "codigoProjeto",
-      valor: "valorContrato",
-      data: "dataContrato",
-      enderecoObra: "endereco",
-      endereco_da_obra: "endereco",
-      enderecoDaObra: "endereco",
-      condicoesPagamento: "condPagamento",
-      condicoes_de_pagamento: "condPagamento",
-      condicoesPag: "condPagamento"
-    };
-
-    // 1) tenta map explícito
-    Object.keys(map).forEach(k => {
-      if(k in data){
-        setFieldValue(byId(map[k]), data[k]);
-      }
-    });
-
-    // 2) para o resto, tenta id igual à chave
-    Object.keys(data).forEach(k => {
-      if(k in map) return;
-      const el = byId(k);
-      if(el) setFieldValue(el, data[k]);
-    });
-
-    // 3) volta para etapa 1 (se existir showStep)
-    if (typeof window.showStep === "function") {
-      window.showStep(1);
-    }
-  }
-
-  async function loadProjectJson(codigo){
-    if(!codigo) throw new Error("Código inválido");
-
-    // pré-preenche o código no campo da etapa 1
-    const codigoEl = byId("codigoProjeto");
-    if(codigoEl) setFieldValue(codigoEl, codigo);
-
-    const r = await fetch(DATA_URL(codigo), { cache: "no-store" });
-    const data = await r.json();
-
-    // alguns servidores retornam {ok:true, data:{...}}; outros já retornam payload direto
-    const payload = (data && typeof data === "object" && ("data" in data) && data.data) ? data.data : data;
-    applyJsonToFormLoose(payload);
-  }
-
-  async function openProjectPicker(){
-    openOverlay();
-    try{
-      _itemsCache = await fetchList();
-      renderList(_itemsCache);
-    }catch(err){
-      closeOverlay();
-      throw err;
-    }
-  }
-
-  function wirePickerUi(){
-    const ov = byId(ID_OV);
-    if(!ov) return;
-
-    // fecha clicando fora do card
-    ov.addEventListener("click", (e)=>{ if(e.target === ov) closeOverlay(); });
-
-    byId(ID_BTN_CLOSE)?.addEventListener("click", (e)=>{ e.preventDefault(); e.stopPropagation(); closeOverlay(); });
-    document.addEventListener("keydown", (e)=>{ if(e.key === "Escape") closeOverlay(); });
-
-    byId(ID_Q)?.addEventListener("input", ()=> renderList(_itemsCache));
-
-    byId(ID_BTN_REFRESH)?.addEventListener("click", async ()=>{
-      const st = byId(ID_ST);
-      if(st) st.textContent = "Atualizando…";
+  for (const storage of storages){
+    for (const key of keysObjeto){
+      const raw = ler(storage, key);
+      if (!raw) continue;
       try{
-        _itemsCache = await fetchList();
-        renderList(_itemsCache);
-      }catch(err){
-        console.error(err);
-        if (window.Swal) Swal.fire({ icon:"error", title:"Erro", html: err?.message || String(err) });
-      }
-    });
-  }
-
-  // expõe para o wire() já existente
-  window.openProjectPicker = openProjectPicker;
-
-  if(document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", wirePickerUi);
-  } else {
-    wirePickerUi();
-  }
-})();
-
-/* ================================
-   GERAR DOCUMENTOS (Contrato / OS)
-   - Abre modal simples (SweetAlert)
-   - Gera DOCX via API (make_contract.php / make_os.php)
-   ================================ */
-
-const WORD365_API_BASE = "https://api.erpimpar.com.br/word365";
-const WORD365_ENDPOINT_CHECK = WORD365_API_BASE + "/consultar_documento_word365.php";
-const WORD365_ENDPOINT_UPLOAD = WORD365_API_BASE + "/subir_documento_word365.php";
-const WORD365_ENDPOINT_SHARE = WORD365_API_BASE + "/compartilhar_documento_word365.php";
-
-async function fetchJsonSafe(url, options){
-  const resp = await fetch(url, options);
-  let data = null;
-  try{ data = await resp.json(); }catch(e){}
-  if(!resp.ok){
-    throw new Error(data?.message || data?.error || `Falha na API (${resp.status}).`);
-  }
-  return data || {};
-}
-
-async function consultarDocumentoWord365(codigo, tipo){
-  return await fetchJsonSafe(WORD365_ENDPOINT_CHECK, {
-    method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify({ codigo, tipo }),
-    cache: "no-store"
-  });
-}
-
-async function subirDocumentoWord365({ codigo, tipo, filename, blob }){
-  const fd = new FormData();
-  fd.append("codigo", codigo);
-  fd.append("tipo", tipo);
-  fd.append("filename", filename);
-  fd.append("docx", blob, filename);
-
-  return await fetchJsonSafe(WORD365_ENDPOINT_UPLOAD, {
-    method: "POST",
-    body: fd,
-    cache: "no-store"
-  });
-}
-
-async function compartilharDocumentoWord365(codigo, tipo){
-  return await fetchJsonSafe(WORD365_ENDPOINT_SHARE, {
-    method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify({ codigo, tipo }),
-    cache: "no-store"
-  });
-}
-
-async function oferecerCompartilhamentoDocumento(meta){
-  if(!meta?.codigo || !meta?.tipo) return;
-
-  const res = await Swal.fire({
-    title: "Documento aberto no Word 365",
-    html: "Quando terminar os ajustes, você pode gerar um link de compartilhamento do mesmo arquivo.",
-    icon: "success",
-    showCancelButton: true,
-    confirmButtonText: "Gerar link de compartilhamento",
-    cancelButtonText: "Fechar",
-    buttonsStyling: false,
-    customClass: {
-      popup: "impar-swal",
-      confirmButton: "impar-swal-confirm",
-      cancelButton: "impar-swal-cancel",
-      actions: "impar-swal-actions"
+        const obj = JSON.parse(raw);
+        const nome = obj?.nome || obj?.name || obj?.usuario || obj?.username || obj?.displayName || '';
+        const email = obj?.email || obj?.mail || obj?.userEmail || '';
+        if (nome || email) return { nome, email };
+      }catch(e){}
     }
-  });
+  }
 
-  if(!res.isConfirmed) return;
+  let nome = '';
+  let email = '';
+
+  for (const storage of storages){
+    if (!nome){
+      for (const key of keysNome){
+        const value = ler(storage, key);
+        if (value && value.trim()){
+          nome = value.trim();
+          break;
+        }
+      }
+    }
+    if (!email){
+      for (const key of keysEmail){
+        const value = ler(storage, key);
+        if (value && value.trim()){
+          email = value.trim();
+          break;
+        }
+      }
+    }
+  }
+
+  return { nome, email };
+}
+
+function compareProjetos(a, b){
+  const idA = Number(a.id);
+  const idB = Number(b.id);
+  if (!Number.isNaN(idA) && !Number.isNaN(idB)) return idA - idB;
+  return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+}
+
+async function carregarProjetosHistorico(){
+  const select = document.getElementById('obraHistorico');
+  try{
+    const response = await fetch(`${API_BASE}/listar.php?t=${Date.now()}`);
+    const data = await response.json();
+
+    if (!data.success || !data.data || !Array.isArray(data.data.projetos)) {
+      throw new Error('Resposta inválida ao listar obras');
+    }
+
+    projetosCache = [...data.data.projetos].sort(compareProjetos);
+
+    select.innerHTML = '<option value="">Selecione uma obra</option>';
+    projetosCache.forEach((proj) => {
+      const option = document.createElement('option');
+      option.value = String(proj.id);
+      option.textContent = proj.nome;
+      select.appendChild(option);
+    });
+  }catch(error){
+    console.error(error);
+    select.innerHTML = '<option value="">Erro ao carregar obras</option>';
+    document.getElementById('historicoContainer').innerHTML = '<div class="history-empty">Não foi possível carregar a lista de obras.</div>';
+  }
+}
+
+async function carregarHistoricoObra(id){
+  const listEl = document.getElementById('historicoContainer');
+  const currentBox = document.getElementById('historyCurrentBox');
+  const currentText = document.getElementById('historyCurrentText');
+
+  if (!id){
+    currentBox.style.display = 'none';
+    listEl.innerHTML = '<div class="history-empty">Selecione uma obra para visualizar o histórico das atualizações.</div>';
+    return;
+  }
+
+  const projeto = projetosCache.find((p) => String(p.id) === String(id));
+  if (projeto){
+    currentText.textContent = projeto.status || 'Sem status atual';
+    currentBox.style.display = 'block';
+  }else{
+    currentBox.style.display = 'none';
+  }
+
+  listEl.innerHTML = '<div class="history-loading">Carregando histórico...</div>';
 
   try{
-    showImparLoading("Gerando link de compartilhamento…", "Preparando o link do documento no OneDrive.");
-    const share = await compartilharDocumentoWord365(meta.codigo, meta.tipo);
-    hideImparLoading();
+    const response = await fetch(`${API_BASE}/listar_historico.php?id=${encodeURIComponent(id)}&t=${Date.now()}`);
+    const data = await response.json();
 
-    const link = share?.shareUrl || share?.webUrl || "";
-    if(!link){
-      throw new Error("A API não retornou um link de compartilhamento.");
+    const historico = Array.isArray(data.data) ? [...data.data].reverse() : [];
+    if (historico.length === 0){
+      listEl.innerHTML = '<div class="history-empty">Nenhum histórico encontrado para esta obra.</div>';
+      return;
     }
 
-    const copied = !!(navigator.clipboard && navigator.clipboard.writeText && await navigator.clipboard.writeText(link).then(()=>true).catch(()=>false));
-
-    await Swal.fire({
-      icon: "success",
-      title: copied ? "Link copiado" : "Link gerado",
-      html: copied
-        ? "O link de compartilhamento foi copiado para a área de transferência."
-        : `Link gerado:<br><br><a href="${link}" target="_blank" rel="noopener">${link}</a>`,
-      confirmButtonText: "OK",
-      buttonsStyling: false,
-      customClass: {
-        popup: "impar-swal",
-        confirmButton: "impar-swal-confirm"
-      }
-    });
-  }catch(err){
-    hideImparLoading();
-    Swal.fire({
-      icon:"error",
-      title:"Erro ao compartilhar",
-      html: err?.message || String(err)
-    });
+    listEl.innerHTML = historico.map((item) => `
+      <div class="history-item">
+        <div class="history-meta">
+          <span>📅 ${escapeHtml(item.data || '—')}</span>
+          <span class="history-user">${escapeHtml(item.usuario || 'Sistema')}</span>
+        </div>
+        <div class="history-status">${escapeHtml(item.status || 'Sem texto')}</div>
+      </div>
+    `).join('');
+  }catch(error){
+    console.error(error);
+    listEl.innerHTML = '<div class="history-empty">Erro ao carregar o histórico da obra.</div>';
   }
 }
 
-function getProjetoMetaForFilename(){
-  const codigo = (document.getElementById("codigoProjeto")?.value || "").trim();
-  const nomeObra = (document.getElementById("nomeObra")?.value || "").trim();
-  return { codigo, nomeObra };
+function escapeHtml(value){
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
-
-function sanitizeFilenamePart(s){
-  return String(s || "")
-    .replace(/[\\\/:*?"<>|]+/g, " ")   // chars inválidos no Windows
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function imparAskDocToGenerate(origin="manual"){
-  // exige código
-  const {codigo} = getProjetoMetaForFilename();
-  if(!codigo){
-    if (typeof validateStep1 === "function") validateStep1();
-    Swal.fire({ icon:"warning", title:"Informe o código do projeto", html:"Preencha o campo <b>CÓDIGO</b> para gerar o documento."});
-    return null;
-  }
-
-const res = await Swal.fire({
-  title: "Qual documento deseja gerar?",
-  html: "Escolha uma opção abaixo:",
-  icon: "question",
-
-  showCancelButton: true,
-  showDenyButton: true,
-
-  confirmButtonText: "Gerar Contrato",
-  denyButtonText: "Gerar Ordem de Serviço",
-  cancelButtonText: "Cancelar",
-
-  allowOutsideClick: true,
-  allowEscapeKey: true,
-
-  // MUITO IMPORTANTE p/ não brigar com o tema do SweetAlert
-  buttonsStyling: false,
-
-  // classes do seu tema
-  customClass: {
-    popup: "impar-swal",
-    confirmButton: "impar-swal-confirm",
-    denyButton: "impar-swal-deny",
-    cancelButton: "impar-swal-cancel",
-    actions: "impar-swal-actions"
-  }
-});
-  
-  if (res.isConfirmed) return "contrato";
-  if (res.isDenied) return "os";
-  return null;
-}
-
-async function downloadDocxFromApi({endpoint, codigo, filename, method="POST"}){
-  const url = endpoint;
-  const headers = {};
-  let body = null;
-
-  const isPost = (method || "GET").toUpperCase() === "POST";
-  if(isPost){
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify({ codigo });
-  }
-
-  // ✅ NÃO abrir nova aba
-  // window.open(...) REMOVIDO
-
-  const resp = await fetch(url, {
-    method: isPost ? "POST" : "GET",
-    headers,
-    body,
-    mode: "cors",
-    cache: "no-store"
-  });
-
-  const ct = (resp.headers.get("content-type") || "").toLowerCase();
-
-  if(!resp.ok){
-    let msg = `Falha ao gerar documento (HTTP ${resp.status}).`;
-    try{
-      if(ct.includes("application/json")){
-        const j = await resp.json();
-        msg = j?.error || j?.message || msg;
-      } else {
-        const t = await resp.text();
-        if(t && t.length < 800) msg = t;
-      }
-    }catch(e){}
-    throw new Error(msg);
-  }
-
-  if(ct.includes("application/json")){
-    const j = await resp.json();
-    if(j?.ok === false) throw new Error(j?.error || "Falha ao gerar documento.");
-    throw new Error("Resposta inesperada da API (JSON).");
-  }
-
-  const blob = await resp.blob();
-  const a = document.createElement("a");
-  const blobUrl = URL.createObjectURL(blob);
-  a.href = blobUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
-}
-  
-async function gerarDocumento(tipo) {
-  const { codigo, nomeObra } = getProjetoMetaForFilename();
-
-  if (!codigo) {
-    Swal.fire({
-      icon: "warning",
-      title: "Informe o código do projeto",
-      html: "Preencha o campo <b>CÓDIGO</b> para gerar o documento."
-    });
-    return false;
-  }
-
-  const nomeDoc = tipo === "contrato" ? "Contrato" : "Ordem de Serviço";
-  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
-
-  showImparLoading("Gerando documento…", `Preparando ${nomeDoc} e enviando anexos.`);
-
-  try {
-    // 1) Consulta se o documento já existe no OneDrive
-    const consultaResp = await fetch("https://api.erpimpar.com.br/word365/consultar_documento_word365.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ codigo, tipo }),
-      cache: "no-store"
-    });
-
-    const consultaData = await consultaResp.json();
-
-    if (!consultaResp.ok || !consultaData?.ok) {
-      throw new Error(consultaData?.message || `Falha ao consultar documento (HTTP ${consultaResp.status}).`);
-    }
-
-    // 2) Se já existe no OneDrive, NÃO abre Word de novo.
-    //    Vai direto para a etapa final: baixar / compartilhar
-    if (consultaData.exists) {
-      hideImparLoading();
-
-      if (window.DOC_FINAL_ACTIONS && typeof window.DOC_FINAL_ACTIONS.abrirModalDocumentoFinal === "function") {
-        await DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
-        return true;
-      }
-
-      throw new Error("Módulo de finalização não carregado.");
-    }
-
-    // 3) Se ainda não existe, sobe os anexos do tipo escolhido
-    const uploadResult = await uploadAnexosWord365({
-      codigo,
-      tipo,
-      arquivos
-    });
-
-    if (tipo === "contrato") {
-      window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadResult.enviados || [];
-    } else {
-      window.__ANEXOS_OS_UPLOADADOS__ = uploadResult.enviados || [];
-    }
-
-    // 4) Gera o DOCX em memória
-    if (!window.ERP_DOCX) {
-      throw new Error("Módulo ERP_DOCX não carregado.");
-    }
-
-    let ret;
-
-    if (tipo === "contrato") {
-      if (typeof window.ERP_DOCX.gerarContrato !== "function") {
-        throw new Error("Função gerarContrato não encontrada.");
-      }
-      ret = await window.ERP_DOCX.gerarContrato(codigo);
-    } else {
-      if (typeof window.ERP_DOCX.gerarOS !== "function") {
-        throw new Error("Função gerarOS não encontrada.");
-      }
-      ret = await window.ERP_DOCX.gerarOS(codigo);
-    }
-
-    if (!ret?.blob) {
-      throw new Error(`${nomeDoc} gerado sem blob.`);
-    }
-
-    // 5) Define nome do arquivo
-    const nomeSafe = sanitizeFilenamePart(nomeObra || "obra");
-    const filenameBase = tipo === "contrato" ? "CONTRATO" : "OS";
-    const filename = `${codigo}_${filenameBase}_${nomeSafe}.docx`;
-
-    // 6) Sobe para o OneDrive
-    const salvo = await subirDocumentoWord365({
-      codigo,
-      tipo,
-      filename: ret.filename || filename,
-      blob: ret.blob
-    });
-
-    const wordUrl = salvo?.webUrl || salvo?.url || salvo?.shareUrl || "";
-
-    if (!wordUrl) {
-      throw new Error("A API não retornou a URL do Word.");
-    }
-
-    // 7) Abre no Word Web para edição
-    window.open(wordUrl, "_blank", "noopener");
-
-    hideImparLoading();
-
-    await Swal.fire({
-      icon: "success",
-      title: "Documento pronto",
-      html: `${nomeDoc} aberto no Word 365 para edição.<br><br>Após concluir as alterações no Word, volte ao sistema e clique em <b>FINALIZAR</b> novamente para baixar ou compartilhar a versão final.`,
-      confirmButtonText: "OK"
-    });
-
-    return true;
-
-  } catch (err) {
-    hideImparLoading();
-
-    Swal.fire({
-      icon: "error",
-      title: "Erro ao gerar documento",
-      html: err?.message || String(err)
-    });
-
-    return false;
-  }
-}
-  
-/* ===== Disparos =====
-   1) Botão "GERAR DOCUMENTOS" (Etapa 1)
-   2) Após salvar (Etapa 5): no OK do modal de salvar (quando for sucesso)
-*/
-(function bindGerarDocumentos(){
-  function bindBtnGerar(){
-    const btn = document.getElementById("btnGerar");
-    if(!btn) return;
-
-    // remove listeners antigos
-    const clean = btn.cloneNode(true);
-    btn.parentNode.replaceChild(clean, btn);
-
-    clean.addEventListener("click", async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-
-      // se existir validação da etapa 1, respeita
-      if (typeof validateStep1 === "function" && !validateStep1()) return;
-
-      const tipo = await imparAskDocToGenerate("step1");
-      if(!tipo) return;
-
-      try{
-        await gerarDocumento(tipo);
-      }catch(err){
-        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
-      }
-    });
-  }
-
-  function bindGerarDepoisSalvar(){
-    const okBtn = document.getElementById("btnModalSalvarOk");
-    if(!okBtn) return;
-
-    // não clona aqui (pode quebrar o modal existente); só adiciona listener "extra"
-    okBtn.addEventListener("click", async ()=>{
-      // heurística: só pergunta se o modal estiver em "sucesso"
-      const titulo = (document.getElementById("modalSalvarTitulo")?.textContent || "").toLowerCase();
-      const msg = (document.getElementById("modalSalvarMsg")?.textContent || "").toLowerCase();
-
-      const isSuccess = titulo.includes("sucesso") || msg.includes("sucesso") || msg.includes("salvo");
-      if(!isSuccess) return;
-
-      const tipo = await imparAskDocToGenerate("afterSave");
-      if(!tipo) return;
-
-      try{
-        await gerarDocumento(tipo);
-      }catch(err){
-        Swal.fire({ icon:"error", title:"Erro ao gerar documento", html: err?.message || String(err) });
-      }
-    });
-  }
-
-  if(document.readyState === "loading"){
-    document.addEventListener("DOMContentLoaded", ()=>{
-      bindBtnGerar();
-      bindGerarDepoisSalvar();
-    });
-  } else {
-    bindBtnGerar();
-    bindGerarDepoisSalvar();
-  }
-})();
-  
-let anexosContrato = [];
-let anexosOS = [];
-
-function renderListaAnexos(tipo){
-  const lista = tipo === "contrato"
-    ? document.getElementById("listaAnexosContrato")
-    : document.getElementById("listaAnexosOS");
-
-  const arquivos = tipo === "contrato" ? anexosContrato : anexosOS;
-
-  if(!lista) return;
-
-  lista.innerHTML = "";
-
-  if(!arquivos.length){
-    const vazio = document.createElement("div");
-    vazio.className = "item-anexo-vazio";
-    vazio.textContent = "Nenhum anexo selecionado.";
-    lista.appendChild(vazio);
-    return;
-  }
-
-  arquivos.forEach((file, index) => {
-    const row = document.createElement("div");
-    row.className = "anexo-item";
-
-    const nome = document.createElement("span");
-    nome.textContent = file.name;
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "anexo-remove";
-    btn.textContent = "×";
-    btn.addEventListener("click", () => removerAnexo(tipo, index));
-
-    row.appendChild(nome);
-    row.appendChild(btn);
-    lista.appendChild(row);
-  });
-}
-
-function removerAnexo(tipo, index){
-  if(tipo === "contrato"){
-    anexosContrato.splice(index, 1);
-    renderListaAnexos("contrato");
-    return;
-  }
-
-  anexosOS.splice(index, 1);
-  renderListaAnexos("os");
-}
-
-function bindAnexosVisual(){
-  const inputContrato = document.getElementById("anexoContrato");
-  const inputOS = document.getElementById("anexoOS");
-
-  if(inputContrato){
-    inputContrato.addEventListener("change", (e) => {
-      const files = Array.from(e.target.files || []);
-      anexosContrato = [...anexosContrato, ...files];
-      renderListaAnexos("contrato");
-      e.target.value = "";
-    });
-  }
-
-  if(inputOS){
-    inputOS.addEventListener("change", (e) => {
-      const files = Array.from(e.target.files || []);
-      anexosOS = [...anexosOS, ...files];
-      renderListaAnexos("os");
-      e.target.value = "";
-    });
-  }
-
-  renderListaAnexos("contrato");
-  renderListaAnexos("os");
-}
-
-if(document.readyState === "loading"){
-  document.addEventListener("DOMContentLoaded", bindAnexosVisual);
-} else {
-  bindAnexosVisual();
-}
-
-async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
-  if (!arquivos || !arquivos.length) {
-    return { ok: true, enviados: [] };
-  }
-
-  const formData = new FormData();
-  formData.append("codigo", codigo);
-  formData.append("tipo", tipo);
-
-  arquivos.forEach((file) => {
-    formData.append("anexos[]", file, file.name);
-  });
-
-  const resp = await fetch("https://api.erpimpar.com.br/word365/upload_anexos_word365.php", {
-    method: "POST",
-    body: formData,
-    cache: "no-store"
-  });
-
-  const data = await resp.json();
-
-  if (!resp.ok || !data?.ok) {
-    throw new Error(data?.message || "Falha ao enviar anexos.");
-  }
-
-  return data;
-}
-  
 </script>
-
-<script src="./gerar_contrato_docx.js"></script>
-<script src="./gerar_os_docx.js"></script>
-<script src="./documento_final_actions.js"></script>
-  
 </body>
 </html>
