@@ -490,8 +490,8 @@
         </div>
 
         <div class="topbox-center">
-          <div class="main-title">Reunião Matinal • PDF para impressão</div>
-          <div class="subtitle">Gerar PDF exige todos alocados • Finalizar exige % e Motivo se &lt; 100%</div>
+          <div class="main-title">📺 Gestão à Vista — Sistema de Monitoramento</div>
+          <div class="subtitle">Atualize o projeto, visualize na TV e acompanhe o histórico por obra</div>
         </div>
 
         <div class="topbox-right">
@@ -558,16 +558,73 @@ let projetosCache = [];
 window.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('impar-enter');
 
-  const nome = localStorage.getItem('usuarioNome') || localStorage.getItem('usuario') || 'Usuário';
-  const email = localStorage.getItem('usuarioEmail') || localStorage.getItem('email') || '';
-  document.getElementById('usuarioNome').textContent = nome;
-  document.getElementById('usuarioEmail').textContent = email || '—';
+  const usuario = obterUsuarioLogado();
+  document.getElementById('usuarioNome').textContent = usuario.nome || 'Usuário';
+  document.getElementById('usuarioEmail').textContent = usuario.email || '—';
 
   carregarProjetosHistorico();
   document.getElementById('obraHistorico').addEventListener('change', (e) => {
     carregarHistoricoObra(e.target.value);
   });
 });
+
+
+function obterUsuarioLogado(){
+  const storages = [localStorage, sessionStorage];
+
+  const keysNome = [
+    'usuarioNome', 'nomeUsuario', 'userName', 'username', 'nome', 'usuario'
+  ];
+  const keysEmail = [
+    'usuarioEmail', 'emailUsuario', 'userEmail', 'email', 'mail'
+  ];
+  const keysObjeto = [
+    'usuarioLogado', 'usuarioAtual', 'currentUser', 'user', 'authUser', 'loggedUser'
+  ];
+
+  const ler = (storage, key) => {
+    try { return storage.getItem(key); } catch { return null; }
+  };
+
+  for (const storage of storages){
+    for (const key of keysObjeto){
+      const raw = ler(storage, key);
+      if (!raw) continue;
+      try{
+        const obj = JSON.parse(raw);
+        const nome = obj?.nome || obj?.name || obj?.usuario || obj?.username || obj?.displayName || '';
+        const email = obj?.email || obj?.mail || obj?.userEmail || '';
+        if (nome || email) return { nome, email };
+      }catch(e){}
+    }
+  }
+
+  let nome = '';
+  let email = '';
+
+  for (const storage of storages){
+    if (!nome){
+      for (const key of keysNome){
+        const value = ler(storage, key);
+        if (value && value.trim()){
+          nome = value.trim();
+          break;
+        }
+      }
+    }
+    if (!email){
+      for (const key of keysEmail){
+        const value = ler(storage, key);
+        if (value && value.trim()){
+          email = value.trim();
+          break;
+        }
+      }
+    }
+  }
+
+  return { nome, email };
+}
 
 function compareProjetos(a, b){
   const idA = Number(a.id);
