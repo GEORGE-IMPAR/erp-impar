@@ -4,9 +4,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-SERP_API_KEY = os.getenv("eb6e19e7325ca5fa0fbc8165712ecfe1d1aa49c0156093684b8335c72e8b261c")
+SERP_API_KEY = os.getenv("SERP_API_KEY")
 
 # =========================
 # UTIL
@@ -39,43 +39,42 @@ def detectar_tipo_cobre(nome):
 # BUSCA SERPAPI
 # =========================
 def buscar_serp(query):
-    url = "https://serpapi.com/search.json"
+    if not SERP_API_KEY:
+        raise Exception("SERP_API_KEY não configurada no ambiente")
 
+    url = "https://serpapi.com/search.json"
     params = {
         "q": query,
-        "engine": "google",
-        "api_key": SERP_API_KEY
+        "api_key": SERP_API_KEY,
+        "engine": "google"
     }
 
-    r = requests.get(url, params=params, timeout=20)
-    data = r.json()
+    resp = requests.get(url, params=params, timeout=25)
+    resp.raise_for_status()
+    data = resp.json()
 
     resultados = []
 
-    for item in data.get("organic_results", [])[:10]:
-        titulo = item.get("title", "")
-        link = item.get("link", "")
+    for r in data.get("organic_results", [])[:5]:
+        link = r.get("link", "")
+        if link_ruim(link):
+            continue
 
-        # tentativa simples de extrair preço do snippet
-        snippet = item.get("snippet", "")
+        snippet = r.get("snippet", "")
+        preco = extrair_preco(snippet)
+        if not preco:
+            continue
 
-        preco = None
-        for token in snippet.split():
-            if "₹" in token or "$" in token:
-                try:
-                    preco = float(token.replace("₹", "").replace("$", "").replace(",", ""))
-                    break
-                except:
-                    pass
+        pais = detectar_pais(f"{r.get('title', '')} {snippet} {link}")
 
         resultados.append({
-            "titulo": titulo,
-            "link": link,
-            "preco": preco
+            "fornecedor": r.get("title", "")[:80],
+            "pais": pais,
+            "origem": preco,
+            "link": link
         })
 
     return resultados
-
 # =========================
 # CORE
 # =========================
@@ -142,9 +141,17 @@ def home():
 
 @app.route("/buscar", methods=["POST"])
 def buscar():
+    data = request.get_json(silent=True) or {}
+
+    material = data.get("material", "elastomerico")
+    mercado = data.get("mercado", "asia")
+    modo = data.get("modo", "preco")
+
+    logs = []
+    logs.append("🔍 Buscando dados reais na internet...")
+
     try:
         dados = processar(material)
-
         logs.append(f"✅ {len(dados)} resultados encontrados")
 
         return jsonify({
@@ -154,10 +161,12 @@ def buscar():
         })
 
     except Exception as e:
+        logs.append(f"❌ Erro: {str(e)}")
         return jsonify({
             "ok": False,
-            "erro": str(e)
-        })
+            "dados": [],
+            "logs": logs
+        }), 500
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
