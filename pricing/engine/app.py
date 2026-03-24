@@ -2,6 +2,8 @@ import os
 import requests
 import re
 import statistics
+import json
+from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -11,9 +13,6 @@ CORS(app)
 SERP_API_KEY = os.getenv("SERP_API_KEY")
 BRIGHT_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
 
-# =========================
-# CONFIG
-# =========================
 FONTES_RUINS = ["indiamart", "tradeindia", "exportersindia"]
 
 # =========================
@@ -33,7 +32,7 @@ def extrair_preco(texto):
 
 def detectar_tipo_cobre(nome):
     nome = nome.lower()
-    if "coil" in nome or "soft" in nome or "flex" in nome:
+    if "coil" in nome or "soft" in nome or "flex":
         return "flexivel"
     return "rigido"
 
@@ -50,7 +49,7 @@ def validar_preco(material, preco):
     return True
 
 # =========================
-# SERP API
+# SERP
 # =========================
 def buscar_serp(query):
     url = "https://serpapi.com/search.json"
@@ -62,7 +61,6 @@ def buscar_serp(query):
 
     resp = requests.get(url, params=params, timeout=20)
     resp.raise_for_status()
-
     return resp.json().get("organic_results", [])
 
 # =========================
@@ -93,16 +91,63 @@ def abrir_pagina(url):
 # QUERY INTELIGENTE
 # =========================
 def montar_query(material, tipo, bitola):
-    base = ""
-
     if material == "cobre":
-        base = f"copper tube {tipo} {bitola} hvac price per kg"
+        return f"copper tube {tipo} {bitola} hvac price per kg supplier china india"
     elif material == "elastomerico":
-        base = f"elastomeric insulation {bitola} price per meter hvac"
+        return f"elastomeric insulation {bitola} hvac price per meter supplier"
     else:
-        base = "galvanized steel sheet price per unit"
+        return "galvanized steel sheet price per unit supplier"
 
-    return base + " supplier china india"
+# =========================
+# HISTÓRICO
+# =========================
+def salvar_historico(material, dados):
+    path = f"historico_{material}.json"
+
+    try:
+        antigo = []
+        if os.path.exists(path):
+            with open(path) as f:
+                antigo = json.load(f)
+
+        antigo.append({
+            "data": str(datetime.now()),
+            "dados": dados
+        })
+
+        with open(path, "w") as f:
+            json.dump(antigo, f)
+
+    except:
+        pass
+
+# =========================
+# SCORE
+# =========================
+def calcular_confianca(precos):
+    if len(precos) < 3:
+        return "C"
+
+    variacao = max(precos) - min(precos)
+
+    if variacao < 10:
+        return "A"
+    elif variacao < 30:
+        return "B"
+    return "C"
+
+# =========================
+# INSIGHT
+# =========================
+def gerar_insight(precos, melhor):
+    media = statistics.mean(precos)
+
+    if melhor["brasil"] < media:
+        return "Preço abaixo da média global. Excelente oportunidade."
+    elif melhor["brasil"] < media * 1.2:
+        return "Preço dentro da média de mercado. Compra viável."
+    else:
+        return "Preço acima da média global. Avaliar negociação."
 
 # =========================
 # CORE
@@ -123,23 +168,17 @@ def processar(material, tipo, bitola):
         snippet = r.get("snippet", "")
 
         if is_fonte_ruim(link):
-            logs.append(f"❌ Ignorado (fonte ruim): {link}")
             continue
 
         texto = snippet
 
-        # tenta enriquecer com BrightData
         pagina = abrir_pagina(link)
         if pagina:
             texto += " " + pagina
 
         preco = extrair_preco(texto)
 
-        if not preco:
-            continue
-
-        if not validar_preco(material, preco):
-            logs.append(f"⚠️ Preço descartado: {preco}")
+        if not preco or not validar_preco(material, preco):
             continue
 
         pais = "Índia" if "india" in link.lower() else "China"
@@ -160,17 +199,26 @@ def processar(material, tipo, bitola):
         })
 
     if not dados:
-        return [], logs
+        return [], logs, {}, "C", "Sem dados suficientes"
 
     precos = [d["origem"] for d in dados]
 
-    mediana = statistics.median(precos)
     media = round(statistics.mean(precos), 2)
+    mediana = statistics.median(precos)
+    confianca = calcular_confianca(precos)
 
-    logs.append(f"📊 Média: {media}")
-    logs.append(f"📊 Mediana: {mediana}")
+    melhor = min(dados, key=lambda x: x["brasil"])
 
-    return dados, logs
+    insight = gerar_insight(precos, melhor)
+
+    grafico = {
+        "labels": [d["fornecedor"][:20] for d in dados],
+        "valores": [d["origem"] for d in dados]
+    }
+
+    salvar_historico(material, dados)
+
+    return dados, logs, grafico, confianca, insight
 
 # =========================
 # ROTAS
@@ -191,11 +239,10 @@ def buscar():
     tipo = data.get("tipo", "flexivel")
     bitola = data.get("bitola", "")
 
-    logs = []
-    logs.append("🚀 Iniciando motor HARD V1...")
+    logs = ["🚀 HARD V2 iniciado"]
 
     try:
-        dados, logs_core = processar(material, tipo, bitola)
+        dados, logs_core, grafico, confianca, insight = processar(material, tipo, bitola)
         logs += logs_core
 
         melhor = min(dados, key=lambda x: x["brasil"]) if dados else None
@@ -204,17 +251,18 @@ def buscar():
             "ok": True,
             "dados": dados,
             "melhor": melhor,
+            "confianca": confianca,
+            "insight": insight,
+            "grafico": grafico,
             "logs": logs
         })
 
     except Exception as e:
-        logs.append(f"❌ Erro: {str(e)}")
+        logs.append(str(e))
         return jsonify({
             "ok": False,
-            "dados": [],
             "logs": logs
         }), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
