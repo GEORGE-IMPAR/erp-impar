@@ -1,126 +1,220 @@
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-import pandas as pd
 import os
-import time
+import requests
+import re
+import statistics
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ULTIMO_ARQUIVO = os.path.join(BASE_DIR, "resultado_consulta.xlsx")
+SERP_API_KEY = os.getenv("SERP_API_KEY")
+BRIGHT_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
 
-def gerar_dados(material, mercado, modo):
-    # simulação mais inteligente até plugar a busca real
-    if material == "elastomerico":
-        if mercado == "asia":
-            dados = [
-                {"fornecedor":"Aaryi Industrial Materials", "pais":"Índia", "origem":2.28, "unidade":"m"},
-                {"fornecedor":"NBR Tube Supplier", "pais":"Índia", "origem":3.00, "unidade":"m"},
-                {"fornecedor":"Thermaflex Supplier", "pais":"Índia", "origem":3.60, "unidade":"m"},
-                {"fornecedor":"Fornecedor Brasil", "pais":"Brasil", "origem":20.24, "unidade":"m"},
-            ]
-        elif mercado == "brasil":
-            dados = [
-                {"fornecedor":"Fornecedor SC", "pais":"Brasil", "origem":13.85, "unidade":"m"},
-                {"fornecedor":"Fornecedor SP", "pais":"Brasil", "origem":20.24, "unidade":"m"},
-                {"fornecedor":"Fornecedor PR", "pais":"Brasil", "origem":25.56, "unidade":"m"},
-            ]
-        else:
-            dados = [
-                {"fornecedor":"Índia Lead", "pais":"Índia", "origem":2.28, "unidade":"m"},
-                {"fornecedor":"Vietnã Lead", "pais":"Vietnã", "origem":4.10, "unidade":"m"},
-                {"fornecedor":"Brasil", "pais":"Brasil", "origem":20.24, "unidade":"m"},
-            ]
+# =========================
+# CONFIG
+# =========================
+FONTES_RUINS = ["indiamart", "tradeindia", "exportersindia"]
 
-    elif material == "cobre":
-        if mercado == "asia":
-            dados = [
-                {"fornecedor":"India Copper Tube", "pais":"Índia", "origem":51.60, "unidade":"kg"},
-                {"fornecedor":"Made in Asia", "pais":"Vietnã", "origem":58.00, "unidade":"kg"},
-                {"fornecedor":"Brasil Base", "pais":"Brasil", "origem":130.00, "unidade":"kg"},
-            ]
-        elif mercado == "brasil":
-            dados = [
-                {"fornecedor":"Distribuidor SC", "pais":"Brasil", "origem":130.00, "unidade":"kg"},
-                {"fornecedor":"Distribuidor SP", "pais":"Brasil", "origem":150.00, "unidade":"kg"},
-            ]
-        else:
-            dados = [
-                {"fornecedor":"Índia", "pais":"Índia", "origem":51.60, "unidade":"kg"},
-                {"fornecedor":"China", "pais":"China", "origem":52.50, "unidade":"kg"},
-                {"fornecedor":"Brasil", "pais":"Brasil", "origem":130.00, "unidade":"kg"},
-            ]
+# =========================
+# UTIL
+# =========================
+def is_fonte_ruim(link):
+    return any(f in link.lower() for f in FONTES_RUINS)
 
-    else:  # aço galvanizado
-        if mercado == "asia":
-            dados = [
-                {"fornecedor":"Turkey GI Coil", "pais":"Turquia", "origem":5.10, "unidade":"kg"},
-                {"fornecedor":"Vietnam GI Sheet", "pais":"Vietnã", "origem":5.60, "unidade":"kg"},
-                {"fornecedor":"Brasil Base", "pais":"Brasil", "origem":13.00, "unidade":"kg"},
-            ]
-        elif mercado == "brasil":
-            dados = [
-                {"fornecedor":"Fornecedor SC", "pais":"Brasil", "origem":13.00, "unidade":"kg"},
-                {"fornecedor":"Fornecedor Santos", "pais":"Brasil", "origem":12.70, "unidade":"kg"},
-            ]
-        else:
-            dados = [
-                {"fornecedor":"Turquia", "pais":"Turquia", "origem":5.10, "unidade":"kg"},
-                {"fornecedor":"Vietnã", "pais":"Vietnã", "origem":5.60, "unidade":"kg"},
-                {"fornecedor":"Brasil", "pais":"Brasil", "origem":13.00, "unidade":"kg"},
-            ]
+def extrair_preco(texto):
+    matches = re.findall(r"(\d+[.,]?\d*)", texto)
+    if not matches:
+        return None
+    try:
+        return float(matches[0].replace(",", "."))
+    except:
+        return None
 
-    # estimativa de custo Brasil
-    for d in dados:
+def detectar_tipo_cobre(nome):
+    nome = nome.lower()
+    if "coil" in nome or "soft" in nome or "flex" in nome:
+        return "flexivel"
+    return "rigido"
+
+def calcular_brasil(origem, pais):
+    if pais.lower() == "brasil":
+        return origem
+    return round(origem * 2.2, 2)
+
+def validar_preco(material, preco):
+    if material == "cobre" and preco < 20:
+        return False
+    if material == "elastomerico" and preco < 1:
+        return False
+    return True
+
+# =========================
+# SERP API
+# =========================
+def buscar_serp(query):
+    url = "https://serpapi.com/search.json"
+    params = {
+        "q": query,
+        "api_key": SERP_API_KEY,
+        "engine": "google"
+    }
+
+    resp = requests.get(url, params=params, timeout=20)
+    resp.raise_for_status()
+
+    return resp.json().get("organic_results", [])
+
+# =========================
+# BRIGHT DATA
+# =========================
+def abrir_pagina(url):
+    endpoint = "https://api.brightdata.com/request"
+
+    payload = {
+        "zone": "web_unlocker1",
+        "url": url,
+        "format": "raw"
+    }
+
+    headers = {
+        "Authorization": f"Bearer {BRIGHT_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=25)
+        resp.raise_for_status()
+        return resp.text[:5000]
+    except:
+        return ""
+
+# =========================
+# QUERY INTELIGENTE
+# =========================
+def montar_query(material, tipo, bitola):
+    base = ""
+
+    if material == "cobre":
+        base = f"copper tube {tipo} {bitola} hvac price per kg"
+    elif material == "elastomerico":
+        base = f"elastomeric insulation {bitola} price per meter hvac"
+    else:
+        base = "galvanized steel sheet price per unit"
+
+    return base + " supplier china india"
+
+# =========================
+# CORE
+# =========================
+def processar(material, tipo, bitola):
+    logs = []
+    dados = []
+
+    query = montar_query(material, tipo, bitola)
+    logs.append(f"🔎 Query: {query}")
+
+    resultados = buscar_serp(query)
+    logs.append(f"🌐 {len(resultados)} links encontrados")
+
+    for r in resultados[:8]:
+        link = r.get("link", "")
+        titulo = r.get("title", "")
+        snippet = r.get("snippet", "")
+
+        if is_fonte_ruim(link):
+            logs.append(f"❌ Ignorado (fonte ruim): {link}")
+            continue
+
+        texto = snippet
+
+        # tenta enriquecer com BrightData
+        pagina = abrir_pagina(link)
+        if pagina:
+            texto += " " + pagina
+
+        preco = extrair_preco(texto)
+
+        if not preco:
+            continue
+
+        if not validar_preco(material, preco):
+            logs.append(f"⚠️ Preço descartado: {preco}")
+            continue
+
+        pais = "Índia" if "india" in link.lower() else "China"
+
+        tipo_cobre = None
         if material == "cobre":
-            fator = 2.4
-        elif material == "aco_galvanizado":
-            fator = 2.1
-        else:
-            fator = 2.5
+            tipo_cobre = detectar_tipo_cobre(titulo)
 
-        d["brasil"] = round(d["origem"] * fator, 2)
+        brasil = calcular_brasil(preco, pais)
 
-    return dados
+        dados.append({
+            "fornecedor": titulo[:60],
+            "pais": pais,
+            "origem": preco,
+            "brasil": brasil,
+            "tipo": tipo_cobre,
+            "link": link
+        })
+
+    if not dados:
+        return [], logs
+
+    precos = [d["origem"] for d in dados]
+
+    mediana = statistics.median(precos)
+    media = round(statistics.mean(precos), 2)
+
+    logs.append(f"📊 Média: {media}")
+    logs.append(f"📊 Mediana: {mediana}")
+
+    return dados, logs
+
+# =========================
+# ROTAS
+# =========================
+@app.route("/")
+def home():
+    return jsonify({
+        "ok": True,
+        "service": "consulta-precos-impar",
+        "status": "online"
+    })
 
 @app.route("/buscar", methods=["POST"])
 def buscar():
-    payload = request.get_json(force=True)
-    material = payload.get("material", "elastomerico")
-    mercado = payload.get("mercado", "asia")
-    modo = payload.get("modo", "preco")
+    data = request.get_json(silent=True) or {}
+
+    material = data.get("material", "cobre")
+    tipo = data.get("tipo", "flexivel")
+    bitola = data.get("bitola", "")
 
     logs = []
-    logs.append("🔍 Iniciando busca estratégica...")
-    time.sleep(0.25)
-    logs.append(f"🌐 Mercado selecionado: {mercado}")
-    time.sleep(0.25)
-    logs.append(f"📦 Material selecionado: {material}")
-    time.sleep(0.25)
-    logs.append(f"🧭 Modo de retorno: {modo}")
-    time.sleep(0.25)
-    logs.append("🚚 Calculando custo estimado até o Brasil...")
-    time.sleep(0.25)
+    logs.append("🚀 Iniciando motor HARD V1...")
 
-    dados = gerar_dados(material, mercado, modo)
+    try:
+        dados, logs_core = processar(material, tipo, bitola)
+        logs += logs_core
 
-    df = pd.DataFrame(dados)
-    df.to_excel(ULTIMO_ARQUIVO, index=False)
+        melhor = min(dados, key=lambda x: x["brasil"]) if dados else None
 
-    logs.append(f"✅ {len(dados)} fornecedores processados")
-    logs.append("✅ Planilha gerada com sucesso")
+        return jsonify({
+            "ok": True,
+            "dados": dados,
+            "melhor": melhor,
+            "logs": logs
+        })
 
-    return jsonify({
-        "logs": logs,
-        "dados": dados
-    })
+    except Exception as e:
+        logs.append(f"❌ Erro: {str(e)}")
+        return jsonify({
+            "ok": False,
+            "dados": [],
+            "logs": logs
+        }), 500
 
-@app.route("/baixar", methods=["GET"])
-def baixar():
-    if not os.path.exists(ULTIMO_ARQUIVO):
-        return "Arquivo ainda não gerado.", 404
-    return send_file(ULTIMO_ARQUIVO, as_attachment=True)
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8765, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
