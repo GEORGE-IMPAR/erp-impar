@@ -903,8 +903,7 @@ async function iniciarBusca(){
       headers: { "Content-Type":"application/json" },
       body: JSON.stringify(payload)
     });
-    const t1 = await r1.text();
-    const d1 = JSON.parse(t1);
+    const d1 = await r1.json();
 
     if (!r1.ok || !d1.ok){
       (d1.logs || ["❌ Falha na busca base"]).forEach(x => logLine(x, "c-err"));
@@ -913,23 +912,65 @@ async function iniciarBusca(){
 
     (d1.logs || []).forEach(x => logLine(x, "c-info"));
     logLine(`📦 Candidatos encontrados: ${(d1.candidatos || []).length}`, "c-ok");
-    logLine("🔬 Iniciando detalhamento...", "c-info");
+    logLine("🔬 Iniciando detalhamento em lotes...", "c-info");
 
-    // ETAPA 2
-    const r2 = await fetch(`${API_BASE}/buscar_detalhe`, {
+    // ETAPA 2 EM LOTES
+    let allDados = [];
+    let offset = 0;
+    const limit = 3;
+    let finished = false;
+
+    while (!finished) {
+      const r2 = await fetch(`${API_BASE}/buscar_detalhe`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+          job_id: d1.job_id,
+          offset,
+          limit
+        })
+      });
+
+      const d2 = await r2.json();
+
+      if (!r2.ok || !d2.ok){
+        (d2.logs || ["❌ Falha no detalhamento"]).forEach(x => logLine(x, "c-err"));
+        return;
+      }
+
+      (d2.logs || []).forEach(line => {
+        const cls =
+          line.startsWith("✅") ? "c-ok" :
+          line.startsWith("⚠") ? "c-warn" :
+          line.startsWith("❌") ? "c-err" : "c-info";
+        logLine(line, cls);
+      });
+
+      allDados = allDados.concat(d2.dados_lote || []);
+      finished = !!d2.finished;
+      offset = d2.next_offset || 0;
+    }
+
+    logLine("🧠 Consolidando resultado final...", "c-info");
+
+    // ETAPA 3 - CONSOLIDAÇÃO FINAL
+    const r3 = await fetch(`${API_BASE}/finalizar_detalhe`, {
       method: "POST",
       headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ job_id: d1.job_id })
+      body: JSON.stringify({
+        job_id: d1.job_id,
+        resultados: allDados
+      })
     });
-    const t2 = await r2.text();
-    const d2 = JSON.parse(t2);
 
-    if (!r2.ok || !d2.ok){
-      (d2.logs || ["❌ Falha no detalhamento"]).forEach(x => logLine(x, "c-err"));
+    const d3 = await r3.json();
+
+    if (!r3.ok || !d3.ok){
+      (d3.logs || ["❌ Falha na consolidação"]).forEach(x => logLine(x, "c-err"));
       return;
     }
 
-    (d2.logs || []).forEach(line => {
+    (d3.logs || []).forEach(line => {
       const cls =
         line.startsWith("✅") ? "c-ok" :
         line.startsWith("⚠") ? "c-warn" :
@@ -937,21 +978,22 @@ async function iniciarBusca(){
       logLine(line, cls);
     });
 
-    renderTabela(d2.dados || [], material);
-    document.getElementById("mConf").textContent = d2.confianca || "--";
-    document.getElementById("insightBox").textContent = d2.insight || "Sem insight.";
+    renderTabela(d3.dados || [], material);
+    document.getElementById("mConf").textContent = d3.confianca || "--";
+    document.getElementById("insightBox").textContent = d3.insight || "Sem insight.";
 
     document.getElementById("confCard").className = "mini-card " + (
-      d2.confianca === "A" ? "conf-a" :
-      d2.confianca === "B" ? "conf-b" : "conf-c"
+      d3.confianca === "A" ? "conf-a" :
+      d3.confianca === "B" ? "conf-b" : "conf-c"
     );
 
-    renderCharts(d2.grafico || {}, d2.historico_grafico || {});
+    renderCharts(d3.grafico || {}, d3.historico_grafico || {});
   }catch(err){
     logLine("❌ Falha ao consultar a API do servidor.", "c-err");
     logLine(`⚠ Detalhe: ${err.message}`, "c-warn");
   }
 }
+    
     function abrirExcel(){
       window.open(`${API_BASE}/baixar`, "_blank");
     }
