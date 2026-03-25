@@ -284,28 +284,31 @@ def home():
         }
     })
 
+@app.route("/buscar", methods=["POST", "OPTIONS"])
 def buscar():
     try:
         data = request.get_json(silent=True) or {}
-
-        material = data.get("material", "elastomerico")
-        mercado = data.get("mercado", "global")
-
-        resultados, logs, preco = processar(material, mercado)
-
         return jsonify({
             "ok": True,
-            "dados": resultados,
-            "logs": logs,
-            "preco_estimado": preco,
-            "analise": f"Baseado em {len(resultados)} fontes confiáveis HVAC" if resultados else "Sem dados confiáveis para análise."
+            "dados": [],
+            "logs": [
+                "✅ /buscar respondeu",
+                f"▶ material: {data.get('material')}",
+                f"▶ mercado: {data.get('mercado')}"
+            ],
+            "preco_estimado": None,
+            "confianca": "C",
+            "insight": "Teste simples do endpoint /buscar.",
+            "grafico": {"labels": [], "valores": []},
+            "historico_grafico": {"labels": [], "valores": []}
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "ok": False,
             "dados": [],
             "logs": [f"❌ Erro interno: {str(e)}"]
-        }), 500
-        
+        }), 500        
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
