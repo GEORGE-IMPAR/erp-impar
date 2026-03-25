@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import uuid
 import statistics
 from datetime import datetime
 
@@ -18,26 +19,14 @@ BRIGHT_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LAST_XLSX = os.path.join(BASE_DIR, "resultado_consulta.xlsx")
 HISTORY_DIR = os.path.join(BASE_DIR, "history")
+JOBS_DIR = os.path.join(BASE_DIR, "jobs")
 os.makedirs(HISTORY_DIR, exist_ok=True)
+os.makedirs(JOBS_DIR, exist_ok=True)
 
-# =========================
-# CONFIG
-# =========================
 FONTES_RUINS = [
-    "indiamart",
-    "tradeindia",
-    "exportersindia",
-    "verifiedmarketreports",
-    "marketresearch",
-    "market-size",
-    "quemfornece",
-    "forneceb2b",
-    "solucoesindustriais",
-    "thetradevision",
-    "directory",
-    "blog",
-    "news",
-    "report",
+    "verifiedmarketreports", "marketresearch", "market-size",
+    "quemfornece", "forneceb2b", "solucoesindustriais",
+    "thetradevision", "directory", "blog", "news", "report"
 ]
 
 PAISES_ASIA = {"Índia", "China", "Vietnã"}
@@ -85,7 +74,6 @@ def extrair_preco(texto: str, material: str):
         return None, None, ""
 
     candidatos = []
-
     padroes = [
         r"(R\$|US\$|USD|€|EUR|₹|INR|CNY|CN¥)\s*([0-9][0-9\.,]{0,18})",
         r"([0-9][0-9\.,]{0,18})\s*(R\$|US\$|USD|€|EUR|₹|INR|CNY|CN¥)",
@@ -108,7 +96,6 @@ def extrair_preco(texto: str, material: str):
     if not candidatos:
         return None, None, ""
 
-    # escolha do menor válido costuma ser menos ruim para e-commerce industrial
     valor, moeda, trecho = min(candidatos, key=lambda x: x[0])
     return valor, moeda, trecho
 
@@ -120,7 +107,6 @@ def detectar_tipo_cobre(nome: str) -> str:
 
 def detectar_pais(url="", titulo="", html=""):
     base = f"{url} {titulo} {html}".lower()
-
     if any(x in base for x in ["brasil", "brazil", ".br"]):
         return "Brasil"
     if any(x in base for x in ["india", "índia", ".in", "indiamart"]):
@@ -135,25 +121,19 @@ def detectar_pais(url="", titulo="", html=""):
 
 def validar_mercado(pais: str, mercado: str) -> bool:
     p = (pais or "").strip()
-
     if mercado == "brasil":
         return p == "Brasil"
-
     if mercado == "asia":
         return p in PAISES_ASIA
-
-    return True  # global
+    return True
 
 def calcular_brasil(origem: float, pais: str, material: str):
     if origem is None:
         return None
-
     if (pais or "").lower() == "brasil":
         return round(origem, 2)
 
     fator = BASE_REFERENCIA.get(material, {}).get("fator_brasil", 2.2)
-
-    # pequenos ajustes por origem
     pais_lower = (pais or "").lower()
     if pais_lower == "china":
         fator += 0.15
@@ -167,7 +147,6 @@ def calcular_brasil(origem: float, pais: str, material: str):
 def validar_preco(material: str, valor: float) -> bool:
     if valor is None:
         return False
-
     ref = BASE_REFERENCIA.get(material, {"min": 1.0, "max": 999999.0})
     return ref["min"] <= valor <= ref["max"]
 
@@ -176,7 +155,6 @@ def classificar_fonte(url: str, titulo: str, html: str = "") -> str:
     t = (titulo or "").lower()
     h = (html or "").lower()
 
-    # descarta relatórios / diretórios
     if any(x in h for x in [
         "market size", "tamanho do mercado", "forecast", "cagr",
         "industry report", "billion", "bilhões"
@@ -191,41 +169,25 @@ def classificar_fonte(url: str, titulo: str, html: str = "") -> str:
 
     if "pdf" in u:
         return "A"
-
     if any(x in u for x in ["manufacturer", "factory", "supplier", "produto", "shop", "store"]):
         return "A"
-
     if "indiamart" in u:
         return "C"
-
     if any(x in t for x in ["price", "hvac", "insulation", "copper", "galvanized"]):
         return "B"
-
     return "C"
 
 def score_fonte(classe: str) -> float:
-    if classe == "A":
-        return 1.0
-    if classe == "B":
-        return 0.7
-    if classe == "C":
-        return 0.3
-    return 0.0
+    return {"A": 1.0, "B": 0.7, "C": 0.3}.get(classe, 0.0)
 
 def calcular_confianca(precos_brasil):
-    if not precos_brasil:
+    if not precos_brasil or len(precos_brasil) < 3:
         return "C"
-
-    if len(precos_brasil) < 3:
-        return "C"
-
     media = statistics.mean(precos_brasil)
     if media == 0:
         return "C"
-
     desvio = statistics.pstdev(precos_brasil) if len(precos_brasil) > 1 else 0
     cv = desvio / media
-
     if cv < 0.15:
         return "A"
     elif cv < 0.35:
@@ -235,7 +197,6 @@ def calcular_confianca(precos_brasil):
 def gerar_insight(material, mercado, dados, melhor):
     if not dados:
         return "Sem dados confiáveis para análise."
-
     brasil_vals = [d["brasil"] for d in dados if d.get("brasil") is not None]
     if not brasil_vals:
         return "Sem base consolidada suficiente."
@@ -275,12 +236,10 @@ def salvar_historico(material, payload):
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 hist = json.load(f)
-
         hist.append({
             "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "payload": payload
         })
-
         hist = hist[-30:]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(hist, f, ensure_ascii=False, indent=2)
@@ -299,15 +258,12 @@ def ler_historico(material):
 
 def gerar_excel_simples(dados):
     try:
-        # gera CSV disfarçado em xlsx? não. vamos criar um txt simples se openpyxl não estiver disponível
         import openpyxl
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Consulta"
-
         headers = ["item_ref", "fornecedor", "pais", "origem", "brasil", "tipo", "link", "evidencia"]
         ws.append(headers)
-
         for d in dados:
             ws.append([
                 d.get("item_ref", ""),
@@ -319,10 +275,21 @@ def gerar_excel_simples(dados):
                 d.get("link", ""),
                 d.get("evidencia", ""),
             ])
-
         wb.save(LAST_XLSX)
     except:
         pass
+
+def save_job(job_id, payload):
+    path = os.path.join(JOBS_DIR, f"{job_id}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+def load_job(job_id):
+    path = os.path.join(JOBS_DIR, f"{job_id}.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 # =========================
 # QUERY
@@ -344,7 +311,6 @@ def traduzir_item_detalhado(item_texto: str):
         m_esp = re.search(r"ESPESSURA\s*([0-9]+(?:[.,][0-9]+)?)\s*MM", tu)
         if m_esp:
             esp = m_esp.group(1).replace(",", ".")
-
         bit = ""
         m_bit = re.search(r'TUBO DE COBRE DE\s*([0-9\./"]+)', tu)
         if m_bit:
@@ -400,7 +366,6 @@ def gerar_queries(material, mercado, tipo="", bitola="", detalhe=""):
         f"{base} manufacturer {' '.join(mercado_hint)}",
     ]
 
-    # reforço BR para elastomérico
     if material == "elastomerico" and mercado == "brasil":
         queries.extend([
             f"espuma elastomérica tubo {bitola} ar condicionado preço brasil",
@@ -411,12 +376,11 @@ def gerar_queries(material, mercado, tipo="", bitola="", detalhe=""):
     return list(dict.fromkeys([q.strip() for q in queries if q.strip()]))
 
 # =========================
-# SERVIÇOS EXTERNOS
+# EXTERNOS
 # =========================
 def buscar_serp(query, num=8):
     if not SERP_API_KEY:
         raise Exception("SERP_API_KEY não configurada")
-
     url = "https://serpapi.com/search.json"
     params = {
         "q": query,
@@ -431,7 +395,6 @@ def buscar_serp(query, num=8):
 def extrair_preco_pagina(url, material):
     if not BRIGHT_API_KEY:
         return None, None, "", ""
-
     endpoint = "https://api.brightdata.com/request"
     payload = {
         "zone": "web_unlocker1",
@@ -455,82 +418,131 @@ def extrair_preco_pagina(url, material):
         return None, None, "", ""
 
 # =========================
-# CORE
+# ETAPA 1 - BASE
 # =========================
-def processar_item(item_ref, material, mercado, tipo="", bitola="", detalhe=""):
+def buscar_base(material, mercado, tipo="", bitola="", detalhe="", lista_materiais=None):
+    logs = []
+    candidatos = []
+    lista_materiais = lista_materiais or []
+
+    itens = []
+    if lista_materiais:
+        for item in lista_materiais:
+            itens.append(traduzir_item_detalhado(item))
+    else:
+        itens.append({
+            "item_ref": detalhe or f"{material} {tipo} {bitola}".strip() or material,
+            "material": material,
+            "tipo": tipo,
+            "bitola": bitola,
+            "detalhe": detalhe,
+        })
+
+    deadline = time.time() + 10
+
+    for cfg in itens:
+        if time.time() > deadline:
+            logs.append("⏱ Tempo limite da busca base atingido.")
+            break
+
+        logs.append(f"📌 Item: {cfg['item_ref'][:120]}")
+        queries = gerar_queries(
+            cfg["material"], mercado,
+            cfg.get("tipo", ""), cfg.get("bitola", ""), cfg.get("detalhe", "")
+        )[:2]
+
+        logs.append(f"🔎 {len(queries)} estratégias de busca geradas")
+
+        for q in queries:
+            logs.append(f"🌐 Query: {q}")
+            try:
+                data = buscar_serp(q, num=5)
+            except Exception as e:
+                logs.append(f"⚠ Erro SERP: {str(e)}")
+                continue
+
+            for item in data.get("organic_results", [])[:5]:
+                url = item.get("link", "")
+                titulo = item.get("title", "")
+                snippet = item.get("snippet", "")
+
+                if not url or is_fonte_ruim(url):
+                    continue
+
+                candidatos.append({
+                    "item_ref": cfg["item_ref"],
+                    "material": cfg["material"],
+                    "tipo": cfg.get("tipo", ""),
+                    "bitola": cfg.get("bitola", ""),
+                    "detalhe": cfg.get("detalhe", ""),
+                    "titulo": titulo[:120],
+                    "snippet": snippet[:220],
+                    "link": url
+                })
+
+    # dedup
+    unicos = []
+    vistos = set()
+    for c in candidatos:
+        chave = (c["item_ref"], c["link"])
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        unicos.append(c)
+
+    return unicos[:12], logs
+
+# =========================
+# ETAPA 2 - DETALHE
+# =========================
+def buscar_detalhe(material, mercado, candidatos):
     logs = []
     resultados = []
 
-    queries = gerar_queries(material, mercado, tipo, bitola, detalhe)
-    logs.append(f"🔎 {len(queries)} estratégias de busca geradas")
+    deadline = time.time() + 12
 
-    for q in queries:
-        logs.append(f"🌐 Query: {q}")
+    for c in candidatos[:8]:
+        if time.time() > deadline:
+            logs.append("⏱ Tempo limite do detalhamento atingido.")
+            break
 
-        try:
-            data = buscar_serp(q, num=8)
-        except Exception as e:
-            logs.append(f"⚠ Erro SERP: {str(e)}")
+        valor, moeda, html, evidencia = extrair_preco_pagina(c["link"], c["material"])
+        if not valor:
             continue
 
-        if "organic_results" not in data:
-            logs.append("⚠ Nenhum organic_results retornado")
+        classe = classificar_fonte(c["link"], c["titulo"], html)
+        if classe == "X":
             continue
 
-        aceitos = 0
+        if not validar_preco(c["material"], valor):
+            continue
 
-        for item in data["organic_results"][:5]:
-            url = item.get("link", "")
-            titulo = item.get("title", "")
-            snippet = item.get("snippet", "")
+        pais = detectar_pais(c["link"], c["titulo"], html)
+        if not validar_mercado(pais, mercado):
+            continue
 
-            if not url or is_fonte_ruim(url):
-                continue
+        peso = score_fonte(classe)
+        if peso <= 0:
+            continue
 
-            valor, moeda, html, evidencia = extrair_preco_pagina(url, material)
-            if not valor:
-                continue
+        tipo_cobre = detectar_tipo_cobre(c["titulo"]) if c["material"] == "cobre" else ""
+        brasil = calcular_brasil(valor, pais, c["material"])
 
-            classe = classificar_fonte(url, titulo, html)
-            if classe == "X":
-                continue
+        resultados.append({
+            "item_ref": c["item_ref"],
+            "fornecedor": c["titulo"][:80],
+            "pais": pais,
+            "origem": round(valor, 2),
+            "brasil": brasil,
+            "tipo": tipo_cobre,
+            "link": c["link"],
+            "evidencia": (evidencia or c["snippet"] or "")[:220],
+            "moeda": moeda,
+            "score": peso,
+            "classe": classe,
+        })
 
-            if not validar_preco(material, valor):
-                continue
-
-            pais = detectar_pais(url, titulo, html)
-            if not validar_mercado(pais, mercado):
-                continue
-
-            peso = score_fonte(classe)
-            if peso <= 0:
-                continue
-
-            tipo_cobre = detectar_tipo_cobre(titulo) if material == "cobre" else ""
-            brasil = calcular_brasil(valor, pais, material)
-
-            resultados.append({
-                "item_ref": item_ref,
-                "fornecedor": titulo[:80],
-                "pais": pais,
-                "origem": round(valor, 2),
-                "brasil": brasil,
-                "tipo": tipo_cobre,
-                "link": url,
-                "evidencia": (evidencia or snippet or "")[:220],
-                "moeda": moeda,
-                "score": peso,
-                "classe": classe,
-            })
-
-            aceitos += 1
-            if aceitos >= 3:
-                break
-
-    return resultados, logs
-
-def consolidar(material, mercado, resultados, logs):
-    # remove duplicados
+    # dedup
     unicos = []
     vistos = set()
     for r in resultados:
@@ -547,7 +559,6 @@ def consolidar(material, mercado, resultados, logs):
     brasil_vals = [r["brasil"] for r in unicos if r.get("brasil") is not None]
     melhor = min(unicos, key=lambda x: x["brasil"] if x.get("brasil") is not None else 999999)
 
-    # média ponderada simples
     pesos = [r.get("score", 0.3) for r in unicos]
     origens = [r.get("origem", 0) for r in unicos]
     soma_pesos = sum(pesos) if pesos else 0
@@ -578,50 +589,9 @@ def consolidar(material, mercado, resultados, logs):
     }
 
     logs.append(f"📊 {len(unicos)} fontes válidas")
-    logs.append("✅ Processamento finalizado")
+    logs.append("✅ Detalhamento finalizado")
 
     return unicos, logs, preco_estimado, confianca, insight, grafico, historico_grafico
-
-def processar(material, mercado, tipo="", bitola="", detalhe="", lista_materiais=None):
-    logs = []
-    todos = []
-
-    itens = []
-    lista_materiais = lista_materiais or []
-
-    if lista_materiais:
-        for item in lista_materiais:
-            cfg = traduzir_item_detalhado(item)
-            itens.append(cfg)
-    else:
-        itens.append({
-            "item_ref": detalhe or f"{material} {tipo} {bitola}".strip() or material,
-            "material": material,
-            "tipo": tipo,
-            "bitola": bitola,
-            "detalhe": detalhe,
-        })
-
-    deadline = time.time() + 18
-
-    for cfg in itens:
-        if time.time() > deadline:
-            logs.append("⏱ Tempo limite atingido, retornando melhores resultados já consolidados...")
-            break
-
-        logs.append(f"📌 Item: {cfg['item_ref'][:120]}")
-        r_item, l_item = processar_item(
-            item_ref=cfg["item_ref"],
-            material=cfg["material"],
-            mercado=mercado,
-            tipo=cfg.get("tipo", ""),
-            bitola=cfg.get("bitola", ""),
-            detalhe=cfg.get("detalhe", ""),
-        )
-        logs.extend(l_item)
-        todos.extend(r_item)
-
-    return consolidar(material, mercado, todos, logs)
 
 # =========================
 # ROTAS
@@ -632,7 +602,7 @@ def home():
         "ok": True,
         "service": "ERP ÍMPAR - Consulta de Preços",
         "status": "online",
-        "engine": "V4 MONSTRÃO",
+        "engine": "V4 MONSTRÃO LOTEADO",
         "apis": {
             "serp": "ativa" if SERP_API_KEY else "erro",
             "brightdata": "ativa" if BRIGHT_API_KEY else "erro"
@@ -641,13 +611,10 @@ def home():
 
 @app.route("/health")
 def health():
-    return jsonify({
-        "ok": True,
-        "status": "healthy"
-    })
+    return jsonify({"ok": True, "status": "healthy"})
 
-@app.route("/buscar", methods=["POST", "OPTIONS"])
-def buscar():
+@app.route("/buscar_base", methods=["POST", "OPTIONS"])
+def rota_buscar_base():
     try:
         data = request.get_json(silent=True) or {}
 
@@ -658,16 +625,7 @@ def buscar():
         detalhe = data.get("detalhe", "")
         lista_materiais = data.get("lista_materiais", [])
 
-        print("DEBUG /buscar -> payload recebido:", {
-            "material": material,
-            "mercado": mercado,
-            "tipo": tipo,
-            "bitola": bitola,
-            "detalhe": detalhe,
-            "lista_materiais": lista_materiais
-        })
-
-        dados, logs, preco_estimado, confianca, insight, grafico, historico_grafico = processar(
+        candidatos, logs = buscar_base(
             material=material,
             mercado=mercado,
             tipo=tipo,
@@ -676,8 +634,49 @@ def buscar():
             lista_materiais=lista_materiais
         )
 
-        print("DEBUG /buscar -> processar executado com sucesso")
-        print("DEBUG /buscar -> qtd dados:", len(dados) if dados else 0)
+        job_id = str(uuid.uuid4())
+        save_job(job_id, {
+            "material": material,
+            "mercado": mercado,
+            "candidatos": candidatos
+        })
+
+        return jsonify({
+            "ok": True,
+            "job_id": job_id,
+            "candidatos": candidatos,
+            "logs": logs
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "ok": False,
+            "logs": [f"❌ Erro em /buscar_base: {str(e)}"]
+        }), 500
+
+@app.route("/buscar_detalhe", methods=["POST", "OPTIONS"])
+def rota_buscar_detalhe():
+    try:
+        data = request.get_json(silent=True) or {}
+        job_id = data.get("job_id")
+
+        if not job_id:
+            return jsonify({"ok": False, "logs": ["❌ job_id não informado"]}), 400
+
+        payload = load_job(job_id)
+        if not payload:
+            return jsonify({"ok": False, "logs": ["❌ job_id não encontrado"]}), 404
+
+        material = payload["material"]
+        mercado = payload["mercado"]
+        candidatos = payload["candidatos"]
+
+        dados, logs, preco_estimado, confianca, insight, grafico, historico_grafico = buscar_detalhe(
+            material=material,
+            mercado=mercado,
+            candidatos=candidatos
+        )
 
         gerar_excel_simples(dados)
 
@@ -692,16 +691,13 @@ def buscar():
             "grafico": grafico,
             "historico_grafico": historico_grafico
         })
-
     except Exception as e:
         import traceback
-        print("🔥 ERRO REAL EM /buscar:")
         traceback.print_exc()
-
         return jsonify({
             "ok": False,
             "dados": [],
-            "logs": [f"❌ Erro interno: {str(e)}"],
+            "logs": [f"❌ Erro em /buscar_detalhe: {str(e)}"],
             "confianca": "C",
             "insight": "Falha interna no motor de consulta.",
             "grafico": {"labels": [], "valores": []},
@@ -710,8 +706,9 @@ def buscar():
 
 @app.route("/baixar")
 def baixar():
-   if os.path.exists(LAST_XLSX):
-       return send_file(LAST_XLSX, as_attachment=True)
-   return "Arquivo não encontrado", 404
+    if os.path.exists(LAST_XLSX):
+        return send_file(LAST_XLSX, as_attachment=True)
+    return "Arquivo não encontrado", 404
+
 if __name__ == "__main__":
-   app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
