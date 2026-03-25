@@ -218,52 +218,39 @@ def processar(material, mercado):
     logs = []
     resultados = []
 
-    queries = gerar_queries(material, mercado)
+    queries = gerar_queries(material)
     logs.append(f"🔎 {len(queries)} estratégias de busca geradas")
 
     for q in queries:
         logs.append(f"🌐 Query: {q}")
 
-        try:
-            data = buscar_serp(q)
-        except Exception as e:
-            logs.append(f"⚠ Erro na SERP: {str(e)}")
-            continue
+        data = buscar_serp(q)
 
         if "organic_results" not in data:
-            logs.append("⚠ Nenhum organic_results retornado")
             continue
 
-        for item in data["organic_results"][:5]:
+        for item in data["organic_results"][:7]:
             url = item.get("link", "")
             titulo = item.get("title", "")
 
-            if not url or link_ruim(url):
+            if link_ruim(url):
                 continue
 
-            valor, moeda, html = extrair_preco_pagina(url)
+            valor, moeda = extrair_preco_pagina(url)
 
             if not valor:
                 continue
 
-            classe = classificar_fonte(url, titulo, html)
-            if classe == "X":
-                continue
+            classe = classificar_fonte(url, titulo)
 
             if not validar_preco(valor):
                 continue
 
-            pais = detectar_pais(url, titulo, html)
-            if not validar_mercado(pais, mercado):
-                continue
-
             peso = score_fonte(classe)
-            if peso <= 0:
-                continue
 
             resultados.append({
-                "fornecedor": titulo[:80],
-                "pais": pais,
+                "fornecedor": titulo[:60],
+                "pais": "global",
                 "origem": valor,
                 "moeda": moeda,
                 "score": peso,
@@ -281,7 +268,6 @@ def processar(material, mercado):
     logs.append("✅ Processamento finalizado")
 
     return resultados, logs, round(preco_final, 2)
-
 # ==========================================
 # ROTAS
 # ==========================================
@@ -298,7 +284,6 @@ def home():
         }
     })
 
-@app.route("/buscar", methods=["POST"])
 def buscar():
     try:
         data = request.get_json(silent=True) or {}
@@ -321,6 +306,6 @@ def buscar():
             "dados": [],
             "logs": [f"❌ Erro interno: {str(e)}"]
         }), 500
-
+        
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
