@@ -15,7 +15,7 @@ BRIGHT_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
 
 BASE_ELASTOMERICO = {
     "min": 1,
-    "max": 50
+    "max": 20
 }
 
 # ==========================================
@@ -117,7 +117,7 @@ def extrair_preco_pagina(url):
     }
 
     try:
-        r = requests.post(endpoint, json=payload, headers=headers, timeout=15)
+        r = requests.post(endpoint, json=payload, headers=headers, timeout=10)
         html = r.text
 
         valor, moeda = extrair_preco(html)
