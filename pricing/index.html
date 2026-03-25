@@ -872,86 +872,86 @@
       document.getElementById("mBest").textContent = best != null ? moeda(best) : "--";
     }
 
-    async function iniciarBusca(){
-      const material = document.getElementById("material").value;
-      const mercado = document.getElementById("mercado").value;
-      const modo = document.getElementById("modo").value;
-      const tipo = document.getElementById("tipo").value.trim();
-      const bitola = document.getElementById("bitola").value.trim();
-      const detalhe = document.getElementById("detalhe").value.trim();
-      const lista = document.getElementById("listaMateriais").value
-        .split("\n")
-        .map(x => x.trim())
-        .filter(Boolean);
+async function iniciarBusca(){
+  const material = document.getElementById("material").value;
+  const mercado = document.getElementById("mercado").value;
+  const modo = document.getElementById("modo").value;
+  const tipo = document.getElementById("tipo").value.trim();
+  const bitola = document.getElementById("bitola").value.trim();
+  const detalhe = document.getElementById("detalhe").value.trim();
+  const lista = document.getElementById("listaMateriais").value
+    .split("\n")
+    .map(x => x.trim())
+    .filter(Boolean);
 
-      setRef();
-      limparConsoleAuto();
-      limparResumoExecutivo(material, mercado);
+  setRef();
+  limparConsoleAuto();
+  limparResumoExecutivo(material, mercado);
 
-      logLine("════════ ERP ÍMPAR — CONSULTA DE PREÇOS ════════", "c-info");
-      logLine(`▶ Material: ${material}`, "c-info");
-      logLine(`▶ Mercado: ${mercado}`, "c-info");
-      logLine(`▶ Retorno: ${modo}`, "c-info");
-      logLine("🔍 Iniciando busca no servidor...", "c-info");
+  logLine("════════ ERP ÍMPAR — CONSULTA DE PREÇOS ════════", "c-info");
+  logLine(`▶ Material: ${material}`, "c-info");
+  logLine(`▶ Mercado: ${mercado}`, "c-info");
+  logLine(`▶ Retorno: ${modo}`, "c-info");
+  logLine("🔍 Iniciando busca base...", "c-info");
 
-      try{
-        const response = await fetch(`${API_BASE}/buscar`, {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({
-            material, mercado, modo, tipo, bitola, detalhe,
-            lista_materiais: lista
-          })
-        });
+  try{
+    const payload = { material, mercado, modo, tipo, bitola, detalhe, lista_materiais: lista };
 
-        const raw = await response.text();
+    // ETAPA 1
+    const r1 = await fetch(`${API_BASE}/buscar_base`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+    const t1 = await r1.text();
+    const d1 = JSON.parse(t1);
 
-        let data = null;
-        try{
-          data = JSON.parse(raw);
-        }catch(parseErr){
-          logLine("❌ Falha ao consultar a API do servidor.", "c-err");
-          logLine(`⚠ Detalhe: ${parseErr.message}`, "c-warn");
-          logLine("⚠ Resposta bruta da API:", "c-warn");
-          logLine(raw.substring(0, 1200), "c-warn");
-          return;
-        }
-
-        if (!response.ok || !data.ok){
-          (data.logs || []).forEach(line => {
-            logLine(line, line.startsWith("❌") ? "c-err" : "c-warn");
-          });
-          if (!data.logs?.length){
-            logLine("❌ Falha ao consultar a API do servidor.", "c-err");
-          }
-          return;
-        }
-
-        (data.logs || []).forEach(line => {
-          const cls =
-            line.startsWith("✅") ? "c-ok" :
-            line.startsWith("⚠") ? "c-warn" :
-            line.startsWith("❌") ? "c-err" : "c-info";
-          logLine(line, cls);
-        });
-
-        renderTabela(data.dados || [], material);
-
-        document.getElementById("mConf").textContent = data.confianca || "--";
-        document.getElementById("insightBox").textContent = data.insight || "Sem insight.";
-
-        document.getElementById("confCard").className = "mini-card " + (
-          data.confianca === "A" ? "conf-a" :
-          data.confianca === "B" ? "conf-b" : "conf-c"
-        );
-
-        renderCharts(data.grafico || {}, data.historico_grafico || {});
-      }catch(err){
-        logLine("❌ Falha ao consultar a API do servidor.", "c-err");
-        logLine(`⚠ Detalhe: ${err.message}`, "c-warn");
-      }
+    if (!r1.ok || !d1.ok){
+      (d1.logs || ["❌ Falha na busca base"]).forEach(x => logLine(x, "c-err"));
+      return;
     }
 
+    (d1.logs || []).forEach(x => logLine(x, "c-info"));
+    logLine(`📦 Candidatos encontrados: ${(d1.candidatos || []).length}`, "c-ok");
+    logLine("🔬 Iniciando detalhamento...", "c-info");
+
+    // ETAPA 2
+    const r2 = await fetch(`${API_BASE}/buscar_detalhe`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ job_id: d1.job_id })
+    });
+    const t2 = await r2.text();
+    const d2 = JSON.parse(t2);
+
+    if (!r2.ok || !d2.ok){
+      (d2.logs || ["❌ Falha no detalhamento"]).forEach(x => logLine(x, "c-err"));
+      return;
+    }
+
+    (d2.logs || []).forEach(line => {
+      const cls =
+        line.startsWith("✅") ? "c-ok" :
+        line.startsWith("⚠") ? "c-warn" :
+        line.startsWith("❌") ? "c-err" : "c-info";
+      logLine(line, cls);
+    });
+
+    renderTabela(d2.dados || [], material);
+    document.getElementById("mConf").textContent = d2.confianca || "--";
+    document.getElementById("insightBox").textContent = d2.insight || "Sem insight.";
+
+    document.getElementById("confCard").className = "mini-card " + (
+      d2.confianca === "A" ? "conf-a" :
+      d2.confianca === "B" ? "conf-b" : "conf-c"
+    );
+
+    renderCharts(d2.grafico || {}, d2.historico_grafico || {});
+  }catch(err){
+    logLine("❌ Falha ao consultar a API do servidor.", "c-err");
+    logLine(`⚠ Detalhe: ${err.message}`, "c-warn");
+  }
+}
     function abrirExcel(){
       window.open(`${API_BASE}/baixar`, "_blank");
     }
