@@ -3,6 +3,7 @@ import re
 import json
 import time
 import uuid
+import gc
 import statistics
 from datetime import datetime
 
@@ -24,9 +25,17 @@ os.makedirs(HISTORY_DIR, exist_ok=True)
 os.makedirs(JOBS_DIR, exist_ok=True)
 
 FONTES_RUINS = [
-    "verifiedmarketreports", "marketresearch", "market-size",
-    "quemfornece", "forneceb2b", "solucoesindustriais",
-    "thetradevision", "directory", "blog", "news", "report"
+    "verifiedmarketreports",
+    "marketresearch",
+    "market-size",
+    "quemfornece",
+    "forneceb2b",
+    "solucoesindustriais",
+    "thetradevision",
+    "directory",
+    "blog",
+    "news",
+    "report",
 ]
 
 PAISES_ASIA = {"Índia", "China", "Vietnã"}
@@ -107,6 +116,7 @@ def detectar_tipo_cobre(nome: str) -> str:
 
 def detectar_pais(url="", titulo="", html=""):
     base = f"{url} {titulo} {html}".lower()
+
     if any(x in base for x in ["brasil", "brazil", ".br"]):
         return "Brasil"
     if any(x in base for x in ["india", "índia", ".in", "indiamart"]):
@@ -117,23 +127,29 @@ def detectar_pais(url="", titulo="", html=""):
         return "Vietnã"
     if any(x in base for x in ["turkey", "turquia", ".tr"]):
         return "Turquia"
+
     return "Global"
 
 def validar_mercado(pais: str, mercado: str) -> bool:
     p = (pais or "").strip()
+
     if mercado == "brasil":
         return p == "Brasil"
+
     if mercado == "asia":
         return p in PAISES_ASIA
+
     return True
 
 def calcular_brasil(origem: float, pais: str, material: str):
     if origem is None:
         return None
+
     if (pais or "").lower() == "brasil":
         return round(origem, 2)
 
     fator = BASE_REFERENCIA.get(material, {}).get("fator_brasil", 2.2)
+
     pais_lower = (pais or "").lower()
     if pais_lower == "china":
         fator += 0.15
@@ -169,12 +185,16 @@ def classificar_fonte(url: str, titulo: str, html: str = "") -> str:
 
     if "pdf" in u:
         return "A"
+
     if any(x in u for x in ["manufacturer", "factory", "supplier", "produto", "shop", "store"]):
         return "A"
+
     if "indiamart" in u:
         return "C"
+
     if any(x in t for x in ["price", "hvac", "insulation", "copper", "galvanized"]):
         return "B"
+
     return "C"
 
 def score_fonte(classe: str) -> float:
@@ -183,11 +203,14 @@ def score_fonte(classe: str) -> float:
 def calcular_confianca(precos_brasil):
     if not precos_brasil or len(precos_brasil) < 3:
         return "C"
+
     media = statistics.mean(precos_brasil)
     if media == 0:
         return "C"
+
     desvio = statistics.pstdev(precos_brasil) if len(precos_brasil) > 1 else 0
     cv = desvio / media
+
     if cv < 0.15:
         return "A"
     elif cv < 0.35:
@@ -197,6 +220,7 @@ def calcular_confianca(precos_brasil):
 def gerar_insight(material, mercado, dados, melhor):
     if not dados:
         return "Sem dados confiáveis para análise."
+
     brasil_vals = [d["brasil"] for d in dados if d.get("brasil") is not None]
     if not brasil_vals:
         return "Sem base consolidada suficiente."
@@ -236,10 +260,12 @@ def salvar_historico(material, payload):
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 hist = json.load(f)
+
         hist.append({
             "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "payload": payload
         })
+
         hist = hist[-30:]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(hist, f, ensure_ascii=False, indent=2)
@@ -262,8 +288,10 @@ def gerar_excel_simples(dados):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Consulta"
+
         headers = ["item_ref", "fornecedor", "pais", "origem", "brasil", "tipo", "link", "evidencia"]
         ws.append(headers)
+
         for d in dados:
             ws.append([
                 d.get("item_ref", ""),
@@ -275,8 +303,9 @@ def gerar_excel_simples(dados):
                 d.get("link", ""),
                 d.get("evidencia", ""),
             ])
+
         wb.save(LAST_XLSX)
-    except:
+    except Exception:
         pass
 
 def save_job(job_id, payload):
@@ -311,6 +340,7 @@ def traduzir_item_detalhado(item_texto: str):
         m_esp = re.search(r"ESPESSURA\s*([0-9]+(?:[.,][0-9]+)?)\s*MM", tu)
         if m_esp:
             esp = m_esp.group(1).replace(",", ".")
+
         bit = ""
         m_bit = re.search(r'TUBO DE COBRE DE\s*([0-9\./"]+)', tu)
         if m_bit:
@@ -326,6 +356,7 @@ def traduzir_item_detalhado(item_texto: str):
         m_bit = re.search(r'([0-9]+(?:\.[0-9]+)?(?:/[0-9]+)?)', t)
         if m_bit:
             bit = m_bit.group(1)
+
         tipo = "flexivel" if any(x in tu for x in ["FLEX", "COIL", "SOFT"]) else "rigido"
         result["material"] = "cobre"
         result["tipo"] = tipo
@@ -381,6 +412,7 @@ def gerar_queries(material, mercado, tipo="", bitola="", detalhe=""):
 def buscar_serp(query, num=8):
     if not SERP_API_KEY:
         raise Exception("SERP_API_KEY não configurada")
+
     url = "https://serpapi.com/search.json"
     params = {
         "q": query,
@@ -388,6 +420,7 @@ def buscar_serp(query, num=8):
         "engine": "google",
         "num": num
     }
+
     r = requests.get(url, params=params, timeout=10)
     r.raise_for_status()
     return r.json()
@@ -395,6 +428,7 @@ def buscar_serp(query, num=8):
 def extrair_preco_pagina(url, material):
     if not BRIGHT_API_KEY:
         return None, None, "", ""
+
     endpoint = "https://api.brightdata.com/request"
     payload = {
         "zone": "web_unlocker1",
@@ -409,12 +443,14 @@ def extrair_preco_pagina(url, material):
     try:
         r = requests.post(endpoint, json=payload, headers=headers, timeout=8)
         r.raise_for_status()
+
         html = r.text[:120000]
         texto = strip_html(html)
         valor, moeda, trecho = extrair_preco(texto, material)
         evidencia = trecho or texto[:180]
+
         return valor, moeda, html, evidencia[:220]
-    except:
+    except Exception:
         return None, None, "", ""
 
 # =========================
@@ -493,17 +529,21 @@ def buscar_base(material, mercado, tipo="", bitola="", detalhe="", lista_materia
     return unicos[:12], logs
 
 # =========================
-# ETAPA 2 - DETALHE
+# ETAPA 2 - DETALHE EM LOTES
 # =========================
-def buscar_detalhe(material, mercado, candidatos):
+def buscar_detalhe_lote(material, mercado, candidatos, offset=0, limit=3):
     logs = []
     resultados = []
 
-    deadline = time.time() + 12
+    slice_candidatos = candidatos[offset:offset + limit]
+    finished = (offset + limit) >= len(candidatos)
+    next_offset = None if finished else (offset + limit)
 
-    for c in candidatos[:8]:
+    deadline = time.time() + 10
+
+    for c in slice_candidatos:
         if time.time() > deadline:
-            logs.append("⏱ Tempo limite do detalhamento atingido.")
+            logs.append("⏱ Tempo limite do lote atingido.")
             break
 
         valor, moeda, html, evidencia = extrair_preco_pagina(c["link"], c["material"])
@@ -542,7 +582,37 @@ def buscar_detalhe(material, mercado, candidatos):
             "classe": classe,
         })
 
-    # dedup
+        # limpeza de memória
+        del html
+        gc.collect()
+
+    logs.append(f"📦 Lote processado: {offset} → {offset + len(slice_candidatos)}")
+    if finished:
+        logs.append("✅ Último lote concluído")
+    else:
+        logs.append(f"➡ Próximo offset: {next_offset}")
+
+    return {
+        "dados_lote": resultados,
+        "logs": logs,
+        "next_offset": next_offset,
+        "finished": finished
+    }
+
+# =========================
+# ETAPA 3 - CONSOLIDAÇÃO FINAL
+# =========================
+def consolidar_final(material, mercado, resultados):
+    if not resultados:
+        return {
+            "dados": [],
+            "preco_estimado": None,
+            "confianca": "C",
+            "insight": "Sem dados confiáveis para análise.",
+            "grafico": {"labels": [], "valores": []},
+            "historico_grafico": {"labels": [], "valores": []}
+        }
+
     unicos = []
     vistos = set()
     for r in resultados:
@@ -551,10 +621,6 @@ def buscar_detalhe(material, mercado, candidatos):
             continue
         vistos.add(chave)
         unicos.append(r)
-
-    if not unicos:
-        logs.append("⚠ Nenhuma fonte válida encontrada")
-        return [], logs, None, "C", "Sem dados confiáveis para análise.", {"labels": [], "valores": []}, {"labels": [], "valores": []}
 
     brasil_vals = [r["brasil"] for r in unicos if r.get("brasil") is not None]
     melhor = min(unicos, key=lambda x: x["brasil"] if x.get("brasil") is not None else 999999)
@@ -583,15 +649,24 @@ def buscar_detalhe(material, mercado, candidatos):
     historico_grafico = {
         "labels": [h["data"] for h in hist[-10:]],
         "valores": [
-            min([d["brasil"] for d in h.get("payload", {}).get("dados", []) if d.get("brasil") is not None], default=0)
+            min(
+                [d["brasil"] for d in h.get("payload", {}).get("dados", []) if d.get("brasil") is not None],
+                default=0
+            )
             for h in hist[-10:]
         ]
     }
 
-    logs.append(f"📊 {len(unicos)} fontes válidas")
-    logs.append("✅ Detalhamento finalizado")
+    gerar_excel_simples(unicos)
 
-    return unicos, logs, preco_estimado, confianca, insight, grafico, historico_grafico
+    return {
+        "dados": unicos,
+        "preco_estimado": preco_estimado,
+        "confianca": confianca,
+        "insight": insight,
+        "grafico": grafico,
+        "historico_grafico": historico_grafico
+    }
 
 # =========================
 # ROTAS
@@ -660,6 +735,8 @@ def rota_buscar_detalhe():
     try:
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id")
+        offset = int(data.get("offset", 0))
+        limit = int(data.get("limit", 3))
 
         if not job_id:
             return jsonify({"ok": False, "logs": ["❌ job_id não informado"]}), 400
@@ -672,34 +749,71 @@ def rota_buscar_detalhe():
         mercado = payload["mercado"]
         candidatos = payload["candidatos"]
 
-        dados, logs, preco_estimado, confianca, insight, grafico, historico_grafico = buscar_detalhe(
+        lote = buscar_detalhe_lote(
             material=material,
             mercado=mercado,
-            candidatos=candidatos
+            candidatos=candidatos,
+            offset=offset,
+            limit=limit
         )
-
-        gerar_excel_simples(dados)
 
         return jsonify({
             "ok": True,
-            "dados": dados,
-            "logs": logs,
-            "preco_estimado": preco_estimado,
-            "analise": f"Baseado em {len(dados)} fontes confiáveis HVAC" if dados else "Sem dados confiáveis para análise.",
-            "confianca": confianca,
-            "insight": insight,
-            "grafico": grafico,
-            "historico_grafico": historico_grafico
+            "dados_lote": lote["dados_lote"],
+            "logs": lote["logs"],
+            "next_offset": lote["next_offset"],
+            "finished": lote["finished"]
         })
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({
             "ok": False,
-            "dados": [],
             "logs": [f"❌ Erro em /buscar_detalhe: {str(e)}"],
+            "dados_lote": [],
+            "finished": True,
+            "next_offset": None
+        }), 500
+
+@app.route("/finalizar_detalhe", methods=["POST", "OPTIONS"])
+def rota_finalizar_detalhe():
+    try:
+        data = request.get_json(silent=True) or {}
+        job_id = data.get("job_id")
+        resultados = data.get("resultados", [])
+
+        if not job_id:
+            return jsonify({"ok": False, "logs": ["❌ job_id não informado"]}), 400
+
+        payload = load_job(job_id)
+        if not payload:
+            return jsonify({"ok": False, "logs": ["❌ job_id não encontrado"]}), 404
+
+        material = payload["material"]
+        mercado = payload["mercado"]
+
+        final = consolidar_final(material, mercado, resultados)
+
+        return jsonify({
+            "ok": True,
+            "dados": final["dados"],
+            "preco_estimado": final["preco_estimado"],
+            "analise": f"Baseado em {len(final['dados'])} fontes confiáveis HVAC" if final["dados"] else "Sem dados confiáveis para análise.",
+            "confianca": final["confianca"],
+            "insight": final["insight"],
+            "grafico": final["grafico"],
+            "historico_grafico": final["historico_grafico"],
+            "logs": ["✅ Consolidação final concluída"]
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "ok": False,
+            "logs": [f"❌ Erro em /finalizar_detalhe: {str(e)}"],
+            "dados": [],
             "confianca": "C",
-            "insight": "Falha interna no motor de consulta.",
+            "insight": "Falha interna na consolidação.",
             "grafico": {"labels": [], "valores": []},
             "historico_grafico": {"labels": [], "valores": []}
         }), 500
