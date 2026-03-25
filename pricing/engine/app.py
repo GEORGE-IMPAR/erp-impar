@@ -658,6 +658,15 @@ def buscar():
         detalhe = data.get("detalhe", "")
         lista_materiais = data.get("lista_materiais", [])
 
+        print("DEBUG /buscar -> payload recebido:", {
+            "material": material,
+            "mercado": mercado,
+            "tipo": tipo,
+            "bitola": bitola,
+            "detalhe": detalhe,
+            "lista_materiais": lista_materiais
+        })
+
         dados, logs, preco_estimado, confianca, insight, grafico, historico_grafico = processar(
             material=material,
             mercado=mercado,
@@ -667,7 +676,10 @@ def buscar():
             lista_materiais=lista_materiais
         )
 
-        # gerar_excel_simples(dados)
+        print("DEBUG /buscar -> processar executado com sucesso")
+        print("DEBUG /buscar -> qtd dados:", len(dados) if dados else 0)
+
+        gerar_excel_simples(dados)
 
         return jsonify({
             "ok": True,
@@ -680,9 +692,12 @@ def buscar():
             "grafico": grafico,
             "historico_grafico": historico_grafico
         })
+
     except Exception as e:
         import traceback
+        print("🔥 ERRO REAL EM /buscar:")
         traceback.print_exc()
+
         return jsonify({
             "ok": False,
             "dados": [],
@@ -693,11 +708,10 @@ def buscar():
             "historico_grafico": {"labels": [], "valores": []}
         }), 500
 
-# @app.route("/baixar")
-# def baixar():
-#    if os.path.exists(LAST_XLSX):
-#        return send_file(LAST_XLSX, as_attachment=True)
-#    return "Arquivo não encontrado", 404
-#
-# if __name__ == "__main__":
-#    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+@app.route("/baixar")
+def baixar():
+   if os.path.exists(LAST_XLSX):
+       return send_file(LAST_XLSX, as_attachment=True)
+   return "Arquivo não encontrado", 404
+if __name__ == "__main__":
+   app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
