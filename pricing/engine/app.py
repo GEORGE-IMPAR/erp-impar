@@ -9,7 +9,6 @@ CORS(app)
 
 SERP_API_KEY = os.getenv("SERP_API_KEY")
 BRIGHT_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
-
 # ==========================================
 # 🔥 BASE REAL (PDF LUSOTRADE)
 # ==========================================
@@ -233,8 +232,16 @@ def processar(material, mercado):
 
 @app.route("/")
 def home():
-    return jsonify({"ok": True})
-
+    return jsonify({
+        "ok": True,
+        "service": "ERP ÍMPAR - Consulta de Preços",
+        "status": "online",
+        "engine": "V4 MONSTRÃO",
+        "apis": {
+            "serp": "ativa" if SERP_API_KEY else "erro",
+            "brightdata": "ativa" if BRIGHT_API_KEY else "erro"
+        }
+    })
 @app.route("/buscar", methods=["POST"])
 def buscar():
     data = request.json
