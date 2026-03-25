@@ -667,7 +667,7 @@ def buscar():
             lista_materiais=lista_materiais
         )
 
-        gerar_excel_simples(dados)
+        # gerar_excel_simples(dados)
 
         return jsonify({
             "ok": True,
@@ -693,11 +693,11 @@ def buscar():
             "historico_grafico": {"labels": [], "valores": []}
         }), 500
 
-@app.route("/baixar")
-def baixar():
-    if os.path.exists(LAST_XLSX):
-        return send_file(LAST_XLSX, as_attachment=True)
-    return "Arquivo não encontrado", 404
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# @app.route("/baixar")
+# def baixar():
+#    if os.path.exists(LAST_XLSX):
+#        return send_file(LAST_XLSX, as_attachment=True)
+#    return "Arquivo não encontrado", 404
+#
+# if __name__ == "__main__":
+#    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
