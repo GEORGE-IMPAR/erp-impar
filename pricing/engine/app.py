@@ -12,7 +12,11 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=False
+)
 
 SERP_API_KEY = os.getenv("SERP_API_KEY")
 BRIGHT_API_KEY = os.getenv("BRIGHTDATA_API_KEY")
@@ -688,7 +692,7 @@ def home():
 def health():
     return jsonify({"ok": True, "status": "healthy"})
 
-@app.route("/buscar_base", methods=["POST", "OPTIONS"])
+@app.route("/buscar_base", methods=["POST"])
 def rota_buscar_base():
     try:
         data = request.get_json(silent=True) or {}
@@ -730,7 +734,7 @@ def rota_buscar_base():
             "logs": [f"❌ Erro em /buscar_base: {str(e)}"]
         }), 500
 
-@app.route("/buscar_detalhe", methods=["POST", "OPTIONS"])
+@app.route("/buscar_detalhe", methods=["POST"])
 def rota_buscar_detalhe():
     try:
         data = request.get_json(silent=True) or {}
@@ -775,7 +779,7 @@ def rota_buscar_detalhe():
             "next_offset": None
         }), 500
 
-@app.route("/finalizar_detalhe", methods=["POST", "OPTIONS"])
+@app.route("/finalizar_detalhe", methods=["POST"])
 def rota_finalizar_detalhe():
     try:
         data = request.get_json(silent=True) or {}
