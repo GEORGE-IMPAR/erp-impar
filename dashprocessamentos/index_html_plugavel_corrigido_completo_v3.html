@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP ÍMPAR — Inteligência de Materiais</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{
+      --bg:#06101b; --panel:#0b1726; --panel2:#0e1d31; --line:#1d334a;
+      --txt:#edf4ff; --muted:#9db2c6; --green:#22c55e; --green2:#16a34a;
+      --blue:#38bdf8; --red:#ef4444; --shadow:0 14px 34px rgba(0,0,0,.28);
+      --radius:18px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:linear-gradient(180deg,#06101b 0%, #08131f 100%);color:var(--txt);font-family:Inter,Segoe UI,Arial,sans-serif}
+    body{min-height:100vh}
+    .page{max-width:1600px;margin:0 auto;padding:14px}
+    .hero{background:linear-gradient(135deg,rgba(34,197,94,.18),rgba(56,189,248,.10));border:1px solid var(--line);border-radius:24px;padding:18px 20px;box-shadow:var(--shadow);margin-bottom:14px}
+    .hero-top{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start}
+    .eyebrow{font-size:11px;font-weight:900;letter-spacing:.28em;color:#8df0b2;text-transform:uppercase}
+    .title{font-size:30px;font-weight:900;margin:8px 0 6px}
+    .sub{color:var(--muted);font-size:14px;line-height:1.55}
+    .userbox{min-width:250px;text-align:right}
+    .userbox .name{font-size:18px;font-weight:900}
+    .userbox .email{font-size:13px;color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(8,18,29,.76);font-size:12px;color:#dce8f6;margin-top:10px}
+    .dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(34,197,94,.14)}
+    .tabs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+    .tab{height:42px;padding:0 16px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-weight:800;cursor:pointer}
+    .tab.active{background:linear-gradient(135deg,var(--green),var(--green2));border:none}
+    .panel{display:none}
+    .panel.active{display:block}
+    .filters{display:grid;grid-template-columns:1.6fr .9fr .9fr .9fr;gap:12px;margin-bottom:14px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field label{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    .input,.select,.btn{height:46px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--txt);padding:0 14px;font-size:14px;outline:none}
+    .btn{cursor:pointer;background:linear-gradient(135deg,var(--green),var(--green2));border:none;font-weight:900}
+    .btn.secondary{background:linear-gradient(135deg,#1f3b57,#284d73)}
+    .btn.red{background:linear-gradient(135deg,#b91c1c,#ef4444)}
+    .grid-kpi{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px}
+    .card{background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .kpi{padding:16px}
+    .kpi .label{font-size:12px;color:var(--muted);font-weight:800}
+    .kpi .val{font-size:28px;font-weight:900;margin-top:8px;line-height:1.05}
+    .card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+    .card-title{font-weight:900;font-size:16px}
+    .badge{font-size:11px;padding:6px 10px;border-radius:999px;background:#08121d;border:1px solid var(--line);font-weight:900;color:#dfe9f7}
+    .card-body{padding:14px 16px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+    .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px}
+    .chart-wrap{height:320px}
+    .list{display:flex;flex-direction:column;gap:10px;max-height:620px;overflow:auto;padding-right:4px}
+    .item{background:rgba(6,16,27,.72);border:1px solid #17304b;border-radius:16px;padding:12px}
+    .item-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    .rank{font-size:11px;font-weight:900;color:#86efac;margin-bottom:3px}
+    .it-title{font-size:14px;font-weight:900;line-height:1.35;word-break:break-word}
+    .it-sub{font-size:12px;color:var(--muted);margin-top:4px}
+    .it-val{font-size:18px;font-weight:900;text-align:right}
+    .it-pct{font-size:12px;color:var(--muted);text-align:right;margin-top:4px}
+    .bar-track{margin-top:10px;height:8px;background:#112235;border-radius:999px;overflow:hidden}
+    .bar-fill{height:8px;background:linear-gradient(90deg,var(--green),#4ade80);border-radius:999px}
+    .alerts{display:flex;flex-direction:column;gap:10px;max-height:620px;overflow:auto}
+    .alert{border:1px solid rgba(239,68,68,.30);background:rgba(127,29,29,.18);border-radius:16px;padding:12px}
+    .alert .tag{font-size:11px;font-weight:900;color:#fca5a5}
+    .alert .a-title{font-size:14px;font-weight:900;margin-top:4px;line-height:1.35}
+    .alert .a-line{font-size:13px;color:#e7eef9;margin-top:6px}
+    .table-wrap{overflow:auto;border-radius:14px}
+    table{width:100%;border-collapse:collapse;min-width:760px}
+    th,td{padding:10px 8px;border-bottom:1px solid #12263c;font-size:13px;vertical-align:top}
+    th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;text-align:left}
+    td.right,th.right{text-align:right}
+    .builder-grid{display:grid;grid-template-columns:1.05fr 1.15fr;gap:12px}
+    .library-toolbar{display:grid;grid-template-columns:1.3fr .9fr .8fr .8fr;gap:10px;margin-bottom:12px}
+    .library-list{display:flex;flex-direction:column;gap:10px;max-height:640px;overflow:auto;padding-right:4px}
+    .material-card{border:1px solid #1b3550;background:rgba(8,18,29,.75);border-radius:16px;padding:12px;cursor:grab}
+    .material-name{font-weight:900;font-size:14px;line-height:1.35}
+    .material-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+    .meta-box{background:#091321;border:1px solid #132a43;border-radius:12px;padding:8px}
+    .meta-box .k{font-size:10px;color:var(--muted);font-weight:900;text-transform:uppercase}
+    .meta-box .v{font-size:13px;font-weight:900;margin-top:4px}
+    .dropzone{border:2px dashed #2a4a68;border-radius:18px;padding:16px;background:rgba(8,18,29,.62);min-height:640px}
+    .budget-top{display:grid;grid-template-columns:1.2fr .8fr .8fr .8fr;gap:10px;margin-bottom:12px}
+    .budget-items{display:flex;flex-direction:column;gap:10px;max-height:500px;overflow:auto;padding-right:4px}
+    .budget-row{border:1px solid #1b3550;background:rgba(8,18,29,.78);border-radius:16px;padding:12px}
+    .budget-grid{display:grid;grid-template-columns:1.6fr .55fr .55fr .7fr .8fr .14fr;gap:8px;align-items:end}
+    .budget-grid .input{height:40px}
+    .budget-total{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+    .tot-box{background:#091321;border:1px solid #132a43;border-radius:14px;padding:10px}
+    .tot-box .k{font-size:11px;color:var(--muted);font-weight:900;text-transform:uppercase}
+    .tot-box .v{font-size:22px;font-weight:900;margin-top:6px}
+    .empty{padding:18px;border:1px dashed #26496a;border-radius:16px;color:var(--muted);text-align:center}
+    @media (max-width:1300px){.filters,.library-toolbar,.budget-top{grid-template-columns:1fr 1fr}.grid-kpi{grid-template-columns:repeat(3,1fr)}.grid-2,.grid-3,.builder-grid{grid-template-columns:1fr}.userbox{text-align:left}}
+    @media (max-width:760px){.page{padding:12px}.title{font-size:26px}.filters,.library-toolbar,.budget-top,.grid-kpi,.budget-total{grid-template-columns:1fr}.budget-grid{grid-template-columns:1fr 1fr}.chart-wrap{height:280px}.kpi .val{font-size:24px}table{min-width:760px}}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const app = document.getElementById('app');
+    const money = (v) => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
+    const num = (v) => new Intl.NumberFormat('pt-BR').format(Number(v||0));
+    const pct = (v) => `${Number(v||0).toFixed(1)}%`;
+    const EQUIPAMENTOS_BLOQUEADOS = ['EVAPORADORA','CASSETE','SPLIT','HI WALL','PISO TETO','CONDENSADORA','BUILT-IN','BUILT IN','VRF','EXAUSTOR','VENTILADOR','FANCOIL','FAN COIL'];
+
+    function getLoggedUser(){
+      const keys=['ERPIMPAR_USER','usuarioLogado','impar_user','user','ERP_IMPAR_USER','ERPIMPAR_LOGIN'];
+      for(const key of keys){
+        try{
+          const raw = localStorage.getItem(key)||sessionStorage.getItem(key);
+          if(!raw) continue;
+          let parsed = raw;
+          try{ parsed = JSON.parse(raw); }catch(e){}
+          if(typeof parsed === 'string') return parsed.includes('@') ? {nome:parsed.split('@')[0],email:parsed} : {nome:parsed,email:''};
+          return {nome:parsed?.Nome||parsed?.nome||parsed?.userNome||parsed?.Usuario||'Usuário', email:parsed?.Email||parsed?.email||parsed?.userEmail||''};
+        }catch(e){}
+      }
+      return {nome:'Usuário',email:''};
+    }
+
+    function normalizeText(v){ return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); }
+    function normalizarMaterial(nome){
+      return normalizeText(nome)
+        .replace(/\bTUBO DE\b/g,'')
+        .replace(/\bUNIDADE\b/g,'')
+        .replace(/\bPECA\b/g,'')
+        .replace(/\bPCS\b/g,'')
+        .replace(/\bPC\b/g,'')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+    function isEquipamento(material){
+      const m = normalizeText(material);
+      return EQUIPAMENTOS_BLOQUEADOS.some(x => m.includes(x));
+    }
+    function toNumber(v){
+      if(v===null || v===undefined || v==='') return 0;
+      let s = String(v).trim();
+      if(!s) return 0;
+      if(s.includes('.') && s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
+      else if(s.includes(',')) s = s.replace(',','.');
+      s = s.replace(/[^\d.-]/g,'');
+      return parseFloat(s) || 0;
+    }
+    function inferYear(dateValue){
+      const v = String(dateValue||'').trim();
+      if(/^(\d{2})\/(\d{2})\/(\d{4})$/.test(v)) return v.slice(-4);
+      if(/^(\d{4})-(\d{2})-(\d{2})$/.test(v)) return v.slice(0,4);
+      const m = v.match(/(20\d{2}|19\d{2})/);
+      return m ? m[1] : '';
+    }
+    function isRecent(dateStr){
+      if(!dateStr) return false;
+      const raw = String(dateStr).trim();
+      let d;
+      if(/^\d{4}-\d{2}-\d{2}/.test(raw)) d = new Date(raw.slice(0,10));
+      else if(/^\d{2}\/\d{2}\/\d{4}$/.test(raw)){ const [dd,mm,yy]=raw.split('/'); d = new Date(`${yy}-${mm}-${dd}`); }
+      else d = new Date(raw);
+      if(Number.isNaN(d.getTime())) return false;
+      const diff = (Date.now()-d.getTime())/(1000*60*60*24);
+      return diff <= 180;
+    }
+    function pick(obj,names,fallback=''){
+      for(const n of names){ if(obj[n]!==undefined && obj[n]!==null && obj[n]!=='') return obj[n]; }
+      return fallback;
+    }
+    function parseCSVLine(line, delimiter=','){
+      const out=[]; let cur=''; let inQuotes=false;
+      for(let i=0;i<line.length;i++){
+        const ch=line[i], next=line[i+1];
+        if(ch === '"'){
+          if(inQuotes && next === '"'){ cur += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if(ch === delimiter && !inQuotes){
+          out.push(cur); cur='';
+        } else cur += ch;
+      }
+      out.push(cur);
+      return out.map(v=>String(v||'').trim());
+    }
+    function parseCSV(text){
+      const lines = String(text||'').split(/\r?\n/).filter(l=>l.trim());
+      if(lines.length < 2) return [];
+      const firstLine = lines[0].replace(/^\uFEFF/,'');
+      const delimiter = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+      const headers = parseCSVLine(firstLine, delimiter);
+      return lines.slice(1).map(line=>{
+        const cols = parseCSVLine(line, delimiter);
+        const obj = {};
+        headers.forEach((h,idx)=> obj[h] = cols[idx] ?? '');
+        return obj;
+      });
+    }
+    function downloadText(filename, content, type='text/plain;charset=utf-8'){
+      const blob = new Blob([content], {type});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    }
+    function csvEscape(v){
+      const s = String(v ?? '');
+      return /[;"\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    }
+    function wrapLabel(v,size=20){
+      const s = String(v||'');
+      const parts=[]; let cur='';
+      s.split(' ').forEach(word=>{
+        const test = (cur ? cur+' ' : '') + word;
+        if(test.length > size){ if(cur) parts.push(cur); cur = word; }
+        else cur = test;
+      });
+      if(cur) parts.push(cur);
+      return parts;
+    }
+
+    const state = {matRaw:[], precosRaw:[], matRows:[], precos:[], library:[], budget:[], charts:{}, activeTab:'dashboard'};
+
+    function renderLoading(){
+      app.innerHTML = `<div class="loader-wrap"><div class="loader-card"><div class="sub">PROCESSANDO DADOS...</div></div></div>`;
+    }
+    function renderError(msg){
+      app.innerHTML = `<div class="loader-wrap"><div class="loader-card"><div class="sub" style="color:#fda4af">${msg}</div></div></div>`;
+    }
+
+    async function loadData(){
+      renderLoading();
+      try{
+        const [obrasResp, precosResp] = await Promise.all([
+          fetch('./data/consolidado_obras.csv?ts='+Date.now(), {cache:'no-store'}),
+          fetch('./data/consolidado_precos.csv?ts='+Date.now(), {cache:'no-store'})
+        ]);
+        if(!obrasResp.ok) throw new Error('Não encontrei ./data/consolidado_obras.csv');
+        if(!precosResp.ok) throw new Error('Não encontrei ./data/consolidado_precos.csv');
+        state.matRaw = parseCSV(await obrasResp.text());
+        state.precosRaw = parseCSV(await precosResp.text());
+        state.matRows = normalizeMaterialRows(state.matRaw);
+        state.precos = normalizePrecos(state.precosRaw);
+        state.library = buildLibrary(state.matRows, state.precos);
+        renderApp();
+        applyDashboard();
+        applyBuilder();
+      }catch(err){
+        renderError(err.message || 'Erro ao carregar bases.');
+      }
+    }
+
+    function normalizeMaterialRows(rows){
+      return rows.map(r=>{
+        const materialOriginal = pick(r,['Material','material','MATERIAL'],'');
+        const grupo = pick(r,['Grupo','grupo','GRUPO'],'');
+        const quantidade = toNumber(pick(r,['Quantidade','quantidade','QUANTIDADE'],0));
+        const unidade = pick(r,['UnidadeMedida','Unidade','unidade','UNIDADEMEDIDA'],'');
+        const valorUnit = toNumber(pick(r,['ValorUnitario','ValorUnitário','valorunitario','VALORUNITARIO'],0));
+        const valorTotal = toNumber(pick(r,['ValorTotalItem','ValorTotal','valortotalitem','VALORTOTALITEM'],0));
+        const data = pick(r,['DataUltimaCompra','dataultimacompra','DATAULTIMACOMPRA'],'');
+        const ano = inferYear(data);
+        const material = normalizarMaterial(materialOriginal);
+        const valido = material && quantidade>0 && valorUnit>0 && valorTotal>0 && !isEquipamento(materialOriginal) && !!ano;
+        return {grupo, materialOriginal, material, quantidade, unidade, valorUnit, valorTotal, data, ano, valido};
+      }).filter(r=>r.valido);
+    }
+
+    function normalizePrecos(rows){
+      return rows.map(r=>{
+        const materialOriginal = pick(r,['Material','material','MATERIAL'],'');
+        const material = normalizarMaterial(materialOriginal);
+        const grupo = pick(r,['Grupo','grupo','GRUPO'],'');
+        const unidade = pick(r,['UnidadeMedida','Unidade','unidade','UNIDADEMEDIDA'],'');
+        const ultimo = toNumber(pick(r,['UltimoPreco','ÚltimoPreço','ultimo_preco','ULTIMOPRECO'],0));
+        const media = toNumber(pick(r,['PrecoMedio','PreçoMédio','precomedio','PRECOMEDIO'],0));
+        const qtd = toNumber(pick(r,['Amostras','amostras','AMOSTRAS'],0));
+        const data = pick(r,['UltimaData','ÚltimaData','ultima_data','ULTIMADATA'],'');
+        return {materialOriginal, material, grupo, unidade, ultimo, media, qtd, data, recente:isRecent(data), valido:!!material && !isEquipamento(materialOriginal) && media>0 && ultimo>0};
+      }).filter(r=>r.valido);
+    }
+
+    function buildLibrary(rows, precos){
+      const priceMap = {};
+      precos.forEach(p=>{ if(!priceMap[p.material]) priceMap[p.material] = p; });
+      const usageMap = {};
+      rows.forEach(r=>{
+        if(!usageMap[r.material]) usageMap[r.material] = {material:r.material, grupo:r.grupo, unidade:r.unidade, usos:0, anos:new Set(), valorTotal:0, qtdTotal:0};
+        usageMap[r.material].usos += 1;
+        usageMap[r.material].anos.add(r.ano);
+        usageMap[r.material].valorTotal += r.valorTotal;
+        usageMap[r.material].qtdTotal += r.quantidade;
+      });
+      return Object.values(usageMap).map(x=>{
+        const price = priceMap[x.material] || {};
+        const media = price.media || (x.qtdTotal ? x.valorTotal/x.qtdTotal : 0);
+        const ultimo = price.ultimo || media;
+        const variacao = media ? ((ultimo-media)/media)*100 : 0;
+        return {
+          material:x.material, grupo:x.grupo||'SEM GRUPO', unidade:x.unidade||price.unidade||'',
+          usos:x.usos, anos:x.anos.size, valorTotal:x.valorTotal, qtdTotal:x.qtdTotal,
+          precoMedio:media, ultimoPreco:ultimo, ultimoData:price.data||'', variacao,
+          recente:!!price.recente, confiavel:(price.qtd||x.usos||0)>=2, amostras:price.qtd||x.usos||0
+        };
+      }).sort((a,b)=>b.valorTotal-a.valorTotal);
+    }
+
+    function renderApp(){
+      const user = getLoggedUser();
+      const anos = [...new Set(state.matRows.map(x=>x.ano).filter(Boolean))].sort();
+      app.innerHTML = `
+      <div class="page">
+        <section class="hero">
+          <div class="hero-top">
+            <div>
+              <div class="eyebrow">ERP ÍMPAR</div>
+              <div class="title">Inteligência de Materiais + Montador de Orçamento</div>
+              <div class="sub">Index plugável ajustado para o novo consolidator.</div>
+            </div>
+            <div class="userbox">
+              <div class="name">${user.nome||'Usuário'}</div>
+              <div class="email">${user.email||'Sem e-mail'}</div>
+              <div class="pill"><span class="dot"></span> ${num(state.matRows.length)} registros válidos • ${num(state.library.length)} materiais válidos • ${num(state.precos.length)} referências de preço</div>
+            </div>
+          </div>
+        </section>
+
+        <div class="tabs">
+          <button class="tab active" data-tab="dashboard">Análise de Materiais</button>
+          <button class="tab" data-tab="builder">Montador de Orçamento</button>
+        </div>
+
+        <section id="panel-dashboard" class="panel active">
+          <section class="filters">
+            <div class="field"><label>Busca por material</label><input id="fQuery" class="input" placeholder="Digite o material..." /></div>
+            <div class="field"><label>Ano</label><select id="fAno" class="select"><option value="TOTAL">TOTAL</option>${anos.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+            <div class="field"><label>Grupo</label><select id="fGrupo" class="select"><option value="TODOS">TODOS</option></select></div>
+            <div class="field"><label>&nbsp;</label><button id="btnReload" class="btn">Atualizar base</button></div>
+          </section>
+
+          <section class="grid-kpi">
+            <div class="card kpi"><div class="label">Materiais no recorte</div><div class="val" id="kpiMateriais">-</div></div>
+            <div class="card kpi"><div class="label">Valor total gasto</div><div class="val" id="kpiTotal">-</div></div>
+            <div class="card kpi"><div class="label">Preço médio do recorte</div><div class="val" id="kpiMedio">-</div></div>
+            <div class="card kpi"><div class="label">Maior preço unitário</div><div class="val" id="kpiMaior">-</div></div>
+            <div class="card kpi"><div class="label">Última data de preço</div><div class="val" id="kpiData" style="font-size:22px">-</div></div>
+          </section>
+
+          <section class="grid-2">
+            <div class="card"><div class="card-head"><div class="card-title">Top 20 por valor total gasto</div><div class="badge">MATERIAL × GASTO</div></div><div class="card-body"><div class="chart-wrap"><canvas id="chartValor"></canvas></div></div></div>
+            <div class="card"><div class="card-head"><div class="card-title">Top 20 por preço unitário</div><div class="badge">MATERIAL × PREÇO</div></div><div class="card-body"><div class="chart-wrap"><canvas id="chartPreco"></canvas></div></div></div>
+          </section>
+
+          <section class="grid-3">
+            <div class="card"><div class="card-head"><div class="card-title">Top 20 materiais por valor total</div></div><div class="card-body"><div id="listaValor" class="list"></div></div></div>
+            <div class="card"><div class="card-head"><div class="card-title">Top 20 materiais por preço unitário</div></div><div class="card-body"><div id="listaPreco" class="list"></div></div></div>
+            <div class="card"><div class="card-head"><div class="card-title">Alertas de preço</div></div><div class="card-body"><div id="listaAlertas" class="alerts"></div></div></div>
+          </section>
+
+          <section class="grid-2">
+            <div class="card"><div class="card-head"><div class="card-title">Tabela — valor total por material</div></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>Material</th><th>Grupo</th><th>Unid.</th><th class="right">Qtd total</th><th class="right">Valor total</th><th class="right">% do recorte</th></tr></thead><tbody id="tbValor"></tbody></table></div></div></div>
+            <div class="card"><div class="card-head"><div class="card-title">Tabela — preço unitário por material</div></div><div class="card-body"><div class="table-wrap"><table><thead><tr><th>Material</th><th>Grupo</th><th>Unid.</th><th class="right">Preço médio</th><th class="right">Último preço</th><th class="right">Última data</th><th class="right">Amostras</th></tr></thead><tbody id="tbPreco"></tbody></table></div></div></div>
+          </section>
+        </section>
+
+        <section id="panel-builder" class="panel">
+          <section class="builder-grid">
+            <div class="card">
+              <div class="card-head"><div class="card-title">Biblioteca normalizada de materiais</div><div class="badge" id="libCount">0 itens</div></div>
+              <div class="card-body">
+                <div class="library-toolbar">
+                  <input id="bQuery" class="input" placeholder="Buscar material..." />
+                  <select id="bGrupo" class="select"><option value="TODOS">Todos os grupos</option></select>
+                  <select id="bPrecoBase" class="select"><option value="medio">Usar preço médio</option><option value="ultimo">Usar último preço</option></select>
+                  <button id="btnExportLibrary" class="btn secondary">Exportar biblioteca</button>
+                </div>
+                <div id="libraryList" class="library-list"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><div class="card-title">Montador de orçamento automático</div><div class="badge">Arraste ou clique em adicionar</div></div>
+              <div class="card-body">
+                <div class="budget-top">
+                  <input id="budgetObra" class="input" placeholder="Nome da obra / orçamento" />
+                  <input id="budgetCliente" class="input" placeholder="Cliente" />
+                  <input id="budgetData" class="input" placeholder="Data" />
+                  <button id="btnClearBudget" class="btn red">Limpar orçamento</button>
+                </div>
+                <div id="dropzone" class="dropzone">
+                  <div id="budgetItems" class="budget-items"></div>
+                  <div id="budgetEmpty" class="empty">Arraste os materiais da esquerda para cá ou clique em <b>Adicionar</b>.</div>
+                </div>
+                <div class="budget-total">
+                  <div class="tot-box"><div class="k">Itens</div><div class="v" id="totItens">0</div></div>
+                  <div class="tot-box"><div class="k">Materiais únicos</div><div class="v" id="totUnicos">0</div></div>
+                  <div class="tot-box"><div class="k">Custo total</div><div class="v" id="totValor">R$ 0,00</div></div>
+                  <div class="tot-box"><div class="k">Atualização mais recente</div><div class="v" id="totData" style="font-size:18px">-</div></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px">
+                  <button id="btnExportCSV" class="btn secondary">Exportar CSV</button>
+                  <button id="btnExportExcelLike" class="btn secondary">Gerar planilha automática</button>
+                  <button id="btnSuggest" class="btn">Sugestões automáticas</button>
+                </div>
+                <div id="builderInsights" style="margin-top:12px"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>`;
+
+      document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>setTab(btn.dataset.tab)));
+      document.getElementById('btnReload').addEventListener('click',()=>{ const u=new URL(location.href); u.searchParams.set('ts_reload',Date.now()); location.href=u.toString(); });
+      document.getElementById('fAno').addEventListener('change',applyDashboard);
+      document.getElementById('fGrupo').addEventListener('change',applyDashboard);
+      document.getElementById('fQuery').addEventListener('input',applyDashboard);
+      document.getElementById('bQuery').addEventListener('input',applyBuilder);
+      document.getElementById('bGrupo').addEventListener('change',applyBuilder);
+      document.getElementById('bPrecoBase').addEventListener('change',applyBuilder);
+      document.getElementById('btnExportLibrary').addEventListener('click',exportLibrary);
+      document.getElementById('btnClearBudget').addEventListener('click',()=>{ state.budget=[]; renderBudget(); });
+      document.getElementById('btnExportCSV').addEventListener('click',exportBudgetCSV);
+      document.getElementById('btnExportExcelLike').addEventListener('click',exportBudgetCSV);
+      document.getElementById('btnSuggest').addEventListener('click',renderSuggestions);
+      setupDropzone(); fillGruposFiltro(); fillGruposBuilder();
+    }
+
+    function setTab(tab){
+      state.activeTab = tab;
+      document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
+      document.getElementById('panel-dashboard').classList.toggle('active',tab==='dashboard');
+      document.getElementById('panel-builder').classList.toggle('active',tab==='builder');
+    }
+    function fillGruposFiltro(){
+      const grupos=['TODOS',...new Set(state.matRows.map(x=>x.grupo).filter(Boolean))];
+      document.getElementById('fGrupo').innerHTML=grupos.map(g=>`<option value="${g}">${g}</option>`).join('');
+    }
+    function fillGruposBuilder(){
+      const grupos=['TODOS',...new Set(state.library.map(x=>x.grupo).filter(Boolean))];
+      document.getElementById('bGrupo').innerHTML=grupos.map(g=>`<option value="${g}">${g}</option>`).join('');
+    }
+    function filteredMaterialRows(){
+      const q=normalizeText(document.getElementById('fQuery').value);
+      const ano=document.getElementById('fAno').value;
+      const grupo=document.getElementById('fGrupo').value;
+      return state.matRows.filter(r=>{
+        const okAno=ano==='TOTAL'||r.ano===ano;
+        const okGrupo=grupo==='TODOS'||r.grupo===grupo;
+        const okQ=!q||r.material.includes(q);
+        return okAno&&okGrupo&&okQ;
+      });
+    }
+    function filteredPriceRows(){
+      const q=normalizeText(document.getElementById('fQuery').value);
+      const grupo=document.getElementById('fGrupo').value;
+      return state.precos.filter(r=>(!q||r.material.includes(q))&&(grupo==='TODOS'||r.grupo===grupo));
+    }
+    function applyDashboard(){
+      const rows=filteredMaterialRows();
+      const prices=filteredPriceRows();
+      const total=rows.reduce((s,r)=>s+r.valorTotal,0);
+      const mats=aggregateMaterials(rows);
+      const priceTop=aggregatePriceTable(prices);
+      const alerts=aggregateAlerts(mats,priceTop,total).slice(0,20);
+      const topValor=mats.slice(0,20);
+      const topPreco=priceTop.slice(0,20);
+      const avgPrice=topPreco.length?topPreco.reduce((s,x)=>s+x.media,0)/topPreco.length:0;
+      const maxPrice=topPreco.length?topPreco[0].ultimo:0;
+      const lastDate=topPreco.map(x=>x.data).filter(Boolean).sort().slice(-1)[0]||'-';
+
+      document.getElementById('kpiMateriais').textContent=num(mats.length);
+      document.getElementById('kpiTotal').textContent=money(total);
+      document.getElementById('kpiMedio').textContent=money(avgPrice);
+      document.getElementById('kpiMaior').textContent=money(maxPrice);
+      document.getElementById('kpiData').textContent=lastDate;
+
+      document.getElementById('listaValor').innerHTML = topValor.map((m,i)=>`
+        <div class="item">
+          <div class="item-top">
+            <div>
+              <div class="rank">#${i+1}</div>
+              <div class="it-title">${m.material}</div>
+              <div class="it-sub">Qtd total: ${num(m.qtdTotal)} ${m.unidade||''} • grupo: ${m.grupo||'-'} • ${m.anos.size} ano(s)</div>
+            </div>
+            <div>
+              <div class="it-val">${money(m.valor)}</div>
+              <div class="it-pct">${pct(m.percentual)}</div>
+            </div>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.min(m.percentual,100)}%"></div></div>
+        </div>`).join('') || `<div class="empty">Sem dados no filtro atual.</div>`;
+
+      document.getElementById('listaPreco').innerHTML = topPreco.map((m,i)=>`
+        <div class="item">
+          <div class="item-top">
+            <div>
+              <div class="rank">#${i+1}</div>
+              <div class="it-title">${m.material}</div>
+              <div class="it-sub">Grupo: ${m.grupo||'-'} • unid.: ${m.unidade||'-'} • última data: ${m.data||'-'} • amostras: ${num(m.qtd)}</div>
+            </div>
+            <div>
+              <div class="it-val">${money(m.ultimo)}</div>
+              <div class="it-pct">médio ${money(m.media)}</div>
+            </div>
+          </div>
+        </div>`).join('') || `<div class="empty">Sem dados no filtro atual.</div>`;
+
+      document.getElementById('listaAlertas').innerHTML = alerts.map((a,i)=>`
+        <div class="alert">
+          <div class="tag">ALERTA ${i+1}</div>
+          <div class="a-title">${a.material}</div>
+          <div class="a-line">Impacto no recorte: <b>${pct(a.impacto)}</b></div>
+          <div class="a-line">Preço médio: <b>${money(a.media)}</b> • Último preço: <b>${money(a.ultimo)}</b></div>
+          <div class="a-line">Última data: <b>${a.data||'-'}</b> • Variação: <b>${pct(a.variacao)}</b></div>
+        </div>`).join('') || `<div class="empty">Nenhum alerta relevante no recorte atual.</div>`;
+
+      document.getElementById('tbValor').innerHTML = topValor.map(x=>`<tr><td>${x.material}</td><td>${x.grupo||'-'}</td><td>${x.unidade||'-'}</td><td class="right">${num(x.qtdTotal)}</td><td class="right">${money(x.valor)}</td><td class="right">${pct(x.percentual)}</td></tr>`).join('') || `<tr><td colspan="6">Sem dados</td></tr>`;
+      document.getElementById('tbPreco').innerHTML = topPreco.map(x=>`<tr><td>${x.material}</td><td>${x.grupo||'-'}</td><td>${x.unidade||'-'}</td><td class="right">${money(x.media)}</td><td class="right">${money(x.ultimo)}</td><td class="right">${x.data||'-'}</td><td class="right">${num(x.qtd)}</td></tr>`).join('') || `<tr><td colspan="7">Sem dados</td></tr>`;
+
+      drawBar('chartValor',topValor.map(x=>wrapLabel(x.material,20)),topValor.map(x=>x.valor),'#22c55e',true,'Valor total');
+      drawBar('chartPreco',topPreco.map(x=>wrapLabel(x.material,20)),topPreco.map(x=>x.ultimo),'#38bdf8',true,'Preço unitário');
+    }
+    function aggregateMaterials(rows){
+      const map={};
+      rows.forEach(r=>{
+        if(!map[r.material]) map[r.material]={material:r.material,grupo:r.grupo,unidade:r.unidade,valor:0,qtdTotal:0,anos:new Set()};
+        map[r.material].valor += r.valorTotal;
+        map[r.material].qtdTotal += r.quantidade;
+        map[r.material].anos.add(r.ano);
+      });
+      const total=Object.values(map).reduce((s,x)=>s+x.valor,0);
+      return Object.values(map).sort((a,b)=>b.valor-a.valor).map(x=>({...x,percentual:total?(x.valor/total)*100:0}));
+    }
+    function aggregatePriceTable(prices){
+      return prices.map(p=>({material:p.material,grupo:p.grupo,unidade:p.unidade,media:p.media||0,ultimo:p.ultimo||0,data:p.data||'',qtd:p.qtd||0})).sort((a,b)=>b.ultimo-a.ultimo);
+    }
+    function aggregateAlerts(topMats,priceTop,total){
+      const pm={}; priceTop.forEach(p=>pm[p.material]=p);
+      return topMats.map(m=>{
+        const p=pm[m.material]||{};
+        const media=Number(p.media||0), ultimo=Number(p.ultimo||0);
+        if(media<=0||ultimo<=0) return null;
+        const variacao=media?((ultimo-media)/media)*100:0;
+        return {material:m.material,impacto:total?(m.valor/total)*100:0,media,ultimo,data:p.data||'',variacao};
+      }).filter(x=>x&&(x.impacto>=3||Math.abs(x.variacao)>=15)).sort((a,b)=>(Math.abs(b.variacao)+b.impacto)-(Math.abs(a.variacao)+a.impacto));
+    }
+    function destroyChart(id){ if(state.charts[id]) state.charts[id].destroy(); }
+    function baseChartOptions(horizontal=false){
+      return {
+        responsive:true, maintainAspectRatio:false, indexAxis:horizontal?'y':'x',
+        scales: horizontal ? {
+          x:{ticks:{color:'#cfe0f2',callback:(v)=>money(v)},grid:{color:'rgba(159,179,200,.10)'}},
+          y:{ticks:{color:'#cfe0f2'},grid:{display:false}}
+        } : {
+          x:{ticks:{color:'#cfe0f2'},grid:{display:false}},
+          y:{ticks:{color:'#cfe0f2',callback:(v)=>money(v)},grid:{color:'rgba(159,179,200,.10)'}}
+        },
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label||'Valor'}: ${money(ctx.raw)}`}}}
+      };
+    }
+    function drawBar(id,labels,values,color,horizontal,label){
+      destroyChart(id);
+      state.charts[id]=new Chart(document.getElementById(id),{
+        type:'bar',
+        data:{labels,datasets:[{label:label||'Valor',data:values,backgroundColor:color,borderRadius:8}]},
+        options:baseChartOptions(horizontal)
+      });
+    }
+    function builderFilteredLibrary(){
+      const q=normalizeText(document.getElementById('bQuery').value);
+      const g=document.getElementById('bGrupo').value;
+      return state.library.filter(item=>{
+        const okQ=!q||item.material.includes(q);
+        const okG=g==='TODOS'||item.grupo===g;
+        return okQ&&okG;
+      });
+    }
+    function applyBuilder(){
+      const list=builderFilteredLibrary();
+      document.getElementById('libCount').textContent=`${num(list.length)} itens`;
+      document.getElementById('libraryList').innerHTML = list.map(item=>`
+        <div class="material-card" draggable="true" data-index="${state.library.indexOf(item)}">
+          <div class="material-name">${item.material}</div>
+          <div class="tiny" style="margin-top:4px">Grupo: ${item.grupo||'-'} • unid.: ${item.unidade||'-'} • usos: ${num(item.usos)} • anos: ${num(item.anos)}</div>
+          <div class="material-meta">
+            <div class="meta-box"><div class="k">Preço médio</div><div class="v">${money(item.precoMedio)}</div></div>
+            <div class="meta-box"><div class="k">Último preço</div><div class="v">${money(item.ultimoPreco)}</div></div>
+            <div class="meta-box"><div class="k">Última data</div><div class="v">${item.ultimoData||'-'}</div></div>
+            <div class="meta-box"><div class="k">Confiabilidade</div><div class="v">${item.confiavel?'Boa':'Baixa'}</div></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px">
+            <div class="tiny">Amostras: ${num(item.amostras)} • Variação: ${pct(item.variacao)}</div>
+            <button class="btn" type="button" data-add="${state.library.indexOf(item)}" style="height:36px;padding:0 12px">Adicionar</button>
+          </div>
+        </div>`).join('') || `<div class="empty">Nenhum material encontrado.</div>`;
+      document.querySelectorAll('.material-card').forEach(el=>el.addEventListener('dragstart',ev=>ev.dataTransfer.setData('text/plain',el.dataset.index)));
+      document.querySelectorAll('[data-add]').forEach(btn=>btn.addEventListener('click',()=>addBudgetItem(Number(btn.dataset.add))));
+      renderBudget();
+    }
+    function setupDropzone(){
+      const dz=document.getElementById('dropzone');
+      dz.addEventListener('dragover',e=>{e.preventDefault();});
+      dz.addEventListener('drop',e=>{e.preventDefault(); const idx=Number(e.dataTransfer.getData('text/plain')); addBudgetItem(idx);});
+    }
+    function addBudgetItem(index){
+      const base=state.library[index];
+      if(!base) return;
+      const precoBase=document.getElementById('bPrecoBase').value;
+      const valor=precoBase==='ultimo'?(base.ultimoPreco||base.precoMedio||0):(base.precoMedio||base.ultimoPreco||0);
+      state.budget.push({id:Date.now()+Math.random(),grupo:base.grupo||'',material:base.material,quantidade:1,unidade:base.unidade||'UN',valorUnitario:valor,ultimoPreco:base.ultimoPreco||0,precoMedio:base.precoMedio||0,ultimaData:base.ultimoData||'',observacao:base.confiavel?'':'Validar preço manualmente'});
+      renderBudget();
+    }
+    function renderBudget(){
+      const wrap=document.getElementById('budgetItems');
+      const empty=document.getElementById('budgetEmpty');
+      if(!wrap) return;
+      wrap.innerHTML = state.budget.map(item=>`
+        <div class="budget-row" data-id="${item.id}">
+          <div class="budget-grid">
+            <div><div class="tiny">Material</div><input class="input bi-material" value="${item.material}" /></div>
+            <div><div class="tiny">Qtd</div><input type="number" step="0.01" class="input bi-qtd" value="${item.quantidade}" /></div>
+            <div><div class="tiny">Unid.</div><input class="input bi-un" value="${item.unidade}" /></div>
+            <div><div class="tiny">Valor unit.</div><input type="number" step="0.01" class="input bi-vu" value="${item.valorUnitario}" /></div>
+            <div><div class="tiny">Subtotal</div><div style="height:40px;display:flex;align-items:center;font-weight:900">${money(item.quantidade*item.valorUnitario)}</div><div class="tiny">Médio: ${money(item.precoMedio)} • Último: ${money(item.ultimoPreco)} • Data: ${item.ultimaData||'-'}</div></div>
+            <div><button class="btn red bi-del" style="height:40px;padding:0">X</button></div>
+          </div>
+        </div>`).join('');
+      empty.style.display = state.budget.length ? 'none' : 'block';
+
+      wrap.querySelectorAll('.budget-row').forEach(row=>{
+        const id=Number(row.dataset.id);
+        const item=state.budget.find(x=>x.id===id);
+        row.querySelector('.bi-material').addEventListener('input',e=>{item.material=e.target.value;});
+        row.querySelector('.bi-qtd').addEventListener('input',e=>{item.quantidade=toNumber(e.target.value)||0; renderBudget();});
+        row.querySelector('.bi-un').addEventListener('input',e=>{item.unidade=e.target.value;});
+        row.querySelector('.bi-vu').addEventListener('input',e=>{item.valorUnitario=toNumber(e.target.value)||0; renderBudget();});
+        row.querySelector('.bi-del').addEventListener('click',()=>{state.budget=state.budget.filter(x=>x.id!==id); renderBudget();});
+      });
+
+      const total=state.budget.reduce((s,x)=>s+(x.quantidade*x.valorUnitario),0);
+      const lastDate=state.budget.map(x=>x.ultimaData).filter(Boolean).sort().slice(-1)[0]||'-';
+      document.getElementById('totItens').textContent=num(state.budget.reduce((s,x)=>s+x.quantidade,0));
+      document.getElementById('totUnicos').textContent=num(state.budget.length);
+      document.getElementById('totValor').textContent=money(total);
+      document.getElementById('totData').textContent=lastDate;
+    }
+    function exportLibrary(){
+      const rows=builderFilteredLibrary();
+      const headers=['grupo','material','unidade','preco_medio','ultimo_preco','ultima_data','variacao','amostras','confiavel'];
+      const body=rows.map(r=>[r.grupo,r.material,r.unidade,r.precoMedio,r.ultimoPreco,r.ultimoData,r.variacao,r.amostras,r.confiavel?'SIM':'NAO'].map(csvEscape).join(';')).join('\n');
+      downloadText('biblioteca_materiais.csv', headers.join(';')+'\n'+body, 'text/csv;charset=utf-8');
+    }
+    function exportBudgetCSV(){
+      const headers=['obra','cliente','data_orcamento','grupo','material','quantidade','unidade','valor_unitario','subtotal','preco_medio','ultimo_preco','ultima_data','observacao'];
+      const obra=document.getElementById('budgetObra').value||'';
+      const cliente=document.getElementById('budgetCliente').value||'';
+      const data=document.getElementById('budgetData').value||'';
+      const body=state.budget.map(r=>[obra,cliente,data,r.grupo,r.material,r.quantidade,r.unidade,r.valorUnitario,(r.quantidade*r.valorUnitario),r.precoMedio,r.ultimoPreco,r.ultimaData,r.observacao].map(csvEscape).join(';')).join('\n');
+      downloadText('orcamento_automatico.csv', headers.join(';')+'\n'+body, 'text/csv;charset=utf-8');
+    }
+    function renderSuggestions(){
+      const insights=[];
+      state.budget.forEach(r=>{
+        if(!r.ultimaData) insights.push(`• ${r.material}: sem data do último preço.`);
+        if(r.precoMedio&&r.valorUnitario>r.precoMedio*1.15) insights.push(`• ${r.material}: valor adotado acima de 15% da média histórica.`);
+        if(r.precoMedio&&r.valorUnitario<r.precoMedio*0.85) insights.push(`• ${r.material}: valor adotado abaixo de 15% da média histórica.`);
+        if(r.ultimaData&&!isRecent(r.ultimaData)) insights.push(`• ${r.material}: última referência antiga (${r.ultimaData}).`);
+      });
+      const html = insights.length
+        ? `<div class="card"><div class="card-head"><div class="card-title">Sugestões automáticas</div></div><div class="card-body"><div class="sub">${insights.join('<br>')}</div></div></div>`
+        : `<div class="card"><div class="card-head"><div class="card-title">Sugestões automáticas</div></div><div class="card-body"><div class="sub">Sem alertas relevantes no orçamento atual.</div></div></div>`;
+      document.getElementById('builderInsights').innerHTML=html;
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
