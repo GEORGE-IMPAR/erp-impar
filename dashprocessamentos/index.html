@@ -564,4 +564,670 @@
             <div class="mini-label">Grupos no orçamento</div>
             <div class="mini-value" id="orcGrupos">0</div>
           </div>
-        </
+        </div>
+        <div class="panel mini" style="margin-top:12px">
+          <div class="mini-label">Sugestão automática</div>
+          <div class="mini-value" style="font-size:17px;line-height:1.35" id="orcInsight">Adicione materiais para gerar leitura automática.</div>
+        </div>
+        <div class="panel mini" style="margin-top:12px">
+          <div class="mini-label">Biblioteca disponível</div>
+          <div class="mini-value" style="font-size:17px" id="orcBiblioteca">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">Leitura direta do arquivo <b>https://api.erpimpar.com.br/storage/dash/materiais_extraidos.csv</b> • Estrutura preparada para ERP ÍMPAR / KingHost</div>
+  </div>
+
+  <script>
+    const { DateTime } = luxon;
+    const CSV_PATH = 'https://api.erpimpar.com.br/storage/dash/materiais_extraidos.csv';
+
+    let RAW = [];
+    let DATA = [];
+    let ORC = [];
+    const charts = {};
+
+    const COLORS = ['#22c55e','#38bdf8','#f59e0b','#8b5cf6','#ec4899','#ef4444','#14b8a6','#6366f1','#f97316','#84cc16'];
+
+    function $(id){ return document.getElementById(id); }
+    function safe(v, fallback='-'){ return v === undefined || v === null || v === '' ? fallback : v; }
+    function num(v){
+      if(v === undefined || v === null || v === '') return 0;
+      const s = String(v).trim().replace(/\./g,'').replace(',', '.');
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+    function money(v){ return 'R$ ' + (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+    function pct(v){ return (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:1, maximumFractionDigits:1}) + '%'; }
+    function intFmt(v){ return (Number(v)||0).toLocaleString('pt-BR'); }
+    function shortText(v, max=34){ v = String(v || ''); return v.length > max ? v.slice(0,max-1) + '…' : v; }
+    function parseDate(v){
+      if(!v) return null;
+      const s = String(v).trim();
+      const formats = ['yyyy-MM-dd','dd/MM/yyyy','dd-MM-yyyy','yyyy/MM/dd','dd/MM/yy'];
+      for(const f of formats){
+        const dt = DateTime.fromFormat(s,f);
+        if(dt.isValid) return dt;
+      }
+      const iso = DateTime.fromISO(s);
+      if(iso.isValid) return iso;
+      return null;
+    }
+    function dateLabel(v){
+      const dt = parseDate(v);
+      return dt ? dt.toFormat('dd/MM/yyyy') : safe(v, '-');
+    }
+    function monthKey(v){
+      const dt = parseDate(v);
+      return dt ? dt.toFormat('yyyy-MM') : 'Sem data';
+    }
+    function getUser(){
+      const KEYS=['ERPIMPAR_USER','usuarioLogado','impar_user','user','ERP_IMPAR_USER','ERPIMPAR_LOGIN'];
+      for(const k of KEYS){
+        const raw=localStorage.getItem(k)||sessionStorage.getItem(k);
+        if(raw){
+          try{
+            const j=JSON.parse(raw);
+            return j.Nome||j.nome||j.Email||j.email||raw;
+          }catch{ return raw; }
+        }
+      }
+      return 'Usuário ERP';
+    }
+    function unique(arr){ return [...new Set(arr.filter(Boolean))]; }
+    function sum(arr){ return arr.reduce((a,b)=>a + (Number(b)||0), 0); }
+    function avg(arr){ return arr.length ? sum(arr)/arr.length : 0; }
+    function maxBy(arr, fn){ if(!arr.length) return null; return arr.reduce((m,x)=>fn(x)>fn(m)?x:m); }
+    function minBy(arr, fn){ if(!arr.length) return null; return arr.reduce((m,x)=>fn(x)<fn(m)?x:m); }
+    function groupSum(rows, key, valueKey){
+      const out = {};
+      rows.forEach(r=>{
+        const k = safe(r[key], 'N/A');
+        out[k] = (out[k]||0) + (Number(r[valueKey])||0);
+      });
+      return out;
+    }
+    function groupCount(rows, key){
+      const out = {};
+      rows.forEach(r=>{
+        const k = safe(r[key], 'N/A');
+        out[k] = (out[k]||0)+1;
+      });
+      return out;
+    }
+    function statusClass(score){
+      if(score >= 75) return 'status-chip';
+      if(score >= 45) return 'status-chip warn';
+      return 'status-chip danger';
+    }
+
+    function buildChart(id, config){
+      if(charts[id]) charts[id].destroy();
+      charts[id] = new Chart($(id), config);
+    }
+
+    function baseOptions(){
+      return {
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{
+          legend:{labels:{color:'#d9e7ff', boxWidth:12, usePointStyle:true, pointStyle:'circle'}},
+          tooltip:{
+            backgroundColor:'rgba(6,16,30,.96)',
+            titleColor:'#fff',
+            bodyColor:'#dce8ff',
+            borderColor:'rgba(148,163,184,.18)',
+            borderWidth:1,
+            padding:12,
+            displayColors:true
+          }
+        },
+        scales:{
+          x:{ticks:{color:'#9fb2d1'}, grid:{color:'rgba(255,255,255,.05)'}},
+          y:{ticks:{color:'#9fb2d1'}, grid:{color:'rgba(255,255,255,.05)'}}
+        }
+      }
+    }
+
+    function fillFilters(){
+      const anos = unique(RAW.map(r=>r.Ano)).sort();
+      const grupos = unique(RAW.map(r=>r.Grupo)).sort((a,b)=>String(a).localeCompare(String(b)));
+      const obras = unique(RAW.map(r=>r.Obra)).sort((a,b)=>String(a).localeCompare(String(b)));
+
+      $('fAno').innerHTML = '<option value="">Todos</option>' + anos.map(v=>`<option value="${v}">${v}</option>`).join('');
+      $('fGrupo').innerHTML = '<option value="">Todos</option>' + grupos.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+      $('fObra').innerHTML = '<option value="">Todas</option>' + obras.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    }
+
+    function escapeHtml(str){
+      return String(str || '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+
+    function prepareRows(rows){
+      return rows
+        .map(r=>{
+          const data = parseDate(r.DataUltimaCompra);
+          return {
+            ...r,
+            Material: String(r.Material||'').trim(),
+            NomePlanilha: String(r.NomePlanilha||r['﻿NomePlanilha']||'').trim(),
+            Grupo: String(r.Grupo||'Sem grupo').trim(),
+            Obra: String(r.Obra||r.obra||r.NomePlanilha||r['﻿NomePlanilha']||'Obra não informada').trim(),
+            UnidadeMedida: String(r.UnidadeMedida||'').trim(),
+            Quantidade: num(r.Quantidade),
+            ValorUnitario: num(r.ValorUnitario),
+            ValorTotalItem: num(r.ValorTotalItem),
+            DataUltimaCompra: r.DataUltimaCompra,
+            _dt: data,
+            Ano: data ? data.year : 'Sem data',
+            MesRef: data ? data.toFormat('yyyy-MM') : 'Sem data'
+          };
+        })
+        .filter(r=>r.Material);
+    }
+
+    function applyFilters(){
+      const ano = $('fAno').value;
+      const grupo = $('fGrupo').value;
+      const obra = $('fObra').value;
+      const busca = $('fBusca').value.trim().toLowerCase();
+
+      DATA = RAW.filter(r=>{
+        if(ano && String(r.Ano) !== String(ano)) return false;
+        if(grupo && r.Grupo !== grupo) return false;
+        if(obra && r.Obra !== obra) return false;
+        if(busca && !String(r.Material).toLowerCase().includes(busca)) return false;
+        return true;
+      });
+    }
+
+    function aggregateByMaterial(rows){
+      const map = {};
+      rows.forEach(r=>{
+        if(!map[r.Material]){
+          map[r.Material] = {
+            Material:r.Material,
+            Grupo:r.Grupo,
+            valores:[],
+            qtdTotal:0,
+            valorTotal:0,
+            ultimoPreco:r.ValorUnitario,
+            ultimaData:r._dt,
+            ultimaDataRaw:r.DataUltimaCompra,
+            obraValores:{},
+            obras:new Set(),
+            grupo:r.Grupo
+          };
+        }
+        const m = map[r.Material];
+        m.valores.push(r.ValorUnitario);
+        m.qtdTotal += r.Quantidade;
+        m.valorTotal += r.ValorTotalItem;
+        m.obras.add(r.Obra);
+        m.obraValores[r.Obra] = (m.obraValores[r.Obra]||0) + r.ValorTotalItem;
+        if(r._dt && (!m.ultimaData || r._dt.toMillis() > m.ultimaData.toMillis())){
+          m.ultimaData = r._dt;
+          m.ultimaDataRaw = r.DataUltimaCompra;
+          m.ultimoPreco = r.ValorUnitario;
+        }
+      });
+
+      return Object.values(map).map(m=>{
+        const precoMedio = avg(m.valores);
+        const min = Math.min(...m.valores);
+        const max = Math.max(...m.valores);
+        const variacao = min > 0 ? ((max - min) / min) * 100 : 0;
+        const obraLider = Object.entries(m.obraValores).sort((a,b)=>b[1]-a[1])[0]?.[0] || '-';
+        const alerta = m.ultimoPreco > precoMedio * 1.18 ? 'Acima da média' : m.ultimoPreco < precoMedio * 0.85 ? 'Abaixo da média' : 'Dentro da faixa';
+        return {
+          Material:m.Material,
+          Grupo:m.grupo,
+          ObraLider:obraLider,
+          QtdTotal:m.qtdTotal,
+          ValorTotal:m.valorTotal,
+          PrecoMedio:precoMedio,
+          UltimoPreco:m.ultimoPreco,
+          DataUltimoPreco:m.ultimaDataRaw,
+          Min:min,
+          Max:max,
+          Variacao:variacao,
+          Alerta:alerta,
+          Obras:m.obras.size
+        };
+      });
+    }
+
+    function aggregateByPeriod(rows){
+      const out = {};
+      rows.forEach(r=>{
+        const k = r.MesRef;
+        out[k] = (out[k]||0) + r.ValorTotalItem;
+      });
+      return Object.entries(out).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+    }
+
+    function updateHeaderInfo(){
+      $('userPill').textContent = getUser();
+      $('lastPill').textContent = `Base: ${intFmt(RAW.length)} linhas`;
+    }
+
+    function renderInsights(ctx){
+      $('ins1').textContent = ctx.ins1;
+      $('ins2').textContent = ctx.ins2;
+      $('ins3').textContent = ctx.ins3;
+      $('ins4').textContent = ctx.ins4;
+    }
+
+    function renderSemaforo(score, text){
+      const chip = $('statusChip');
+      chip.className = statusClass(score);
+      chip.textContent = score >= 75 ? 'Operação equilibrada' : score >= 45 ? 'Operação em atenção' : 'Operação crítica';
+      $('statusText').textContent = text;
+    }
+
+    function renderKPIs(ctx){
+      $('kItens').textContent = intFmt(ctx.totalItens);
+      $('kValor').textContent = money(ctx.valorTotal);
+      $('kQtd').textContent = intFmt(ctx.qtdTotal);
+      $('kMedia').textContent = money(ctx.precoMedioSimples);
+      $('kMaiorCusto').textContent = shortText(ctx.maiorCusto?.Material || '-');
+      $('kMaiorCustoSub').textContent = ctx.maiorCusto ? `${money(ctx.maiorCusto.ValorTotal)} • ${pct(ctx.maiorCusto.ValorTotal / (ctx.valorTotal||1) * 100)} do total` : '-';
+      $('kMaiorVar').textContent = ctx.maiorVariacao ? pct(ctx.maiorVariacao.Variacao) : '-';
+      $('kMaiorVarSub').textContent = ctx.maiorVariacao ? shortText(ctx.maiorVariacao.Material, 42) : '-';
+      $('kGrupoTop').textContent = shortText(ctx.grupoTop?.nome || '-');
+      $('kGrupoTopSub').textContent = ctx.grupoTop ? `${money(ctx.grupoTop.valor)} • ${pct(ctx.grupoTop.pct)}` : '-';
+      $('kMatTop').textContent = shortText(ctx.matTop?.Material || '-');
+      $('kMatTopSub').textContent = ctx.matTop ? `${money(ctx.matTop.ValorTotal)} • ${pct(ctx.matTop.ValorTotal / (ctx.valorTotal||1) * 100)}` : '-';
+      $('kCritico').textContent = shortText(ctx.critico?.Material || '-');
+      $('kCriticoSub').textContent = ctx.critico ? `${ctx.critico.Alerta} • ${money(ctx.critico.UltimoPreco)}` : '-';
+      $('kObras').textContent = intFmt(ctx.obrasCount);
+      $('kMin').textContent = money(ctx.minPreco);
+      $('kMax').textContent = money(ctx.maxPreco);
+
+      $('heroGrupoPct').textContent = ctx.grupoTop ? pct(ctx.grupoTop.pct) : '-';
+      $('heroGrupoTxt').textContent = ctx.grupoTop ? shortText(ctx.grupoTop.nome, 40) : '-';
+      $('heroMatPct').textContent = ctx.matTop ? pct(ctx.matTop.ValorTotal / (ctx.valorTotal||1) * 100) : '-';
+      $('heroMatTxt').textContent = ctx.matTop ? shortText(ctx.matTop.Material, 40) : '-';
+      $('heroPond').textContent = money(ctx.precoPonderado);
+      $('heroAmp').textContent = money(ctx.maxPreco - ctx.minPreco);
+      $('heroAmpTxt').textContent = `${money(ctx.minPreco)} até ${money(ctx.maxPreco)}`;
+
+      $('domObra').textContent = shortText(ctx.obraTop?.nome || '-');
+      $('domObraSub').textContent = ctx.obraTop ? `${money(ctx.obraTop.valor)} • ${pct(ctx.obraTop.pct)}` : '-';
+      $('domQtd').textContent = shortText(ctx.materialQtdTop?.Material || '-');
+      $('domQtdSub').textContent = ctx.materialQtdTop ? `${intFmt(ctx.materialQtdTop.QtdTotal)} unidades na janela` : '-';
+      $('domUltimo').textContent = ctx.ultimoRegistro ? money(ctx.ultimoRegistro.ValorUnitario) : '-';
+      $('domUltimoSub').textContent = ctx.ultimoRegistro ? `${shortText(ctx.ultimoRegistro.Material, 38)} • ${dateLabel(ctx.ultimoRegistro.DataUltimaCompra)}` : '-';
+      $('domBiblioteca').textContent = intFmt(ctx.materiaisIntel.length);
+      $('domBibliotecaSub').textContent = 'materiais únicos normalizados';
+    }
+
+    function renderRanking(topMats, total){
+      $('rankingTop').innerHTML = topMats.slice(0,10).map((m,i)=>{
+        const p = total ? (m.ValorTotal/total)*100 : 0;
+        return `
+          <div class="rank-item">
+            <div class="rank-num">${i+1}</div>
+            <div>
+              <div class="rank-name">${escapeHtml(m.Material)}</div>
+              <div class="rank-meta">${escapeHtml(m.Grupo)} • ${intFmt(m.QtdTotal)} un. • ${money(m.PrecoMedio)} médio</div>
+            </div>
+            <div class="rank-value">${pct(p)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderIntelTable(rows){
+      const tbody = $('tblIntel').querySelector('tbody');
+      tbody.innerHTML = rows.slice(0,50).map(r=>{
+        const cor = r.Alerta === 'Acima da média' ? 'style="color:#ffd6d6"' : r.Alerta === 'Abaixo da média' ? 'style="color:#d4ffe3"' : '';
+        return `
+          <tr>
+            <td>${escapeHtml(r.Material)}</td>
+            <td>${escapeHtml(r.Grupo)}</td>
+            <td>${escapeHtml(r.ObraLider)}</td>
+            <td>${intFmt(r.QtdTotal)}</td>
+            <td>${money(r.PrecoMedio)}</td>
+            <td>${money(r.UltimoPreco)}</td>
+            <td>${dateLabel(r.DataUltimoPreco)}</td>
+            <td>${money(r.Min)}</td>
+            <td>${money(r.Max)}</td>
+            <td>${pct(r.Variacao)}</td>
+            <td ${cor}>${r.Alerta}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderCharts(ctx){
+      buildChart('chartEvolucao', {
+        type:'line',
+        data:{
+          labels:ctx.periodo.labels,
+          datasets:[{
+            label:'Valor por período',
+            data:ctx.periodo.values,
+            borderColor:'#38bdf8',
+            backgroundColor:'rgba(56,189,248,.18)',
+            borderWidth:3,
+            tension:.28,
+            fill:true,
+            pointRadius:3,
+            pointHoverRadius:5
+          }]
+        },
+        options:{...baseOptions()}
+      });
+
+      buildChart('chartGrupo', {
+        type:'bar',
+        data:{
+          labels:ctx.gruposTop.map(x=>shortText(x.nome,28)),
+          datasets:[{
+            label:'Valor',
+            data:ctx.gruposTop.map(x=>x.valor),
+            backgroundColor:ctx.gruposTop.map((_,i)=>COLORS[i%COLORS.length]),
+            borderRadius:10,
+            borderSkipped:false
+          }]
+        },
+        options:{...baseOptions(), indexAxis:'y', plugins:{...baseOptions().plugins, legend:{display:false}}}
+      });
+
+      buildChart('chartPreco', {
+        type:'bar',
+        data:{
+          labels:ctx.topPreco.map(x=>shortText(x.Material,28)),
+          datasets:[{
+            label:'Preço unitário',
+            data:ctx.topPreco.map(x=>x.UltimoPreco),
+            backgroundColor:'#f59e0b',
+            borderRadius:10,
+            borderSkipped:false
+          }]
+        },
+        options:{...baseOptions(), indexAxis:'y', plugins:{...baseOptions().plugins, legend:{display:false}}}
+      });
+
+      buildChart('chartObra', {
+        type:'bar',
+        data:{
+          labels:ctx.obrasTop.map(x=>shortText(x.nome,24)),
+          datasets:[{
+            label:'Valor por obra',
+            data:ctx.obrasTop.map(x=>x.valor),
+            backgroundColor:'#22c55e',
+            borderRadius:10,
+            borderSkipped:false
+          }]
+        },
+        options:{...baseOptions(), indexAxis:'y', plugins:{...baseOptions().plugins, legend:{display:false}}}
+      });
+
+      buildChart('chartGrupoDonut', {
+        type:'doughnut',
+        data:{
+          labels:ctx.gruposTop.map(x=>shortText(x.nome,18)),
+          datasets:[{
+            data:ctx.gruposTop.map(x=>x.valor),
+            backgroundColor:ctx.gruposTop.map((_,i)=>COLORS[i%COLORS.length]),
+            borderWidth:1,
+            borderColor:'#081120'
+          }]
+        },
+        options:{
+          responsive:true,
+          maintainAspectRatio:false,
+          plugins:baseOptions().plugins,
+          cutout:'58%'
+        }
+      });
+
+      buildChart('chartQtdGrupo', {
+        type:'pie',
+        data:{
+          labels:ctx.qtdGrupoTop.map(x=>shortText(x.nome,18)),
+          datasets:[{
+            data:ctx.qtdGrupoTop.map(x=>x.valor),
+            backgroundColor:ctx.qtdGrupoTop.map((_,i)=>COLORS[i%COLORS.length]),
+            borderWidth:1,
+            borderColor:'#081120'
+          }]
+        },
+        options:{responsive:true, maintainAspectRatio:false, plugins:baseOptions().plugins}
+      });
+    }
+
+    function buildExecutiveContext(){
+      const materiaisIntel = aggregateByMaterial(DATA).sort((a,b)=>b.ValorTotal-a.ValorTotal);
+      const totalItens = DATA.length;
+      const valorTotal = sum(DATA.map(r=>r.ValorTotalItem));
+      const qtdTotal = sum(DATA.map(r=>r.Quantidade));
+      const precoMedioSimples = avg(DATA.map(r=>r.ValorUnitario));
+      const precoPonderado = qtdTotal > 0 ? valorTotal / qtdTotal : 0;
+      const minPreco = DATA.length ? Math.min(...DATA.map(r=>r.ValorUnitario)) : 0;
+      const maxPreco = DATA.length ? Math.max(...DATA.map(r=>r.ValorUnitario)) : 0;
+      const obrasCount = unique(DATA.map(r=>r.Obra)).length;
+
+      const gruposMap = groupSum(DATA,'Grupo','ValorTotalItem');
+      const gruposTop = Object.entries(gruposMap).map(([nome,valor])=>({nome,valor,pct: valorTotal ? (valor/valorTotal)*100 : 0})).sort((a,b)=>b.valor-a.valor).slice(0,10);
+      const grupoTop = gruposTop[0] || null;
+
+      const obrasMap = groupSum(DATA,'Obra','ValorTotalItem');
+      const obrasTop = Object.entries(obrasMap).map(([nome,valor])=>({nome,valor,pct: valorTotal ? (valor/valorTotal)*100 : 0})).sort((a,b)=>b.valor-a.valor).slice(0,10);
+      const obraTop = obrasTop[0] || null;
+
+      const qtdGrupoMap = groupSum(DATA,'Grupo','Quantidade');
+      const qtdGrupoTop = Object.entries(qtdGrupoMap).map(([nome,valor])=>({nome,valor})).sort((a,b)=>b.valor-a.valor).slice(0,10);
+
+      const matTop = materiaisIntel[0] || null;
+      const maiorCusto = materiaisIntel[0] || null;
+      const maiorVariacao = [...materiaisIntel].sort((a,b)=>b.Variacao-a.Variacao)[0] || null;
+      const criticos = materiaisIntel.filter(x=>x.Alerta==='Acima da média').sort((a,b)=>b.UltimoPreco-a.UltimoPreco);
+      const critico = criticos[0] || matTop;
+      const materialQtdTop = [...materiaisIntel].sort((a,b)=>b.QtdTotal-a.QtdTotal)[0] || null;
+      const topPreco = [...materiaisIntel].sort((a,b)=>b.UltimoPreco-a.UltimoPreco).slice(0,10);
+      const periodoRaw = aggregateByPeriod(DATA);
+      const periodo = {
+        labels: periodoRaw.map(x=>x[0]),
+        values: periodoRaw.map(x=>x[1])
+      };
+      const ultimoRegistro = DATA.filter(r=>r._dt).sort((a,b)=>b._dt.toMillis()-a._dt.toMillis())[0] || null;
+
+      const scoreGrupo = grupoTop ? Math.max(0, 100 - grupoTop.pct) : 50;
+      const scoreMaterial = matTop ? Math.max(0, 100 - ((matTop.ValorTotal / (valorTotal||1)) * 100 * 1.2)) : 50;
+      const scoreCritico = criticos.length ? 35 : 85;
+      const score = Math.round((scoreGrupo + scoreMaterial + scoreCritico)/3);
+
+      const ins1 = grupoTop
+        ? `${grupoTop.nome} concentra ${pct(grupoTop.pct)} do custo total da janela analisada.`
+        : 'Sem dados suficientes para concentração por grupo.';
+      const ins2 = matTop
+        ? `${shortText(matTop.Material,30)} lidera individualmente, com ${money(matTop.ValorTotal)}.`
+        : 'Sem material líder identificado.';
+      const ins3 = maiorVariacao
+        ? `${shortText(maiorVariacao.Material,28)} apresenta a maior variação, em ${pct(maiorVariacao.Variacao)}.`
+        : 'Sem variação relevante detectada.';
+      const ins4 = critico
+        ? `${shortText(critico.Material,26)} foi classificado como ponto de atenção por preço ${critico.Alerta.toLowerCase()}.`
+        : 'Sem materiais críticos no recorte atual.';
+
+      const semaforoText = criticos.length
+        ? `Existem ${intFmt(criticos.length)} materiais acima da média histórica de preço no recorte atual.`
+        : 'A base filtrada está sem alertas relevantes de preço acima da média histórica.';
+
+      return {
+        materiaisIntel,
+        totalItens,
+        valorTotal,
+        qtdTotal,
+        precoMedioSimples,
+        precoPonderado,
+        minPreco,
+        maxPreco,
+        obrasCount,
+        grupoTop,
+        gruposTop,
+        obrasTop,
+        qtdGrupoTop,
+        matTop,
+        maiorCusto,
+        maiorVariacao,
+        critico,
+        materialQtdTop,
+        topPreco,
+        periodo,
+        obraTop,
+        ultimoRegistro,
+        score,
+        ins1, ins2, ins3, ins4,
+        semaforoText
+      };
+    }
+
+    function renderBudget(){
+      const tbody = $('tblOrc').querySelector('tbody');
+      let total = 0;
+      tbody.innerHTML = ORC.map((r,i)=>{
+        const subtotal = r.qtd * r.precoMedio;
+        total += subtotal;
+        return `
+          <tr>
+            <td>${escapeHtml(r.material)}</td>
+            <td>${escapeHtml(r.grupo)}</td>
+            <td><input type="number" min="1" step="1" value="${r.qtd}" style="width:90px;height:34px;border-radius:8px;border:1px solid rgba(148,163,184,.15);background:#091220;color:#fff;padding:0 8px" onchange="window.updateOrcQty(${i}, this.value)" /></td>
+            <td>${money(r.precoMedio)}</td>
+            <td>${money(r.ultimoPreco)}</td>
+            <td>${money(subtotal)}</td>
+            <td><button onclick="window.removeOrc(${i})" style="height:34px;border:none;border-radius:8px;padding:0 10px;background:#ef4444;color:#fff;font-weight:800;cursor:pointer">Remover</button></td>
+          </tr>
+        `;
+      }).join('');
+
+      $('orcTotal').textContent = money(total);
+      $('orcItens').textContent = intFmt(ORC.length);
+      $('orcGrupos').textContent = intFmt(unique(ORC.map(x=>x.grupo)).length);
+      $('orcBiblioteca').textContent = intFmt(unique(RAW.map(x=>x.Material)).length) + ' materiais';
+
+      if(ORC.length){
+        const byGroup = {};
+        ORC.forEach(x=> byGroup[x.grupo] = (byGroup[x.grupo]||0) + x.qtd * x.precoMedio);
+        const topGroup = Object.entries(byGroup).sort((a,b)=>b[1]-a[1])[0];
+        $('orcInsight').textContent = `${topGroup[0]} lidera o orçamento atual, com ${money(topGroup[1])}.`;
+      } else {
+        $('orcInsight').textContent = 'Adicione materiais para gerar leitura automática.';
+      }
+    }
+
+    function addBudgetItem(){
+      const q = $('orcBusca').value.trim().toLowerCase();
+      const qtd = Math.max(1, Number($('orcQtd').value) || 1);
+      if(!q) return;
+
+      const intel = aggregateByMaterial(DATA.length ? DATA : RAW);
+      const found = intel.find(x => x.Material.toLowerCase().includes(q));
+      if(!found){
+        alert('Material não encontrado na biblioteca filtrada.');
+        return;
+      }
+      ORC.push({
+        material: found.Material,
+        grupo: found.Grupo,
+        qtd,
+        precoMedio: found.PrecoMedio,
+        ultimoPreco: found.UltimoPreco
+      });
+      $('orcBusca').value = '';
+      $('orcQtd').value = 1;
+      renderBudget();
+    }
+
+    window.updateOrcQty = (idx, val) => {
+      ORC[idx].qtd = Math.max(1, Number(val) || 1);
+      renderBudget();
+    };
+    window.removeOrc = (idx) => {
+      ORC.splice(idx,1);
+      renderBudget();
+    };
+
+    function exportCSV(rows, filename){
+      const csv = Papa.unparse(rows);
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function renderAll(){
+      applyFilters();
+
+      if(!DATA.length){
+        ['ins1','ins2','ins3','ins4'].forEach(id=>$(id).textContent='Nenhum dado encontrado com os filtros aplicados.');
+        $('statusChip').className='status-chip danger';
+        $('statusChip').textContent='Sem dados';
+        $('statusText').textContent='Revise os filtros para restabelecer a leitura executiva.';
+        return;
+      }
+
+      const ctx = buildExecutiveContext();
+      renderInsights(ctx);
+      renderSemaforo(ctx.score, ctx.semaforoText);
+      renderKPIs(ctx);
+      renderRanking(ctx.materiaisIntel, ctx.valorTotal);
+      renderIntelTable(ctx.materiaisIntel.sort((a,b)=>b.ValorTotal-a.ValorTotal));
+      renderCharts(ctx);
+      renderBudget();
+    }
+
+    function initEvents(){
+      $('btnAplicar').addEventListener('click', renderAll);
+      $('btnLimpar').addEventListener('click', ()=>{
+        $('fAno').value=''; $('fGrupo').value=''; $('fObra').value=''; $('fBusca').value='';
+        renderAll();
+      });
+      $('fAno').addEventListener('change', renderAll);
+      $('fGrupo').addEventListener('change', renderAll);
+      $('fObra').addEventListener('change', renderAll);
+      $('fBusca').addEventListener('input', renderAll);
+      $('btnAddOrc').addEventListener('click', addBudgetItem);
+      $('btnExportFiltros').addEventListener('click', ()=> exportCSV(DATA, 'dashboard_materiais_filtrado.csv'));
+      $('btnExportOrc').addEventListener('click', ()=> exportCSV(ORC.map(x=>({Material:x.material,Grupo:x.grupo,Quantidade:x.qtd,PrecoMedio:x.precoMedio,UltimoPreco:x.ultimoPreco,Total:x.qtd*x.precoMedio})), 'orcamento_materiais.csv'));
+    }
+
+    function bootstrap(){
+      updateHeaderInfo();
+      initEvents();
+      Papa.parse(CSV_PATH, {
+        download:true,
+        header:true,
+        skipEmptyLines:true,
+        complete:(res)=>{
+          RAW = prepareRows(res.data || []);
+          $('lastPill').textContent = `Base: ${intFmt(RAW.length)} linhas • ${intFmt(unique(RAW.map(x=>x.Material)).length)} materiais`;
+          fillFilters();
+          updateHeaderInfo();
+          renderAll();
+        },
+        error:()=>{
+          $('ins1').textContent = 'Falha ao ler ./data/materiais_extraidos.csv';
+          $('ins2').textContent = 'Confirme se o arquivo está dentro da pasta data.';
+          $('ins3').textContent = 'O nome precisa permanecer materiais_extraidos.csv.';
+          $('ins4').textContent = 'Após corrigir, recarregue a página.';
+        }
+      });
+    }
+
+    bootstrap();
+  </script>
+</body>
+</html>
