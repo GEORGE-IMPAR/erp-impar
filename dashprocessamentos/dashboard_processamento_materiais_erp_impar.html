@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ERP ÍMPAR • Dashboard Executivo de Materiais</title>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+
+<style>
+:root{
+  --bg:#0b1220; --card:#111a2e; --muted:#94a3b8; --line:#22304a;
+  --g1:#22c55e; --g2:#16a34a; --blue:#3b82f6; --cyan:#06b6d4; --amber:#f59e0b; --rose:#ef4444;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,Arial;background:radial-gradient(1200px 600px at 10% -10%,#1b2a4a 0%,transparent 60%),var(--bg);color:#e5e7eb}
+header{position:sticky;top:0;z-index:10;backdrop-filter: blur(10px);background:linear-gradient(135deg,var(--g1),var(--g2));padding:16px 20px;display:flex;align-items:center;gap:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+header h1{margin:0;font-size:18px;letter-spacing:.5px}
+.header-right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.btn{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.12);color:#fff;padding:8px 12px;border-radius:10px;cursor:pointer}
+.container{padding:18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 20px 40px rgba(0,0,0,.35)}
+.card h3{margin:0;color:var(--muted);font-size:12px}
+.card h2{margin:6px 0 0;font-size:20px}
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px}
+.table{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-top:16px}
+.table h3{margin:0 0 10px 0}
+.table-wrap{max-height:320px;overflow:auto;border-radius:12px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+th{color:#cbd5f5;text-align:left}
+tr:hover{background:rgba(255,255,255,.03)}
+.badge{padding:4px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
+.filters{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+select,input{background:#0f172a;color:#e5e7eb;border:1px solid var(--line);padding:8px 10px;border-radius:10px}
+.kpis-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:16px}
+.highlight{outline:1px solid rgba(59,130,246,.6);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 Dashboard Executivo • Materiais</h1>
+  <div class="header-right">
+    <span id="userBox" class="badge">Usuário</span>
+    <button class="btn" onclick="exportCSV()">Exportar CSV</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="filters">
+    <select id="fAno"></select>
+    <select id="fGrupo"></select>
+    <input id="fBusca" placeholder="Buscar material..." />
+  </div>
+
+  <div class="cards">
+    <div class="card"><h3>Total Itens</h3><h2 id="kItens"></h2></div>
+    <div class="card"><h3>Valor Total</h3><h2 id="kValor"></h2></div>
+    <div class="card"><h3>Preço Médio</h3><h2 id="kMedia"></h2></div>
+    <div class="card"><h3>Qtd Total</h3><h2 id="kQtd"></h2></div>
+    <div class="card"><h3>Grupo Mais Caro</h3><h2 id="kGrupoTop"></h2></div>
+    <div class="card"><h3>Material Top</h3><h2 id="kMatTop"></h2></div>
+  </div>
+
+  <div class="grid">
+    <div class="chart"><canvas id="cGrupo"></canvas></div>
+    <div class="chart"><canvas id="cAno"></canvas></div>
+  </div>
+
+  <div class="grid2">
+    <div class="chart"><canvas id="cTopValor"></canvas></div>
+    <div class="chart"><canvas id="cTopPreco"></canvas></div>
+  </div>
+
+  <div class="table">
+    <h3>Top 20 Materiais (Valor)</h3>
+    <div class="table-wrap"><table id="tTop"></table></div>
+  </div>
+
+  <div class="table">
+    <h3>Inteligência de Preços (média / min / max / último)</h3>
+    <div class="table-wrap"><table id="tIntel"></table></div>
+  </div>
+
+  <div class="table">
+    <h3>Montador de Orçamento</h3>
+    <div class="filters">
+      <input id="orcBusca" placeholder="Buscar material para adicionar" />
+      <button class="btn" onclick="addOrc()">Adicionar</button>
+    </div>
+    <div class="table-wrap"><table id="tOrc"></table></div>
+    <div style="margin-top:10px"><b>Total: </b><span id="orcTotal"></span></div>
+  </div>
+
+</div>
+
+<script>
+const DateTime = luxon.DateTime;
+let RAW=[]; let DATA=[]; let charts={}; let ORC=[];
+
+function money(v){return 'R$ '+(v||0).toLocaleString('pt-BR',{maximumFractionDigits:2})}
+function num(v){return Number(v||0)}
+function yearFrom(d){ if(!d) return 'N/A'; try{ return DateTime.fromISO(d).year }catch{ return 'N/A' } }
+
+function getUser(){
+  const KEYS=['ERPIMPAR_USER','usuarioLogado','impar_user','user','ERP_IMPAR_USER','ERPIMPAR_LOGIN'];
+  for(const k of KEYS){
+    const raw=localStorage.getItem(k)||sessionStorage.getItem(k);
+    if(raw){ try{ const j=JSON.parse(raw); return j.Nome||j.nome||j.email||raw }catch{ return raw } }
+  }
+  return 'Usuário';
+}
+
+document.getElementById('userBox').innerText=getUser();
+
+Papa.parse('data/materiais_extraidos.csv',{
+  download:true, header:true,
+  complete:(res)=>{ RAW=res.data.filter(r=>r.Material); prepare(); render(); }
+});
+
+function prepare(){
+  RAW.forEach(r=>{
+    r.ValorTotalItem=num(r.ValorTotalItem);
+    r.ValorUnitario=num(r.ValorUnitario);
+    r.Quantidade=num(r.Quantidade);
+    r.Ano=yearFrom(r.DataUltimaCompra);
+  });
+  fillFilters();
+}
+
+function fillFilters(){
+  const anos=[...new Set(RAW.map(r=>r.Ano))].sort();
+  const grupos=[...new Set(RAW.map(r=>r.Grupo))].sort();
+  fAno.innerHTML='<option value="">Ano</option>'+anos.map(a=>`<option>${a}</option>`).join('');
+  fGrupo.innerHTML='<option value="">Grupo</option>'+grupos.map(g=>`<option>${g}</option>`).join('');
+}
+
+fAno.onchange=fGrupo.onchange=fBusca.oninput=()=>render();
+
+function applyFilters(){
+  const ano=fAno.value, grp=fGrupo.value, q=fBusca.value.toLowerCase();
+  DATA=RAW.filter(r=>
+    (!ano||r.Ano==ano)&&
+    (!grp||r.Grupo==grp)&&
+    (!q||r.Material.toLowerCase().includes(q))
+  );
+}
+
+function render(){
+  applyFilters();
+
+  // KPIs
+  const totalItens=DATA.length;
+  const valorTotal=DATA.reduce((a,b)=>a+b.ValorTotalItem,0);
+  const qtdTotal=DATA.reduce((a,b)=>a+b.Quantidade,0);
+  const precoMedio= totalItens? valorTotal/totalItens:0;
+
+  kItens.innerText=totalItens; kValor.innerText=money(valorTotal);
+  kQtd.innerText=qtdTotal.toLocaleString('pt-BR'); kMedia.innerText=money(precoMedio);
+
+  // grupo
+  const byGrupo={}; DATA.forEach(r=> byGrupo[r.Grupo]=(byGrupo[r.Grupo]||0)+r.ValorTotalItem);
+  const grupoTop=Object.entries(byGrupo).sort((a,b)=>b[1]-a[1])[0];
+  kGrupoTop.innerText=grupoTop? grupoTop[0]:'-';
+
+  // material
+  const byMat={}; DATA.forEach(r=> byMat[r.Material]=(byMat[r.Material]||0)+r.ValorTotalItem);
+  const matTop=Object.entries(byMat).sort((a,b)=>b[1]-a[1])[0];
+  kMatTop.innerText=matTop? matTop[0]:'-';
+
+  // charts
+  buildBar('cGrupo', Object.keys(byGrupo), Object.values(byGrupo));
+
+  const byAno={}; DATA.forEach(r=> byAno[r.Ano]=(byAno[r.Ano]||0)+r.ValorTotalItem);
+  buildLine('cAno', Object.keys(byAno), Object.values(byAno));
+
+  const topValor=Object.entries(byMat).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  buildBar('cTopValor', topValor.map(x=>x[0]), topValor.map(x=>x[1]));
+
+  const byPreco={}; DATA.forEach(r=> byPreco[r.Material]=(byPreco[r.Material]||[]).concat(r.ValorUnitario));
+  const topPreco=Object.entries(byPreco)
+    .map(([m,arr])=>[m, Math.max(...arr)])
+    .sort((a,b)=>b[1]-a[1]).slice(0,20);
+  buildBar('cTopPreco', topPreco.map(x=>x[0]), topPreco.map(x=>x[1]));
+
+  // tabela top
+  tTop.innerHTML='<tr><th>Material</th><th>Valor</th></tr>'+
+    topValor.map(t=>`<tr><td>${t[0]}</td><td>${money(t[1])}</td></tr>`).join('');
+
+  // inteligência
+  const intel={};
+  DATA.forEach(r=>{
+    if(!intel[r.Material]) intel[r.Material]={arr:[], last:r.DataUltimaCompra};
+    intel[r.Material].arr.push(r.ValorUnitario);
+    if(r.DataUltimaCompra>intel[r.Material].last) intel[r.Material].last=r.DataUltimaCompra;
+  });
+  const rows=Object.entries(intel).map(([m,o])=>{
+    const avg=o.arr.reduce((a,b)=>a+b,0)/o.arr.length;
+    const min=Math.min(...o.arr), max=Math.max(...o.arr);
+    return {m,avg,min,max,last:o.last};
+  }).sort((a,b)=>b.avg-a.avg).slice(0,20);
+
+  tIntel.innerHTML='<tr><th>Material</th><th>Médio</th><th>Min</th><th>Max</th><th>Último</th></tr>'+
+    rows.map(r=>`<tr><td>${r.m}</td><td>${money(r.avg)}</td><td>${money(r.min)}</td><td>${money(r.max)}</td><td>${r.last||'-'}</td></tr>`).join('');
+
+  renderOrc();
+}
+
+function buildBar(id, labels, data){
+  if(charts[id]) charts[id].destroy();
+  charts[id]=new Chart(document.getElementById(id),{
+    type:'bar', data:{labels, datasets:[{data}]}, options:{plugins:{legend:{display:false}},indexAxis:'y'}
+  });
+}
+function buildLine(id, labels, data){
+  if(charts[id]) charts[id].destroy();
+  charts[id]=new Chart(document.getElementById(id),{
+    type:'line', data:{labels, datasets:[{data, tension:.3}]}, options:{plugins:{legend:{display:false}}}
+  });
+}
+
+// orçamento
+function addOrc(){
+  const q=orcBusca.value.toLowerCase();
+  const m=RAW.find(r=>r.Material.toLowerCase().includes(q));
+  if(!m) return alert('Material não encontrado');
+  ORC.push({...m, qtd:1});
+  renderOrc();
+}
+function renderOrc(){
+  let total=0;
+  tOrc.innerHTML='<tr><th>Material</th><th>Qtd</th><th>Preço</th><th>Total</th></tr>'+
+  ORC.map((o,i)=>{
+    const t=o.qtd*o.ValorUnitario; total+=t;
+    return `<tr>
+      <td>${o.Material}</td>
+      <td><input value="${o.qtd}" style="width:60px" onchange="ORC[${i}].qtd=this.value;renderOrc()"></td>
+      <td>${money(o.ValorUnitario)}</td>
+      <td>${money(t)}</td>
+    </tr>`
+  }).join('');
+  orcTotal.innerText=money(total);
+}
+
+function exportCSV(){
+  const csv=Papa.unparse(DATA);
+  const blob=new Blob([csv]);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='export.csv'; a.click();
+}
+
+</script>
+
+</body>
+</html>
