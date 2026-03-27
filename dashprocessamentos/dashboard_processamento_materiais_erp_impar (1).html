@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP ÍMPAR • Dashboard Executivo de Materiais</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#07101f;
+      --bg2:#020817;
+      --card:#0d1728;
+      --card2:#101d33;
+      --line:#1c2b46;
+      --text:#eaf2ff;
+      --muted:#8ea4c7;
+      --green:#22c55e;
+      --green-2:#16a34a;
+      --cyan:#38bdf8;
+      --blue:#3b82f6;
+      --amber:#f59e0b;
+      --red:#ef4444;
+      --violet:#8b5cf6;
+      --pink:#ec4899;
+      --shadow:0 16px 40px rgba(0,0,0,.35);
+      --radius:18px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 500px at 0% -10%, rgba(34,197,94,.18), transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, rgba(59,130,246,.14), transparent 55%),
+        linear-gradient(180deg, #091221 0%, #06101e 35%, #030816 100%);
+      min-height:100vh;
+    }
+
+    .topbar{
+      position:sticky;
+      top:0;
+      z-index:30;
+      display:flex;
+      align-items:center;
+      gap:16px;
+      justify-content:space-between;
+      padding:16px 20px;
+      background:linear-gradient(135deg, rgba(15,23,42,.86), rgba(6,16,30,.86));
+      border-bottom:1px solid rgba(148,163,184,.12);
+      backdrop-filter:blur(12px);
+      box-shadow:0 10px 26px rgba(0,0,0,.22);
+    }
+
+    .brand-wrap{display:flex;align-items:center;gap:14px;min-width:0}
+    .brand-icon{
+      width:42px;height:42px;border-radius:14px;
+      background:linear-gradient(135deg,var(--green),var(--cyan));
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 10px 26px rgba(34,197,94,.26);
+      font-size:20px;font-weight:800;
+    }
+    .brand-text{min-width:0}
+    .brand-title{margin:0;font-size:28px;line-height:1.05;font-weight:800;letter-spacing:-.03em}
+    .brand-sub{margin:4px 0 0;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    .top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .pill{
+      border:1px solid rgba(148,163,184,.15);
+      background:rgba(255,255,255,.04);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:999px;
+      font-size:12px;
+      box-shadow:var(--shadow);
+    }
+    .btn{
+      border:none;
+      color:#fff;
+      font-weight:700;
+      background:linear-gradient(135deg,var(--green),var(--green-2));
+      padding:11px 14px;
+      border-radius:12px;
+      cursor:pointer;
+      box-shadow:0 12px 26px rgba(34,197,94,.28);
+    }
+    .btn.secondary{
+      background:linear-gradient(135deg,#1d4ed8,#2563eb);
+      box-shadow:0 12px 26px rgba(37,99,235,.22);
+    }
+
+    .container{padding:18px}
+
+    .panel{
+      background:linear-gradient(180deg, rgba(16,29,51,.82), rgba(11,23,40,.9));
+      border:1px solid rgba(148,163,184,.12);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+
+    .filters{
+      display:grid;
+      grid-template-columns:1.1fr 1.1fr 1.2fr 1fr auto auto;
+      gap:12px;
+      padding:14px;
+      margin-bottom:14px;
+    }
+
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+    .field select,.field input{
+      width:100%;
+      height:42px;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,.14);
+      outline:none;
+      background:linear-gradient(180deg,#0b1424,#0b1322);
+      color:var(--text);
+      padding:0 12px;
+      font-size:14px;
+    }
+
+    .insights-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+    .insight{
+      padding:14px 16px;
+      min-height:96px;
+      position:relative;
+      overflow:hidden;
+    }
+    .insight::after{
+      content:'';
+      position:absolute;inset:auto -40px -40px auto;
+      width:120px;height:120px;border-radius:999px;
+      background:radial-gradient(circle, rgba(255,255,255,.16), transparent 65%);
+      pointer-events:none;
+    }
+    .insight .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#dce9ff;font-weight:800;opacity:.8}
+    .insight .headline{margin-top:9px;font-size:17px;line-height:1.28;font-weight:800}
+    .insight.green{background:linear-gradient(135deg,rgba(34,197,94,.22),rgba(13,23,40,.92));border:1px solid rgba(34,197,94,.28)}
+    .insight.blue{background:linear-gradient(135deg,rgba(56,189,248,.2),rgba(13,23,40,.92));border:1px solid rgba(56,189,248,.24)}
+    .insight.amber{background:linear-gradient(135deg,rgba(245,158,11,.22),rgba(13,23,40,.92));border:1px solid rgba(245,158,11,.24)}
+    .insight.red{background:linear-gradient(135deg,rgba(239,68,68,.2),rgba(13,23,40,.92));border:1px solid rgba(239,68,68,.25)}
+
+    .summary-band{
+      display:grid;
+      grid-template-columns:1.2fr .8fr .8fr .8fr .8fr;
+      gap:12px;
+      margin-bottom:12px;
+    }
+    .status-card,.small-hero{
+      padding:16px;
+      min-height:98px;
+    }
+    .status-chip{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 12px;border-radius:999px;
+      background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.22);
+      font-size:13px;font-weight:800;color:#c8ffd9
+    }
+    .status-chip.warn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.25);color:#ffe8bd}
+    .status-chip.danger{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.25);color:#ffd0d0}
+    .small-kicker{font-size:12px;color:var(--muted);font-weight:700}
+    .small-number{font-size:28px;font-weight:900;letter-spacing:-.03em;margin-top:6px}
+    .small-caption{font-size:12px;color:var(--muted);margin-top:4px}
+    .small-hero.blue{border-top:3px solid var(--cyan)}
+    .small-hero.green{border-top:3px solid var(--green)}
+    .small-hero.amber{border-top:3px solid var(--amber)}
+    .small-hero.red{border-top:3px solid var(--red)}
+
+    .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:12px}
+    .kpi{
+      padding:14px;
+      min-height:102px;
+      position:relative;
+      overflow:hidden;
+      border:1px solid rgba(148,163,184,.12);
+      background:linear-gradient(180deg, rgba(16,29,51,.9), rgba(8,16,30,.94));
+    }
+    .kpi::before{
+      content:'';position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.65
+    }
+    .kpi.green::before{background:linear-gradient(90deg,transparent,var(--green),transparent)}
+    .kpi.amber::before{background:linear-gradient(90deg,transparent,var(--amber),transparent)}
+    .kpi.red::before{background:linear-gradient(90deg,transparent,var(--red),transparent)}
+    .kpi.violet::before{background:linear-gradient(90deg,transparent,var(--violet),transparent)}
+    .kpi .label{font-size:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    .kpi .value{margin-top:8px;font-size:28px;font-weight:900;letter-spacing:-.03em;word-break:break-word;line-height:1.05}
+    .kpi .sub{margin-top:6px;font-size:12px;color:var(--muted)}
+
+    .dominance-band{
+      display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:14px
+    }
+    .dom-card{padding:14px 16px}
+    .dom-title{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:800;letter-spacing:.06em}
+    .dom-main{margin-top:8px;font-size:17px;font-weight:900;line-height:1.3}
+    .dom-sub{margin-top:6px;font-size:12px;color:var(--muted)}
+
+    .main-grid{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+    .chart-card{padding:14px 14px 10px}
+    .section-title{font-size:16px;font-weight:900;margin:0}
+    .section-sub{font-size:12px;color:var(--muted);margin-top:4px}
+    .chart-wrap{position:relative;height:360px;margin-top:14px}
+    .chart-wrap.small{height:300px}
+
+    .ranking-card{padding:14px}
+    .ranking-list{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+    .rank-item{
+      display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+      padding:12px;border-radius:14px;border:1px solid rgba(148,163,184,.12);
+      background:linear-gradient(180deg, rgba(15,23,42,.7), rgba(10,18,33,.9));
+    }
+    .rank-num{
+      width:28px;height:28px;border-radius:999px;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,var(--cyan),var(--blue));font-weight:900;font-size:12px
+    }
+    .rank-name{font-weight:800;font-size:13px;line-height:1.25;word-break:break-word}
+    .rank-meta{font-size:11px;color:var(--muted);margin-top:4px}
+    .rank-value{font-size:12px;font-weight:900;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.05)}
+
+    .dual-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+    .triple-grid{display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:14px;margin-bottom:14px}
+
+    .table-card{padding:14px}
+    .table-wrap{margin-top:12px;overflow:auto;max-height:420px;border-radius:14px;border:1px solid rgba(148,163,184,.08)}
+    table{width:100%;border-collapse:collapse;min-width:840px;background:rgba(2,8,23,.45)}
+    th,td{padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.09);font-size:12px;text-align:left;vertical-align:top}
+    thead th{position:sticky;top:0;background:#0b1424;color:#dce8ff;z-index:2;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+    tbody tr:hover{background:rgba(255,255,255,.03)}
+
+    .budget-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+    .budget-box{padding:14px}
+    .budget-controls{display:grid;grid-template-columns:1fr 140px 120px auto;gap:10px;margin-top:12px}
+    .budget-box input,.budget-box button{
+      height:42px;border-radius:12px;border:1px solid rgba(148,163,184,.14);background:#0a1323;color:var(--text);padding:0 12px
+    }
+    .budget-box button{cursor:pointer;background:linear-gradient(135deg,var(--green),var(--green-2));border:none;font-weight:800}
+    .budget-summary{
+      display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px
+    }
+    .mini{padding:14px}
+    .mini .mini-label{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:800;letter-spacing:.06em}
+    .mini .mini-value{margin-top:8px;font-size:24px;font-weight:900}
+
+    .footer-note{margin-top:14px;color:var(--muted);font-size:11px;text-align:right}
+
+    @media (max-width: 1400px){
+      .kpi-grid{grid-template-columns:repeat(3,1fr)}
+      .summary-band,.dominance-band,.insights-grid,.dual-grid,.triple-grid,.budget-grid{grid-template-columns:1fr 1fr}
+      .filters{grid-template-columns:1fr 1fr 1fr 1fr auto auto}
+    }
+    @media (max-width: 980px){
+      .brand-title{font-size:22px}
+      .filters,.insights-grid,.summary-band,.kpi-grid,.dominance-band,.main-grid,.dual-grid,.triple-grid,.budget-grid{grid-template-columns:1fr}
+      .budget-controls{grid-template-columns:1fr 1fr}
+      .chart-wrap{height:320px}
+      .topbar{align-items:flex-start;flex-direction:column}
+      .top-actions{width:100%;justify-content:flex-start}
+    }
+    @media (max-width: 640px){
+      .container{padding:12px}
+      .topbar{padding:14px 12px}
+      .brand-title{font-size:18px}
+      .brand-sub{white-space:normal}
+      .budget-controls{grid-template-columns:1fr}
+      .chart-wrap,.chart-wrap.small{height:280px}
+      .kpi .value,.small-number{font-size:22px}
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand-wrap">
+      <div class="brand-icon">📦</div>
+      <div class="brand-text">
+        <h1 class="brand-title">ERP ÍMPAR — Dashboard Executivo</h1>
+        <div class="brand-sub">Compras • Materiais • Inteligência analítica • Leitura dinâmica do CSV consolidado</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <div class="pill" id="userPill">Usuário</div>
+      <div class="pill" id="lastPill">Base carregando...</div>
+      <button class="btn secondary" id="btnExportFiltros">Exportar filtro</button>
+      <button class="btn" id="btnExportOrc">Exportar orçamento</button>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <div class="panel filters">
+      <div class="field">
+        <label>Ano</label>
+        <select id="fAno"></select>
+      </div>
+      <div class="field">
+        <label>Grupo</label>
+        <select id="fGrupo"></select>
+      </div>
+      <div class="field">
+        <label>Obra</label>
+        <select id="fObra"></select>
+      </div>
+      <div class="field">
+        <label>Buscar material</label>
+        <input id="fBusca" placeholder="Digite parte do nome do material" />
+      </div>
+      <button class="btn" id="btnAplicar">Atualizar dashboard</button>
+      <button class="btn secondary" id="btnLimpar">Limpar filtros</button>
+    </div>
+
+    <div class="insights-grid">
+      <div class="panel insight green">
+        <div class="eyebrow">Resumo executivo 1</div>
+        <div class="headline" id="ins1">Carregando análise...</div>
+      </div>
+      <div class="panel insight blue">
+        <div class="eyebrow">Resumo executivo 2</div>
+        <div class="headline" id="ins2">Carregando análise...</div>
+      </div>
+      <div class="panel insight amber">
+        <div class="eyebrow">Resumo executivo 3</div>
+        <div class="headline" id="ins3">Carregando análise...</div>
+      </div>
+      <div class="panel insight red">
+        <div class="eyebrow">Resumo executivo 4</div>
+        <div class="headline" id="ins4">Carregando análise...</div>
+      </div>
+    </div>
+
+    <div class="summary-band">
+      <div class="panel status-card">
+        <div class="small-kicker">Semáforo gerencial</div>
+        <div style="margin-top:12px"><span class="status-chip" id="statusChip">Analisando base...</span></div>
+        <div class="small-caption" id="statusText" style="margin-top:12px">Aguardando consolidação dos indicadores.</div>
+      </div>
+      <div class="panel small-hero blue">
+        <div class="small-kicker">Participação do grupo líder</div>
+        <div class="small-number" id="heroGrupoPct">-</div>
+        <div class="small-caption" id="heroGrupoTxt">-</div>
+      </div>
+      <div class="panel small-hero green">
+        <div class="small-kicker">Concentração do material líder</div>
+        <div class="small-number" id="heroMatPct">-</div>
+        <div class="small-caption" id="heroMatTxt">-</div>
+      </div>
+      <div class="panel small-hero amber">
+        <div class="small-kicker">Preço médio ponderado</div>
+        <div class="small-number" id="heroPond">-</div>
+        <div class="small-caption">Valor total / quantidade total</div>
+      </div>
+      <div class="panel small-hero red">
+        <div class="small-kicker">Amplitude de preços</div>
+        <div class="small-number" id="heroAmp">-</div>
+        <div class="small-caption" id="heroAmpTxt">-</div>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="panel kpi green">
+        <div class="label">Itens analisados</div>
+        <div class="value" id="kItens">-</div>
+        <div class="sub">Registros na janela filtrada</div>
+      </div>
+      <div class="panel kpi blue">
+        <div class="label">Valor total</div>
+        <div class="value" id="kValor">-</div>
+        <div class="sub">Somatório de ValorTotalItem</div>
+      </div>
+      <div class="panel kpi violet">
+        <div class="label">Quantidade total</div>
+        <div class="value" id="kQtd">-</div>
+        <div class="sub">Somatório de Quantidade</div>
+      </div>
+      <div class="panel kpi amber">
+        <div class="label">Preço médio simples</div>
+        <div class="value" id="kMedia">-</div>
+        <div class="sub">Média de ValorUnitario</div>
+      </div>
+      <div class="panel kpi red">
+        <div class="label">Maior custo</div>
+        <div class="value" id="kMaiorCusto">-</div>
+        <div class="sub" id="kMaiorCustoSub">-</div>
+      </div>
+      <div class="panel kpi green">
+        <div class="label">Maior variação</div>
+        <div class="value" id="kMaiorVar">-</div>
+        <div class="sub" id="kMaiorVarSub">-</div>
+      </div>
+      <div class="panel kpi blue">
+        <div class="label">Grupo mais caro</div>
+        <div class="value" id="kGrupoTop">-</div>
+        <div class="sub" id="kGrupoTopSub">-</div>
+      </div>
+      <div class="panel kpi amber">
+        <div class="label">Material top por valor</div>
+        <div class="value" id="kMatTop">-</div>
+        <div class="sub" id="kMatTopSub">-</div>
+      </div>
+      <div class="panel kpi red">
+        <div class="label">Material crítico</div>
+        <div class="value" id="kCritico">-</div>
+        <div class="sub" id="kCriticoSub">-</div>
+      </div>
+      <div class="panel kpi violet">
+        <div class="label">Obras na seleção</div>
+        <div class="value" id="kObras">-</div>
+        <div class="sub">Cardinalidade do campo Obra</div>
+      </div>
+      <div class="panel kpi green">
+        <div class="label">Preço mínimo</div>
+        <div class="value" id="kMin">-</div>
+        <div class="sub">Menor ValorUnitario</div>
+      </div>
+      <div class="panel kpi red">
+        <div class="label">Preço máximo</div>
+        <div class="value" id="kMax">-</div>
+        <div class="sub">Maior ValorUnitario</div>
+      </div>
+    </div>
+
+    <div class="dominance-band">
+      <div class="panel dom-card">
+        <div class="dom-title">Obra dominante</div>
+        <div class="dom-main" id="domObra">-</div>
+        <div class="dom-sub" id="domObraSub">-</div>
+      </div>
+      <div class="panel dom-card">
+        <div class="dom-title">Material mais utilizado</div>
+        <div class="dom-main" id="domQtd">-</div>
+        <div class="dom-sub" id="domQtdSub">-</div>
+      </div>
+      <div class="panel dom-card">
+        <div class="dom-title">Último preço registrado</div>
+        <div class="dom-main" id="domUltimo">-</div>
+        <div class="dom-sub" id="domUltimoSub">-</div>
+      </div>
+      <div class="panel dom-card">
+        <div class="dom-title">Biblioteca normalizada</div>
+        <div class="dom-main" id="domBiblioteca">-</div>
+        <div class="dom-sub" id="domBibliotecaSub">-</div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <div class="panel chart-card">
+        <div>
+          <h3 class="section-title">Evolução de valor por período</h3>
+          <div class="section-sub">Leitura temporal com base em DataUltimaCompra</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartEvolucao"></canvas></div>
+      </div>
+
+      <div class="panel ranking-card">
+        <div>
+          <h3 class="section-title">Top 10 materiais</h3>
+          <div class="section-sub">Ranking por valor consolidado na seleção</div>
+        </div>
+        <div class="ranking-list" id="rankingTop"></div>
+      </div>
+    </div>
+
+    <div class="dual-grid">
+      <div class="panel chart-card">
+        <h3 class="section-title">Top grupos por valor</h3>
+        <div class="section-sub">Participação consolidada por grupo</div>
+        <div class="chart-wrap small"><canvas id="chartGrupo"></canvas></div>
+      </div>
+      <div class="panel chart-card">
+        <h3 class="section-title">Top materiais por preço unitário</h3>
+        <div class="section-sub">Comparativo dos maiores preços unitários</div>
+        <div class="chart-wrap small"><canvas id="chartPreco"></canvas></div>
+      </div>
+    </div>
+
+    <div class="triple-grid">
+      <div class="panel chart-card">
+        <h3 class="section-title">Top obras por valor</h3>
+        <div class="section-sub">Custo consolidado por obra</div>
+        <div class="chart-wrap small"><canvas id="chartObra"></canvas></div>
+      </div>
+      <div class="panel chart-card">
+        <h3 class="section-title">Custo por grupo</h3>
+        <div class="section-sub">Distribuição percentual consolidada</div>
+        <div class="chart-wrap small"><canvas id="chartGrupoDonut"></canvas></div>
+      </div>
+      <div class="panel chart-card">
+        <h3 class="section-title">Quantidade por grupo</h3>
+        <div class="section-sub">Concentração de consumo</div>
+        <div class="chart-wrap small"><canvas id="chartQtdGrupo"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel table-card" style="margin-bottom:14px">
+      <h3 class="section-title">Inteligência de preços por material</h3>
+      <div class="section-sub">Média, mínimo, máximo, último preço, data e alerta analítico</div>
+      <div class="table-wrap">
+        <table id="tblIntel">
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>Grupo</th>
+              <th>Obra líder</th>
+              <th>Qtd total</th>
+              <th>Preço médio</th>
+              <th>Último preço</th>
+              <th>Data último preço</th>
+              <th>Mínimo</th>
+              <th>Máximo</th>
+              <th>Variação</th>
+              <th>Alerta</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="budget-grid">
+      <div class="panel budget-box">
+        <h3 class="section-title">Montador de orçamento inteligente</h3>
+        <div class="section-sub">Biblioteca normalizada com inclusão manual, preço médio e cálculo automático</div>
+
+        <div class="budget-controls">
+          <input id="orcBusca" placeholder="Buscar material para adicionar" />
+          <input id="orcQtd" type="number" min="1" step="1" value="1" />
+          <input id="orcModo" value="Preço médio" disabled />
+          <button id="btnAddOrc">Adicionar</button>
+        </div>
+
+        <div class="table-wrap" style="margin-top:14px;max-height:360px">
+          <table id="tblOrc">
+            <thead>
+              <tr>
+                <th>Material</th>
+                <th>Grupo</th>
+                <th>Qtd</th>
+                <th>Preço médio</th>
+                <th>Último preço</th>
+                <th>Total</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel mini">
+          <div class="mini-label">Total do orçamento</div>
+          <div class="mini-value" id="orcTotal">R$ 0</div>
+        </div>
+        <div class="budget-summary">
+          <div class="panel mini">
+            <div class="mini-label">Itens adicionados</div>
+            <div class="mini-value" id="orcItens">0</div>
+          </div>
+          <div class="panel mini">
+            <div class="mini-label">Grupos no orçamento</div>
+            <div class="mini-value" id="orcGrupos">0</div>
+          </div>
+        </
