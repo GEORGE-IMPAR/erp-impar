@@ -1812,7 +1812,7 @@ button.adminBtnConfirm:hover {
       <button class="sheetClose" id="m_close" type="button">Fechar</button>
     </div>
 
-    <div class="sheetBlock">
+  //  <div class="sheetBlock">
       <div class="sheetRow"><span>Status</span><b id="m_status">—</b></div>
       <div class="sheetRow"><span>Pagamentos</span><b id="m_pag">—</b></div>
     </div>
@@ -2763,24 +2763,43 @@ function adminApplyCurrentTabToCfg(){
 }
 
 async function adminSave(){
-  if(!ADMIN_CFG) return false;
+  try{
+    const cfg = window.AGAPE_CFG || {};
 
-  adminApplyCurrentTabToCfg();
+    const src = cfg.config || cfg;
 
-  const rr = await fetch(ADMIN_SAVE_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify(ADMIN_CFG)
-  });
-  if(!rr.ok) throw new Error("ADMIN save HTTP " + rr.status);
+    const payload = {
+      config: {
+        loja: src.loja || {},
+        sessao: src.sessao || {},
+        push: src.push || {},
+        convocacao: src.convocacao || {},
+        ui: src.ui || {},
+        irmaos: Array.isArray(src.irmaos) ? src.irmaos : [],
+        produtos: Array.isArray(src.produtos) ? src.produtos : [],
+        fechamento: !!src.fechamento
+      }
+    };
 
-  // ✅ mantém app sincronizado
-  CFG = ADMIN_CFG;
-  window.CFG = CFG;
+    const res = await fetch(ADMIN_SAVE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
 
-  return true;
+    const json = await res.json();
+
+    if(!json.ok){
+      throw new Error(json.err || "falha_salvar");
+    }
+
+    return json;
+  }catch(err){
+    console.error("adminSave erro:", err);
+    throw err;
+  }
 }
-
+  
 function adminBindUI(){
   if(ADMIN_BOUND) return;
   ADMIN_BOUND = true;
