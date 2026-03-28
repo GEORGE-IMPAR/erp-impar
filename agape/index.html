@@ -1698,6 +1698,8 @@ button.adminBtnConfirm:hover {
       <button class="adminTab" id="tabIrmaos" type="button">IRMÃOS</button>
     </div>
 
+    <div id="listaIrmaos" style="margin-top:10px"></div>
+    
     <div class="adminPanel">
       <div class="adminScroll">
 
@@ -1751,7 +1753,7 @@ button.adminBtnConfirm:hover {
         <div id="adminViewIrmaos" class="hidden">
           <div class="aLabel">Status: Não confirmado • Somente sessão • Somente ágape • Sessão e ágape</div>
           <div class="adminTableScroll">
-<table class="adminTable" id="adminTableIrmaos">
+          <table class="adminTable" id="adminTableIrmaos">
             <thead>
               <tr>
                 <th style="width:40px;">#</th>
@@ -1789,6 +1791,24 @@ button.adminBtnConfirm:hover {
   </div>
 </section>
 
+<div id="scr_fechamento" class="screen safe">
+  <div class="wrap">
+    
+    <div class="card" style="
+      background: linear-gradient(135deg,#0f5132,#198754);
+      border:1px solid rgba(255,255,255,.2);
+      color:#fff;
+    ">
+
+      <div style="font-weight:1000;font-size:20px;margin-bottom:10px">
+        Sessão sendo contabilizada
+      </div>
+
+      <div style="opacity:.9">
+        A sessão do dia está sendo fechada e contabilizada.<br>
+        Aguarde a finalização pelo tesoureiro.
+      </div>  
+  
 <!-- MODAL/DETALHE IRMÃO -->
 <div class="adminModal" id="adminModal">
   <div class="adminSheet">
@@ -1947,6 +1967,18 @@ async function loadConfig(){
   window.CFG = CFG;
   return CFG;
 }
+
+function checkFluxoInicial(){
+  if(isConvocacaoAtiva()){
+    showScreen("scr_wait","forward"); // tela sessão fechada
+  } else {
+    showScreen("scr_splash2","forward"); // tela azul
+  }
+}  
+
+await loadConfig();
+checkFluxoInicial();
+  
 window.loadConfig = loadConfig;
 window.normalizeCFG = normalizeCFG;
 
@@ -2069,7 +2101,10 @@ function getConvocacaoObj(){
   return (CFG && (CFG.convocacao || (CFG.sessao && CFG.sessao.convocacao))) || null;
 }
 function getConvocacaoId(){ return String(getConvocacaoObj()?.id || "").trim(); }
-function isConvocacaoAtiva(){ return getConvocacaoObj()?.ativa === true; }
+function isConvocacaoAtiva(){
+  const v = getConvocacaoObj()?.ativa;
+  return v === true || v === 1 || v === "1";
+}
 function isConvocacaoLida(){
   const id = getConvocacaoId();
   if(!id) return false;
@@ -2083,10 +2118,14 @@ function marcarConvocacaoLida(){
 function updateConvocacaoBadge(){
   const badge = document.getElementById("badgeConvocacao");
   if(!badge) return;
-  const show = isConvocacaoAtiva() && !isConvocacaoLida();
-  badge.classList.toggle("hidden", !show);
+
+  const ativa = isConvocacaoAtiva();
+  const lida  = isConvocacaoLida();
+
+  badge.classList.toggle("hidden", !(ativa && !lida));
   badge.textContent = "!";
 }
+
 function updateEnvelopeUI(){ updateConvocacaoBadge(); }
 
 function choosePresenca(val){
@@ -2203,6 +2242,33 @@ function animateTotal(to){
   }, stepMs);
 }
 
+function renderIrmaosADM(){
+  const container = document.getElementById("listaIrmaos");
+  if(!container) return;
+
+  const lista = CFG?.irmaos || [];
+
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-weight:800;margin-bottom:6px">
+      <div>Nome</div>
+      <div>Telefone</div>
+      <div>CIM</div>
+    </div>
+  `;
+
+  lista.forEach(i=>{
+    container.innerHTML += `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1)">
+        <div>${i.nome}</div>
+        <div>${i.telefone}</div>
+        <div>${i.cim}</div>
+      </div>
+    `;
+  });
+}
+
+renderIrmaosAADM()  
+  
 function renderProducts(){
   const list=$("#prodList");
   if(!list) return;
@@ -2482,6 +2548,13 @@ function closePixModal(){
   if(modal) modal.classList.add("hidden");
 }
 
+function fecharSessao(){
+  CFG.sessao.status = "fechada";
+  CFG.convocacao.ativa = false;
+
+  showScreen("scr_fechamento","forward");
+}  
+  
 async function copyText(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado ✅"); }
   catch(_){
