@@ -1,5 +1,5 @@
-/* Ágape PWA Service Worker - v28 (install blindado) */
-const CACHE_NAME = "agape-v28";
+/* Ágape PWA Service Worker - v29 (install blindado) */
+const CACHE_NAME = "agape-v29";
 
 // ✅ deixe aqui APENAS o que é 100% garantido existir
 const CORE_ASSETS = [
