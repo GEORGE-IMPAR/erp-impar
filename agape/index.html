@@ -2171,7 +2171,10 @@ function choosePresenca(val){
 }
 
 function openPresenca(){
+  bindPresencaUI();
+
   if(!CFG?.sessao) return;
+
   marcarConvocacaoLida();
   updateConvocacaoBadge();
 
@@ -2186,7 +2189,6 @@ function openPresenca(){
   showScreen("scr_presenca","forward");
   refreshPresenceUI();
 }
-
 /* ==========================
    BRAND / UI
 ========================== */
@@ -2813,11 +2815,72 @@ function adminBindUI(){
     showScreen("scr_login","back");
   });
 
-  adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
+adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
+  try{
+    if(!ADMIN_CFG || typeof ADMIN_CFG !== "object"){
+      throw new Error("ADMIN_CFG ausente");
+    }
+
+    if(!ADMIN_CFG.sessao || typeof ADMIN_CFG.sessao !== "object") ADMIN_CFG.sessao = {};
+    if(!ADMIN_CFG.convocacao || typeof ADMIN_CFG.convocacao !== "object") ADMIN_CFG.convocacao = {};
+    if(!ADMIN_CFG.push || typeof ADMIN_CFG.push !== "object") ADMIN_CFG.push = {};
+    if(typeof ADMIN_CFG.fechamento === "undefined") ADMIN_CFG.fechamento = false;
+
     const prevConvAtiva = toBool(ADMIN_CFG?.convocacao?.ativa);
     const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
     const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
+    async function sendPush(title, body){
+      const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
+        method:"POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+          title,
+          body,
+          icon: "https://erpimpar.com.br/agape/logo.jpeg",
+          badge: "https://erpimpar.com.br/agape/logo.jpeg",
+          url: location.href
+        })
+      });
+
+      const j = await r.json().catch(()=>null);
+      if(!r.ok || !j || !j.ok){
+        throw new Error("push_send.php falhou");
+      }
+      return j;
+    }
+
+    const textoChamado = String(
+      ADMIN_CFG?.convocacao?.texto ||
+      ADMIN_CFG?.sessao?.chamado ||
+      ""
+    ).trim();
+
+    const querConvocar = (ADMIN_TAB === "sessao" && textoChamado.length > 0);
+    const querAbrirSessao = (String(ADMIN_CFG?.sessao?.status || "").toLowerCase() === "aberta");
+
+    // ==========================
+    // AJUSTA O ESTADO ANTES DE SALVAR
+    // ==========================
+    if(querConvocar){
+      ADMIN_CFG.sessao.status = "fechada";
+      ADMIN_CFG.convocacao.ativa = 1;
+      if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
+      ADMIN_CFG.convocacao.ts = new Date().toISOString();
+      ADMIN_CFG.convocacao.texto = textoChamado;
+
+      // compatibilidade com modelos antigos/novos
+      ADMIN_CFG.push.habilitado = true;
+      ADMIN_CFG.push.ativo = true;
+
+      ADMIN_CFG.fechamento = false;
+    }
+
+    if(querAbrirSessao){
+      ADMIN_CFG.fechamento = false;
+    }
+
+    // 1) salva primeiro a config já correta
     try{
       await adminSave();
       adminToastOk("Salvo no servidor ✅");
@@ -2834,21 +2897,45 @@ function adminBindUI(){
     const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
     const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
 
-    async function sendPush(title, body){
-      await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
-        method:"POST",
-        headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({
-          title,
-          body,
-          icon: "https://erpimpar.com.br/agape/logo.jpeg",
-          badge: "https://erpimpar.com.br/agape/logo.jpeg",
-          url: location.href
-        })
-      });
+    // 2) push da convocação
+    if(virouConvocada){
+      try{
+        const body = (ADMIN_CFG?.convocacao?.texto || ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
+        await sendPush("Sessão convocada", body);
+        adminToastOk("PUSH de convocação enviado ✅");
+      }catch(e){
+        console.warn(e);
+        adminToastErr("Falha ao enviar PUSH de convocação");
+      }
     }
 
-    async function salvarConfigPhp(){
+    // 3) push de sessão aberta
+    if(virouAberta){
+      try{
+        await sendPush("Sessão aberta para consumo", "Consumo liberado no Ágape. Abra o app para registrar seus itens.");
+        adminToastOk("PUSH de sessão aberta enviado ✅");
+      }catch(e){
+        console.warn(e);
+        adminToastErr("Falha ao enviar PUSH de sessão aberta");
+      }
+    }
+
+    // 4) recarrega config oficial
+    try{
+      const cfgReload = await loadConfig();
+      window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+      window.AGAPE_CFG = normalizeConfig(cfgReload);
+    }catch(e){
+      console.warn("[WARN] Falha ao recarregar config:", e);
+    }
+
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Erro ao processar salvamento");
+  }
+});
+   
+  async function salvarConfigPhp(){
       const url = "https://api.erpimpar.com.br/agape/consumo/salvar_config.php";
       const payload = (ADMIN_CFG && ADMIN_CFG.config) ? ADMIN_CFG : { config: ADMIN_CFG };
 
@@ -2904,6 +2991,29 @@ function adminBindUI(){
   });
 }
 
+let PRESENCA_BOUND = false;
+
+function bindPresencaUI(){
+  if (PRESENCA_BOUND) return;
+  PRESENCA_BOUND = true;
+
+  document.getElementById("btnRespSessaoAgape")?.addEventListener("click", () => {
+    setPresencaAns("SESSAO_E_AGAPE");
+  });
+
+  document.getElementById("btnRespSessao")?.addEventListener("click", () => {
+    setPresencaAns("SOMENTE_SESSAO");
+  });
+
+  document.getElementById("btnRespAgape")?.addEventListener("click", () => {
+    setPresencaAns("SOMENTE_AGAPE");
+  });
+
+  document.getElementById("btnRespNaoVou")?.addEventListener("click", () => {
+    setPresencaAns("NAO_VOU");
+  });
+}  
+  
 async function openAdmin(){
   window.__AGAPE_ADMIN_MODE = true;
   try{ if(typeof hideV0==="function") hideV0(); }catch(_){}
