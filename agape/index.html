@@ -2860,9 +2860,9 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
     const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
     async function sendPush(title, body){
-      const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php",{
-        method:"POST",
-        headers: { "Content-Type":"application/json" },
+      const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           body,
@@ -2872,11 +2872,29 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
         })
       });
 
-      const j = await r.json().catch(()=>null);
+      const j = await r.json().catch(() => null);
       if(!r.ok || !j || !j.ok){
         throw new Error("push_send.php falhou");
       }
       return j;
+    }
+
+    async function salvarConfigPhp(){
+      const url = "https://api.erpimpar.com.br/agape/consumo/salvar_config.php";
+      const payload = (ADMIN_CFG && ADMIN_CFG.config) ? ADMIN_CFG : { config: ADMIN_CFG };
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type":"text/plain;charset=UTF-8" },
+        body: JSON.stringify(payload)
+      });
+
+      if(!r.ok){
+        const t = await r.text().catch(() => "");
+        throw new Error("salvar_config.php falhou: HTTP " + r.status + " " + t);
+      }
+
+      return r;
     }
 
     const textoChamado = String(
@@ -2885,12 +2903,9 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
       ""
     ).trim();
 
-    const querConvocar = (ADMIN_TAB === "sessao" && textoChamado.length > 0);
+    const querConvocar    = (ADMIN_TAB === "sessao" && textoChamado.length > 0);
     const querAbrirSessao = (String(ADMIN_CFG?.sessao?.status || "").toLowerCase() === "aberta");
 
-    // ==========================
-    // AJUSTA O ESTADO ANTES DE SALVAR
-    // ==========================
     if(querConvocar){
       ADMIN_CFG.sessao.status = "fechada";
       ADMIN_CFG.convocacao.ativa = 1;
@@ -2898,10 +2913,8 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
       ADMIN_CFG.convocacao.ts = new Date().toISOString();
       ADMIN_CFG.convocacao.texto = textoChamado;
 
-      // compatibilidade com modelos antigos/novos
       ADMIN_CFG.push.habilitado = true;
       ADMIN_CFG.push.ativo = true;
-
       ADMIN_CFG.fechamento = false;
     }
 
@@ -2909,7 +2922,6 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
       ADMIN_CFG.fechamento = false;
     }
 
-    // 1) salva primeiro a config já correta
     try{
       await adminSave();
       adminToastOk("Salvo no servidor ✅");
@@ -2926,19 +2938,25 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
     const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
     const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
 
-    // 2) push da convocação
     if(virouConvocada){
       try{
         const body = (ADMIN_CFG?.convocacao?.texto || ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
         await sendPush("Sessão convocada", body);
         adminToastOk("PUSH de convocação enviado ✅");
+
+        if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
+        ADMIN_CFG.convocacao.ativa = 1;
+        if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
+        ADMIN_CFG.convocacao.ts = new Date().toISOString();
+
+        await salvarConfigPhp();
+        adminToastOk("Config gravado (convocação=1) ✅");
       }catch(e){
         console.warn(e);
-        adminToastErr("Falha ao enviar PUSH de convocação");
+        adminToastErr("Falha no PUSH e/ou salvar_config.php");
       }
     }
 
-    // 3) push de sessão aberta
     if(virouAberta){
       try{
         await sendPush("Sessão aberta para consumo", "Consumo liberado no Ágape. Abra o app para registrar seus itens.");
@@ -2949,21 +2967,22 @@ adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
       }
     }
 
-    // 4) recarrega config oficial
     try{
       const cfgReload = await loadConfig();
       window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
-      window.AGAPE_CFG = normalizeConfig(cfgReload);
+      window.CFG = normalizeConfig(cfgReload);
     }catch(e){
       console.warn("[WARN] Falha ao recarregar config:", e);
     }
+
+    aplicarFluxoDoSistema?.();
 
   }catch(e){
     console.warn(e);
     adminToastErr("Erro ao processar salvamento");
   }
 });
-   
+  
   async function salvarConfigPhp(){
       const url = "https://api.erpimpar.com.br/agape/consumo/salvar_config.php";
       const payload = (ADMIN_CFG && ADMIN_CFG.config) ? ADMIN_CFG : { config: ADMIN_CFG };
