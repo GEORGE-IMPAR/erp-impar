@@ -1885,7 +1885,53 @@ button.adminBtnConfirm:hover {
   </div>
 </div>
 </section>
- 
+ <div style="margin-top:20px; padding:15px; border-radius:12px; background:#111; color:#fff">
+
+  <h3>Controle de Estágio</h3>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+
+    <label>Sessão</label>
+    <select id="adm_sessao">
+      <option value="fechada">Fechada</option>
+      <option value="aberta">Aberta</option>
+    </select>
+
+    <label>Convocação</label>
+    <select id="adm_conv">
+      <option value="false">False</option>
+      <option value="true">True</option>
+    </select>
+
+    <label>Push</label>
+    <select id="adm_push">
+      <option value="false">False</option>
+      <option value="true">True</option>
+    </select>
+
+    <label>Fechamento</label>
+    <select id="adm_fech">
+      <option value="false">False</option>
+      <option value="true">True</option>
+    </select>
+
+  </div>
+
+  <div style="margin-top:15px;">
+    <button onclick="setStage(1)">Stage 1</button>
+    <button onclick="setStage(2)">Stage 2</button>
+    <button onclick="setStage(3)">Stage 3</button>
+    <button onclick="setStage(4)">Stage 4</button>
+  </div>
+
+  <div style="margin-top:15px;">
+    <button onclick="salvarEstado()">Salvar Estado</button>
+    <button onclick="acaoConvocar(APP.config)">Convocar</button>
+    <button onclick="acaoAbrirSessao(APP.config)">Abrir Sessão</button>
+    <button onclick="acaoFecharSessao(APP.config)">Fechar Sessão</button>
+  </div>
+
+</div>
 <script>
 /* ==========================
    CONFIG / HELPERS
@@ -3557,7 +3603,164 @@ function getImg(cfg, produto){
   const base = cfg.assets?.produtos_path || "./";
   return base + produto.img;
 }
-  
+
+
+  // ==========================
+// 🔥 BLOCO FINAL ÁGAPE (SEGURO)
+// ==========================
+
+// ==========================
+// MOTOR DE ESTÁGIO
+// ==========================
+function getStage(cfg){
+  const s = cfg.sessao?.status;
+  const conv = !!cfg.convocacao?.ativa;
+  const push = !!cfg.push?.ativo || !!cfg.push?.habilitado;
+  const fech = !!cfg.fechamento;
+
+  if(s === "fechada" && !conv && !push && fech) return 4;
+  if(s === "aberta" && conv && push && !fech) return 3;
+  if(s === "fechada" && conv && push && !fech) return 2;
+
+  return 1;
+}
+
+// ==========================
+// PUSH
+// ==========================
+async function sendPush(titulo, mensagem){
+  try{
+    await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titulo, mensagem })
+    });
+  }catch(e){
+    console.log("Erro push:", e);
+  }
+}
+
+// ==========================
+// AÇÕES
+// ==========================
+
+// 🔴 CONVOCAR
+window.acaoConvocar = async function(cfg){
+  cfg.sessao.status = "fechada";
+  cfg.convocacao.ativa = true;
+  cfg.push.ativo = true;
+  cfg.fechamento = false;
+
+  localStorage.removeItem("conv_lida");
+
+  await salvarConfig(cfg);
+  await sendPush("Sessão convocada", cfg.sessao?.chamado || "Confirme presença");
+
+  location.reload();
+}
+
+// 🟢 ABRIR SESSÃO
+window.acaoAbrirSessao = async function(cfg){
+  cfg.sessao.status = "aberta";
+  cfg.convocacao.ativa = true;
+  cfg.push.ativo = true;
+  cfg.fechamento = false;
+
+  await salvarConfig(cfg);
+  await sendPush("Sessão aberta para consumo", "Já pode consumir");
+
+  location.reload();
+}
+
+// ⚪ FECHAR SESSÃO
+window.acaoFecharSessao = async function(cfg){
+  cfg.sessao.status = "fechada";
+  cfg.convocacao.ativa = false;
+  cfg.push.ativo = false;
+  cfg.fechamento = true;
+
+  await salvarConfig(cfg);
+
+  location.reload();
+}
+
+// ==========================
+// BADGE
+// ==========================
+function atualizarBadge(cfg){
+  const badge = document.querySelector(".msgBadge");
+  if(!badge) return;
+
+  const conv = cfg.convocacao?.ativa;
+  const lida = localStorage.getItem("conv_lida") === "1";
+
+  if(conv && !lida){
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+// ==========================
+// ADM CONTROLE
+// ==========================
+function setStage(n){
+  const cfg = APP.config;
+
+  if(n === 1){
+    cfg.sessao.status = "fechada";
+    cfg.convocacao.ativa = false;
+    cfg.push.ativo = false;
+    cfg.fechamento = false;
+  }
+
+  if(n === 2){
+    cfg.sessao.status = "fechada";
+    cfg.convocacao.ativa = true;
+    cfg.push.ativo = true;
+    cfg.fechamento = false;
+  }
+
+  if(n === 3){
+    cfg.sessao.status = "aberta";
+    cfg.convocacao.ativa = true;
+    cfg.push.ativo = true;
+    cfg.fechamento = false;
+  }
+
+  if(n === 4){
+    cfg.sessao.status = "fechada";
+    cfg.convocacao.ativa = false;
+    cfg.push.ativo = false;
+    cfg.fechamento = true;
+  }
+
+  aplicarEstado();
+}
+
+// ==========================
+// SALVAR ADM
+// ==========================
+async function salvarEstado(){
+  const cfg = APP.config;
+
+  cfg.sessao.status = document.getElementById("adm_sessao").value;
+  cfg.convocacao.ativa = document.getElementById("adm_conv").value === "true";
+  cfg.push.ativo = document.getElementById("adm_push").value === "true";
+  cfg.fechamento = document.getElementById("adm_fech").value === "true";
+
+  await salvarConfig(cfg);
+
+  alert("Estado salvo!");
+}
+
+// ==========================
+// LOGO PRODUTO
+// ==========================
+function getImg(cfg, produto){
+  const base = cfg.assets?.produtos_path || "./";
+  return base + produto.img;
+}
 </script>
 </body>
 </html>
