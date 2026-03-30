@@ -3473,6 +3473,91 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
   
 });
+
+// ==========================
+// 🔥 MOTOR FORÇADO DO ÁGAPE
+// ==========================
+
+function getStage(cfg){
+  const s = cfg.sessao?.status;
+  const conv = !!cfg.convocacao?.ativa;
+  const push = !!cfg.push?.ativo || !!cfg.push?.habilitado;
+  const fech = !!cfg.fechamento;
+
+  if(s === "fechada" && !conv && !push && fech) return 4;
+  if(s === "aberta" && conv && push && !fech) return 3;
+  if(s === "fechada" && conv && push && !fech) return 2;
+
+  return 1;
+}
+
+// 🔴 CONVOCAR
+window.acaoConvocar = async function(cfg){
+  cfg.sessao.status = "fechada";
+  cfg.convocacao.ativa = true;
+  cfg.push.ativo = true;
+  cfg.fechamento = false;
+
+  localStorage.removeItem("conv_lida");
+
+  await salvarConfig(cfg);
+
+  if(typeof sendPush === "function"){
+    await sendPush("Sessão convocada", cfg.sessao?.chamado || "Confirme presença");
+  }
+
+  location.reload();
+}
+
+// 🟢 ABRIR SESSÃO
+window.acaoAbrirSessao = async function(cfg){
+  cfg.sessao.status = "aberta";
+  cfg.convocacao.ativa = true;
+  cfg.push.ativo = true;
+  cfg.fechamento = false;
+
+  await salvarConfig(cfg);
+
+  if(typeof sendPush === "function"){
+    await sendPush("Sessão aberta para consumo", "Já pode consumir");
+  }
+
+  location.reload();
+}
+
+// ⚪ FECHAR SESSÃO
+window.acaoFecharSessao = async function(cfg){
+  cfg.sessao.status = "fechada";
+  cfg.convocacao.ativa = false;
+  cfg.push.ativo = false;
+  cfg.fechamento = true;
+
+  await salvarConfig(cfg);
+
+  location.reload();
+}
+
+// 🔴 BADGE
+function atualizarBadge(cfg){
+  const badge = document.querySelector(".msgBadge");
+  if(!badge) return;
+
+  const conv = cfg.convocacao?.ativa;
+  const lida = localStorage.getItem("conv_lida") === "1";
+
+  if(conv && !lida){
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+// 🖼️ LOGO
+function getImg(cfg, produto){
+  const base = cfg.assets?.produtos_path || "./";
+  return base + produto.img;
+}
+  
 </script>
 </body>
 </html>
