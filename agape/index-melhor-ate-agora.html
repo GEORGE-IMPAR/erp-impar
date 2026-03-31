@@ -1997,22 +1997,44 @@ function getStageFromCFG(){
   return "SEM_SESSAO";
 }
 
+let __goingOpenedSession = false;
+
 function goToOpenedSession(){
-  const u = getUser();
-  if(!u){
-    showScreen("scr_login","forward");
-    return;
+  if(__goingOpenedSession) return;
+  __goingOpenedSession = true;
+
+  try{
+    const cfg = window.CFG || window.ADMIN_CFG || {};
+    const status = String(cfg?.sessao?.status || "").toLowerCase();
+    const fechamento = !!cfg?.fechamento;
+
+    // usuário precisa existir para entrar no fluxo interno
+    const user = getUser();
+    if(!user){
+      if(typeof showScreen === "function") showScreen("scr_login");
+      return;
+    }
+
+    if(status === "aberta" && !fechamento){
+      if(typeof showScreen === "function") showScreen("scr_consumo");
+      return;
+    }
+
+    if(status === "fechada" && fechamento){
+      if(typeof showScreen === "function") showScreen("scr_fechamento");
+      return;
+    }
+
+    if(status === "fechada"){
+      if(typeof showScreen === "function") showScreen("scr_wait");
+      return;
+    }
+
+    if(typeof showScreen === "function") showScreen("scr_wait");
+  } finally {
+    setTimeout(() => { __goingOpenedSession = false; }, 0);
   }
-
-  applyRememberedUser();
-  renderProducts();
-  lastTotal = 0;
-  updateTotal();
-  initCashFromConfig();
-  renderCash();
-  showScreen("scr_consumo","forward");
 }
-
 function routeFromCFG(){
   const u = getUser();
 
@@ -2064,8 +2086,20 @@ function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}c
 function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
 function clearCart(){ localStorage.removeItem(LS_CART); }
 
-function getUser(){ try { return JSON.parse(localStorage.getItem(LS_USER) || "null"); } catch(e){ return null; } }
-function setUser(u){ localStorage.setItem(LS_USER, JSON.stringify(u)); }
+function getUser(){
+  try{
+    return JSON.parse(localStorage.getItem(LS_USER) || "null");
+  }catch(_){
+    return null;
+  }
+}
+function setUser(u){
+  localStorage.setItem(LS_USER, JSON.stringify(u));
+}
+
+function clearUser(){
+  localStorage.removeItem(LS_USER);
+}
 
 function getCashFromCFG(){
   const n = Number(CFG?.sessao?.caixa_inicial);
