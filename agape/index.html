@@ -2102,25 +2102,44 @@ function getStageFromCFG(){
   return "SEM_SESSAO";
 }
 
+let __goingOpenedSession = false;
+
 function goToOpenedSession(){
-  const u = getUser();
-  if(!u){
-    try{ localStorage.removeItem(LS_USER); }catch(_){}
-    const telInp = document.getElementById("inpTel"); if(telInp) telInp.value = "";
-    const cimInp = document.getElementById("inpCIM"); if(cimInp) cimInp.value = "";
-    showScreen("scr_login","forward");
-    return;
+  if(__goingOpenedSession) return;
+  __goingOpenedSession = true;
+
+  try{
+    const cfg = window.CFG || window.ADMIN_CFG || {};
+    const status = String(cfg?.sessao?.status || "").toLowerCase();
+    const fechamento = !!cfg?.fechamento;
+
+    // usuário precisa existir para entrar no fluxo interno
+    const user = getUser();
+    if(!user){
+      if(typeof showScreen === "function") showScreen("scr_login");
+      return;
+    }
+
+    if(status === "aberta" && !fechamento){
+      if(typeof showScreen === "function") showScreen("scr_consumo");
+      return;
+    }
+
+    if(status === "fechada" && fechamento){
+      if(typeof showScreen === "function") showScreen("scr_fechamento");
+      return;
+    }
+
+    if(status === "fechada"){
+      if(typeof showScreen === "function") showScreen("scr_wait");
+      return;
+    }
+
+    if(typeof showScreen === "function") showScreen("scr_wait");
+  } finally {
+    setTimeout(() => { __goingOpenedSession = false; }, 0);
   }
-
-  applyRememberedUser();
-  renderProducts();
-  lastTotal = 0;
-  updateTotal();
-  initCashFromConfig();
-  renderCash();
-  showScreen("scr_consumo","forward");
 }
-
 function routeFromCFG(){
   const u = getUser();
 
