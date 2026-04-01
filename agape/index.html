@@ -2423,39 +2423,56 @@ function animateTotal(to){
     window.CFG.produtos = Array.isArray(root.produtos) ? root.produtos : [];
   }
 })
-function renderProducts(){
-  const list=$("#prodList");
-  if(!list) return;
-  list.innerHTML="";
-  const produtos=Array.isArray(CFG?.produtos)?CFG.produtos:[];
-  const cart=getCart();
 
-  if(produtos.length===0){
-    list.innerHTML='<div style="color:rgba(255,255,255,.65)">Sem produtos no JSON.</div>';
-    return;
-  }
+window.renderProdutos = function(){
+  const cfg = window.CFG?.config || window.CFG || {};
+  const produtos = Array.isArray(cfg.produtos) ? cfg.produtos : [];
+  const box = document.querySelector(".prodScroll");
+  if (!box) return;
 
-  for(const p of produtos){
-    const q=Number(cart[p.id]||0);
-    const row=document.createElement("div");
-    row.className="prodRow";
-    row.innerHTML=`
-      <div class="pIcon"><img src="${p.icon || './assets/icon-192.png'}" alt=""></div>
-      <div class="pMid">
-        <div class="pName">${p.nome||"Produto"}</div>
-        <div class="pDesc">${p.desc||""}</div>
-        <div class="pPrice">${fmtBRL(Number(p.preco||0))}</div>
-      </div>
-      <div class="qtyWrap">
-        <button class="qtyBtn" data-act="dec" data-id="${p.id}">−</button>
-        <div class="qty" id="qty_${p.id}">${q}</div>
-        <button class="qtyBtn" data-act="inc" data-id="${p.id}">+</button>
+  const base = cfg.assets?.produtos_path || "./";
+
+  box.innerHTML = produtos.map((p, i) => {
+    const img = base + (p.img || "");
+    const id = p.id ?? (i + 1);
+    const qtd = Number((window.__CARRINHO__ || {})[id] || 0);
+
+    return `
+      <div class="prodRow" data-id="${id}">
+        <div class="pIcon">
+          <img src="${img}" alt="${p.nome}" onerror="this.style.display='none'">
+        </div>
+        <div class="pMid">
+          <div class="pName">${p.nome || ""}</div>
+          <div class="pDesc">${p.desc || ""}</div>
+          <div class="pPrice">R$ ${Number(p.preco || 0).toFixed(2)}</div>
+        </div>
+        <div class="qtyWrap">
+          <button class="qtyBtn" onclick="window.__menosProduto(${id})">−</button>
+          <div class="qty" id="qty-${id}">${qtd}</div>
+          <button class="qtyBtn" onclick="window.__maisProduto(${id})">+</button>
+        </div>
       </div>
     `;
-    list.appendChild(row);
-  }
-  updateTotal();
-}
+  }).join("");
+};
+
+window.__CARRINHO__ = window.__CARRINHO__ || {};
+
+window.__maisProduto = function(id){
+  window.__CARRINHO__[id] = (window.__CARRINHO__[id] || 0) + 1;
+  const el = document.getElementById("qty-" + id);
+  if (el) el.textContent = window.__CARRINHO__[id];
+};
+
+window.__menosProduto = function(id){
+  window.__CARRINHO__[id] = Math.max(0, (window.__CARRINHO__[id] || 0) - 1);
+  const el = document.getElementById("qty-" + id);
+  if (el) el.textContent = window.__CARRINHO__[id];
+};
+
+// chama automaticamente
+setTimeout(() => window.renderProdutos(), 300);
 
 function updateTotal(){
   const cart=getCart();
