@@ -2217,16 +2217,12 @@ function marcarConvocacaoLida(){
   if(!id) return;
   localStorage.setItem(LS_CONVOCACAO_READ, id);
 }
+  
 function updateConvocacaoBadge(){
   const badge = document.getElementById("badgeConvocacao");
   if(!badge) return;
 
-  const ROOT_CFG = CFG?.config || CFG || {};
-  const ativa = !!ROOT_CFG?.convocacao?.ativa;
-  const lida = localStorage.getItem("conv_lida") === "1";
-
-  const show = ativa && !lida;
-
+  const show = isConvocacaoAtiva() && localStorage.getItem("conv_lida") !== "1";
   badge.classList.toggle("hidden", !show);
   badge.textContent = "!";
 }
@@ -2249,7 +2245,6 @@ async function choosePresenca(val){
     showScreen("scr_wait","back");
   }, 3000);
 }
-
 
 function showPresSuccess(){
   const ov = document.getElementById("presSuccess");
@@ -2276,7 +2271,7 @@ function startWaitPresencaFX(){
   const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 
   const applyOnce = ()=>{
-    const ans = getPresencaAns() || "";
+    const ans = String(getPresencaAns() || "").trim();
     const label =
       ans === "SESSAO_E_AGAPE" ? "SESSÃO E ÁGAPE" :
       ans === "SOMENTE_SESSAO" ? "SOMENTE SESSÃO" :
@@ -2300,17 +2295,31 @@ function startWaitPresencaFX(){
 function updatePresenceConfirmedWait(){
   const el = document.getElementById("waitPresencaOk");
   if(!el) return;
-  const ans = getPresencaAns() || "";
-  el.classList.toggle("hidden", !ans);
-  if(ans) startWaitPresencaFX();
+
+  const ans = String(getPresencaAns() || "").trim();
+  const confirmado =
+    ans === "SESSAO_E_AGAPE" ||
+    ans === "SOMENTE_SESSAO" ||
+    ans === "SOMENTE_AGAPE" ||
+    ans === "NAO_VOU";
+
+  el.classList.toggle("hidden", !confirmado);
+
+  if(confirmado){
+    startWaitPresencaFX();
+  }else if(_waitPresFxTimer){
+    clearInterval(_waitPresFxTimer);
+    _waitPresFxTimer = null;
+  }
 }
 
 function openPresenca(){
-  if(!CFG?.sessao) return;
+  const ROOT_CFG = CFG?.config || CFG || {};
+  if(!ROOT_CFG?.sessao) return;
 
   const elTxt = document.getElementById("presTexto");
   if(elTxt){
-    elTxt.textContent = CFG.sessao.chamado || CFG?.convocacao?.texto || "Mensagem não configurada.";
+    elTxt.textContent = ROOT_CFG.sessao.chamado || ROOT_CFG?.convocacao?.texto || "Mensagem não configurada.";
   }
 
   const b1 = document.getElementById("btnRespSessaoAgape");
@@ -2323,15 +2332,11 @@ function openPresenca(){
   if(b3) b3.onclick = () => choosePresenca("SOMENTE_AGAPE");
   if(b4) b4.onclick = () => choosePresenca("NAO_VOU");
 
-  marcarConvocacaoLida();
-  updateConvocacaoBadge();
-
-  localStorage.setItem(LS_PRES_LIDA, "1");
-  updateEnvelopeUI();
-
   showScreen("scr_presenca","forward");
   refreshPresenceUI();
   updatePresenceConfirmedWait();
+  updateEnvelopeUI();
+  updateConvocacaoBadge();
 }
   /* ==========================
    BRAND / UI
@@ -3012,25 +3017,25 @@ function adminBindUI(){
       const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
       const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
-async function sendPush(title, body){
-  const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
-    method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify({
-      title,
-      body,
-      icon: "https://erpimpar.com.br/agape/logo.jpeg",
-      badge: "https://erpimpar.com.br/agape/logo.jpeg",
-      url: location.href
-    })
-  });
+      async function sendPush(title, body){
+        const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({
+            title,
+            body,
+            icon: "https://erpimpar.com.br/agape/logo.jpeg",
+            badge: "https://erpimpar.com.br/agape/logo.jpeg",
+            url: location.href
+          })
+        });
 
-  const j = await r.json().catch(()=>null);
-  if(!r.ok || !j || !j.ok){
-    throw new Error("push_send.php falhou");
-  }
-  return j;
-}
+        const j = await r.json().catch(()=>null);
+        if(!r.ok || !j || !j.ok){
+          throw new Error("push_send.php falhou");
+        }
+        return j;
+      }
 
 const textoChamado = String(
   ADMIN_CFG?.convocacao?.texto ||
@@ -3040,19 +3045,15 @@ const textoChamado = String(
 
 const statusAtual = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
-// IMPORTANTÍSSIMO:
-// convocar só quando a sessão está fechada E a convocação está ativa
 const querConvocar =
   ADMIN_TAB === "sessao" &&
   statusAtual === "fechada" &&
   !!ADMIN_CFG?.convocacao?.ativa;
 
-// abrir sessão = status aberta
 const querAbrirSessao =
   ADMIN_TAB === "sessao" &&
   statusAtual === "aberta";
 
-// fechar sessão = status fechada, sem convocação e sem push
 const querFecharSessao =
   ADMIN_TAB === "sessao" &&
   statusAtual === "fechada" &&
@@ -3060,44 +3061,7 @@ const querFecharSessao =
   !ADMIN_CFG?.push?.ativo &&
   !ADMIN_CFG?.push?.habilitado;
 
-if(querConvocar){
-  ADMIN_CFG.sessao.status = "fechada";
-  ADMIN_CFG.convocacao.ativa = 1;
-  if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
-  ADMIN_CFG.convocacao.ts = new Date().toISOString();
-  ADMIN_CFG.convocacao.texto = textoChamado;
-
-  ADMIN_CFG.push.habilitado = true;
-  ADMIN_CFG.push.ativo = true;
-  ADMIN_CFG.fechamento = false;
-}
-
-if(querAbrirSessao){
-  ADMIN_CFG.sessao.status = "aberta";
-  ADMIN_CFG.convocacao.ativa = 1;
-  ADMIN_CFG.push.habilitado = true;
-  ADMIN_CFG.push.ativo = true;
-  ADMIN_CFG.fechamento = false;
-}
-
-if(querFecharSessao){
-  ADMIN_CFG.sessao.status = "fechada";
-  ADMIN_CFG.convocacao.ativa = 0;
-  ADMIN_CFG.push.habilitado = false;
-  ADMIN_CFG.push.ativo = false;
-  ADMIN_CFG.fechamento = true;
-}
-
-try{
-  await adminSave();
-  adminToastOk("Salvo no servidor ✅");
-}catch(e){
-  console.warn(e);
-  adminToastErr("Falha ao salvar no servidor");
-  return;
-}
-
-// PUSH DA CONVOCAÇÃO: só aqui
+// 1 -> 2
 if(querConvocar){
   try{
     const body = (ADMIN_CFG?.convocacao?.texto || ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
@@ -3105,19 +3069,16 @@ if(querConvocar){
     adminToastOk("PUSH de convocação enviado ✅");
 
     localStorage.removeItem("conv_lida");
-
     setTimeout(() => {
       updateEnvelopeUI?.();
       updateConvocacaoBadge?.();
     }, 300);
-
   }catch(e){
     console.warn(e);
     adminToastErr("Falha ao enviar PUSH de convocação");
   }
 }
 
-// PUSH DE ABERTURA: só aqui
 if(querAbrirSessao){
   try{
     await sendPush(
@@ -3131,35 +3092,26 @@ if(querAbrirSessao){
   }
 }
 
-try{
-  const cfgReload = await loadConfig();
-  window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
-  window.CFG = normalizeCFG(cfgReload);
-}catch(e){
-  console.warn("[WARN] Falha ao recarregar config:", e);
-}
+const cfgReload = await loadConfig();
+window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+window.CFG = normalizeCFG(cfgReload);
 
-try{
-  applyBrand?.();
-  updateConvocacaoBadge?.();
-  initCashFromConfig?.();
-  renderCash?.();
-} catch(_) {}
+applyBrand?.();
+updateConvocacaoBadge?.();
+initCashFromConfig?.();
+renderCash?.();
 
 if(typeof aplicarFluxoDoSistema === "function"){
   aplicarFluxoDoSistema();
 }
-
     }catch(e){
       console.warn(e);
       adminToastErr("Erro ao processar salvamento");
     }
+  });
+}  
 
-  }); // fecha click
-
-} // fecha adminBindUI
-  
-  async function openAdmin(){
+async function openAdmin(){
   window.__AGAPE_ADMIN_MODE = true;
   try{ if(typeof hideV0==="function") hideV0(); }catch(_){}
 
@@ -3496,6 +3448,8 @@ async function v0Tick(){
     // stage V2: só garante V0 fora e segue fluxo normal do app
   }catch(_){}
 }
+
+  
 
 document.addEventListener("DOMContentLoaded", ()=>{
   // OK: fecha (no desktop tenta fechar aba; no PWA só esconde)
