@@ -3012,47 +3012,64 @@ function adminBindUI(){
       const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
       const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
-      async function sendPush(title, body){
-        const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({
-            title,
-            body,
-            icon: "https://erpimpar.com.br/agape/logo.jpeg",
-            badge: "https://erpimpar.com.br/agape/logo.jpeg",
-            url: location.href
-          })
-        });
+async function sendPush(title, body){
+  const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({
+      title,
+      body,
+      icon: "https://erpimpar.com.br/agape/logo.jpeg",
+      badge: "https://erpimpar.com.br/agape/logo.jpeg",
+      url: location.href
+    })
+  });
 
-        const j = await r.json().catch(()=>null);
-        if(!r.ok || !j || !j.ok){
-          throw new Error("push_send.php falhou");
-        }
-        return j;
-      }
+  const j = await r.json().catch(()=>null);
+  if(!r.ok || !j || !j.ok){
+    throw new Error("push_send.php falhou");
+  }
+  return j;
+}
 
-      const textoChamado = String(
-        ADMIN_CFG?.convocacao?.texto ||
-        ADMIN_CFG?.sessao?.chamado ||
-        ""
-      ).trim();
+const textoChamado = String(
+  ADMIN_CFG?.convocacao?.texto ||
+  ADMIN_CFG?.sessao?.chamado ||
+  ""
+).trim();
 
-      const statusAtual = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
-      const querConvocar    = (ADMIN_TAB === "sessao" && textoChamado.length > 0);
-      const querAbrirSessao = (statusAtual === "aberta");
-      const querFecharSessao = (statusAtual === "fechada" && !querConvocar);
+const statusAtual = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
-      if(querConvocar){
-        ADMIN_CFG.sessao.status = "fechada";
-        ADMIN_CFG.convocacao.ativa = 1;
-        if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
-        ADMIN_CFG.convocacao.ts = new Date().toISOString();
-        ADMIN_CFG.convocacao.texto = textoChamado;
+// IMPORTANTÍSSIMO:
+// convocar só quando a sessão está fechada E a convocação está ativa
+const querConvocar =
+  ADMIN_TAB === "sessao" &&
+  statusAtual === "fechada" &&
+  !!ADMIN_CFG?.convocacao?.ativa;
 
-ADMIN_CFG.push.habilitado = true; 
-ADMIN_CFG.push.ativo = true; 
-ADMIN_CFG.fechamento = false;
+// abrir sessão = status aberta
+const querAbrirSessao =
+  ADMIN_TAB === "sessao" &&
+  statusAtual === "aberta";
+
+// fechar sessão = status fechada, sem convocação e sem push
+const querFecharSessao =
+  ADMIN_TAB === "sessao" &&
+  statusAtual === "fechada" &&
+  !ADMIN_CFG?.convocacao?.ativa &&
+  !ADMIN_CFG?.push?.ativo &&
+  !ADMIN_CFG?.push?.habilitado;
+
+if(querConvocar){
+  ADMIN_CFG.sessao.status = "fechada";
+  ADMIN_CFG.convocacao.ativa = 1;
+  if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
+  ADMIN_CFG.convocacao.ts = new Date().toISOString();
+  ADMIN_CFG.convocacao.texto = textoChamado;
+
+  ADMIN_CFG.push.habilitado = true;
+  ADMIN_CFG.push.ativo = true;
+  ADMIN_CFG.fechamento = false;
 }
 
 if(querAbrirSessao){
@@ -3061,25 +3078,14 @@ if(querAbrirSessao){
   ADMIN_CFG.push.habilitado = true;
   ADMIN_CFG.push.ativo = true;
   ADMIN_CFG.fechamento = false;
-
-  try{
-    await sendPush(
-      "Sessão aberta para consumo",
-      "Consumo liberado no Ágape. Abra o app para registrar seus itens."
-    );
-    adminToastOk("PUSH de sessão aberta enviado ✅");
-  }catch(e){
-    console.warn(e);
-    adminToastErr("Falha ao enviar PUSH de sessão aberta");
-  }
 }
-      
+
 if(querFecharSessao){
-  ADMIN_CFG.fechamento = true;
+  ADMIN_CFG.sessao.status = "fechada";
   ADMIN_CFG.convocacao.ativa = 0;
   ADMIN_CFG.push.habilitado = false;
   ADMIN_CFG.push.ativo = false;
- 
+  ADMIN_CFG.fechamento = true;
 }
 
 try{
@@ -3090,31 +3096,14 @@ try{
   adminToastErr("Falha ao salvar no servidor");
   return;
 }
-      const nowConvAtiva = toBool(ADMIN_CFG?.convocacao?.ativa);
-      const nowConvId    = String(ADMIN_CFG?.convocacao?.id || "");
-      const nowStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
 
-      const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
-      const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
-
-      if(virouConvocada){
-        try{
-          const body = (ADMIN_CFG?.convocacao?.texto || ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
-          await sendPush("Sessão convocada", body);
-          adminToastOk("PUSH de convocação enviado ✅");
-        }catch(e){
-          console.warn(e);
-          adminToastErr("Falha ao enviar PUSH de convocação");
-        }
-      }
-
-if(virouConvocada){
+// PUSH DA CONVOCAÇÃO: só aqui
+if(querConvocar){
   try{
     const body = (ADMIN_CFG?.convocacao?.texto || ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
     await sendPush("Sessão convocada", body);
     adminToastOk("PUSH de convocação enviado ✅");
 
-    // 🔴 nova convocação = reseta leitura da bolinha
     localStorage.removeItem("conv_lida");
 
     setTimeout(() => {
@@ -3127,32 +3116,39 @@ if(virouConvocada){
     adminToastErr("Falha ao enviar PUSH de convocação");
   }
 }
-      try{
-        const cfgReload = await loadConfig();
-        window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
-        window.CFG = normalizeCFG(cfgReload);
-      }catch(e){
-        console.warn("[WARN] Falha ao recarregar config:", e);
-      }
 
-      try{
-        applyBrand?.();
-        updateConvocacaoBadge?.();
-        initCashFromConfig?.();
-        renderCash?.();
-      }catch(_){}
+// PUSH DE ABERTURA: só aqui
+if(querAbrirSessao){
+  try{
+    await sendPush(
+      "Sessão aberta para consumo",
+      "Consumo liberado no Ágape. Abra o app para registrar seus itens."
+    );
+    adminToastOk("PUSH de sessão aberta enviado ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Falha ao enviar PUSH de sessão aberta");
+  }
+}
 
-      if(typeof aplicarFluxoDoSistema === "function"){
-        aplicarFluxoDoSistema();
-      }
+try{
+  const cfgReload = await loadConfig();
+  window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+  window.CFG = normalizeCFG(cfgReload);
+}catch(e){
+  console.warn("[WARN] Falha ao recarregar config:", e);
+}
 
-    }catch(e){
-      console.warn(e);
-      adminToastErr("Erro ao processar salvamento");
-    }
-  });
-}  
+try{
+  applyBrand?.();
+  updateConvocacaoBadge?.();
+  initCashFromConfig?.();
+  renderCash?.();
+} catch(_) {}
 
+if(typeof aplicarFluxoDoSistema === "function"){
+  aplicarFluxoDoSistema();
+}
 async function openAdmin(){
   window.__AGAPE_ADMIN_MODE = true;
   try{ if(typeof hideV0==="function") hideV0(); }catch(_){}
