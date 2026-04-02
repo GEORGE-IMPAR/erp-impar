@@ -26,11 +26,11 @@ for pasta in [ENTRADA, PROCESSADOS, ERRO, JSON_DIR, CSV_DIR]:
     os.makedirs(pasta, exist_ok=True)
 
 
-def agora_str() -> str:
+def agora_str():
     return datetime.now().strftime("%d/%m/%Y, %H:%M:%S")
 
 
-def carregar_json(path: str, default):
+def carregar_json(path, default):
     if not os.path.exists(path):
         return default
     try:
@@ -40,12 +40,12 @@ def carregar_json(path: str, default):
         return default
 
 
-def salvar_json(path: str, data):
+def salvar_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def adicionar_log(etapa: str, status: str, mensagem: str):
+def adicionar_log(etapa, status, mensagem):
     logs = carregar_json(LOG_FILE, [])
     logs.append({
         "data_hora": agora_str(),
@@ -57,12 +57,7 @@ def adicionar_log(etapa: str, status: str, mensagem: str):
     salvar_json(LOG_FILE, logs)
 
 
-def salvar_status(
-    motor_status: str = "aguardando",
-    current_step: str = "ler",
-    itens=None,
-    resumo=None
-):
+def salvar_status(motor_status="aguardando", current_step="ler", itens=None, resumo=None):
     itens = itens or carregar_json(ITENS_FILE, [])
     resumo = resumo or carregar_json(RESUMO_FILE, [])
 
@@ -102,14 +97,14 @@ def salvar_status(
     salvar_json(STATUS_FILE, payload)
 
 
-def normalizar_texto(texto: str) -> str:
+def normalizar_texto(texto):
     texto = texto.replace("\r", "\n")
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n{2,}", "\n", texto)
     return texto.strip()
 
 
-def br_to_float(valor: str) -> float:
+def br_to_float(valor):
     valor = (valor or "").strip()
     if not valor:
         return 0.0
@@ -121,7 +116,7 @@ def br_to_float(valor: str) -> float:
         return 0.0
 
 
-def extract_text_from_pdf(pdf_path: str) -> str:
+def extract_text_from_pdf(pdf_path):
     try:
         import pdfplumber
         partes = []
@@ -143,7 +138,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         raise RuntimeError(f"Falha ao extrair texto do PDF: {e}")
 
 
-def extrair_numero_nota(texto: str, nome_arquivo: str) -> str:
+def extrair_numero_nota(texto, nome_arquivo):
     m = re.search(r"\bN[º°]?\s*[:.]?\s*(\d{1,9})\b", texto, re.I)
     if m:
         return m.group(1)
@@ -155,22 +150,22 @@ def extrair_numero_nota(texto: str, nome_arquivo: str) -> str:
     return ""
 
 
-def extrair_data_emissao(texto: str) -> str:
+def extrair_data_emissao(texto):
     m = re.search(r"DATA DE EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})", texto, re.I)
     return m.group(1) if m else ""
 
 
-def extrair_valor_frete(texto: str) -> float:
+def extrair_valor_frete(texto):
     m = re.search(r"VALOR DO FRETE\s+([\d\.,]+)", texto, re.I)
     return br_to_float(m.group(1)) if m else 0.0
 
 
-def extrair_valor_total_nota(texto: str) -> float:
+def extrair_valor_total_nota(texto):
     m = re.search(r"VALOR TOTAL DA NOTA\s+([\d\.,]+)", texto, re.I)
     return br_to_float(m.group(1)) if m else 0.0
 
 
-def extrair_fornecedor(texto: str) -> str:
+def extrair_fornecedor(texto):
     bloco = ""
     m = re.search(
         r"IDENTIFICAÇÃO DO EMITENTE(.*?)(DANFE|DOCUMENTO AUXILIAR|NATUREZA DA OPERAÇÃO)",
@@ -193,7 +188,7 @@ def extrair_fornecedor(texto: str) -> str:
     return "Fornecedor não identificado"
 
 
-def extrair_bloco_produtos(texto: str) -> str:
+def extrair_bloco_produtos(texto):
     inicio = texto.upper().find("DADOS DO PRODUTO / SERVIÇO")
     if inicio == -1:
         inicio = texto.upper().find("DADOS DO PRODUTO/SERVIÇO")
@@ -219,11 +214,11 @@ def extrair_bloco_produtos(texto: str) -> str:
     return resto[:fim_pos].strip() if fim_pos is not None else resto.strip()
 
 
-def limpar_descricao_item(desc: str) -> str:
+def limpar_descricao_item(desc):
     return re.sub(r"\s{2,}", " ", desc or "").strip()
 
 
-def parse_itens_danfe(bloco: str):
+def parse_itens_danfe(bloco):
     itens = []
     if not bloco:
         return itens
@@ -242,23 +237,23 @@ def parse_itens_danfe(bloco: str):
         r"""
         (?:^|\n)
         \s*
-        (\d{1,20})                                 # código
+        (\d{1,20})
         \s+
-        (.*?)                                      # descrição
+        (.*?)
         \s+
-        (\d{4,10})                                 # ncm
+        (\d{4,10})
         \s+
-        (\d{2,4})                                  # cst
+        (\d{2,4})
         \s+
-        (\d{4})                                    # cfop
+        (\d{4})
         \s+
-        ([A-Z]{1,6}|[A-Z]{1,6}\.)                  # unid
+        ([A-Z]{1,6}|[A-Z]{1,6}\.)
         \s+
-        (\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+)          # quantidade
+        (\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+)
         \s+
-        (\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+)          # valor unit
+        (\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+)
         \s+
-        (\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+)          # valor total
+        (\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+)
         """,
         re.S | re.X | re.I
     )
