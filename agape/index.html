@@ -3877,7 +3877,227 @@ document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
   setInterval(bind, 1000);
 
 })();
-  
+
+  /* =========================================================
+   TELA TESOUREIRO V2 + FINAL 4→1
+   BLOCO ÚNICO — COLAR NO FINAL DO SCRIPT
+========================================================= */
+;(function(){
+
+  if(window.__PACOTE_TESOUREIRO_FINAL__) return;
+  window.__PACOTE_TESOUREIRO_FINAL__ = true;
+
+  function CFGROOT(){
+    return window.CFG?.config || window.CFG || {};
+  }
+
+  /* =========================
+     CRIA TELA
+  ========================= */
+  function criarTelaTesoureiro(){
+
+    if(document.getElementById("scr_fechamento_v2")) return;
+
+    const scr = document.createElement("section");
+    scr.id = "scr_fechamento_v2";
+    scr.className = "screen";
+
+    scr.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg,#0b3d2b 0%, #0a2f3f 55%, #071f33 100%);padding:20px">
+
+        <div style="width:100%;max-width:420px;border-radius:22px;
+        background:rgba(6,28,44,.8);border:1px solid rgba(74,222,128,.4);
+        box-shadow:0 20px 50px rgba(0,0,0,.4);padding:22px;color:#fff">
+
+          <div id="logoTesoureiro"
+            style="display:flex;align-items:center;gap:12px;
+            border:1px solid #22c55e;border-radius:12px;padding:10px;cursor:pointer">
+
+            <img id="logoTesImg" src="" style="width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover">
+            <div>
+              <div style="font-weight:800;font-size:16px" id="nomeLojaTes">Ágape</div>
+              <div style="font-size:11px">Modo Tesoureiro • toque 5x</div>
+            </div>
+          </div>
+
+          <div style="text-align:center;margin-top:25px;font-size:50px">🛠️</div>
+
+          <div style="text-align:center;font-size:26px;font-weight:900;margin-top:10px">
+            Sessão fechada
+          </div>
+
+          <div style="text-align:center;margin-top:10px;font-size:14px;line-height:1.6">
+            Sessão fechada para contabilização.<br>
+            Toque 5x no logo para abrir o ADM.
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(scr);
+
+    preencherDados();
+    bindLogoADM();
+  }
+
+  function preencherDados(){
+    const cfg = CFGROOT();
+
+    const nome = document.getElementById("nomeLojaTes");
+    const logo = document.getElementById("logoTesImg");
+
+    if(nome) nome.textContent = cfg?.loja?.nome || "Ágape";
+
+    if(logo){
+      logo.src =
+        cfg?.loja?.logo_url ||
+        cfg?.loja?.logo ||
+        "./logo-Clementino-Brito.jpeg";
+    }
+  }
+
+  /* =========================
+     LOGO → ADM (5 cliques)
+  ========================= */
+  function bindLogoADM(){
+
+    const el = document.getElementById("logoTesoureiro");
+    if(!el) return;
+    if(el.dataset.ok) return;
+
+    el.dataset.ok = "1";
+
+    let taps = 0;
+    let timer = null;
+
+    el.onclick = function(){
+      taps++;
+      clearTimeout(timer);
+      timer = setTimeout(()=>taps=0,1200);
+
+      if(taps >= 5){
+        taps = 0;
+        if(typeof openAdmin === "function"){
+          openAdmin();
+        }
+      }
+    };
+  }
+
+  /* =========================
+     MOSTRA TELA NO FLUXO
+  ========================= */
+  const old = window.irTelaFechamentoTesoureiro;
+
+  window.irTelaFechamentoTesoureiro = function(){
+
+    criarTelaTesoureiro();
+
+    if(typeof showScreen === "function"){
+      showScreen("scr_fechamento_v2","forward");
+    }else if(typeof old === "function"){
+      old();
+    }
+  };
+
+  /* =========================
+     FINAL 4 → 1
+  ========================= */
+  async function finalizar4para1(){
+
+    try{
+
+      if(!window.ADMIN_CFG || typeof window.ADMIN_CFG !== "object"){
+        window.ADMIN_CFG = JSON.parse(JSON.stringify(CFGROOT()));
+      }
+
+      if(!ADMIN_CFG.sessao) ADMIN_CFG.sessao = {};
+      if(!ADMIN_CFG.push) ADMIN_CFG.push = {};
+      if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
+
+      // 👉 REGRA FINAL
+      ADMIN_CFG.sessao.status = "fechada";
+      ADMIN_CFG.push.habilitado = false;
+      ADMIN_CFG.push.ativo = false;
+      ADMIN_CFG.convocacao.ativa = false;
+      ADMIN_CFG.fechamento = false;
+
+      ADMIN_CFG.convocacao.id = "";
+      ADMIN_CFG.convocacao.texto = "";
+      ADMIN_CFG.convocacao.ts = "";
+      ADMIN_CFG.convocacao.lida_por = [];
+
+      if(typeof adminSave === "function"){
+        await adminSave();
+      }
+
+      if(typeof loadConfig === "function" && typeof normalizeCFG === "function"){
+        const cfgReload = await loadConfig();
+        window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+        window.CFG = normalizeCFG(cfgReload);
+      }
+
+      localStorage.setItem("conv_lida","1");
+
+      setTimeout(()=>{
+        if(typeof showScreen === "function"){
+          showScreen("scr_splash1","back");
+        }
+      },200);
+
+    }catch(e){
+      console.warn("erro finalizar 4→1", e);
+    }
+  }
+
+  /* =========================
+     BIND CONFIRMAR ADM
+  ========================= */
+  function bindConfirmar(){
+
+    const btn = document.getElementById("btnAdminSalvar");
+    if(!btn) return;
+    if(btn.dataset.ok41) return;
+
+    btn.dataset.ok41 = "1";
+
+    btn.addEventListener("click", async function(ev){
+
+      try{
+
+        const cfg = window.ADMIN_CFG || CFGROOT();
+
+        const status = String(cfg?.sessao?.status || "").toLowerCase();
+        const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
+        const convAtiva = !!cfg?.convocacao?.ativa;
+        const fechamento = !!cfg?.fechamento;
+
+        if(status === "fechada" && !pushAtivo && !convAtiva && fechamento){
+
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+
+          await finalizar4para1();
+
+          return false;
+        }
+
+      }catch(e){
+        console.warn("erro bind 4→1", e);
+      }
+
+    }, true);
+  }
+
+  document.addEventListener("DOMContentLoaded", function(){
+    setTimeout(bindConfirmar, 500);
+  });
+
+  setInterval(bindConfirmar, 1000);
+
+})();
  
  </script>
 </body>
