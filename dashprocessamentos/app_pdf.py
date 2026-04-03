@@ -7,7 +7,11 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=True
+)
 
 BASE_PATH = "/data/pdfs"
 
@@ -532,6 +536,7 @@ def status():
 
     status_salvo = carregar_json(STATUS_FILE, {})
 
+    # 🔥 SE NÃO ESTÁ PROCESSANDO → NÃO PODE FICAR EXECUTANDO
     if not motor.get("processando", False):
         return jsonify({
             "motor_status": "aguardando",
@@ -563,8 +568,6 @@ def status():
         status_salvo["logs"] = logs[-50:]
         status_salvo["pdfs_fila"] = qtd_fila
         status_salvo["pdfs_processados"] = qtd_processados
-        status_salvo["total_fila"] = qtd_fila + qtd_processados
-        status_salvo["total_processado"] = qtd_processados
         status_salvo["itens_extraidos"] = len(itens)
         status_salvo["motor_ctrl"] = motor
         return jsonify(status_salvo)
@@ -573,23 +576,9 @@ def status():
         "motor_status": "aguardando",
         "motor_status_label": "Aguardando",
         "current_step": "ler",
-        "ultima_execucao": "",
         "pdfs_fila": qtd_fila,
         "pdfs_processados": qtd_processados,
-        "total_fila": qtd_fila + qtd_processados,
-        "total_processado": qtd_processados,
         "itens_extraidos": len(itens),
-        "itens": itens,
-        "resumo": resumo,
-        "logs": logs[-50:],
-        "timeline": {
-            "ler": "pending",
-            "extrair": "pending",
-            "blocos": "pending",
-            "normalizar": "pending",
-            "json": "pending",
-            "csv": "pending"
-        },
         "motor_ctrl": motor
     })
 
@@ -642,14 +631,11 @@ def motor_ligar():
 
     salvar_status(
         motor_status="aguardando",
-        current_step="ler",
-        itens=carregar_json(ITENS_FILE, []),
-        resumo=carregar_json(RESUMO_FILE, [])
+        current_step="ler"
     )
 
     adicionar_log("motor", "OK", "Motor ligado.")
     return jsonify({"ok": True, "motor": data})
-
 
 @app.route("/pdf/motor/parar", methods=["POST"])
 def motor_parar():
@@ -662,13 +648,12 @@ def motor_parar():
 
     salvar_status(
         motor_status="aguardando",
-        current_step="ler",
-        itens=carregar_json(ITENS_FILE, []),
-        resumo=carregar_json(RESUMO_FILE, [])
+        current_step="ler"
     )
 
-    adicionar_log("motor", "INFO", "Parada solicitada para o motor.")
+    adicionar_log("motor", "INFO", "Parada solicitada.")
     return jsonify({"ok": True, "motor": data})
+
 
 @app.route("/pdf/motor/processar-lote", methods=["POST"])
 def motor_processar_lote():
@@ -695,3 +680,19 @@ def motor_processar_lote():
         "status": "processando",
         "mensagem": "Lote iniciado em background."
     })
+
+from flask import send_file
+
+@app.route("/pdf/csv", methods=["GET"])
+def baixar_csv():
+    if not os.path.exists(CSV_FILE):
+        return jsonify({
+            "ok": False,
+            "erro": "CSV ainda não foi gerado."
+        }), 404
+
+    return send_file(
+        CSV_FILE,
+        as_attachment=True,
+        download_name="materiais_extraidos.csv"
+    )
