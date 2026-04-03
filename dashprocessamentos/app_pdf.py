@@ -3,7 +3,7 @@ import re
 import json
 import threading
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -61,8 +61,7 @@ def adicionar_log(etapa, status, mensagem):
         "status": status,
         "mensagem": mensagem
     })
-    logs = logs[-500:]
-    salvar_json(LOG_FILE, logs)
+    salvar_json(LOG_FILE, logs[-500:])
 
 
 def motor_ctrl_default():
@@ -139,7 +138,12 @@ def salvar_status(motor_status="aguardando", current_step="ler", itens=None, res
 
 
 def normalizar_texto(texto):
+    texto = texto or ""
     texto = texto.replace("\r", "\n")
+    texto = texto.replace("\ufeff", " ")
+    texto = texto.replace("SERVIÃ‡O", "SERVIÇO")
+    texto = texto.replace("DESCRIÃ‡ÃO", "DESCRIÇÃO")
+    texto = texto.replace("EMISSÃƒO", "EMISSÃO")
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n{2,}", "\n", texto)
     return texto.strip()
@@ -157,49 +161,67 @@ def br_to_float(valor):
         return 0.0
 
 
+def limpar_texto_nota(texto):
+    texto_up = texto.upper()
+
+    # corta boleto e tenta ficar só na parte da NF
+    if "RECIBO DO PAGADOR" in texto_up and "DANFE" in texto_up:
+        pos_danfe = texto_up.find("DANFE")
+        if pos_danfe != -1:
+            return texto[pos_danfe:]
+
+    return texto
+
+
 def extract_text_from_pdf(pdf_path):
+    # 1) pdfplumber
     try:
         import pdfplumber
         with pdfplumber.open(pdf_path) as pdf:
-            texto = "\n".join([p.extract_text() or "" for p in pdf.pages])
-
+            texto = "\n".join((page.extract_text() or "") for page in pdf.pages)
+        texto = normalizar_texto(texto)
         if len(texto.strip()) > 50:
-            return normalizar_texto(texto)
-    except:
+            return texto
+    except Exception:
         pass
 
+    # 2) PyPDF2
     try:
         from PyPDF2 import PdfReader
         reader = PdfReader(pdf_path)
-        texto = "\n".join([p.extract_text() or "" for p in reader.pages])
-
+        texto = "\n".join((page.extract_text() or "") for page in reader.pages)
+        texto = normalizar_texto(texto)
         if len(texto.strip()) > 50:
-            return normalizar_texto(texto)
-    except:
+            return texto
+    except Exception:
         pass
 
-    # 🔥 OCR (DUFRIO resolve aqui)
- try:
-    from pdf2image import convert_from_path
-    import pytesseract
-except:
-    return normalizar_texto(texto)  # fallback
- 
- 
-def limpar_texto_nota(texto):
-    if "RECIBO DO PAGADOR" in texto:
-        partes = texto.split("RECIBO DO PAGADOR")
-        return partes[-1]
-    return texto
+    # 3) OCR opcional - se libs/sistema existirem
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+
+        imagens = convert_from_path(pdf_path)
+        texto = []
+        for img in imagens:
+            texto.append(pytesseract.image_to_string(img, lang="por"))
+        texto = normalizar_texto("\n".join(texto))
+        if len(texto.strip()) > 20:
+            return texto
+    except Exception:
+        pass
+
+    raise RuntimeError("Não foi possível extrair texto do PDF.")
 
 
 def extrair_numero_nota(texto, nome_arquivo):
     patterns = [
         r"N[º°]?\s*[:.]?\s*0*([0-9]{1,9})",
-        r"NF-e\s+S[ÉE]RIE\s*:\s*\d+\s+N[º°]?\s*[:.]?\s*0*([0-9]{1,9})",
+        r"NF-e\s+S[ÉE]RIE\s*[:.]?\s*\d+\s+N[º°]?\s*[:.]?\s*0*([0-9]{1,9})",
         r"N[º°]\s*0*([0-9]{1,9})",
-        r"Nº:\s*0*([0-9]{1,9})",
-        r"\b000\.0*([0-9]{1,9})\b"
+        r"Nº[:.]?\s*0*([0-9]{1,9})",
+        r"\b000\.0*([0-9]{1,9})\b",
+        r"\b00000*([0-9]{1,9})\b"
     ]
 
     for p in patterns:
@@ -211,19 +233,25 @@ def extrair_numero_nota(texto, nome_arquivo):
     if m:
         return m.group(1)
 
+    m = re.search(r"(\d{3,})", nome_arquivo)
+    if m:
+        return m.group(1)
+
     return ""
+
 
 def extrair_data_emissao(texto):
     patterns = [
-        r"DATA DA EMISSÃO\s+(\d{2}/\d{2}/\d{4})",
+        r"DATA DA EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
         r"DATA DE EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
-        r"EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
+        r"EMISS[ÃA]O[: ]+(\d{2}/\d{2}/\d{4})"
     ]
     for p in patterns:
         m = re.search(p, texto, re.I)
         if m:
             return m.group(1)
     return ""
+
 
 def extrair_valor_frete(texto):
     patterns = [
@@ -254,31 +282,48 @@ def extrair_fornecedor(texto):
 
     for i, linha in enumerate(linhas):
         if "DOCUMENTO AUXILIAR" in linha.upper() or "DANFE" in linha.upper():
-            for j in range(max(0, i - 6), i):
+            for j in range(max(0, i - 8), i):
                 cand = linhas[j].strip()
                 if cand and not re.search(
-                    r"CHAVE DE ACESSO|NATUREZA DA OPERAÇÃO|INSCRIÇÃO ESTADUAL|CNPJ|PROTOCOLO|NF-E|FOLHA|SÉRIE|Nº|DOCUMENTO AUXILIAR|DANFE",
+                    r"CHAVE DE ACESSO|NATUREZA DA OPERAÇÃO|INSCRIÇÃO ESTADUAL|CNPJ|PROTOCOLO|NF-E|FOLHA|SÉRIE|Nº|DOCUMENTO AUXILIAR|DANFE|0 - ENTRADA|1 - SAÍDA",
                     cand,
                     re.I
                 ):
                     if len(cand) > 3:
                         return cand
 
-    for i, linha in enumerate(linhas):
+    for linha in linhas:
         if "RECEBEMOS DE" in linha.upper():
             m = re.search(r"RECEBEMOS DE\s+(.+?)\s+OS PRODUTOS", linha, re.I)
             if m:
                 return m.group(1).strip()
 
+    for i, linha in enumerate(linhas):
+        if "IDENTIFICAÇÃO DO EMITENTE" in linha.upper():
+            for j in range(i + 1, min(i + 5, len(linhas))):
+                cand = linhas[j].strip()
+                if cand and not re.search(r"CNPJ|RUA |AVENIDA|CEP|FONE|TEL", cand, re.I):
+                    return cand
+
     return "Fornecedor não identificado"
 
 
 def extrair_bloco_produtos(texto):
-    inicio = texto.upper().find("DADOS DO PRODUTO / SERVIÇO")
-    if inicio == -1:
-        inicio = texto.upper().find("DADOS DO PRODUTO/SERVIÇO")
-    if inicio == -1:
-        inicio = texto.upper().find("DADOS DOS PRODUTOS")
+    marcadores = [
+        "DADOS DO PRODUTO / SERVIÇO",
+        "DADOS DO PRODUTO/SERVIÇO",
+        "DADOS DOS PRODUTOS/SERVIÇOS",
+        "DADOS DOS PRODUTOS/SERVICOS",
+        "DADOS DO PRODUTO / SERVICO",
+        "DADOS DO PRODUTO/SERVICO",
+    ]
+
+    inicio = -1
+    for marcador in marcadores:
+        inicio = texto.upper().find(marcador.upper())
+        if inicio != -1:
+            break
+
     if inicio == -1:
         return ""
 
@@ -296,15 +341,22 @@ def extrair_bloco_produtos(texto):
     fim_pos = None
     for termo in terminadores:
         p = resto_upper.find(termo.upper())
-        if p != -1:
-            if fim_pos is None or p < fim_pos:
-                fim_pos = p
+        if p != -1 and (fim_pos is None or p < fim_pos):
+            fim_pos = p
 
-    return resto[:fim_pos].strip() if fim_pos is not None else resto.strip()
+    bloco = resto[:fim_pos].strip() if fim_pos is not None else resto.strip()
+    bloco = bloco.replace("DADOS DO PRODUTO/SERVIÇO", "")
+    bloco = bloco.replace("DADOS DO PRODUTO / SERVIÇO", "")
+    bloco = bloco.replace("DADOS DOS PRODUTOS/SERVIÇOS", "")
+    bloco = bloco.replace("DADOS DOS PRODUTOS/SERVICOS", "")
+    return bloco.strip()
 
 
 def limpar_descricao_item(desc):
-    return re.sub(r"\s{2,}", " ", (desc or "").strip())
+    desc = (desc or "").strip()
+    desc = re.sub(r"\s{2,}", " ", desc)
+    desc = desc.replace(" .", ".")
+    return desc
 
 
 def parse_itens_danfe(bloco):
@@ -312,35 +364,37 @@ def parse_itens_danfe(bloco):
     if not bloco:
         return itens
 
-    bloco = bloco.replace("DADOS DO PRODUTO/SERVIÇO", "")
-    bloco = bloco.replace("DADOS DO PRODUTO / SERVIÇO", "")
     linhas = [x.strip() for x in bloco.split("\n") if x.strip()]
-
     buffer_desc = []
 
     for linha in linhas:
         if re.search(
-            r"COD\.?\s*PROD|DESCRIÇÃO DO PRODUTO|VALOR TOTAL|VALOR UNITARIO|VALOR UNITÁRIO|ALIQUOTAS|CSOSN|NCM|CFOP|UNID|QUANT",
+            r"COD\.?|CÓD\.?|DESCRIÇÃO|DESCRICAO|NCM|CFOP|UNID|QUANT|V\.?UNIT|V\.?TOTAL|BC\.?ICMS|V\.?ICMS|V\.?IPI|ALIQUOTAS|CSOSN|CST",
             linha,
             re.I
         ):
             continue
 
-        # linha final do item com colunas numéricas da DANFE
+        # padrão mais comum de linha final do item
         m = re.search(
-            r"^(.*?)\s+(\d{8})\s+\d+\s+(\d{3})\s+(\d{4})\s+([A-Z]{1,4})\s+(\d+,\d{4})\s+(\d+,\d{4})\s+(\d+,\d{2})",
+            r"^(.*?)\s+(\d{8})\s+\d+\s+(\d{4})\s+([A-Z]{1,5})\s+(\d+,\d{2,4})\s+(\d+,\d{2,4})\s+(\d+,\d{2})",
             linha,
             re.I
         )
 
+        # padrão alternativo com NCM + CST + CFOP + UN
+        if not m:
+            m = re.search(
+                r"^(.*?)\s+(\d{8})\s+\d{3}\s+(\d{4})\s+([A-Z]{1,5})\s+(\d+,\d{2,4})\s+(\d+,\d{2,4})\s+(\d+,\d{2})",
+                linha,
+                re.I
+            )
+
         if m:
             desc_ini = m.group(1).strip()
-            ncm = m.group(2)
-            cfop = m.group(4)
-            unid = m.group(5)
-            qtd = br_to_float(m.group(6))
-            unit = br_to_float(m.group(7))
-            total = br_to_float(m.group(8))
+            qtd = br_to_float(m.group(5))
+            unit = br_to_float(m.group(6))
+            total = br_to_float(m.group(7))
 
             descricao_final = " ".join(buffer_desc + [desc_ini]).strip()
             descricao_final = limpar_descricao_item(descricao_final)
@@ -351,14 +405,32 @@ def parse_itens_danfe(bloco):
                 "preco_unitario_item": unit,
                 "preco_total_item": total
             })
-
             buffer_desc = []
-        else:
-            # linhas de complemento da descrição
-            if len(linha) > 2 and not re.search(r"^0,\d{2}$", linha):
-                buffer_desc.append(linha)
+            continue
+
+        # padrão scan simplificado / linhas quebradas
+        if re.search(r"\d+,\d{2,4}\s+\d+,\d{2,4}\s+\d+,\d{2}", linha):
+            nums = re.findall(r"\d+,\d{2,4}", linha)
+            if len(nums) >= 3:
+                qtd = br_to_float(nums[-3])
+                unit = br_to_float(nums[-2])
+                total = br_to_float(nums[-1])
+                descricao_final = limpar_descricao_item(" ".join(buffer_desc))
+                if descricao_final:
+                    itens.append({
+                        "descricao_item": descricao_final,
+                        "quantidade_item": qtd,
+                        "preco_unitario_item": unit,
+                        "preco_total_item": total
+                    })
+                buffer_desc = []
+            continue
+
+        if linha and not re.fullmatch(r"[- ]+", linha):
+            buffer_desc.append(linha)
 
     return itens
+
 
 def gerar_csv(itens):
     import csv
@@ -448,112 +520,110 @@ def processar_lote_background():
         itens_novos = []
         resumo_novo = []
 
-        while True:
-          arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
-
-         if not arquivos:
-           break
-
-        nome = arquivos[0]
-        total_arquivos = len(arquivos)
-
         salvar_status("executando", "ler", itens_existentes, resumo_existente)
-        adicionar_log("motor", "INFO", f"Iniciando lote com {total_arquivos} PDF(s).")
-
-try:
-    while True:
-        ctrl = ler_motor_ctrl()
-
-        if ctrl.get("parar_solicitado"):
-            adicionar_log("motor", "INFO", "Parada solicitada detectada. Encerrando lote.")
-            break
-
-        arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
-
-        if not arquivos:
-            break
-
-        nome = arquivos[0]
-        caminho = os.path.join(ENTRADA, nome)
-
-        adicionar_log("ler", "INFO", f"Lendo {nome}")
+        adicionar_log("motor", "INFO", "Iniciando lote.")
 
         try:
-            salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+            while True:
+                ctrl = ler_motor_ctrl()
 
-            texto = extract_text_from_pdf(caminho)
-            texto = limpar_texto_nota(texto)
+                if ctrl.get("parar_solicitado"):
+                    adicionar_log("motor", "INFO", "Parada solicitada detectada. Encerrando lote.")
+                    break
 
-            salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+                arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
+                if not arquivos:
+                    break
 
-            fornecedor = extrair_fornecedor(texto)
-            numero_nota = extrair_numero_nota(texto, nome)
-            data_emissao = extrair_data_emissao(texto)
-            valor_frete = extrair_valor_frete(texto)
-            valor_total_nota = extrair_valor_total_nota(texto)
-            bloco_produtos = extrair_bloco_produtos(texto)
+                nome = arquivos[0]
+                caminho = os.path.join(ENTRADA, nome)
 
-            salvar_status("executando", "normalizar", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+                adicionar_log("ler", "INFO", f"Lendo {nome}")
 
-            itens_nota = parse_itens_danfe(bloco_produtos)
+                try:
+                    salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
 
-            resumo_item = {
-                "nome_arquivo": nome,
-                "fornecedor": fornecedor,
-                "numero_nota": numero_nota,
-                "data_emissao": data_emissao,
-                "valor_frete": valor_frete,
-                "valor_total_nota": valor_total_nota,
-                "quantidade_itens": len(itens_nota)
-            }
+                    texto = extract_text_from_pdf(caminho)
+                    texto = limpar_texto_nota(texto)
 
-            resumo_novo.append(resumo_item)
+                    salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
 
-            for item in itens_nota:
-                itens_novos.append({
-                    "nome_arquivo": nome,
-                    "fornecedor": fornecedor,
-                    "numero_nota": numero_nota,
-                    "data_emissao": data_emissao,
-                    "valor_frete": valor_frete,
-                    "valor_total_nota": valor_total_nota,
-                    "descricao_item": item["descricao_item"],
-                    "quantidade_item": item["quantidade_item"],
-                    "preco_unitario_item": item["preco_unitario_item"],
-                    "preco_total_item": item["preco_total_item"]
-                })
+                    fornecedor = extrair_fornecedor(texto)
+                    numero_nota = extrair_numero_nota(texto, nome)
+                    data_emissao = extrair_data_emissao(texto)
+                    valor_frete = extrair_valor_frete(texto)
+                    valor_total_nota = extrair_valor_total_nota(texto)
+                    bloco_produtos = extrair_bloco_produtos(texto)
 
-            itens_finais = itens_existentes + itens_novos
-            resumo_finais = resumo_existente + resumo_novo
+                    salvar_status("executando", "normalizar", itens_existentes + itens_novos, resumo_existente + resumo_novo)
 
-            salvar_json(RESUMO_FILE, resumo_finais)
-            salvar_json(ITENS_FILE, itens_finais)
+                    itens_nota = parse_itens_danfe(bloco_produtos)
 
-            salvar_status("executando", "json", itens_finais, resumo_finais)
+                    resumo_item = {
+                        "nome_arquivo": nome,
+                        "fornecedor": fornecedor,
+                        "numero_nota": numero_nota,
+                        "data_emissao": data_emissao,
+                        "valor_frete": valor_frete,
+                        "valor_total_nota": valor_total_nota,
+                        "quantidade_itens": len(itens_nota)
+                    }
+                    resumo_novo.append(resumo_item)
 
-            gerar_csv(itens_finais)
+                    for item in itens_nota:
+                        itens_novos.append({
+                            "nome_arquivo": nome,
+                            "fornecedor": fornecedor,
+                            "numero_nota": numero_nota,
+                            "data_emissao": data_emissao,
+                            "valor_frete": valor_frete,
+                            "valor_total_nota": valor_total_nota,
+                            "descricao_item": item["descricao_item"],
+                            "quantidade_item": item["quantidade_item"],
+                            "preco_unitario_item": item["preco_unitario_item"],
+                            "preco_total_item": item["preco_total_item"]
+                        })
 
-            os.rename(caminho, os.path.join(PROCESSADOS, nome))
+                    itens_finais = itens_existentes + itens_novos
+                    resumo_finais = resumo_existente + resumo_novo
 
-            adicionar_log("json", "OK", f"{nome} processado com sucesso.")
+                    salvar_json(RESUMO_FILE, resumo_finais)
+                    salvar_json(ITENS_FILE, itens_finais)
+                    salvar_status("executando", "json", itens_finais, resumo_finais)
 
-            salvar_status("executando", "csv", itens_finais, resumo_finais)
+                    gerar_csv(itens_finais)
 
-        except Exception as e:
-            os.rename(caminho, os.path.join(ERRO, nome))
-            adicionar_log("motor", "ERRO", f"{nome}: {e}")
+                    os.rename(caminho, os.path.join(PROCESSADOS, nome))
+                    adicionar_log("json", "OK", f"{nome} processado com sucesso.")
 
-    itens_finais = carregar_json(ITENS_FILE, [])
-    resumo_finais = carregar_json(RESUMO_FILE, [])
+                    salvar_status("executando", "csv", itens_finais, resumo_finais)
 
-    salvar_status("concluido", "csv", itens_finais, resumo_finais)
+                except Exception as e:
+                    try:
+                        os.rename(caminho, os.path.join(ERRO, nome))
+                    except Exception:
+                        pass
+                    adicionar_log("motor", "ERRO", f"{nome}: {e}")
 
-    adicionar_log("motor", "OK", "Lote finalizado.")
+            itens_finais = carregar_json(ITENS_FILE, [])
+            resumo_finais = carregar_json(RESUMO_FILE, [])
+            salvar_status("concluido", "csv", itens_finais, resumo_finais)
+            adicionar_log("motor", "OK", "Lote finalizado.")
+
+        finally:
+            ctrl_final = ler_motor_ctrl()
+            atualizar_motor_ctrl(
+                processando=False,
+                parar_solicitado=False,
+                ligado=ctrl_final.get("ligado", False),
+                ultimo_comando="lote_finalizado"
+            )
 
 
 @app.route("/")
 def home():
     return jsonify({"status": "ok", "msg": "Motor PDF rodando 🚀"})
+
 
 @app.route("/pdf/status")
 def status():
@@ -567,8 +637,7 @@ def status():
 
     status_salvo = carregar_json(STATUS_FILE, {})
 
-    # 🔥 SE NÃO ESTÁ PROCESSANDO → NÃO PODE FICAR EXECUTANDO
-    if not motor.get("ligado", False):
+    if not motor.get("processando", False):
         return jsonify({
             "motor_status": "aguardando",
             "motor_status_label": "Aguardando",
@@ -599,6 +668,8 @@ def status():
         status_salvo["logs"] = logs[-50:]
         status_salvo["pdfs_fila"] = qtd_fila
         status_salvo["pdfs_processados"] = qtd_processados
+        status_salvo["total_fila"] = qtd_fila + qtd_processados
+        status_salvo["total_processado"] = qtd_processados
         status_salvo["itens_extraidos"] = len(itens)
         status_salvo["motor_ctrl"] = motor
         return jsonify(status_salvo)
@@ -607,11 +678,26 @@ def status():
         "motor_status": "aguardando",
         "motor_status_label": "Aguardando",
         "current_step": "ler",
+        "ultima_execucao": "",
         "pdfs_fila": qtd_fila,
         "pdfs_processados": qtd_processados,
+        "total_fila": qtd_fila + qtd_processados,
+        "total_processado": qtd_processados,
         "itens_extraidos": len(itens),
+        "itens": itens,
+        "resumo": resumo,
+        "logs": logs[-50:],
+        "timeline": {
+            "ler": "pending",
+            "extrair": "pending",
+            "blocos": "pending",
+            "normalizar": "pending",
+            "json": "pending",
+            "csv": "pending"
+        },
         "motor_ctrl": motor
     })
+
 
 @app.route("/pdf/rankings")
 def rankings():
@@ -668,6 +754,7 @@ def motor_ligar():
     adicionar_log("motor", "OK", "Motor ligado.")
     return jsonify({"ok": True, "motor": data})
 
+
 @app.route("/pdf/motor/parar", methods=["POST"])
 def motor_parar():
     data = atualizar_motor_ctrl(
@@ -712,7 +799,6 @@ def motor_processar_lote():
         "mensagem": "Lote iniciado em background."
     })
 
-from flask import send_file
 
 @app.route("/pdf/csv", methods=["GET"])
 def baixar_csv():
