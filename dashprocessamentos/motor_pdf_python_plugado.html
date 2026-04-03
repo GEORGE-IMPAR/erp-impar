@@ -56,6 +56,127 @@
     footer{margin-top:auto;background:#020617;color:#9ca3af;padding:8px 12px;font-size:10px}.rodape-inner{max-width:1500px;margin:0 auto;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
     @media (max-width:1200px){.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.grid-2{grid-template-columns:1fr}.rank-grid{grid-template-columns:1fr 1fr}}
     @media (max-width:980px){.topbox-center{text-align:left}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.btn-row{flex-direction:column;flex-wrap:wrap}.btn{width:100%;min-width:unset}.pipeline-hero{grid-template-columns:1fr}.pipeline-media{min-height:150px}.rank-grid{grid-template-columns:1fr}}
+  
+  .motor-strip{
+  margin-top:14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:14px 16px;
+  border-radius:16px;
+  border:1px solid rgba(148,163,184,.18);
+  background:linear-gradient(180deg, rgba(2,6,23,.50), rgba(2,6,23,.28));
+}
+
+.motor-meta{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.motor-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.14em;
+  color:#94a3b8;
+  font-weight:900;
+}
+
+.motor-state{
+  font-size:22px;
+  font-weight:1000;
+  line-height:1;
+  color:#ef4444;
+}
+
+.motor-state.on{
+  color:#22c55e;
+}
+
+.motor-switch{
+  position:relative;
+  display:inline-block;
+  width:150px;
+  height:56px;
+  cursor:pointer;
+}
+
+.motor-switch input{
+  opacity:0;
+  width:0;
+  height:0;
+  position:absolute;
+}
+
+.motor-slider{
+  position:absolute;
+  inset:0;
+  border-radius:999px;
+  background:linear-gradient(135deg,#1f2937,#111827);
+  border:1px solid rgba(148,163,184,.28);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.03), 0 12px 30px rgba(0,0,0,.28);
+  transition:.28s ease;
+  overflow:hidden;
+}
+
+.motor-knob{
+  position:absolute;
+  top:6px;
+  left:6px;
+  width:44px;
+  height:44px;
+  border-radius:999px;
+  background:linear-gradient(135deg,#ef4444,#dc2626);
+  box-shadow:0 8px 20px rgba(239,68,68,.35);
+  transition:.28s cubic-bezier(.16,1,.3,1);
+}
+
+.motor-text{
+  position:absolute;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:12px;
+  font-weight:1000;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  pointer-events:none;
+}
+
+.motor-text-off{
+  right:18px;
+  color:#fca5a5;
+}
+
+.motor-text-on{
+  left:18px;
+  color:#86efac;
+  opacity:.22;
+}
+
+.motor-switch input:checked + .motor-slider{
+  background:linear-gradient(135deg,#052e16,#14532d);
+  border-color:rgba(34,197,94,.55);
+  box-shadow:
+    0 0 0 1px rgba(34,197,94,.28),
+    0 0 24px rgba(34,197,94,.18),
+    0 12px 30px rgba(0,0,0,.28);
+}
+
+.motor-switch input:checked + .motor-slider .motor-knob{
+  transform:translateX(94px);
+  background:linear-gradient(135deg,#22c55e,#16a34a);
+  box-shadow:0 8px 20px rgba(34,197,94,.35);
+}
+
+.motor-switch input:checked + .motor-slider .motor-text-on{
+  opacity:1;
+}
+
+.motor-switch input:checked + .motor-slider .motor-text-off{
+  opacity:.22;
+}
+  
   </style>
 </head>
 <body class="impar-enter">
@@ -98,13 +219,27 @@
         <div class="upload-list" id="uploadList"></div>
         <div class="small-note">Nessa fase, o jeito certo de “atualizar direto” é enviar os PDFs pela tela. Depois a gente pode criar um importador automático.</div>
 
-        <div class="btn-row">
-             <button class="btn btn-green-premium" id="btnLigarMotor" type="button">🟢 Ligar motor</button>
-             <button class="btn btn-red-premium" id="btnPararMotor" type="button">🔴 Parar motor</button>
-             <button class="btn btn-blue-premium" id="btnEnviarArquivos" type="button">⬆️ Enviar para a fila</button>
-             <button class="btn btn-secondary" id="btnProcessarLote" type="button">⚙️ Processar lote</button>
-             <button class="btn btn-secondary" id="btnAtualizarStatus" type="button">🔄 Atualizar status</button>
-        </div>
+<div class="motor-strip">
+  <div class="motor-meta">
+    <div class="motor-label">Motor</div>
+    <div class="motor-state" id="motorStateLabel">Desligado</div>
+  </div>
+
+  <label class="motor-switch">
+    <input type="checkbox" id="motorToggle">
+    <span class="motor-slider">
+      <span class="motor-knob"></span>
+      <span class="motor-text motor-text-off">OFF</span>
+      <span class="motor-text motor-text-on">ON</span>
+    </span>
+  </label>
+</div>
+<div class="btn-row">
+  <button class="btn btn-green-premium" id="btnProcessarAgora" type="button">
+    ⚙️ Processar agora
+  </button>
+</div>
+        
         <div class="save-status info" id="saveStatus">Pronto.</div>
       </div>
     </div>
@@ -290,8 +425,40 @@ async function atualizarStatus() {
   if (motorStatus !== "executando") stopPolling();
 }
 
-  
+ async function atualizarMotorCtrl() {
+  const r = await fetch(API_BASE + "motor?ts=" + Date.now(), { cache: "no-store" });
+  const data = await r.json();
+  const motor = data.motor || {};
 
+  const toggle = document.getElementById("motorToggle");
+  const label = document.getElementById("motorStateLabel");
+
+  const ligado = !!motor.ligado;
+  toggle.checked = ligado;
+
+  if (ligado) {
+    label.textContent = motor.processando ? "Ligado • Processando" : "Ligado";
+    label.classList.add("on");
+  } else {
+    label.textContent = motor.parar_solicitado ? "Parando" : "Desligado";
+    label.classList.remove("on");
+  }
+} 
+
+ async function definirMotorLigado(ligar) {
+  const rota = ligar ? "motor/ligar" : "motor/parar";
+
+  const r = await fetch(API_BASE + rota, { method: "POST" });
+  const data = await r.json();
+
+  if (!r.ok || data.ok === false) {
+    throw new Error(data.erro || "Falha ao alterar estado do motor.");
+  }
+
+  await atualizarMotorCtrl();
+  await atualizarStatus();
+} 
+  
   function refreshUploadList(){
     const list = document.getElementById("uploadList");
     if(!state.files.length){ list.innerHTML = ""; return; }
@@ -355,26 +522,53 @@ async function atualizarStatus() {
     }
   }
 
-  async function processarAgora(){
-    setSaveStatus("Processando PDFs na fila...", "info");
-    applyStatusCard("executando");
-    startPolling();
-    try{
-      const r = await fetch(API_BASE + "processar");
-      const data = await r.json();
-      if(!r.ok || data.status !== "ok"){
-        throw new Error(data.erro || "Falha no processamento.");
-      }
-      setSaveStatus(`Processamento concluído. ${data.processados || 0} nota(s) processada(s).`, "ok");
-      await atualizarStatus();
-    }catch(err){
-      setSaveStatus(err.message || "Falha ao processar PDFs.", "err");
-      applyStatusCard("erro");
-    }finally{
-      stopPolling();
-    }
-  }
+async function processarAgora() {
+  try {
+    const toggle = document.getElementById("motorToggle");
 
+    if (!toggle.checked) {
+      setSaveStatus("Ligue o motor antes de processar.", "err");
+      return;
+    }
+
+    if (state.files.length) {
+      setSaveStatus("Enviando PDFs e iniciando lote...", "info");
+
+      for (const file of state.files) {
+        const form = new FormData();
+        form.append("file", file);
+
+        const rUpload = await fetch(API_BASE + "upload", {
+          method: "POST",
+          body: form
+        });
+
+        const dataUpload = await rUpload.json();
+        if (!rUpload.ok || dataUpload.ok === false) {
+          throw new Error(dataUpload.erro || "Falha ao enviar " + file.name);
+        }
+      }
+
+      state.files = [];
+      refreshUploadList();
+    }
+
+    const r = await fetch(API_BASE + "motor/processar-lote", { method: "POST" });
+    const data = await r.json();
+
+    if (!r.ok || data.ok === false) {
+      throw new Error(data.erro || "Falha ao iniciar lote.");
+    }
+
+    setSaveStatus("Lote iniciado em background.", "ok");
+    startPolling();
+    await atualizarStatus();
+    await atualizarMotorCtrl();
+
+  } catch (err) {
+    setSaveStatus(err.message || "Falha ao processar lote.", "err");
+  }
+}
   async function atualizarMotorCtrl() {
   const r = await fetch(API_BASE + "motor?ts=" + Date.now(), { cache: "no-store" });
   const data = await r.json();
@@ -436,7 +630,20 @@ async function processarLote() {
   document.getElementById("btnPararMotor").addEventListener("click", async () => {
     try { await pararMotor(); } catch (e) { setSaveStatus(e.message, "err"); }
   });
+  document.getElementById("motorToggle").addEventListener("change", async (e) => {
+  try {
+    await definirMotorLigado(e.target.checked);
+    setSaveStatus(
+      e.target.checked ? "Motor ligado com sucesso." : "Parada solicitada com sucesso.",
+      "ok"
+    );
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    setSaveStatus(err.message || "Falha ao alterar o motor.", "err");
+  }
+});
 
+  document.getElementById("btnProcessarAgora").addEventListener("click", processarAgora);
   document.getElementById("btnProcessarLote").addEventListener("click", processarLote);
   const drop = document.getElementById("uploadDrop");
   drop.addEventListener("click", () => document.getElementById("fileInput").click());
