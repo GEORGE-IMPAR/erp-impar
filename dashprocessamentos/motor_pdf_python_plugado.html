@@ -199,7 +199,11 @@
        <div class="summary-v" id="sumMotorCtrl">Desligado</div>
     </div>
   </div>
-
+  <div class="motor-meta">
+    <div class="motor-label">Motor</div>
+    <div class="motor-state" id="motorStateLabel">Desligado</div>
+  </div>
+  
   <div class="status-legend">
     <div class="status-legend-item"><span class="status-legend-dot aguardando"></span><span>Aguardando</span></div>
     <div class="status-legend-item"><span class="status-legend-dot nao"></span><span>Pendente</span></div>
@@ -502,43 +506,64 @@ async function atualizarStatus() {
 }
 
 async function atualizarMotorCtrl() {
-  const r = await fetch(API_BASE + "motor?ts=" + Date.now(), {
-    cache: "no-store"
-  });
-  const data = await r.json();
-  const motor = data.motor || {};
+  try {
+    const r = await fetch(API_BASE + "motor?ts=" + Date.now(), {
+      cache: "no-store"
+    });
 
-  const toggle = document.getElementById("motorToggle");
-  const label = document.getElementById("motorStateLabel");
+    const data = await r.json();
+    const motor = data.motor || {};
 
-  const ligado = !!motor.ligado;
-  const processando = !!motor.processando;
-  const parando = !!motor.parar_solicitado;
+    const ligado = !!motor.ligado;
+    const processando = !!motor.processando;
+    const parando = !!motor.parar_solicitado;
 
-  if (toggle) {
-    toggle.checked = ligado;
-  }
+    const toggle = document.getElementById("motorToggle");
+    const motorStateLabel = document.getElementById("motorStateLabel");
+    const sumMotorCtrl = document.getElementById("sumMotorCtrl");
 
-  if (label) {
-    label.classList.remove("on");
+    if (toggle) {
+      toggle.checked = ligado;
+    }
+
+    let texto = "Desligado";
+    let cor = "#ef4444";
 
     if (ligado && processando) {
-      label.textContent = "Ligado • Processando";
-      label.classList.add("on");
+      texto = "Ligado • Processando";
+      cor = "#22c55e";
     } else if (ligado) {
-      label.textContent = "Ligado";
-      label.classList.add("on");
+      texto = "Ligado";
+      cor = "#22c55e";
     } else if (parando) {
-      label.textContent = "Parando";
-    } else {
-      label.textContent = "Desligado";
+      texto = "Parando";
+      cor = "#f59e0b";
     }
+
+    if (motorStateLabel) {
+      motorStateLabel.textContent = texto;
+      motorStateLabel.style.color = cor;
+      motorStateLabel.classList.toggle("on", ligado || processando);
+    }
+
+    if (sumMotorCtrl) {
+      sumMotorCtrl.textContent = texto;
+      sumMotorCtrl.style.color = cor;
+    }
+
+  } catch (e) {
+    console.error("Erro ao atualizar motor:", e);
   }
 }
- async function definirMotorLigado(ligar) {
+  
+  
+async function definirMotorLigado(ligar) {
   const rota = ligar ? "motor/ligar" : "motor/parar";
 
-  const r = await fetch(API_BASE + rota, { method: "POST" });
+  const r = await fetch(API_BASE + rota, {
+    method: "POST"
+  });
+
   const data = await r.json();
 
   if (!r.ok || data.ok === false) {
@@ -547,7 +572,8 @@ async function atualizarMotorCtrl() {
 
   await atualizarMotorCtrl();
   await atualizarStatus();
-} 
+}  
+ 
   
   function refreshUploadList(){
     const list = document.getElementById("uploadList");
