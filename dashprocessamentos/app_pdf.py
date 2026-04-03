@@ -526,28 +526,61 @@ def status():
     itens = carregar_json(ITENS_FILE, [])
     resumo = carregar_json(RESUMO_FILE, [])
     logs = carregar_json(LOG_FILE, [])
+    motor = ler_motor_ctrl()
 
-    if os.path.exists(STATUS_FILE):
-        status_salvo = carregar_json(STATUS_FILE, {})
-        if status_salvo:
-            status_salvo["itens"] = itens
-            status_salvo["resumo"] = resumo
-            status_salvo["logs"] = logs[-50:]
-            status_salvo["pdfs_fila"] = len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")])
-            status_salvo["pdfs_processados"] = len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")])
-            status_salvo["itens_extraidos"] = len(itens)
-            status_salvo["motor_ctrl"] = ler_motor_ctrl()
-            return jsonify(status_salvo)
+    qtd_fila = len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")])
+    qtd_processados = len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")])
 
+    # tenta carregar status salvo
+    status_salvo = carregar_json(STATUS_FILE, {})
+
+    # 🔥 CORREÇÃO: nunca confiar no status antigo se não estiver processando
+    if not motor.get("processando", False):
+        return jsonify({
+            "motor_status": "aguardando",
+            "motor_status_label": "Aguardando",
+            "current_step": "ler",
+            "ultima_execucao": "",
+            "pdfs_fila": qtd_fila,
+            "pdfs_processados": qtd_processados,
+            "total_fila": qtd_fila + qtd_processados,
+            "total_processado": qtd_processados,
+            "itens_extraidos": len(itens),
+            "itens": itens,
+            "resumo": resumo,
+            "logs": logs[-50:],
+            "timeline": {
+                "ler": "pending",
+                "extrair": "pending",
+                "blocos": "pending",
+                "normalizar": "pending",
+                "json": "pending",
+                "csv": "pending"
+            },
+            "motor_ctrl": motor
+        })
+
+    # 🔥 só usa status salvo se realmente estiver processando
+    if status_salvo:
+        status_salvo["itens"] = itens
+        status_salvo["resumo"] = resumo
+        status_salvo["logs"] = logs[-50:]
+        status_salvo["pdfs_fila"] = qtd_fila
+        status_salvo["pdfs_processados"] = qtd_processados
+        status_salvo["itens_extraidos"] = len(itens)
+        status_salvo["motor_ctrl"] = motor
+        return jsonify(status_salvo)
+
+    # fallback
     return jsonify({
         "motor_status": "aguardando",
         "motor_status_label": "Aguardando",
         "current_step": "ler",
         "ultima_execucao": "",
-        "pdfs_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]),
-        "pdfs_processados": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
-        "total_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]) + len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
-        "total_processado": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
+        "pdfs_fila": qtd_fila,
+        "pdfs_processados": qtd_processados,
+        "total_fila": qtd_fila + qtd_processados,
+        "total_processado": qtd_processados,
         "itens_extraidos": len(itens),
         "itens": itens,
         "resumo": resumo,
@@ -560,9 +593,8 @@ def status():
             "json": "pending",
             "csv": "pending"
         },
-        "motor_ctrl": ler_motor_ctrl()
+        "motor_ctrl": motor
     })
-
 
 @app.route("/pdf/rankings")
 def rankings():
@@ -606,12 +638,12 @@ def motor_status():
 def motor_ligar():
     data = atualizar_motor_ctrl(
         ligado=True,
+        processando=False,  # 🔥 ESSENCIAL
         parar_solicitado=False,
         ultimo_comando="ligado"
     )
     adicionar_log("motor", "OK", "Motor ligado.")
     return jsonify({"ok": True, "motor": data})
-
 
 @app.route("/pdf/motor/parar", methods=["POST"])
 def motor_parar():
