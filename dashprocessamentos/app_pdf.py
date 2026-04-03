@@ -179,21 +179,13 @@ def extract_text_from_pdf(pdf_path):
         pass
 
     # 🔥 OCR (DUFRIO resolve aqui)
-    try:
-        from pdf2image import convert_from_path
-        import pytesseract
-
-        images = convert_from_path(pdf_path)
-        texto = ""
-
-        for img in images:
-            texto += pytesseract.image_to_string(img, lang="por")
-
-        return normalizar_texto(texto)
-    except Exception as e:
-        raise RuntimeError(f"OCR falhou: {e}")
-
-
+ try:
+    from pdf2image import convert_from_path
+    import pytesseract
+except:
+    return normalizar_texto(texto)  # fallback
+ 
+ 
 def limpar_texto_nota(texto):
     if "RECIBO DO PAGADOR" in texto:
         partes = texto.split("RECIBO DO PAGADOR")
@@ -468,86 +460,95 @@ def processar_lote_background():
         salvar_status("executando", "ler", itens_existentes, resumo_existente)
         adicionar_log("motor", "INFO", f"Iniciando lote com {total_arquivos} PDF(s).")
 
+try:
+    while True:
+        ctrl = ler_motor_ctrl()
+
+        if ctrl.get("parar_solicitado"):
+            adicionar_log("motor", "INFO", "Parada solicitada detectada. Encerrando lote.")
+            break
+
+        arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
+
+        if not arquivos:
+            break
+
+        nome = arquivos[0]
+        caminho = os.path.join(ENTRADA, nome)
+
+        adicionar_log("ler", "INFO", f"Lendo {nome}")
+
         try:
-            for idx, nome in enumerate(arquivos, start=1):
-                ctrl = ler_motor_ctrl()
-                if ctrl.get("parar_solicitado"):
-                    adicionar_log("motor", "INFO", "Parada solicitada detectada. Encerrando lote.")
-                    break
+            salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
 
-                caminho = os.path.join(ENTRADA, nome)
-                adicionar_log("ler", "INFO", f"Lendo {nome} ({idx}/{total_arquivos})")
+            texto = extract_text_from_pdf(caminho)
+            texto = limpar_texto_nota(texto)
 
-                try:
-                    salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
-                    texto = extract_text_from_pdf(caminho)
-                    texto = limpar_texto_nota(texto)
-                    salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
-                    fornecedor = extrair_fornecedor(texto)
-                    numero_nota = extrair_numero_nota(texto, nome)
-                    data_emissao = extrair_data_emissao(texto)
-                    valor_frete = extrair_valor_frete(texto)
-                    valor_total_nota = extrair_valor_total_nota(texto)
-                    bloco_produtos = extrair_bloco_produtos(texto)
+            salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
 
-                    salvar_status("executando", "normalizar", itens_existentes + itens_novos, resumo_existente + resumo_novo)
-                    itens_nota = parse_itens_danfe(bloco_produtos)
+            fornecedor = extrair_fornecedor(texto)
+            numero_nota = extrair_numero_nota(texto, nome)
+            data_emissao = extrair_data_emissao(texto)
+            valor_frete = extrair_valor_frete(texto)
+            valor_total_nota = extrair_valor_total_nota(texto)
+            bloco_produtos = extrair_bloco_produtos(texto)
 
-                    resumo_item = {
-                        "nome_arquivo": nome,
-                        "fornecedor": fornecedor,
-                        "numero_nota": numero_nota,
-                        "data_emissao": data_emissao,
-                        "valor_frete": valor_frete,
-                        "valor_total_nota": valor_total_nota,
-                        "quantidade_itens": len(itens_nota)
-                    }
-                    resumo_novo.append(resumo_item)
+            salvar_status("executando", "normalizar", itens_existentes + itens_novos, resumo_existente + resumo_novo)
 
-                    for item in itens_nota:
-                        itens_novos.append({
-                            "nome_arquivo": nome,
-                            "fornecedor": fornecedor,
-                            "numero_nota": numero_nota,
-                            "data_emissao": data_emissao,
-                            "valor_frete": valor_frete,
-                            "valor_total_nota": valor_total_nota,
-                            "descricao_item": item["descricao_item"],
-                            "quantidade_item": item["quantidade_item"],
-                            "preco_unitario_item": item["preco_unitario_item"],
-                            "preco_total_item": item["preco_total_item"]
-                        })
+            itens_nota = parse_itens_danfe(bloco_produtos)
 
-                    itens_finais = itens_existentes + itens_novos
-                    resumo_finais = resumo_existente + resumo_novo
+            resumo_item = {
+                "nome_arquivo": nome,
+                "fornecedor": fornecedor,
+                "numero_nota": numero_nota,
+                "data_emissao": data_emissao,
+                "valor_frete": valor_frete,
+                "valor_total_nota": valor_total_nota,
+                "quantidade_itens": len(itens_nota)
+            }
 
-                    salvar_json(RESUMO_FILE, resumo_finais)
-                    salvar_json(ITENS_FILE, itens_finais)
+            resumo_novo.append(resumo_item)
 
-                    salvar_status("executando", "json", itens_finais, resumo_finais)
-                    gerar_csv(itens_finais)
+            for item in itens_nota:
+                itens_novos.append({
+                    "nome_arquivo": nome,
+                    "fornecedor": fornecedor,
+                    "numero_nota": numero_nota,
+                    "data_emissao": data_emissao,
+                    "valor_frete": valor_frete,
+                    "valor_total_nota": valor_total_nota,
+                    "descricao_item": item["descricao_item"],
+                    "quantidade_item": item["quantidade_item"],
+                    "preco_unitario_item": item["preco_unitario_item"],
+                    "preco_total_item": item["preco_total_item"]
+                })
 
-                    os.rename(caminho, os.path.join(PROCESSADOS, nome))
-                    adicionar_log("json", "OK", f"{nome} processado com sucesso ({idx}/{total_arquivos}).")
+            itens_finais = itens_existentes + itens_novos
+            resumo_finais = resumo_existente + resumo_novo
 
-                    salvar_status("executando", "csv", itens_finais, resumo_finais)
+            salvar_json(RESUMO_FILE, resumo_finais)
+            salvar_json(ITENS_FILE, itens_finais)
 
-                except Exception as e:
-                    os.rename(caminho, os.path.join(ERRO, nome))
-                    adicionar_log("motor", "ERRO", f"{nome}: {e}")
+            salvar_status("executando", "json", itens_finais, resumo_finais)
 
-            itens_finais = carregar_json(ITENS_FILE, [])
-            resumo_finais = carregar_json(RESUMO_FILE, [])
-            salvar_status("concluido", "csv", itens_finais, resumo_finais)
-            adicionar_log("motor", "OK", "Lote finalizado.")
-        finally:
-            ctrl_final = ler_motor_ctrl()
-            atualizar_motor_ctrl(
-                processando=False,
-                parar_solicitado=False,
-                ligado=ctrl_final.get("ligado", False),
-                ultimo_comando="lote_finalizado"
-            )
+            gerar_csv(itens_finais)
+
+            os.rename(caminho, os.path.join(PROCESSADOS, nome))
+
+            adicionar_log("json", "OK", f"{nome} processado com sucesso.")
+
+            salvar_status("executando", "csv", itens_finais, resumo_finais)
+
+        except Exception as e:
+            os.rename(caminho, os.path.join(ERRO, nome))
+            adicionar_log("motor", "ERRO", f"{nome}: {e}")
+
+    itens_finais = carregar_json(ITENS_FILE, [])
+    resumo_finais = carregar_json(RESUMO_FILE, [])
+
+    salvar_status("concluido", "csv", itens_finais, resumo_finais)
+
+    adicionar_log("motor", "OK", "Lote finalizado.")
 
 
 @app.route("/")
