@@ -181,28 +181,27 @@ def extract_text_from_pdf(pdf_path):
 
 def extrair_numero_nota(texto, nome_arquivo):
     patterns = [
-        r"\bN[º°]?\s*[:.]?\s*(\d{1,9})\b",
-        r"\bN[ÚU]MERO\s*[:.]?\s*(\d{1,9})\b",
-        r"\bNF[ -]?[Ee]?\s*[:.]?\s*(\d{1,9})\b"
+        r"N[º°]?\s*[:.]?\s*0*([0-9]{1,9})",
+        r"NF-e\s+S[ÉE]RIE\s*:\s*\d+\s+N[º°]?\s*[:.]?\s*0*([0-9]{1,9})",
+        r"N[º°]\s*0*([0-9]{1,9})",
+        r"Nº:\s*0*([0-9]{1,9})",
+        r"\b000\.0*([0-9]{1,9})\b"
     ]
+
     for p in patterns:
         m = re.search(p, texto, re.I)
         if m:
             return m.group(1)
 
-    m = re.search(r"\bNF\s*([0-9]{1,9})\b", nome_arquivo, re.I)
-    if m:
-        return m.group(1)
-
-    m = re.search(r"(\d{4,9})", nome_arquivo)
+    m = re.search(r"NF\s*([0-9]{1,9})", nome_arquivo, re.I)
     if m:
         return m.group(1)
 
     return ""
 
-
 def extrair_data_emissao(texto):
     patterns = [
+        r"DATA DA EMISSÃO\s+(\d{2}/\d{2}/\d{4})",
         r"DATA DE EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
         r"EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
     ]
@@ -211,7 +210,6 @@ def extrair_data_emissao(texto):
         if m:
             return m.group(1)
     return ""
-
 
 def extrair_valor_frete(texto):
     patterns = [
@@ -241,15 +239,22 @@ def extrair_fornecedor(texto):
     linhas = [x.strip() for x in texto.split("\n") if x.strip()]
 
     for i, linha in enumerate(linhas):
-        if "IDENTIFICAÇÃO DO EMITENTE" in linha.upper():
-            for j in range(i + 1, min(i + 10, len(linhas))):
-                cand = linhas[j]
-                if not re.search(
-                    r"CNPJ|IE|CEP|TELEFONE|FONE|RUA|AVENIDA|ENDERE|MUNICÍPIO|MUNICIPIO|BAIRRO|UF|DANFE|DOCUMENTO AUXILIAR",
+        if "DOCUMENTO AUXILIAR" in linha.upper() or "DANFE" in linha.upper():
+            for j in range(max(0, i - 6), i):
+                cand = linhas[j].strip()
+                if cand and not re.search(
+                    r"CHAVE DE ACESSO|NATUREZA DA OPERAÇÃO|INSCRIÇÃO ESTADUAL|CNPJ|PROTOCOLO|NF-E|FOLHA|SÉRIE|Nº|DOCUMENTO AUXILIAR|DANFE",
                     cand,
                     re.I
                 ):
-                    return cand
+                    if len(cand) > 3:
+                        return cand
+
+    for i, linha in enumerate(linhas):
+        if "RECEBEMOS DE" in linha.upper():
+            m = re.search(r"RECEBEMOS DE\s+(.+?)\s+OS PRODUTOS", linha, re.I)
+            if m:
+                return m.group(1).strip()
 
     return "Fornecedor não identificado"
 
@@ -293,56 +298,53 @@ def parse_itens_danfe(bloco):
     if not bloco:
         return itens
 
+    bloco = bloco.replace("DADOS DO PRODUTO/SERVIÇO", "")
+    bloco = bloco.replace("DADOS DO PRODUTO / SERVIÇO", "")
     linhas = [x.strip() for x in bloco.split("\n") if x.strip()]
-    buffer = []
+
+    buffer_desc = []
 
     for linha in linhas:
         if re.search(
-            r"CÓD\.?\s*PROD|DESCRIÇÃO DO PRODUTO|V\.\s*UNIT|V\.\s*TOTAL|QUANT|NCM|CFOP|UNID|ALIQ|ICMS|IPI",
+            r"COD\.?\s*PROD|DESCRIÇÃO DO PRODUTO|VALOR TOTAL|VALOR UNITARIO|VALOR UNITÁRIO|ALIQUOTAS|CSOSN|NCM|CFOP|UNID|QUANT",
             linha,
             re.I
         ):
             continue
 
-        buffer.append(linha)
-        texto_item = " ".join(buffer)
-        numeros = re.findall(r"\d{1,3}(?:\.\d{3})*,\d{2}", texto_item)
+        # linha final do item com colunas numéricas da DANFE
+        m = re.search(
+            r"^(.*?)\s+(\d{8})\s+\d+\s+(\d{3})\s+(\d{4})\s+([A-Z]{1,4})\s+(\d+,\d{4})\s+(\d+,\d{4})\s+(\d+,\d{2})",
+            linha,
+            re.I
+        )
 
-        if len(numeros) >= 3:
-            try:
-                qtd = br_to_float(numeros[-3])
-                unit = br_to_float(numeros[-2])
-                total = br_to_float(numeros[-1])
-            except Exception:
-                buffer = []
-                continue
+        if m:
+            desc_ini = m.group(1).strip()
+            ncm = m.group(2)
+            cfop = m.group(4)
+            unid = m.group(5)
+            qtd = br_to_float(m.group(6))
+            unit = br_to_float(m.group(7))
+            total = br_to_float(m.group(8))
 
-            descricao = texto_item
-            descricao = re.sub(r"^\d{1,20}\s+", "", descricao)
-            descricao = re.sub(
-                r"\s+\d{4,10}\s+\d{2,4}\s+\d{4}\s+[A-Z]{1,6}\s+\d{1,3}(?:\.\d{3})*,\d{2}\s+\d{1,3}(?:\.\d{3})*,\d{2}\s+\d{1,3}(?:\.\d{3})*,\d{2}.*$",
-                "",
-                descricao,
-                flags=re.I
-            )
-            descricao = limpar_descricao_item(descricao)
+            descricao_final = " ".join(buffer_desc + [desc_ini]).strip()
+            descricao_final = limpar_descricao_item(descricao_final)
 
-            if descricao and not re.search(
-                r"CHAVE DE ACESSO|PARCELA|FATURA|DUPLICATA|FONTE IBPT|PEDIDO CLIENTE|VALOR DO FRETE|VALOR TOTAL",
-                descricao,
-                re.I
-            ):
-                itens.append({
-                    "descricao_item": descricao,
-                    "quantidade_item": qtd,
-                    "preco_unitario_item": unit,
-                    "preco_total_item": total
-                })
+            itens.append({
+                "descricao_item": descricao_final,
+                "quantidade_item": qtd,
+                "preco_unitario_item": unit,
+                "preco_total_item": total
+            })
 
-            buffer = []
+            buffer_desc = []
+        else:
+            # linhas de complemento da descrição
+            if len(linha) > 2 and not re.search(r"^0,\d{2}$", linha):
+                buffer_desc.append(linha)
 
     return itens
-
 
 def gerar_csv(itens):
     import csv
