@@ -520,7 +520,6 @@ def processar_lote_background():
 def home():
     return jsonify({"status": "ok", "msg": "Motor PDF rodando 🚀"})
 
-
 @app.route("/pdf/status")
 def status():
     itens = carregar_json(ITENS_FILE, [])
@@ -531,10 +530,8 @@ def status():
     qtd_fila = len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")])
     qtd_processados = len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")])
 
-    # tenta carregar status salvo
     status_salvo = carregar_json(STATUS_FILE, {})
 
-    # 🔥 CORREÇÃO: nunca confiar no status antigo se não estiver processando
     if not motor.get("processando", False):
         return jsonify({
             "motor_status": "aguardando",
@@ -560,18 +557,18 @@ def status():
             "motor_ctrl": motor
         })
 
-    # 🔥 só usa status salvo se realmente estiver processando
     if status_salvo:
         status_salvo["itens"] = itens
         status_salvo["resumo"] = resumo
         status_salvo["logs"] = logs[-50:]
         status_salvo["pdfs_fila"] = qtd_fila
         status_salvo["pdfs_processados"] = qtd_processados
+        status_salvo["total_fila"] = qtd_fila + qtd_processados
+        status_salvo["total_processado"] = qtd_processados
         status_salvo["itens_extraidos"] = len(itens)
         status_salvo["motor_ctrl"] = motor
         return jsonify(status_salvo)
 
-    # fallback
     return jsonify({
         "motor_status": "aguardando",
         "motor_status_label": "Aguardando",
@@ -638,23 +635,40 @@ def motor_status():
 def motor_ligar():
     data = atualizar_motor_ctrl(
         ligado=True,
-        processando=False,  # 🔥 ESSENCIAL
+        processando=False,
         parar_solicitado=False,
         ultimo_comando="ligado"
     )
+
+    salvar_status(
+        motor_status="aguardando",
+        current_step="ler",
+        itens=carregar_json(ITENS_FILE, []),
+        resumo=carregar_json(RESUMO_FILE, [])
+    )
+
     adicionar_log("motor", "OK", "Motor ligado.")
     return jsonify({"ok": True, "motor": data})
+
 
 @app.route("/pdf/motor/parar", methods=["POST"])
 def motor_parar():
     data = atualizar_motor_ctrl(
         parar_solicitado=True,
         ligado=False,
+        processando=False,
         ultimo_comando="parada_solicitada"
     )
+
+    salvar_status(
+        motor_status="aguardando",
+        current_step="ler",
+        itens=carregar_json(ITENS_FILE, []),
+        resumo=carregar_json(RESUMO_FILE, [])
+    )
+
     adicionar_log("motor", "INFO", "Parada solicitada para o motor.")
     return jsonify({"ok": True, "motor": data})
-
 
 @app.route("/pdf/motor/processar-lote", methods=["POST"])
 def motor_processar_lote():
