@@ -88,12 +88,15 @@ def salvar_status(motor_status="aguardando", current_step="ler", itens=None, res
         "ultima_execucao": agora_str(),
         "pdfs_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]),
         "pdfs_processados": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
+        "total_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]) + len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
+        "total_processado": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
         "itens_extraidos": len(itens),
         "itens": itens,
         "resumo": resumo,
         "logs": carregar_json(LOG_FILE, []),
         "timeline": timeline
     }
+    
     salvar_json(STATUS_FILE, payload)
 
 
@@ -462,6 +465,7 @@ def upload():
 
 
 @app.route("/pdf/processar")
+@app.route("/pdf/processar")
 def processar():
     itens_existentes = carregar_json(ITENS_FILE, [])
     resumo_existente = carregar_json(RESUMO_FILE, [])
@@ -470,21 +474,34 @@ def processar():
     itens_novos = []
     resumo_novo = []
 
-    salvar_status("executando", "ler", itens_existentes, resumo_existente)
-    adicionar_log("motor", "INFO", "Iniciando processamento dos PDFs.")
-
     arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
+    total_arquivos = len(arquivos)
 
-    for nome in arquivos:
+    salvar_status("executando", "ler", itens_existentes, resumo_existente)
+    adicionar_log("motor", "INFO", f"Iniciando processamento de {total_arquivos} PDF(s).")
+
+    for idx, nome in enumerate(arquivos, start=1):
         caminho = os.path.join(ENTRADA, nome)
-        logs_exec.append(f"Processando {nome}")
-        adicionar_log("ler", "INFO", f"Lendo {nome}")
+        logs_exec.append(f"Processando {nome} ({idx}/{total_arquivos})")
+        adicionar_log("ler", "INFO", f"Lendo {nome} ({idx}/{total_arquivos})")
 
         try:
-            salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+            salvar_status(
+                "executando",
+                "extrair",
+                itens_existentes + itens_novos,
+                resumo_existente + resumo_novo
+            )
+
             texto = extract_text_from_pdf(caminho)
 
-            salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+            salvar_status(
+                "executando",
+                "blocos",
+                itens_existentes + itens_novos,
+                resumo_existente + resumo_novo
+            )
+
             fornecedor = extrair_fornecedor(texto)
             numero_nota = extrair_numero_nota(texto, nome)
             data_emissao = extrair_data_emissao(texto)
@@ -492,7 +509,13 @@ def processar():
             valor_total_nota = extrair_valor_total_nota(texto)
             bloco_produtos = extrair_bloco_produtos(texto)
 
-            salvar_status("executando", "normalizar", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+            salvar_status(
+                "executando",
+                "normalizar",
+                itens_existentes + itens_novos,
+                resumo_existente + resumo_novo
+            )
+
             itens_nota = parse_itens_danfe(bloco_produtos)
 
             resumo_item = {
@@ -520,23 +543,44 @@ def processar():
                     "preco_total_item": item["preco_total_item"]
                 })
 
-            salvar_status("executando", "json", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+            itens_finais_parciais = itens_existentes + itens_novos
+            resumo_finais_parciais = resumo_existente + resumo_novo
+
+            salvar_json(RESUMO_FILE, resumo_finais_parciais)
+            salvar_json(ITENS_FILE, itens_finais_parciais)
+
+            salvar_status(
+                "executando",
+                "json",
+                itens_finais_parciais,
+                resumo_finais_parciais
+            )
+
             os.rename(caminho, os.path.join(PROCESSADOS, nome))
-            adicionar_log("json", "OK", f"{nome} processado com sucesso.")
+            adicionar_log("json", "OK", f"{nome} processado com sucesso ({idx}/{total_arquivos}).")
+
+            salvar_status(
+                "executando",
+                "csv",
+                itens_finais_parciais,
+                resumo_finais_parciais
+            )
+            gerar_csv(itens_finais_parciais)
 
         except Exception as e:
             os.rename(caminho, os.path.join(ERRO, nome))
             logs_exec.append(str(e))
             adicionar_log("motor", "ERRO", f"{nome}: {e}")
 
-    itens_finais = itens_existentes + itens_novos
-    resumo_final = resumo_existente + resumo_novo
+            salvar_status(
+                "executando",
+                "extrair",
+                itens_existentes + itens_novos,
+                resumo_existente + resumo_novo
+            )
 
-    salvar_json(RESUMO_FILE, resumo_final)
-    salvar_json(ITENS_FILE, itens_finais)
-
-    salvar_status("executando", "csv", itens_finais, resumo_final)
-    gerar_csv(itens_finais)
+    itens_finais = carregar_json(ITENS_FILE, [])
+    resumo_final = carregar_json(RESUMO_FILE, [])
 
     rankings = gerar_rankings()
     salvar_status("concluido", "csv", itens_finais, resumo_final)
@@ -549,7 +593,6 @@ def processar():
         "rankings": rankings,
         "logs": logs_exec
     })
-
 
 @app.route("/pdf/rankings")
 def rankings():
