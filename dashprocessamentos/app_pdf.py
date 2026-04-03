@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import threading
 from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -21,9 +22,12 @@ LOG_FILE = f"{JSON_DIR}/logs_motor_pdf.json"
 RESUMO_FILE = f"{JSON_DIR}/resumo.json"
 ITENS_FILE = f"{JSON_DIR}/itens.json"
 CSV_FILE = f"{CSV_DIR}/materiais_extraidos.csv"
+MOTOR_CTRL_FILE = f"{JSON_DIR}/motor_ctrl.json"
 
 for pasta in [ENTRADA, PROCESSADOS, ERRO, JSON_DIR, CSV_DIR]:
     os.makedirs(pasta, exist_ok=True)
+
+motor_lock = threading.Lock()
 
 
 def agora_str():
@@ -57,9 +61,39 @@ def adicionar_log(etapa, status, mensagem):
     salvar_json(LOG_FILE, logs)
 
 
+def motor_ctrl_default():
+    return {
+        "ligado": False,
+        "processando": False,
+        "parar_solicitado": False,
+        "modo": "lote",
+        "ultimo_comando": "desligado",
+        "atualizado_em": agora_str()
+    }
+
+
+def ler_motor_ctrl():
+    return carregar_json(MOTOR_CTRL_FILE, motor_ctrl_default())
+
+
+def salvar_motor_ctrl(data):
+    data["atualizado_em"] = agora_str()
+    salvar_json(MOTOR_CTRL_FILE, data)
+
+
+def atualizar_motor_ctrl(**kwargs):
+    data = ler_motor_ctrl()
+    data.update(kwargs)
+    salvar_motor_ctrl(data)
+    return data
+
+
 def salvar_status(motor_status="aguardando", current_step="ler", itens=None, resumo=None):
     itens = itens or carregar_json(ITENS_FILE, [])
     resumo = resumo or carregar_json(RESUMO_FILE, [])
+
+    qtd_fila = len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")])
+    qtd_processados = len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")])
 
     timeline = {
         "ler": "pending",
@@ -86,17 +120,17 @@ def salvar_status(motor_status="aguardando", current_step="ler", itens=None, res
         "motor_status_label": motor_status.capitalize(),
         "current_step": current_step,
         "ultima_execucao": agora_str(),
-        "pdfs_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]),
-        "pdfs_processados": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
-        "total_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]) + len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
-        "total_processado": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
+        "pdfs_fila": qtd_fila,
+        "pdfs_processados": qtd_processados,
+        "total_fila": qtd_fila + qtd_processados,
+        "total_processado": qtd_processados,
         "itens_extraidos": len(itens),
         "itens": itens,
         "resumo": resumo,
         "logs": carregar_json(LOG_FILE, []),
-        "timeline": timeline
+        "timeline": timeline,
+        "motor_ctrl": ler_motor_ctrl()
     }
-    
     salvar_json(STATUS_FILE, payload)
 
 
@@ -167,7 +201,6 @@ def extrair_data_emissao(texto):
     patterns = [
         r"DATA DE EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
         r"EMISS[ÃA]O\s+(\d{2}/\d{2}/\d{4})",
-        r"\b(\d{2}/\d{2}/\d{4})\b"
     ]
     for p in patterns:
         m = re.search(p, texto, re.I)
@@ -213,25 +246,6 @@ def extrair_fornecedor(texto):
                     re.I
                 ):
                     return cand
-
-    bloco = ""
-    m = re.search(
-        r"IDENTIFICAÇÃO DO EMITENTE(.*?)(DANFE|DOCUMENTO AUXILIAR|NATUREZA DA OPERAÇÃO)",
-        texto,
-        re.S | re.I
-    )
-    if m:
-        bloco = m.group(1).strip()
-
-    if bloco:
-        linhas = [x.strip() for x in bloco.split("\n") if x.strip()]
-        for linha in linhas:
-            if not re.search(
-                r"CNPJ|IE|CEP|Telefone|Fone|Rua|Avenida|Endere|Município|Municipio|Bairro|UF",
-                linha,
-                re.I
-            ):
-                return linha
 
     return "Fornecedor não identificado"
 
@@ -288,7 +302,6 @@ def parse_itens_danfe(bloco):
 
         buffer.append(linha)
         texto_item = " ".join(buffer)
-
         numeros = re.findall(r"\d{1,3}(?:\.\d{3})*,\d{2}", texto_item)
 
         if len(numeros) >= 3:
@@ -397,6 +410,112 @@ def gerar_rankings():
     }
 
 
+def processar_lote_background():
+    with motor_lock:
+        ctrl = ler_motor_ctrl()
+        if ctrl.get("processando"):
+            return
+
+        atualizar_motor_ctrl(
+            processando=True,
+            parar_solicitado=False,
+            ultimo_comando="processando_lote"
+        )
+
+        itens_existentes = carregar_json(ITENS_FILE, [])
+        resumo_existente = carregar_json(RESUMO_FILE, [])
+
+        itens_novos = []
+        resumo_novo = []
+
+        arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
+        total_arquivos = len(arquivos)
+
+        salvar_status("executando", "ler", itens_existentes, resumo_existente)
+        adicionar_log("motor", "INFO", f"Iniciando lote com {total_arquivos} PDF(s).")
+
+        try:
+            for idx, nome in enumerate(arquivos, start=1):
+                ctrl = ler_motor_ctrl()
+                if ctrl.get("parar_solicitado"):
+                    adicionar_log("motor", "INFO", "Parada solicitada detectada. Encerrando lote.")
+                    break
+
+                caminho = os.path.join(ENTRADA, nome)
+                adicionar_log("ler", "INFO", f"Lendo {nome} ({idx}/{total_arquivos})")
+
+                try:
+                    salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+                    texto = extract_text_from_pdf(caminho)
+
+                    salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+                    fornecedor = extrair_fornecedor(texto)
+                    numero_nota = extrair_numero_nota(texto, nome)
+                    data_emissao = extrair_data_emissao(texto)
+                    valor_frete = extrair_valor_frete(texto)
+                    valor_total_nota = extrair_valor_total_nota(texto)
+                    bloco_produtos = extrair_bloco_produtos(texto)
+
+                    salvar_status("executando", "normalizar", itens_existentes + itens_novos, resumo_existente + resumo_novo)
+                    itens_nota = parse_itens_danfe(bloco_produtos)
+
+                    resumo_item = {
+                        "nome_arquivo": nome,
+                        "fornecedor": fornecedor,
+                        "numero_nota": numero_nota,
+                        "data_emissao": data_emissao,
+                        "valor_frete": valor_frete,
+                        "valor_total_nota": valor_total_nota,
+                        "quantidade_itens": len(itens_nota)
+                    }
+                    resumo_novo.append(resumo_item)
+
+                    for item in itens_nota:
+                        itens_novos.append({
+                            "nome_arquivo": nome,
+                            "fornecedor": fornecedor,
+                            "numero_nota": numero_nota,
+                            "data_emissao": data_emissao,
+                            "valor_frete": valor_frete,
+                            "valor_total_nota": valor_total_nota,
+                            "descricao_item": item["descricao_item"],
+                            "quantidade_item": item["quantidade_item"],
+                            "preco_unitario_item": item["preco_unitario_item"],
+                            "preco_total_item": item["preco_total_item"]
+                        })
+
+                    itens_finais = itens_existentes + itens_novos
+                    resumo_finais = resumo_existente + resumo_novo
+
+                    salvar_json(RESUMO_FILE, resumo_finais)
+                    salvar_json(ITENS_FILE, itens_finais)
+
+                    salvar_status("executando", "json", itens_finais, resumo_finais)
+                    gerar_csv(itens_finais)
+
+                    os.rename(caminho, os.path.join(PROCESSADOS, nome))
+                    adicionar_log("json", "OK", f"{nome} processado com sucesso ({idx}/{total_arquivos}).")
+
+                    salvar_status("executando", "csv", itens_finais, resumo_finais)
+
+                except Exception as e:
+                    os.rename(caminho, os.path.join(ERRO, nome))
+                    adicionar_log("motor", "ERRO", f"{nome}: {e}")
+
+            itens_finais = carregar_json(ITENS_FILE, [])
+            resumo_finais = carregar_json(RESUMO_FILE, [])
+            salvar_status("concluido", "csv", itens_finais, resumo_finais)
+            adicionar_log("motor", "OK", "Lote finalizado.")
+        finally:
+            ctrl_final = ler_motor_ctrl()
+            atualizar_motor_ctrl(
+                processando=False,
+                parar_solicitado=False,
+                ligado=ctrl_final.get("ligado", False),
+                ultimo_comando="lote_finalizado"
+            )
+
+
 @app.route("/")
 def home():
     return jsonify({"status": "ok", "msg": "Motor PDF rodando 🚀"})
@@ -417,6 +536,7 @@ def status():
             status_salvo["pdfs_fila"] = len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")])
             status_salvo["pdfs_processados"] = len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")])
             status_salvo["itens_extraidos"] = len(itens)
+            status_salvo["motor_ctrl"] = ler_motor_ctrl()
             return jsonify(status_salvo)
 
     return jsonify({
@@ -426,6 +546,8 @@ def status():
         "ultima_execucao": "",
         "pdfs_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]),
         "pdfs_processados": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
+        "total_fila": len([f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]) + len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
+        "total_processado": len([f for f in os.listdir(PROCESSADOS) if f.lower().endswith(".pdf")]),
         "itens_extraidos": len(itens),
         "itens": itens,
         "resumo": resumo,
@@ -437,7 +559,16 @@ def status():
             "normalizar": "pending",
             "json": "pending",
             "csv": "pending"
-        }
+        },
+        "motor_ctrl": ler_motor_ctrl()
+    })
+
+
+@app.route("/pdf/rankings")
+def rankings():
+    return jsonify({
+        "ok": True,
+        "rankings": gerar_rankings()
     })
 
 
@@ -447,7 +578,6 @@ def upload():
         return jsonify({"ok": False, "erro": "sem arquivo"}), 400
 
     arquivo = request.files["file"]
-
     if not arquivo.filename:
         return jsonify({"ok": False, "erro": "arquivo inválido"}), 400
 
@@ -464,139 +594,58 @@ def upload():
     })
 
 
-@app.route("/pdf/processar")
-@app.route("/pdf/processar")
-def processar():
-    itens_existentes = carregar_json(ITENS_FILE, [])
-    resumo_existente = carregar_json(RESUMO_FILE, [])
-
-    logs_exec = []
-    itens_novos = []
-    resumo_novo = []
-
-    arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
-    total_arquivos = len(arquivos)
-
-    salvar_status("executando", "ler", itens_existentes, resumo_existente)
-    adicionar_log("motor", "INFO", f"Iniciando processamento de {total_arquivos} PDF(s).")
-
-    for idx, nome in enumerate(arquivos, start=1):
-        caminho = os.path.join(ENTRADA, nome)
-        logs_exec.append(f"Processando {nome} ({idx}/{total_arquivos})")
-        adicionar_log("ler", "INFO", f"Lendo {nome} ({idx}/{total_arquivos})")
-
-        try:
-            salvar_status(
-                "executando",
-                "extrair",
-                itens_existentes + itens_novos,
-                resumo_existente + resumo_novo
-            )
-
-            texto = extract_text_from_pdf(caminho)
-
-            salvar_status(
-                "executando",
-                "blocos",
-                itens_existentes + itens_novos,
-                resumo_existente + resumo_novo
-            )
-
-            fornecedor = extrair_fornecedor(texto)
-            numero_nota = extrair_numero_nota(texto, nome)
-            data_emissao = extrair_data_emissao(texto)
-            valor_frete = extrair_valor_frete(texto)
-            valor_total_nota = extrair_valor_total_nota(texto)
-            bloco_produtos = extrair_bloco_produtos(texto)
-
-            salvar_status(
-                "executando",
-                "normalizar",
-                itens_existentes + itens_novos,
-                resumo_existente + resumo_novo
-            )
-
-            itens_nota = parse_itens_danfe(bloco_produtos)
-
-            resumo_item = {
-                "nome_arquivo": nome,
-                "fornecedor": fornecedor,
-                "numero_nota": numero_nota,
-                "data_emissao": data_emissao,
-                "valor_frete": valor_frete,
-                "valor_total_nota": valor_total_nota,
-                "quantidade_itens": len(itens_nota)
-            }
-            resumo_novo.append(resumo_item)
-
-            for item in itens_nota:
-                itens_novos.append({
-                    "nome_arquivo": nome,
-                    "fornecedor": fornecedor,
-                    "numero_nota": numero_nota,
-                    "data_emissao": data_emissao,
-                    "valor_frete": valor_frete,
-                    "valor_total_nota": valor_total_nota,
-                    "descricao_item": item["descricao_item"],
-                    "quantidade_item": item["quantidade_item"],
-                    "preco_unitario_item": item["preco_unitario_item"],
-                    "preco_total_item": item["preco_total_item"]
-                })
-
-            itens_finais_parciais = itens_existentes + itens_novos
-            resumo_finais_parciais = resumo_existente + resumo_novo
-
-            salvar_json(RESUMO_FILE, resumo_finais_parciais)
-            salvar_json(ITENS_FILE, itens_finais_parciais)
-
-            salvar_status(
-                "executando",
-                "json",
-                itens_finais_parciais,
-                resumo_finais_parciais
-            )
-
-            os.rename(caminho, os.path.join(PROCESSADOS, nome))
-            adicionar_log("json", "OK", f"{nome} processado com sucesso ({idx}/{total_arquivos}).")
-
-            salvar_status(
-                "executando",
-                "csv",
-                itens_finais_parciais,
-                resumo_finais_parciais
-            )
-            gerar_csv(itens_finais_parciais)
-
-        except Exception as e:
-            os.rename(caminho, os.path.join(ERRO, nome))
-            logs_exec.append(str(e))
-            adicionar_log("motor", "ERRO", f"{nome}: {e}")
-
-            salvar_status(
-                "executando",
-                "extrair",
-                itens_existentes + itens_novos,
-                resumo_existente + resumo_novo
-            )
-
-    itens_finais = carregar_json(ITENS_FILE, [])
-    resumo_final = carregar_json(RESUMO_FILE, [])
-
-    rankings = gerar_rankings()
-    salvar_status("concluido", "csv", itens_finais, resumo_final)
-    adicionar_log("motor", "OK", "Processamento concluído com sucesso.")
-
-    return jsonify({
-        "status": "ok",
-        "processados": len(resumo_novo),
-        "itens_extraidos": len(itens_novos),
-        "rankings": rankings,
-        "logs": logs_exec
-    })
-
-@app.route("/pdf/rankings")
-def rankings():
+@app.route("/pdf/motor", methods=["GET"])
+def motor_status():
     return jsonify({
         "ok": True,
-        "rankings": gerar_rankings()
+        "motor": ler_motor_ctrl()
+    })
+
+
+@app.route("/pdf/motor/ligar", methods=["POST"])
+def motor_ligar():
+    data = atualizar_motor_ctrl(
+        ligado=True,
+        parar_solicitado=False,
+        ultimo_comando="ligado"
+    )
+    adicionar_log("motor", "OK", "Motor ligado.")
+    return jsonify({"ok": True, "motor": data})
+
+
+@app.route("/pdf/motor/parar", methods=["POST"])
+def motor_parar():
+    data = atualizar_motor_ctrl(
+        parar_solicitado=True,
+        ligado=False,
+        ultimo_comando="parada_solicitada"
+    )
+    adicionar_log("motor", "INFO", "Parada solicitada para o motor.")
+    return jsonify({"ok": True, "motor": data})
+
+
+@app.route("/pdf/motor/processar-lote", methods=["POST"])
+def motor_processar_lote():
+    ctrl = ler_motor_ctrl()
+
+    if not ctrl.get("ligado"):
+        return jsonify({
+            "ok": False,
+            "erro": "Motor desligado. Ligue o motor antes de iniciar o lote."
+        }), 400
+
+    if ctrl.get("processando"):
+        return jsonify({
+            "ok": False,
+            "erro": "Já existe um lote em processamento."
+        }), 400
+
+    thread = threading.Thread(target=processar_lote_background, daemon=True)
+    thread.start()
+
+    adicionar_log("motor", "INFO", "Processamento em lote iniciado em background.")
+    return jsonify({
+        "ok": True,
+        "status": "processando",
+        "mensagem": "Lote iniciado em background."
     })
