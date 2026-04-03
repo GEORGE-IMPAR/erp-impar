@@ -292,27 +292,99 @@
   function money(v){ return "R$ " + (Number(v)||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function intFmt(v){ return (Number(v)||0).toLocaleString("pt-BR"); }
 
-  function getSessaoERP(){
-    const KEYS = ["ERPIMPAR_USER","usuarioLogado","impar_user","user","ERP_IMPAR_USER","ERPIMPAR_LOGIN"];
-    for(const key of KEYS){
-      const raw = localStorage.getItem(key) || sessionStorage.getItem(key);
-      if(!raw) continue;
-      try{
-        const parsed = JSON.parse(raw);
-        return { nome: parsed.nome || parsed.Nome || "Usuário", email: parsed.email || parsed.Email || "—" };
-      }catch{
-        if(String(raw).includes("@")) return { nome: String(raw).split("@")[0], email: raw };
+function getLoggedUser() {
+  const STORAGE_KEYS = [
+    "ERPIMPAR_USER",
+    "usuarioLogado",
+    "impar_user",
+    "user",
+    "ERP_IMPAR_USER",
+    "ERPIMPAR_LOGIN"
+  ];
+
+  for (const key of STORAGE_KEYS) {
+    const raw = localStorage.getItem(key) || sessionStorage.getItem(key);
+    if (!raw) continue;
+
+    try {
+      const parsed = JSON.parse(raw);
+
+      const nome =
+        parsed?.Nome ||
+        parsed?.nome ||
+        parsed?.name ||
+        parsed?.usuario ||
+        parsed?.userName ||
+        parsed?.username ||
+        parsed?.displayName ||
+        "";
+
+      const email =
+        parsed?.Email ||
+        parsed?.email ||
+        parsed?.mail ||
+        parsed?.userEmail ||
+        parsed?.username ||
+        "";
+
+      if (nome || email) {
+        return {
+          nome: nome || (email ? email.split("@")[0] : "Usuário"),
+          email: email || "—"
+        };
+      }
+    } catch (e) {
+      const val = String(raw).trim();
+      if (val) {
+        if (val.includes("@")) {
+          return {
+            nome: val.split("@")[0],
+            email: val
+          };
+        }
+        return {
+          nome: val,
+          email: "—"
+        };
       }
     }
-    return null;
   }
 
-  function loadUser(){
-    const u = getSessaoERP();
-    if(!u){ window.location.href = LOGIN_URL; return; }
-    document.getElementById("userName").textContent = u.nome || "Usuário";
-    document.getElementById("userEmail").textContent = u.email || "—";
+  const nomeFallback =
+    localStorage.getItem("usuarioNome") ||
+    sessionStorage.getItem("usuarioNome") ||
+    "";
+
+  const emailFallback =
+    localStorage.getItem("usuarioEmail") ||
+    sessionStorage.getItem("usuarioEmail") ||
+    "";
+
+  if (nomeFallback || emailFallback) {
+    return {
+      nome: nomeFallback || (emailFallback ? emailFallback.split("@")[0] : "Usuário"),
+      email: emailFallback || "—"
+    };
   }
+
+  return null;
+}
+
+function applyLoggedUser() {
+  const user = getLoggedUser();
+
+  const elNome = document.getElementById("userName");
+  const elEmail = document.getElementById("userEmail");
+
+  if (!user) {
+    if (elNome) elNome.textContent = "Usuário";
+    if (elEmail) elEmail.textContent = "—";
+    return;
+  }
+
+  if (elNome) elNome.textContent = user.nome || "Usuário";
+  if (elEmail) elEmail.textContent = user.email || "—";
+}
 
   function setSaveStatus(text, cls="info"){
     const el = document.getElementById("saveStatus");
@@ -651,7 +723,7 @@ async function processarLote() {
   ["dragleave","drop"].forEach(evt => drop.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); drop.classList.remove("drag"); }));
   drop.addEventListener("drop", (e) => attachFiles(e.dataTransfer.files));
 
-  loadUser();
+  applyLoggedUser();
   renderRankings({});
   atualizarStatus();
 })();
