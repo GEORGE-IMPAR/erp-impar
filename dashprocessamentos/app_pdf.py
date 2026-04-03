@@ -160,23 +160,45 @@ def br_to_float(valor):
 def extract_text_from_pdf(pdf_path):
     try:
         import pdfplumber
-        partes = []
         with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                partes.append(page.extract_text() or "")
-        return normalizar_texto("\n".join(partes))
-    except Exception:
+            texto = "\n".join([p.extract_text() or "" for p in pdf.pages])
+
+        if len(texto.strip()) > 50:
+            return normalizar_texto(texto)
+    except:
         pass
 
     try:
         from PyPDF2 import PdfReader
         reader = PdfReader(pdf_path)
-        partes = []
-        for page in reader.pages:
-            partes.append(page.extract_text() or "")
-        return normalizar_texto("\n".join(partes))
+        texto = "\n".join([p.extract_text() or "" for p in reader.pages])
+
+        if len(texto.strip()) > 50:
+            return normalizar_texto(texto)
+    except:
+        pass
+
+    # 🔥 OCR (DUFRIO resolve aqui)
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+
+        images = convert_from_path(pdf_path)
+        texto = ""
+
+        for img in images:
+            texto += pytesseract.image_to_string(img, lang="por")
+
+        return normalizar_texto(texto)
     except Exception as e:
-        raise RuntimeError(f"Falha ao extrair texto do PDF: {e}")
+        raise RuntimeError(f"OCR falhou: {e}")
+
+
+def limpar_texto_nota(texto):
+    if "RECIBO DO PAGADOR" in texto:
+        partes = texto.split("RECIBO DO PAGADOR")
+        return partes[-1]
+    return texto
 
 
 def extrair_numero_nota(texto, nome_arquivo):
@@ -434,7 +456,13 @@ def processar_lote_background():
         itens_novos = []
         resumo_novo = []
 
-        arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
+        while True:
+          arquivos = [f for f in os.listdir(ENTRADA) if f.lower().endswith(".pdf")]
+
+         if not arquivos:
+           break
+
+        nome = arquivos[0]
         total_arquivos = len(arquivos)
 
         salvar_status("executando", "ler", itens_existentes, resumo_existente)
@@ -453,7 +481,7 @@ def processar_lote_background():
                 try:
                     salvar_status("executando", "extrair", itens_existentes + itens_novos, resumo_existente + resumo_novo)
                     texto = extract_text_from_pdf(caminho)
-
+                    texto = limpar_texto_nota(texto)
                     salvar_status("executando", "blocos", itens_existentes + itens_novos, resumo_existente + resumo_novo)
                     fornecedor = extrair_fornecedor(texto)
                     numero_nota = extrair_numero_nota(texto, nome)
@@ -539,7 +567,7 @@ def status():
     status_salvo = carregar_json(STATUS_FILE, {})
 
     # 🔥 SE NÃO ESTÁ PROCESSANDO → NÃO PODE FICAR EXECUTANDO
-    if not motor.get("processando", False):
+    if not motor.get("ligado", False):
         return jsonify({
             "motor_status": "aguardando",
             "motor_status_label": "Aguardando",
