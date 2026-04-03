@@ -73,7 +73,10 @@
     <div class="summary-card"><div class="summary-k">PDFs processados</div><div class="summary-v" id="sumProcessados">0</div></div>
     <div class="summary-card"><div class="summary-k">Itens extraídos</div><div class="summary-v" id="sumItens">0</div></div>
     <div class="summary-card"><div class="summary-k">Última execução</div><div class="summary-v" id="sumUltimaExec">—</div></div>
-    <div class="summary-card"><div class="summary-k">Modo / intervalo</div><div class="summary-v" id="sumModo">Texto nativo do PDF / Manual</div></div>
+    <div class="summary-card" id="motorCtrlCard">
+       <div class="summary-k">Motor operacional</div>
+       <div class="summary-v" id="sumMotorCtrl">Desligado</div>
+    </div>
   </div>
 
   <div class="status-legend">
@@ -96,9 +99,11 @@
         <div class="small-note">Nessa fase, o jeito certo de “atualizar direto” é enviar os PDFs pela tela. Depois a gente pode criar um importador automático.</div>
 
         <div class="btn-row">
-          <button class="btn btn-blue-premium" id="btnEnviarArquivos" type="button">⬆️ Enviar para a fila</button>
-          <button class="btn btn-green-premium" id="btnProcessarAgora" type="button">⚙️ Processar agora</button>
-          <button class="btn btn-secondary" id="btnAtualizarStatus" type="button">🔄 Atualizar status</button>
+             <button class="btn btn-green-premium" id="btnLigarMotor" type="button">🟢 Ligar motor</button>
+             <button class="btn btn-red-premium" id="btnPararMotor" type="button">🔴 Parar motor</button>
+             <button class="btn btn-blue-premium" id="btnEnviarArquivos" type="button">⬆️ Enviar para a fila</button>
+             <button class="btn btn-secondary" id="btnProcessarLote" type="button">⚙️ Processar lote</button>
+             <button class="btn btn-secondary" id="btnAtualizarStatus" type="button">🔄 Atualizar status</button>
         </div>
         <div class="save-status info" id="saveStatus">Pronto.</div>
       </div>
@@ -197,8 +202,8 @@
     else { imgServer.classList.remove("show"); imgGear.classList.add("show"); }
   }
 
-function updateProgress(step, mode, statusData){
-  const baseMap = { ler:10, extrair:25, blocos:45, normalizar:65, json:82, csv:92 };
+function updateProgress(step, mode, statusData) {
+  const baseMap = { ler: 10, extrair: 25, blocos: 45, normalizar: 65, json: 82, csv: 92 };
   let pct = baseMap[step] || 0;
 
   const total = Number(statusData.total_fila || 0);
@@ -274,6 +279,7 @@ async function atualizarStatus() {
   applyStatusCard(motorStatus);
   setPipeline(currentStep, motorStatus);
   updateProgress(currentStep, motorStatus, statusData);
+  await atualizarMotorCtrl();
 
   const rRank = await fetch(API_BASE + "rankings?ts=" + Date.now(), {
     cache: "no-store"
@@ -369,12 +375,69 @@ async function atualizarStatus() {
     }
   }
 
+  async function atualizarMotorCtrl() {
+  const r = await fetch(API_BASE + "motor?ts=" + Date.now(), { cache: "no-store" });
+  const data = await r.json();
+  const motor = data.motor || {};
+
+  let texto = "Desligado";
+  if (motor.ligado && motor.processando) texto = "Ligado • Processando";
+  else if (motor.ligado) texto = "Ligado";
+  else if (motor.parar_solicitado) texto = "Parando";
+
+  document.getElementById("sumMotorCtrl").textContent = texto;
+}
+
+async function ligarMotor() {
+  const r = await fetch(API_BASE + "motor/ligar", { method: "POST" });
+  const data = await r.json();
+  if (!r.ok || data.ok === false) throw new Error(data.erro || "Falha ao ligar motor.");
+  setSaveStatus("Motor ligado com sucesso.", "ok");
+  await atualizarStatus();
+  await atualizarMotorCtrl();
+}
+
+async function pararMotor() {
+  const r = await fetch(API_BASE + "motor/parar", { method: "POST" });
+  const data = await r.json();
+  if (!r.ok || data.ok === false) throw new Error(data.erro || "Falha ao parar motor.");
+  setSaveStatus("Parada solicitada. O motor vai encerrar com segurança.", "info");
+  await atualizarStatus();
+  await atualizarMotorCtrl();
+}
+
+async function processarLote() {
+  setSaveStatus("Iniciando lote em background...", "info");
+  try {
+    const r = await fetch(API_BASE + "motor/processar-lote", { method: "POST" });
+    const data = await r.json();
+
+    if (!r.ok || data.ok === false) {
+      throw new Error(data.erro || "Falha ao iniciar lote.");
+    }
+
+    startPolling();
+    setSaveStatus("Lote iniciado em background.", "ok");
+    await atualizarStatus();
+    await atualizarMotorCtrl();
+  } catch (err) {
+    setSaveStatus(err.message || "Falha ao iniciar lote.", "err");
+  }
+}
+  
   document.getElementById("btnVoltarMenu").addEventListener("click", () => window.location.href = MENU_URL);
   document.getElementById("btnEnviarArquivos").addEventListener("click", enviarArquivos);
   document.getElementById("btnAtualizarStatus").addEventListener("click", atualizarStatus);
   document.getElementById("btnProcessarAgora").addEventListener("click", processarAgora);
   document.getElementById("fileInput").addEventListener("change", (e) => attachFiles(e.target.files));
+  document.getElementById("btnLigarMotor").addEventListener("click", async () => {
+    try { await ligarMotor(); } catch (e) { setSaveStatus(e.message, "err"); }
+  });
+  document.getElementById("btnPararMotor").addEventListener("click", async () => {
+    try { await pararMotor(); } catch (e) { setSaveStatus(e.message, "err"); }
+  });
 
+  document.getElementById("btnProcessarLote").addEventListener("click", processarLote);
   const drop = document.getElementById("uploadDrop");
   drop.addEventListener("click", () => document.getElementById("fileInput").click());
   ["dragenter","dragover"].forEach(evt => drop.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); drop.classList.add("drag"); }));
