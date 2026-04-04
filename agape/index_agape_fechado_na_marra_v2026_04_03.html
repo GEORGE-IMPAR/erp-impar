@@ -1,0 +1,4824 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#071a2b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVRIx2NgGAWjYBSMglEwCkbBSAcACBAAAeaR9cIAAAAASUVORK5CYII=">
+  <title>Sistema Ágape</title>
+
+  <style>
+    :root{
+      --bad: #ff3b30;
+      --bg1:#071a2b;
+      --bg2:#0c3a56;
+      --glass: rgba(255,255,255,.08);
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.60);
+      --good:#33d07a;
+      --blue:#2d8cff;
+      --yellow: rgba(255,215,0,.20);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: var(--bg1); color:var(--text);}
+    body{overflow:hidden}
+
+/* ===== Pagamento v25 (top) ===== */
+.payCard{
+  margin-top:12px;
+  padding:16px;
+  border-radius:22px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow: 0 24px 55px rgba(0,0,0,.32);
+}
+.payMsg{line-height:1.2}
+.payHello{font-weight:1000; font-size:28px; margin-bottom:6px}
+.payTotal{font-weight:800; opacity:.95}
+/* === Conferência: limita a lista e cria scroll interno === */
+/* === Conferência: limita a lista e cria scroll interno (6 itens visíveis) === */
+#payItems{
+  max-height: calc(4 * 36px);      /* 4 linhas */
+  overflow-y: auto;               /* scroll à direita */
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;             /* respiro pro scrollbar */
+}
+ .background: rgba(255,255,255,.25); border:1px solid rgba(255,255,255,.10);}
+.payItemRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 0;
+  min-height:36px;               /* casa com o calc(6 * 36px) */
+}
+.payItemLeft{
+  font-weight:900;
+
+  flex: 1 1 auto;        /* ocupa só o espaço disponível */
+  min-width: 0;          /* 🔴 ESSENCIAL para funcionar com flex */
+  
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.payItemDots{flex:1; border-bottom: 2px dotted rgba(255,255,255,.25); height:0; opacity:.9}
+.payItemRight{
+  font-weight:1000;
+  white-space:nowrap;
+  flex: 0 0 auto;
+}
+.payQ{font-weight:1000; font-size:22px; margin:4px 0 12px}
+.payIconRow{display:flex; gap:14px; justify-content:center; margin:10px 0 14px}
+.payIconBtn{
+  width:74px; height:54px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color:var(--text);
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+  box-shadow: 0 16px 35px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.06);
+  transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+  cursor:pointer;
+}
+.payIconBtn:hover{transform: translateY(-1px) scale(1.03); filter:brightness(1.05)}
+.payIconBtn:active{transform: translateY(0) scale(.98)}
+.payIconBtn::after{
+  content: attr(data-tip);
+  position:absolute;
+  left:50%; top:-10px;
+  transform: translate(-50%,-100%);
+  padding:6px 10px;
+  border-radius:999px;
+  background: rgba(0,0,0,.72);
+  border:1px solid rgba(255,255,255,.12);
+  color:#fff;
+  font-weight:900;
+  font-size:12px;
+  opacity:0;
+  pointer-events:none;
+  transition: opacity .15s ease, transform .15s ease;
+  white-space:nowrap;
+}
+.payIconBtn:hover::after{opacity:1; transform: translate(-50%,-115%)}
+.payIconImg{width:62px; height:30px; object-fit:contain; display:block; filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+.paySvg{font-size:26px; line-height:1}
+.payBack{margin-top:8px}
+.payHint{margin-top:10px; opacity:.70; font-size:12px}
+
+/* Modal */
+.modal{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:999;}
+.modal.hidden{display:none;}
+.modal::before{content:""; position:absolute; inset:0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);}
+.modalCard{
+  position:relative;
+  width:min(420px, calc(100% - 36px));
+  border-radius:20px;
+  padding:16px;
+  background: rgba(10,20,32,.92);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55);
+}
+.modalTop{display:flex; align-items:center; justify-content:space-between; gap:10px}
+.modalTitle{font-weight:1000; font-size:20px}
+.modalX{border:none; background: rgba(255,255,255,.06); color:var(--text); border-radius:12px; padding:8px 10px; font-weight:1000}
+.modalText{margin-top:8px; opacity:.85; font-size:13px; line-height:1.35}
+.pixValueRow{display:flex; align-items:center; justify-content:space-between; margin-top:14px;
+  padding:12px; border-radius:16px; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);}
+.pixValueLbl{opacity:.80; font-weight:900}
+.pixValue{font-weight:1000; font-size:18px}
+.pixKeyRow{display:flex; align-items:center; gap:10px; margin-top:12px;
+  padding:12px; border-radius:16px; background: rgba(10,200,160,.12); border:1px solid rgba(100,255,230,.25);}
+.pixKeyText{flex:1; font-weight:1000; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.pixCopyBtn{
+  width:44px; height:44px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color:var(--text);
+  font-size:20px;
+  cursor:pointer;
+}
+.modalOk{margin-top:14px}
+.modalCancel{
+  width:100%;
+  margin-top:10px;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid red;
+  background: rgba(255,0,0,0.5);
+  color:var(--text);
+  font-weight:900;
+}
+
+/* Success overlay */
+.paySuccess{
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  width:100vw; height:100vh;
+  background: rgba(230,204,24,.96);
+}
+.paySuccess.hidden{display:none;}
+.paySuccessBox{
+  background: rgba(255,255,255,.75);
+  border-radius:18px;
+  padding:16px 18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  box-shadow: 0 22px 70px rgba(0,0,0,.35);
+}
+.paySuccessGif{width:140px; height:140px; object-fit:contain; display:block}
+.payOkText{font-weight:1000; color:#083018}
+
+/* === v25 pay success overlay (yellow full, gif + text only) === */
+.paySuccess{position:fixed; inset:0; background:rgba(230,204,24,.96); display:flex; align-items:center; justify-content:center; z-index:9999;}
+.paySuccess.hidden{display:none;}
+.paySuccessInner{display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center;}
+#payGif{width:160px; height:160px; object-fit:contain; filter:drop-shadow(0 12px 26px rgba(0,0,0,.25));}
+.payOkText{font-weight:1000; font-size:22px; color:#053018; text-shadow:0 1px 0 rgba(255,255,255,.35);}
+
+
+    
+    .safe{
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+
+    .screen{
+      position:fixed; inset:0;
+      display:none;
+      background: radial-gradient(1200px 900px at 50% 0%, var(--bg2), var(--bg1));
+    }
+    .screen.active{display:flex}
+
+    /* Slide transitions */
+    .enter-left{transform:translateX(100%); opacity:1}
+    .enter-right{transform:translateX(-100%); opacity:1}
+    .exit-left{transform:translateX(-100%); opacity:1}
+    .exit-right{transform:translateX(100%); opacity:1}
+    .screen{transition: transform .46s ease, opacity .46s ease;}
+    .screen.active{transform:translateX(0); opacity:1}
+    .screen.exit-left,.screen.exit-right,.screen.enter-left,.screen.enter-right{display:flex}
+
+    /* Splash 1 */
+    #scr_splash1{
+      background:#000 !important;
+      align-items:center;
+      justify-content:center;
+    }
+
+    /* Splash 2 */
+    #scr_splash2{align-items:center; justify-content:center; background:#061a2b !important;}
+    .splashCenter{display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; padding:24px;}
+    .logoWrap{
+      width:92px; height:92px; border-radius:22px;
+      background: rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      overflow:hidden;
+      box-shadow: 0 18px 40px rgba(0,0,0,.35);
+      transform: scale(.78);
+      opacity:0;
+      animation: logoZoom 3.0s ease forwards;
+    }
+    .logoWrap img{width:100%; height:100%; object-fit:cover; display:block}
+    .brandText{
+      font-weight:800; letter-spacing:.3px;
+      font-size: 34px;
+      transform: scale(.96);
+      opacity:0;
+      animation: textZoom 3.0s ease forwards;
+      animation-delay: .05s;
+    }
+    @keyframes logoZoom{
+      0%{transform:scale(.78); opacity:0}
+      30%{opacity:1}
+      100%{transform:scale(1.00); opacity:1}
+    }
+    @keyframes textZoom{
+      0%{transform:scale(.96); opacity:0}
+      35%{opacity:1}
+      100%{transform:scale(1.00); opacity:1}
+    }
+
+    /* Card layout */
+    .wrap{width:min(420px, 100%); margin:0 auto; padding:16px;}
+    .topBrand{
+      display:flex; gap:12px; align-items:center;
+      padding:14px 16px;
+      border-radius:18px;
+      background: rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.10);
+      box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    }
+    .topBrand .bLogo{
+      width:46px;height:46px;border-radius:12px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.15);
+      flex:0 0 auto;
+      background: rgba(255,255,255,.10);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .topBrand .bLogo img{width:100%; height:100%; object-fit:cover; display:block}
+    .topBrand .bTxt{line-height:1.15}
+    .topBrand .bTxt .bTitle{font-weight:800; font-size:18px; line-height:1.1;}
+    .topBrand .bTxt .bSub{font-size:12px; opacity:.85; margin-top:2px;}
+
+    .sessionBar{
+      margin-top:14px; display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:14px;
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10);
+    }
+    .dotBig{width:16px;height:16px;border-radius:50%; background:var(--bad); box-shadow:0 0 0 4px rgba(255,0,0,.10);}
+    .sessionLine{font-weight:800; font-size:15px; letter-spacing:.2px; flex:1; min-width:0;}
+
+    .card{
+      margin-top:14px;
+      padding:16px;
+      border-radius:22px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow: 0 24px 55px rgba(0,0,0,.32);
+    }
+
+    .btn{
+      width:100%;
+      margin-top:14px;
+      padding:11px 12px;
+      border-radius:14px;
+      border:none;
+      background: linear-gradient(90deg, #1bb3ff, #3b6cff);
+      color:#001018;
+      font-weight:900;
+      font-size:17px;
+      line-height: 1.1 !important;
+    }
+
+    .btn2{
+      width:100%;
+      padding:11px 12px;
+      border:none;
+      border-radius:14px;
+      background: linear-gradient(90deg, #19baff, #3a66ff);
+      color:#001018;
+      font-weight:1000;
+      font-size:17px;
+      line-height: 1.1 !important;
+    }
+
+    .miniBtn{
+      border:1px solid red;
+      background: rgba(255,0,0,0.5);
+      color: var(--text);
+      padding:10px 14px;
+      border-radius:14px;
+      font-weight:800;
+    }
+
+
+    /* Pix bar */
+    .pixBar{
+      margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:12px 14px; border-radius:14px;
+      background:rgba(10,200,160,.16); border:1px solid rgba(100,255,230,.25);
+    }
+    .pixBadge{width:64px; height:36px; border-radius:10px; background:rgba(255,255,255,.12);
+      display:flex; align-items:center; justify-content:center;}
+    .pixBadge img{width:70px;height:26px;object-fit:contain;display:block;filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+    .pixKey{font-weight:900; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0;}
+
+    /* Toast */
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background: rgba(0,0,0,.75);
+      color:white; padding:10px 14px;
+      border-radius:14px;
+      opacity:0; pointer-events:none;
+      transition: opacity .25s ease;
+      font-weight:800;
+      z-index:99999;
+    }
+    .toast.show{opacity:1}
+
+    /* Wait envelope */
+    .waitCard{ position:relative; }
+    .msgBtn{
+      position:relative;
+      width:44px; height:44px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .msgIcon{width:24px; height:24px; object-fit:contain; opacity:.95; filter:drop-shadow(0 2px 6px rgba(0,0,0,.35));}
+    .msgBadge{
+      position:absolute;
+      top:-6px; right:-6px;
+      width:18px; height:18px;
+      border-radius:999px;
+      background:#ff3b30;
+      border:2px solid rgba(6,26,43,1);
+      color:#fff;
+      font-weight:1000;
+      font-size:12px;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 10px 24px rgba(0,0,0,.35);
+    }
+    .hidden{display:none !important;}
+    @keyframes pulseBadge{
+      0%{transform:scale(1); filter:brightness(1);}
+      50%{transform:scale(1.12); filter:brightness(1.2);}
+      100%{transform:scale(1); filter:brightness(1);}
+    }
+    .msgBadge.pulse{animation:pulseBadge 1.1s ease-in-out infinite;}
+
+    /* ===== PRESENÇA (bonitona) ===== */
+    #scr_presenca{
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      padding:16px 0;
+    }
+    #scr_presenca .wrap{min-height:100%; height:auto !important; align-items:flex-start;}
+    #scr_presenca .card{max-height: calc(100vh - 32px); overflow-y:auto; -webkit-overflow-scrolling:touch;}
+
+    .hint{
+      margin-top:12px; padding:12px 14px; border-radius:14px;
+      background:linear-gradient(90deg, rgba(60,170,120,.35), rgba(80,210,160,.22));
+      border:1px solid rgba(150,255,210,.25);
+    }
+
+    .presResumo{
+      display:grid;
+      grid-template-columns: 1fr 120px;
+      gap:12px;
+      border-radius:14px;
+      border:2px solid rgba(255, 220, 40, .55);
+      background: rgba(180, 150, 0, .25);
+      padding:10px;
+      margin: 12px 0;
+    }
+    .presResumoTitle{font-weight:900; margin-bottom:6px;}
+    .presResumoLine{display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:2px 0;}
+    .barBox{
+      width:86px;
+      height:130px;
+      border-radius:10px;
+      overflow:hidden;
+      border:2px solid rgba(255,255,255,.18);
+      background: rgba(0,0,0,.25);
+      display:flex;
+      flex-direction:column;
+    }
+    .barTop{
+      background: rgba(255,120,0,.85);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900; font-size:13px;
+      flex:1;
+    }
+    .barBottom{
+      background: rgba(70,190,120,.85);
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900; font-size:13px;
+      flex:1;
+    }
+    .barLegend{display:flex; gap:10px; margin-top:8px; font-size:11px; opacity:.95; justify-content:center;}
+    .barLegend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+    .lgNo i{background: rgba(255,120,0,.85);}
+    .lgYes i{background: rgba(70,190,120,.85);}
+
+    /* ===== CONSUMO (layout simples e estável) ===== */
+    #scr_consumo{align-items:stretch; justify-content:center;}
+    .page{
+      display:flex;
+      flex-direction:column;
+      height:100%;
+      width:min(440px, 100%);
+      margin:0 auto;
+      padding:16px;
+      gap:12px;
+    }
+    .cashBar{
+      display:flex; align-items:center; gap:12px;
+      padding:12px 14px; border-radius:14px;
+      background: rgba(255,165,0,.22);
+      border: 1px solid rgba(255,200,120,.22);
+    }
+    .cashText{font-weight:1000; font-size:14px;}
+    #cashValue{font-weight:1000;}
+
+    .prodScroll{
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      -webkit-overflow-scrolling:touch;
+      padding: 4px 0;
+    }
+    .prodRow{
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:14px 14px;
+      border-radius:18px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
+      margin-bottom:12px;
+    }
+    .pIcon{
+      width:50px;height:50px;border-radius:18px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.08);
+      flex:0 0 auto;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .pIcon img{background:#fff;width:100%; height:100%; object-fit:contain; display:block}
+    .pMid{flex:1; min-width:0}
+    .pName{font-weight:900}
+    .pDesc{font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .pPrice{margin-top:6px; font-weight:900}
+    .qtyWrap{display:flex; align-items:center; gap:10px; flex:0 0 auto;}
+    .qtyBtn{
+      width:40px;height:40px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-size:22px;
+      line-height:1;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:900;
+      cursor:pointer;
+    }
+    .qty{min-width:20px; text-align:center; font-weight:900}
+
+    .consFooter{
+      padding: 10px 0 0 0;
+      background: linear-gradient(180deg, rgba(7,26,43,0) 0%, rgba(7,26,43,.65) 30%, rgba(7,26,43,.92) 100%);
+      border-radius:18px;
+    }
+    .totalBox{
+      padding:14px 14px;
+      border-radius:18px;
+      background: rgba(0,0,0,.20);
+      border:1px solid rgba(255,255,255,.10);
+      margin-bottom:12px;
+    }
+    .totalBox .tLbl{font-size:12px; color:var(--muted)}
+    .totalBox .tVal{font-size:28px; font-weight:1000; margin-top:6px}
+
+    /* desktop center */
+    @media (min-width:900px){
+      body{display:flex; align-items:center; justify-content:center; background:#081b2c;}
+      .screen{position:relative; width:420px; height:860px; border-radius:26px; overflow:hidden; box-shadow: 0 30px 80px rgba(0,0,0,.55);}
+    }
+    .payIconBtn:hover::after{opacity:1; transform: translate(-50%,-115%)}
+    .payIconImg{width:62px; height:30px; object-fit:contain; display:block; filter:drop-shadow(0 2px 8px rgba(0,0,0,.25));}
+    .paySvg{font-size:26px; line-height:1}
+    .payBack{margin-top:8px}
+    .payHint{margin-top:10px; opacity:.70; font-size:12px}
+
+    /* FIX: não quebrar linha dentro do #payItems (trunca descrição e mantém preço na mesma linha) */
+#payItems{
+  max-height: calc(4 * 36px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  color: #FFD700; /* Amarelo ouro forte */
+  font-weight: bold;
+}
+
+#payItems .payItemRow{
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  min-height: 36px;
+  flex-wrap: nowrap !important;     /* nunca quebra */
+}
+
+#payItems .payItemLeft{
+  flex: 1 1 auto !important;
+  min-width: 0 !important;          /* ESSENCIAL pro "..." funcionar no flex */
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#payItems .payItemDots{
+  flex: 1 1 auto !important;        /* pontilhado ocupa o meio */
+  min-width: 16px;
+}
+
+#payItems .payItemRight{
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+    /* Pagamento */
+    #scr_pagamento{align-items:flex-start; justify-content:center;}
+    .payBtns{display:flex; flex-direction:column; gap:12px; margin-top:12px}
+    /* .payBtn{
+      padding:16px 14px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:900;
+      font-size:18px;
+      text-align:center;
+    }
+    .payBtn.primary{background: rgba(51,208,122,.18); border-color: rgba(51,208,122,.35)}
+    .payBtn.warn{background: rgba(255,215,0,.14); border-color: rgba(255,215,0,.25)}*/
+    .toast{
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background: rgba(0,0,0,.75);
+      color:white; padding:10px 14px;
+      border-radius:14px;
+      opacity:0; pointer-events:none;
+      transition: opacity .25s ease;
+      font-weight:800;
+      z-index:99;
+    }
+    .toast.show{opacity:1}
+
+
+/* v15 fixes */
+.panel{flex:1;display:flex;flex-direction:column;min-height:0;}
+.prodScroll{flex:1;min-height:0;-webkit-overflow-scrolling:touch;}
+
+.pIconImg{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25));}
+/* botão selecionado = contorno azul brilhante */
+.payBtn.isChosen{
+  border: 2px solid rgba(45,140,255,.95) !important;
+  box-shadow:
+    0 0 0 3px rgba(45,140,255,.22),
+    0 0 18px rgba(45,140,255,.45) !important;
+  filter: brightness(1.06);
+}
+    
+    .payBtn.no{border-color:rgba(239,68,68,.95);color:#fee2e2;}
+    .payBtn.no.isChosen{background:linear-gradient(135deg,rgba(239,68,68,.25),rgba(239,68,68,.12));box-shadow:0 0 0 1px rgba(239,68,68,.55) inset,0 12px 28px rgba(239,68,68,.18);}
+.presCard{padding:14px; max-width:420px;}
+    .presMsg{
+      border: 2px solid rgba(70, 190, 120, .55);
+      background: rgba(0,0,0,.18);
+      margin: 12px 0;
+    }
+    .presMsg .infoText{
+      font-size: 12px;
+      line-height: 1.35;
+      max-height: 170px;
+      overflow: auto;
+      padding-right: 6px;
+    }
+    .infoCard{margin-top:12px; padding:14px; border-radius:16px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.10);}
+    .infoTitle{font-weight:900; font-size:18px;}
+    .infoText{margin-top:6px; font-size:13px; opacity:.90; line-height:1.35;}
+
+    .presBtnsRow{display:flex; gap:10px;}
+    .payBtn{
+      flex:1;
+      min-height:44px;
+      padding:10px 8px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:900;
+      font-size:8px;
+      text-align:center;
+      cursor:pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      line-height:1.1;
+    }
+    .payBtn.primary{background: rgba(51,208,122,.18); border-color: rgba(51,208,122,.35)}
+    .payBtn.isChosen{outline:2px solid rgba(255,255,255,.35);}
+
+/* ===== BOTÃO ESCOLHIDO: BORDA AMARELA BRILHANTE ===== */
+.presBtnsRow .payBtn.isChosen{
+  border: 2px solid rgba(255,215,0,.98) !important;
+  box-shadow:
+    0 0 0 3px rgba(255,215,0,.22),
+    0 0 18px rgba(255,215,0,.45) !important;
+  filter: brightness(1.06);
+}
+
+/* ===== STATUS (retângulo preto já no seu #presStatusLine) ===== */
+#presStatusLine{
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 900;
+}
+
+/* ===== OVERLAY: PRESENÇA CONFIRMADA (preto full) ===== */
+.presSuccess{
+  position:fixed;
+  inset:0;
+  width:100vw;
+  height:100dvh;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:999999;
+}
+.presSuccess.hidden{display:none;}
+.presSuccessInner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:14px;
+  text-align:center;
+  padding: 18px;
+}
+#presGif{
+  width:220px;
+  max-width:70vw;
+  height:auto;
+  object-fit:contain;
+  filter: drop-shadow(0 14px 30px rgba(0,0,0,.55));
+}
+.presOkText{
+  font-weight:1000;
+  font-size:22px;
+  color:#fff;
+  text-shadow:0 2px 12px rgba(0,0,0,.6);
+}
+
+/* ===== WAIT: AVISO PRESENÇA JÁ CONFIRMADA ===== */
+.waitPresencaOk{
+  margin-top:8px;
+  padding:7px 10px;              /* menor */
+  border-radius:12px;
+  background: rgba(80,170,255,.16);  /* azul claro transparente */
+  border: 1px solid rgba(140,210,255,.28);
+  font-weight:900;
+  font-size:12px;                /* menor (ajuda no celular) */
+  line-height:1.05;              /* mais baixo */
+  text-align:center;
+  letter-spacing:.2px;
+
+  transition: transform .35s ease, filter .35s ease, background .35s ease, border-color .35s ease, box-shadow .35s ease, opacity .35s ease;
+  will-change: transform, filter;
+}
+
+.waitPresencaOk.pulse{
+  animation: presPulse 1.15s ease-in-out infinite;
+}
+
+@keyframes presPulse{
+  0%   { transform: scale(1);    filter: brightness(1);   }
+  50%  { transform: scale(1.04); filter: brightness(1.15);}
+  100% { transform: scale(1);    filter: brightness(1);   }
+}
+
+@keyframes presBlink{
+  0%   { opacity:1; }
+  50%  { opacity:.82; }
+  100% { opacity:1; }
+}
+
+.waitPresencaOk.blink{
+  animation: presBlink 1.0s ease-in-out infinite;
+}
+
+.waitPresencaOk.hidden{display:none;}
+
+/* bolinha vermelha */
+.msgBtn{ position:relative; }
+
+.msgBadge{
+  position:absolute;
+  top:-6px; right:-6px;
+  width:18px; height:18px;
+  border-radius:999px;
+  background:#ff3b30;
+  border:2px solid rgba(6,26,43,1);
+  color:#fff;
+  font-weight:1000;
+  font-size:12px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 10px 24px rgba(0,0,0,.35);
+}
+
+.msgBadge.hidden{ display:none !important; }
+
+/* ==========================
+   ADMIN (tela completa) - CSS
+   Cole no FINAL do seu <style>
+   ========================== */
+#scr_admin .cardTitleRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+#scr_admin .adminLogo{
+  width:38px;height:38px;border-radius:10px;
+  object-fit:cover;border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 8px 20px rgba(0,0,0,.25);
+}
+#scr_admin .adminHeadTxt{ line-height:1.1; }
+#scr_admin .adminHeadTxt .t1{ font-weight:800; font-size:16px; letter-spacing:.2px; }
+#scr_admin .adminHeadTxt .t2{ font-size:11px; opacity:.82; margin-top:2px; }
+
+#scr_admin .adminTabs{
+  display:flex;
+  gap:8px;
+  margin:10px 0 12px;
+}
+#scr_admin .adminTab{
+  flex:1;
+  padding:9px 10px;
+  border-radius:12px;
+  font-weight:800;
+  font-size:12px;
+  border:1px solid rgba(255,255,255,.15);
+  background:rgba(255,255,255,.06);
+  color:#fff;
+  cursor:pointer;
+  transition:transform .08s ease, filter .2s ease, background .2s ease;
+}
+#scr_admin .adminTab:active{ transform:scale(.99); }
+#scr_admin .adminTab.active{
+  background:rgba(0,210,255,.12);
+  border-color:rgba(255,215,0,.75);
+  box-shadow:0 0 0 2px rgba(255,215,0,.10) inset;
+}
+
+#scr_admin .adminPanel{
+  margin-top:6px;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.06));
+  min-height:240px;
+}
+#scr_admin .hidden{ display:none !important; }
+
+#scr_admin .adminGrid{
+  display:grid;
+  gap:10px;
+}
+#scr_admin .adminField label{
+  display:block;
+  font-size:11px;
+  font-weight:800;
+  opacity:.9;
+  margin:2px 0 6px;
+}
+#scr_admin .adminField input,
+#scr_admin .adminField textarea,
+#scr_admin .adminField select{
+  width:100%;
+  box-sizing:border-box;
+  padding:10px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.18);
+  color:#fff;
+  outline:none;
+}
+#scr_admin .adminField textarea{
+  min-height:70px;
+  resize:vertical;
+}
+
+#scr_admin .adminTwoCol{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+@media (max-width:420px){
+  #scr_admin .adminTwoCol{ grid-template-columns:1fr; }
+}
+
+#scr_admin .adminTable{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  overflow:hidden;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.12);
+  margin-top:8px;
+}
+.adminTableScroll{max-height:260px;overflow:auto;border-radius:14px;}
+@media (max-width: 520px){
+  .adminTableScroll{max-height:220px;}
+}
+.adminStatusSel{
+  width:100%;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(148,163,184,.25);
+  color:#e5e7eb;
+  border-radius:10px;
+  padding:8px 10px;
+  font-weight:700;
+  outline:none;
+}
+.adminStatusSel option{color:#0b1220;}
+
+#scr_admin .adminTable th,
+#scr_admin .adminTable td{
+  padding:8px 10px;
+  font-size:12px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+#scr_admin .adminTable th{
+  font-size:11px;
+  opacity:.9;
+  text-transform:uppercase;
+  letter-spacing:.35px;
+  background:rgba(255,255,255,.06);
+}
+#scr_admin .pill{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:900;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(0,0,0,.18);
+}
+#scr_admin .pill.ok{ background:rgba(46,204,113,.15); border-color:rgba(46,204,113,.35); }
+#scr_admin .pill.warn{ background:rgba(52,152,219,.15); border-color:rgba(52,152,219,.35); }
+#scr_admin .pill.bad{ background:rgba(231,76,60,.15); border-color:rgba(231,76,60,.35); }
+
+#scr_admin .adminFooterBtns{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+}
+#scr_admin #btnAdminSalvar{
+  flex:1;
+}
+#scr_admin #btnAdminSair{
+  width:86px;
+}
+#scr_admin .adminMini{
+  margin-top:10px;
+  font-size:11px;
+  opacity:.8;
+}
+#scr_admin .adminMini strong{ opacity:1; }
+#scr_admin .adminJsonBox{
+  width:100%;
+  margin-top:10px;
+  padding:10px;
+  border-radius:14px;
+  border:1px dashed rgba(255,255,255,.22);
+  background:rgba(0,0,0,.18);
+  color:#fff;
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:11px;
+  line-height:1.35;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+/* container do conteúdo dentro das screens */
+.phoneFrame{
+  width:100%;
+  min-height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding: 14px 14px 18px;
+  overflow:auto;
+}
+
+ /* ==========================
+   ADMIN ONLINE (UI PREMIUM)
+   cole no FINAL do <style>
+   ========================== */
+.adminWrap{
+  width:100%;
+  max-width:420px;
+  margin:0 auto;
+  padding:14px 14px 12px;
+}
+.adminHeader{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 12px;
+  border-radius:18px;
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+}
+.adminHeader img{width:34px;height:34px;border-radius:10px;object-fit:cover;}
+.adminHeader .t1{font-weight:900; font-size:15px; line-height:1.1;}
+.adminHeader .t2{font-size:11px; opacity:.75; margin-top:2px;}
+
+.adminTabs{
+  display:flex; gap:10px;
+  margin-top:12px;
+}
+.adminTab{
+  flex:1;
+  padding:10px 10px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color:#fff;
+  font-weight:900;
+  font-size:12px;
+  letter-spacing:.3px;
+  cursor:pointer;
+}
+.adminTab.active{
+  outline:2px solid rgba(255,220,0,.65);
+  background: rgba(0, 200, 255, .10);
+}
+
+.adminPanel{
+  margin-top:12px;
+  border-radius:20px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,255,255,.10);
+  overflow:hidden;
+}
+.adminScroll{
+  max-height:520px;
+  overflow:auto;
+  padding:12px;
+}
+
+.adminGrid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+@media(max-width:420px){ .adminGrid2{grid-template-columns:1fr;} }
+
+.aLabel{font-size:11px; opacity:.75; margin:10px 0 6px;}
+.aInput,.aSelect{
+  width:100%;
+  padding:10px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color:#fff;
+  outline:none;
+}
+.aInput::placeholder{opacity:.55;}
+
+.adminTable{
+  width:100%;
+  border-collapse:collapse;
+  overflow:hidden;
+  border-radius:14px;
+}
+.adminTable th, .adminTable td{
+  padding:10px 10px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+  font-size:12px;
+}
+.adminTable th{
+  text-transform:uppercase;
+  letter-spacing:.3px;
+  font-size:11px;
+  opacity:.85;
+}
+.rowBtn{
+  width:100%;
+  text-align:left;
+  background:transparent;
+  border:none;
+  color:#fff;
+  cursor:pointer;
+  padding:0;
+}
+.badgeSt{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:900;
+  border:1px solid rgba(255,255,255,.12);
+}
+.st-N{background:rgba(255,60,60,.18);}
+.st-SS{background:rgba(255,220,0,.16);}
+.st-SA{background:rgba(0,190,255,.16);}
+.st-SE{background:rgba(0,255,140,.14);}
+
+.adminFooter{
+  display:flex;
+  gap:10px;
+  padding:12px;
+}
+.btnAdminPrimary{
+  flex:1;
+  padding:12px 10px;
+  border-radius:14px;
+  border:none;
+  background: linear-gradient(90deg, rgba(0,200,255,.95), rgba(90,120,255,.95));
+  color:#00131f;
+  font-weight:900;
+  cursor:pointer;
+}
+.btnAdminDanger{
+  width:90px;
+  padding:12px 10px;
+  border-radius:14px;
+  border:none;
+  background: rgba(255,0,0,.75);
+  color:#fff;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.adminResumo{
+  margin-top:10px;
+  border-radius:18px;
+  padding:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+}
+.adminResumo .rTitle{font-weight:900; font-size:12px; opacity:.9; margin-bottom:10px;}
+.adminResumo .rLine{display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.07);}
+.adminResumo .rLine:last-child{border-bottom:none;}
+.adminResumo .k{opacity:.78;}
+.adminResumo .v{font-weight:900;}
+
+.adminModal{
+  position:fixed; inset:0;
+  display:none;
+  align-items:flex-end; justify-content:center;
+  background: rgba(0,0,0,.55);
+  z-index:9999;
+}
+.adminModal.open{display:flex;}
+.adminSheet{
+  width:min(420px, 96vw);
+  border-radius:18px 18px 0 0;
+  background: radial-gradient(800px 600px at 50% 0%, rgba(0,170,255,.18), rgba(0,0,0,.55));
+  border:1px solid rgba(255,255,255,.14);
+  padding:12px;
+  max-height:78vh;
+  overflow:auto;
+}
+.sheetHead{display:flex; justify-content:space-between; align-items:center; gap:12px;}
+.sheetHead .h1{font-weight:900; font-size:13px;}
+.sheetClose{border:none; background:rgba(255,255,255,.08); color:#fff; border-radius:12px; padding:8px 10px; font-weight:900; cursor:pointer;}
+.sheetBlock{margin-top:10px; padding:10px; border-radius:14px; background:rgba(0,0,0,.20); border:1px solid rgba(255,255,255,.10);}
+.sheetRow{display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.07);}
+.sheetRow:last-child{border-bottom:none;}
+   
+
+/* ===================================================================
+   🎨 ADMIN PANEL - DESIGN MODERNO (teste.html + v16)
+   =================================================================== */
+
+#adminPanel {
+  background: rgba(10, 25, 41, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+}
+
+#adminHeader {
+  background: rgba(0,0,0,0.3) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+  padding: 16px 20px !important;
+}
+
+#adminHeader h2 {
+  color: #4fc3f7 !important;
+  font-weight: 600 !important;
+}
+
+.adminTabs {
+  display: flex !important;
+  gap: 8px !important;
+  padding: 12px 20px !important;
+  background: rgba(0,0,0,0.2) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+.adminTab {
+  padding: 10px 20px !important;
+  background: rgba(255,255,255,0.05) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 8px !important;
+  color: rgba(255,255,255,0.7) !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.adminTab:hover {
+  background: rgba(255,255,255,0.1) !important;
+  color: #fff !important;
+}
+
+.adminTab.active {
+  background: linear-gradient(90deg, #1bb3ff, #3b6cff) !important;
+  color: #001018 !important;
+  font-weight: 700 !important;
+}
+
+.adminTabContent {
+  padding: 24px !important;
+  background: rgba(0,0,0,0.2) !important;
+}
+
+.aLabel {
+  color: #81c784 !important;
+  font-weight: 500 !important;
+  margin-bottom: 6px !important;
+}
+
+.aInput, select.aInput, textarea.aInput {
+  background: rgba(0,0,0,0.3) !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  padding: 12px 16px !important;
+}
+
+.aInput:focus, select.aInput:focus, textarea.aInput:focus {
+  border-color: #4fc3f7 !important;
+  background: rgba(0,0,0,0.4) !important;
+  box-shadow: 0 0 0 3px rgba(79, 195, 247, 0.1) !important;
+}
+
+button.adminBtnConfirm {
+  background: linear-gradient(90deg, #1bb3ff, #3b6cff) !important;
+  color: #001018 !important;
+  padding: 14px 32px !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+}
+
+button.adminBtnConfirm:hover {
+  opacity: 0.9 !important;
+  transform: translateY(-1px) !important;
+}
+
+.adminResumo {
+  background: rgba(0,0,0,0.3) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  margin-bottom: 20px !important;
+}
+
+.rTitle {
+  color: #4fc3f7 !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  margin-bottom: 12px !important;
+}
+
+.rLine {
+  display: flex !important;
+  justify-content: space-between !important;
+  padding: 6px 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+}
+
+.rLabel { opacity: 0.8 !important; }
+.rValue { font-weight: 700 !important; }
+
+.status-ok { color: #10b981 !important; font-weight: 600 !important; }
+.status-parcial { color: #f59e0b !important; font-weight: 600 !important; }
+.status-nao { color: #ef4444 !important; }
+
+
+    .status-naovou{background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.35);color:#fde68a;}
+.adminTable {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin-top: 10px !important;
+}
+
+.adminTable th {
+  background: rgba(255,255,255,0.1) !important;
+  padding: 12px !important;
+  text-align: left !important;
+  font-weight: 600 !important;
+  color: #4fc3f7 !important;
+  border-bottom: 2px solid rgba(255,255,255,0.2) !important;
+}
+
+.adminTable td {
+  padding: 10px 12px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+}
+
+.adminTable tr:hover {
+  background: rgba(255,255,255,0.03) !important;
+}
+  
+/* ===== V0 MODAL (Sessão não convocada) ===== */
+.modal-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.65);
+  backdrop-filter:blur(6px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+.hidden{display:none;}
+.v0-card{
+  width:90%;
+  max-width:420px;
+  background:linear-gradient(180deg,#071c3b,#0b2a5e);
+  border-radius:22px;
+  padding:28px 24px 32px;
+  text-align:center;
+  box-shadow:0 25px 60px rgba(0,0,0,.6);
+  animation:fadeInScale .35s ease;
+}
+
+/* ===== V0: borda animada premium (efeito neon) ===== */
+.v0-card{ position:relative; overflow:hidden; }
+.v0-card::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background: conic-gradient(from 0deg,
+    rgba(45,140,255,0) 0deg,
+    rgba(45,140,255,.95) 40deg,
+    rgba(51,208,122,.45) 90deg,
+    rgba(45,140,255,.95) 140deg,
+    rgba(45,140,255,0) 220deg,
+    rgba(255,255,255,.0) 360deg
+  );
+  animation: v0BorderSpin 3.5s linear infinite;
+  filter: blur(0px);
+  opacity:.95;
+}
+.v0-card::after{
+  content:"";
+  position:absolute;
+  inset:2px;
+  background:linear-gradient(180deg,#071c3b,#0b2a5e);
+  border-radius:20px;
+  z-index:0;
+}
+.v0-card > *{ position:relative; z-index:1; }
+@keyframes v0BorderSpin{
+  to{ transform: rotate(360deg); }
+}
+
+@keyframes fadeInScale{
+  from{opacity:0; transform:scale(.9);}
+  to{opacity:1; transform:scale(1);}
+}
+.v0-header{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  /* sobe um pouco e aumenta respiro pro ícone pulsante */
+  margin:-10px 0 28px;
+  justify-content:flex-start;
+  width:100%;
+  padding:10px 14px;
+  border:2px solid rgba(34,197,94,.95);
+  border-radius:14px;
+  background:rgba(2,6,23,.18);
+  cursor:pointer;
+  user-select:none;
+}
+.v0-logo{
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  object-fit:cover;
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.25);
+}
+.v0-loja{font-weight:600;font-size:15px;}
+.v0-sub{font-size:12px;opacity:.7;}
+.v0-icon{
+  font-size:48px;
+  width:90px;
+  height:90px;
+  border-radius:50%;
+  border:3px solid #ffcc66;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin:0 auto 20px;
+  color:#ffcc66;
+  animation:pulse 1.8s infinite;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,204,102,.5);}
+  70%{box-shadow:0 0 0 18px rgba(255,204,102,0);}
+  100%{box-shadow:0 0 0 0 rgba(255,204,102,0);}
+}
+.v0-title{font-size:20px;font-weight:700;margin-bottom:14px;}
+.v0-text{font-size:14px;line-height:1.6;opacity:.85;margin-bottom:22px;}
+.v0-btn{
+  background:#0d5eff;
+  border:none;
+  padding:10px 22px;
+  border-radius:12px;
+  color:white;
+  font-weight:600;
+  cursor:pointer;
+  box-shadow:0 8px 18px rgba(13,94,255,.4);
+}
+
+</style>
+</head>
+
+<body>
+  <div id="toast" class="toast"></div>
+
+  <!-- Splash 1 -->
+  <section id="scr_splash1" class="screen active safe">
+    <div class="splashCenter">
+      <img id="splashSymbol" class="splashSymbol" src="./assets/maconaria.png" alt="Carregando" style="width:160px;height:160px;object-fit:contain;">
+      <div class="splashLoading" style="margin-top:6px;font-weight:900;font-size:18px;opacity:.95;">Carregando…..</div>
+    </div>
+  </section>
+
+  <!-- Splash 2 -->
+  <section id="scr_splash2" class="screen safe">
+    <div class="splashCenter">
+      <div class="logoWrap">
+        <img id="splashLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+      </div>
+      <div class="brandText">Sistema Ágape</div>
+    </div>
+  </section>
+
+  <!-- Wait -->
+  <section id="scr_wait" class="screen safe">
+    <div class="wrap">
+      <div class="card waitCard">
+        <div class="topBrand">
+          <div class="bLogo">
+            <img id="brandLogoWait" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+          </div>
+          <div class="bTxt">
+            <div class="bTitle" id="lojaNomeWait">Loja</div>
+            <div class="bSub" id="lojaSubWait">App Agape • Consumo & Pagamento</div>
+          </div>
+        </div>
+
+        <div class="sessionBar">
+          <div class="dotBig" id="sessaoDotWait"></div>
+          <div class="sessionLine" id="sessaoLineWait">Sessão fechada — —</div>
+          <button class="msgBtn" id="btnEnvelope" type="button" aria-label="Mensagem do Venerável">
+            <img src="./assets/icon-envelope.png" alt="" class="msgIcon">
+            <span class="msgBadge hidden" id="badgeConvocacao">!</span>
+          </button>
+        </div>
+
+        <div class="pixBar" style="margin-top:12px;">
+          <div class="pixBadge"><img src="./assets/logo-Clementino-Brito.jpeg" alt="Pix"></div>
+          <div class="pixKey" id="pixChaveWait">—</div>
+        </div>
+
+        <div class="infoCard">
+          <div class="infoTitle">Sessão ainda não liberada 🔒</div>
+          <div class="infoText">A sessão ainda não foi aberta pelo responsável, mas não se preocupe. Quando liberar a sessão, automaticamente aparecerá a tela de login.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+            <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);">
+              <div style="font-size:12px;opacity:.75;">Última verificação</div>
+              <div style="margin-top:4px;font-weight:900;font-size:16px;" id="lastCheck">—</div>
+            </div>
+            <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);">
+              <div style="font-size:12px;opacity:.75;">Sessão</div>
+              <div style="margin-top:4px;font-weight:900;font-size:16px;" id="sessaoStatus">Fechada</div>
+            </div>
+          </div>
+          <button class="miniBtn" id="btnSairWait" type="button" style="margin-top:12px;background:#e53935;border-color:#e53935;color:#fff;">
+            Sair do aplicativo
+          </button>
+        </div>
+
+<!-- 1) COLE ISTO DENTRO DO #scr_wait (ex: logo abaixo do infoCard ou antes do hint) -->
+<div id="waitPresencaOk" class="waitPresencaOk hidden">✅ PRESENÇA JÁ CONFIRMADA</div>
+
+        <div class="hint">
+          <div style="font-weight:900;font-size:14px;">Modo tesoureiro</div>
+          <div style="font-size:13px;opacity:.95;margin-top:4px;">toque 5x no logo para abrir Admin (sessão, caixa, produtos, Pix).</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Presença -->
+  <section id="scr_presenca" class="screen safe">
+    <div class="wrap">
+      <div class="card presCard">
+
+        <div class="topBrand presTop">
+          <div class="bLogo">
+            <img id="brandLogoPres" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/>
+          </div>
+          <div class="bTxt">
+            <div class="bTitle" id="lojaNomePres">Loja</div>
+            <div class="bSub">Presença • Sessão & Agape</div>
+          </div>
+        </div>
+
+        <div class="sessionBar presSessionBar">
+          <div class="dotBig" id="sessaoDotPres"></div>
+          <div class="sessionLine" id="sessaoLinePres">Sessão fechada</div>
+        </div>
+
+        <div class="infoCard presMsg">
+          <div class="infoTitle">Chamado do Venerável</div>
+          <div class="infoText" id="presTexto">Carregando...</div>
+        </div>
+
+        <div class="presBtnsRow">
+          <button class="payBtn primary" id="btnRespSessaoAgape" type="button">Sessão e Agape</button>
+          <button class="payBtn" id="btnRespSessao" type="button">Somente sessão</button>
+          <button class="payBtn" id="btnRespAgape" type="button">Somente ágape</button>
+        <button class="payBtn no" id="btnRespNaoVou" type="button">Não vou</button>
+        </div>
+
+        <div class="hint" id="presStatusLine">Você ainda não respondeu.</div>
+
+        <div class="presResumo">
+          <div class="presResumoLeft">
+            <div class="presResumoTitle">Resumo:</div>
+            <div class="presResumoLine"><span>Sessão e Agape:</span><b id="rSA">0</b></div>
+            <div class="presResumoLine"><span>Somente sessão:</span><b id="rS">0</b></div>
+            <div class="presResumoLine"><span>Somente ágape:</span><b id="rA">0</b></div>
+            <div class="presResumoLine"><span>Não vou:</span><b id="rNV">0</b></div>
+            <div class="presResumoLine"><span>Total respondidos:</span><b id="rT">0</b></div>
+            <div class="presResumoLine"><span>Total não respondidos:</span><b id="rN">0</b></div>
+          </div>
+
+          <div class="presResumoRight" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <div class="barBox">
+              <div class="barTop" id="barNao">0</div>
+              <div class="barBottom" id="barSim">0</div>
+            </div>
+            <div class="barLegend">
+              <span class="lgNo" style="display:inline-flex;gap:6px;align-items:center;"><i></i>Não</span>
+              <span class="lgYes" style="display:inline-flex;gap:6px;align-items:center;"><i></i>Sim</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn2" id="btnFecharPresenca" type="button">Fechar</button>
+      </div>
+    </div>
+  </section>
+
+   
+  <!-- Login -->
+  <section id="scr_login" class="screen safe">
+    <div class="wrap">
+      <div class="topBrand" id="brandBar">
+        <div class="bLogo"><img id="brandLogo" alt="logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="lojaNome">Loja</div>
+          <div class="bSub" id="lojaSub"></div>
+        </div>
+      </div>
+
+      <div class="sessionBar" id="sessionBarLogin">
+        <span class="dotBig" id="sessaoDotLogin" style="width:16px;height:16px;border-radius:50%;"></span>
+        <div class="sessionLine" id="sessaoLineLogin">Sessão —</div>
+      </div>
+
+      <div class="pixBar">
+        <div class="pixBadge"><img id="pixLogo" src="https://www.erpimpar.com.br/agape/assets/logo-pix.jpg" alt="Pix"></div>
+        <div class="pixKey" id="pixChave">—</div>
+      </div>
+
+      <div class="card" id="loginCard">
+        <h2 id="welcomeTitle" style="margin:0 0 6px 0; font-size:34px; letter-spacing:.2px">Bem-vindo 👋</h2>
+        <p style="margin:0 0 14px 0; color:var(--muted)">Digite seu <strong>CIM</strong> para entrar. Botões grandes e tudo bem simples.</p>
+
+        <div id="telWrap">
+          <label style="display:block; font-weight:700; margin:10px 0 6px 0; font-size:15px">Telefone</label>
+          <input id="inpTel" inputmode="tel" placeholder="Ex: 48999990000" style="width:100%;padding:14px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background: rgba(255,255,255,.06);color:var(--text);outline:none;font-size:16px;" />
+        </div>
+
+        <label style="display:block; font-weight:700; margin:10px 0 6px 0; font-size:15px">CIM (senha)</label>
+        <input id="inpCIM" inputmode="numeric" placeholder="Digite seu CIM" style="width:100%;padding:14px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background: rgba(255,255,255,.06);color:var(--text);outline:none;font-size:16px;" />
+
+        <button class="btn" id="btnEntrar">Entrar</button>
+        <button class="miniBtn" id="btnSairLogin" style="width:100%;margin-top:10px;">Sair do aplicativo</button>
+
+        <div style="margin-top:10px; color: rgba(255,255,255,.65)">Admin: toque 5x no logo.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Consumo -->
+  <section id="scr_consumo" class="screen safe">
+    <div class="page">
+      <div class="topBrand">
+        <div class="bLogo"><img id="brandLogoCons" src="./assets/logo-Clementino-Brito.jpeg" alt="logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="consLoja">Loja</div>
+          <div class="bSub" id="consSub"></div>
+        </div>
+      </div>
+
+      <div class="sessionBar">
+        <span class="dotBig" id="sessaoDotCons"></span>
+        <div class="sessionLine" id="sessaoLineCons">Sessão —</div>
+      </div>
+
+      <div class="cashBar" id="cashBar">
+        <div class="cashText">Valor em caixa: <span id="cashValue">R$ 0,00</span></div>
+      </div>
+
+      <div class="pixBar">
+        <div class="pixKey" >Meu Consumo</div>
+        <button class="miniBtn" id="btnSair">Sair</button>
+      </div>
+
+      <div class="prodScroll" id="prodScroll">
+        <div id="prodList"></div>
+      </div>
+
+      <div class="consFooter">
+        <div class="totalBox">
+          <div class="tLbl">Total</div>
+          <div class="tVal" id="totalValue">R$ 0,00</div>
+        </div>
+        <button class="btn2" id="btnFechar">Fechar e pagar</button>
+      </div>
+    </div>
+  </section>
+
+   <!-- Pagamento -->
+  <section id="scr_pagamento" class="screen safe">
+    <div class="wrap">
+      <div class="topBrand" id="payBrandBar">
+        <div class="bLogo"><img id="payLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo"/></div>
+        <div class="bTxt">
+          <div class="bTitle" id="payLoja">Loja</div>
+          <div class="bSub">App Agape • Consumo & Pagamento</div>
+        </div>
+      </div>
+
+      <div class="sessionBar">
+        <span class="dotbig" id="paySessaoDot" style="width:12px;height:12px;border-radius:99px;"></span>
+        <div class="sessionLine" id="paySessaoLine">Sessão —</div>
+      </div>
+
+      <div class="payCard">
+        <div class="payMsg">
+          <div class="payHello" id="payHello">Oi meu irmão,</div>
+          <div class="payTotal">Sua conta totalizou <span id="payTotal">R$ 0,00</span>:</div><br>
+        </div>
+
+        <div id="payItems" class="payItems"></div>
+              
+        <div class="payQ"><br>Como deseja pagar?</div><br>
+
+        <div class="payIconRow" aria-label="Formas de pagamento">
+          <button class="payIconBtn" id="btnPix" type="button" data-tip="Pix">
+            <img src="./assets/logo-pix.jpg" alt="Pix" class="payIconImg"/>
+          </button>
+
+          <button class="payIconBtn" id="btnDinheiro" type="button" data-tip="Dinheiro">
+            <span class="paySvg" aria-hidden="true">💵</span>
+          </button>
+
+          <button class="payIconBtn" id="btnProxima" type="button" data-tip="Próxima sessão">
+            <span class="paySvg" aria-hidden="true">📅</span>
+          </button>
+        </div>
+
+        <button class="btn2 payBack" id="btnVoltarConsumo" type="button">Voltar para comanda</button>
+        <div class="payHint">Ao pagar, registramos e voltamos para o login.</div>
+      </div>
+    </div>
+
+
+    <!-- Modal Pix -->
+    <div id="pixModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pixTitle">
+      <div class="modalCard">
+        <div class="modalTop">
+          <div class="modalTitle" id="pixTitle">Pix</div>
+          <button class="modalX" id="btnPixCancel" type="button" aria-label="Fechar">✕</button>
+        </div>
+
+        <div class="modalText">Copie a chave e faça a transferência do valor exato.</div>
+
+        <div class="pixValueRow">
+          <div class="pixValueLbl">Valor</div>
+          <div class="pixValue" id="pixValor">R$ 0,00</div>
+        </div>
+
+        <div class="pixKeyRow">
+          <div class="pixKeyText" id="pixChaveModal">—</div>
+          <button class="pixCopyBtn" id="btnCopyPix" type="button" title="Copiar">📋</button>
+        </div>
+
+        <button class="btn2 modalOk" id="btnPixOk" type="button">OK, transferi</button>
+        <button class="modalCancel" id="btnPixCancel2" type="button">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Sucesso -->
+    <div id="paySuccess" class="hidden" style="position:fixed;inset:0;background:rgba(230,204,24,.96);display:flex;align-items:center;justify-content:center;z-index:9999;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;">
+        <img id="payGif" src="./assets/check.gif" alt="Pago" style="width:160px;height:160px;object-fit:contain;filter:drop-shadow(0 12px 26px rgba(0,0,0,.25));">
+        <div style="font-weight:1000;font-size:22px;color:#053018;text-shadow:0 1px 0 rgba(255,255,255,.35);">Pagamento registrado</div>
+      </div>
+    </div>
+  </section>
+  <div id="presSuccess" class="presSuccess hidden" aria-hidden="true">
+     <div class="presSuccessInner">
+       <img id="presGif" src="./assets/presenca.gif" alt="Confirmado">
+       <div class="presOkText">PRESENÇA CONFIRMADA!!!!!!!!!</div>
+    </div>
+  </div>
+<!-- ==========================/*---------------------------------------------------
+<div id="scr_fechamento" class="screen safe">
+  <div class="wrap">
+    <div class="card" style="background: linear-gradient(135deg,#0f5132,#198754); border:1px solid rgba(255,255,255,.2); color:#fff;">
+      <div style="font-weight:1000;font-size:20px;margin-bottom:10px">Sessão sendo contabilizada</div>
+      <div style="opacity:.9">
+        A sessão do dia está sendo fechada e contabilizada.<br>
+        Aguarde a finalização pelo tesoureiro.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================
+     ADMIN (SUBSTITUIR O SECTION INTEIRO)
+     ========================== -->
+<section id="scr_admin" class="screen">
+  <div class="adminWrap">
+    <div class="adminHeader">
+      <img id="adminLogo" src="./assets/logo-Clementino-Brito.jpeg" alt="logo">
+      <div>
+        <div class="t1">Admin</div>
+        <div class="t2">Configuração • Sessão • Irmãos</div>
+      </div>
+    </div>
+
+    <div class="adminTabs">
+      <button class="adminTab" id="tabCfg" type="button">CONFIGURAÇÃO</button>
+      <button class="adminTab active" id="tabSessao" type="button">SESSÃO</button>
+      <button class="adminTab" id="tabIrmaos" type="button">IRMÃOS</button>
+    </div>
+
+    <div class="adminPanel">
+      <div class="adminScroll">
+
+                <!-- ABA SESSAO -->
+        <div id="adminViewSessao" class="hidden">
+          <div class="adminGrid2">
+            <div>
+              <div class="aLabel">Status</div>
+              <select class="aSelect" id="a_sessao_status">
+                <option value="aberta">aberta</option>
+                <option value="fechada">fechada</option>
+              </select>
+            </div>
+            <div>
+              <div class="aLabel">Data</div>
+              <input class="aInput" id="a_sessao_data" placeholder="dd/mm/aaaa">
+            </div>
+          </div>
+
+          <div class="adminGrid2">
+            <div>
+              <div class="aLabel">Caixa inicial</div>
+              <input class="aInput" id="a_sessao_caixa" placeholder="0" inputmode="decimal">
+            </div>
+            <div>
+              <div class="aLabel">Sessão ID (convocação)</div>
+              <input class="aInput" id="a_conv_id" placeholder="2026-02-07-001">
+            </div>
+          </div>
+
+          <div class="aLabel">Chamado</div>
+          <input class="aInput" id="a_sessao_chamado" placeholder="Texto do chamado">
+        </div>
+
+        <!-- ABA CFG -->
+        <div id="adminViewCfg">
+          <div class="aLabel">Nome da loja</div>
+          <input class="aInput" id="a_loja_nome" placeholder="Nome da loja">
+          <div class="aLabel">Subtítulo</div>
+          <input class="aInput" id="a_loja_sub" placeholder="Subtítulo">
+          <div class="aLabel">PIX</div>
+          <input class="aInput" id="a_loja_pix" placeholder="Chave PIX">
+          <div class="aLabel">WhatsApp Tesoureiro (senha)</div>
+          <input class="aInput" id="a_loja_tes" placeholder="55...">
+          <div class="aLabel">Logo URL (GitHub)</div>
+          <input class="aInput" id="a_logo_url" placeholder="./assets/logo...">
+        </div>
+
+
+        <!-- ABA IRMAOS (ONLINE) -->
+        <div id="adminViewIrmaos" class="hidden">
+          <div class="aLabel">Status: Não confirmado • Somente sessão • Somente ágape • Sessão e ágape</div>
+          <div class="adminTableScroll">
+<table class="adminTable" id="adminTableIrmaos">
+            <thead>
+              <tr>
+                <th style="width:40px;">#</th>
+                <th>IRMÃO</th>
+                <th style="width:130px;">STATUS</th>
+                <th style="width:90px;">PAGOU</th>
+              </tr>
+            </thead>
+            <tbody id="adminIrmaosBody"></tbody>
+          </table>
+</div>
+
+          <div class="adminResumo" id="adminResumoBox">
+            <div class="rTitle">Resumo (online)</div>
+            <div class="rLine"><span class="k">Total de irmãos na sessão</span><span class="v" id="r_total_irmaos">—</span></div>
+            <div class="rLine"><span class="k">Não confirmaram</span><span class="v" id="r_nao_confirm">—</span></div>
+            <div class="rLine"><span class="k">Recebido em DINHEIRO</span><span class="v" id="r_din">—</span></div>
+            <div class="rLine"><span class="k">Recebido em PIX</span><span class="v" id="r_pix">—</span></div>
+            <div class="rLine"><span class="k">Próxima sessão (pendência)</span><span class="v" id="r_prox">—</span></div>
+            <div class="rLine"><span class="k">Total em caixa (físico)</span><span class="v" id="r_caixa">—</span></div>
+          </div>
+
+          <div class="adminResumo" id="adminProdutosBox">
+            <div class="rTitle">Consumo por produto (total)</div>
+            <div id="r_prod_list" style="font-size:12px; opacity:.9;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="adminFooter">
+        <button class="btnAdminPrimary" id="btnAdminSalvar" type="button">CONFIRMAR</button>
+        <button class="btnAdminDanger" id="btnAdminSair" type="button">SAIR</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MODAL/DETALHE IRMÃO -->
+<div class="adminModal" id="adminModal">
+  <div class="adminSheet">
+    <div class="sheetHead">
+      <div>
+        <div class="h1" id="m_nome">Irmão</div>
+        <div style="font-size:11px;opacity:.75" id="m_meta">—</div>
+      </div>
+      <button class="sheetClose" id="m_close" type="button">Fechar</button>
+    </div>
+
+  //  <div class="sheetBlock">
+      <div class="sheetRow"><span>Status</span><b id="m_status">—</b></div>
+      <div class="sheetRow"><span>Pagamentos</span><b id="m_pag">—</b></div>
+    </div>
+
+    <div class="sheetBlock">
+      <div style="font-weight:900; font-size:12px; margin-bottom:8px;">Consumo (descrição + qtd)</div>
+      <div id="m_cons" style="font-size:12px; opacity:.92;">—</div>
+    </div>
+
+    <div class="sheetBlock">
+      <div style="font-weight:900; font-size:12px; margin-bottom:8px;">Lançar pagamento (online)</div>
+      <div class="adminGrid2">
+        <input class="aInput" id="m_valor" placeholder="Valor (ex: 10)" inputmode="decimal">
+        <select class="aSelect" id="m_forma">
+          <option value="DINHEIRO">DINHEIRO</option>
+          <option value="PIX">PIX</option>
+          <option value="PROXIMA_SESSAO">PROXIMA_SESSAO</option>
+        </select>
+      </div>
+      <button class="btnAdminPrimary" id="m_btn_pagar" type="button" style="margin-top:10px;">Registrar pagamento</button>
+    </div>
+  </div>
+</div>
+</section>
+ 
+<script>
+/* ==========================
+   CONFIG / HELPERS
+========================== */
+const LS_CART  = "agape_cart_v14";
+const LS_USER  = "agape_user_v14";
+const LS_CASH = "agape_cash_v1";
+const LS_CASH_DATE = "agape_cash_date_v1";
+const LS_PRES_LIDA = "agape_presenca_lida_v1";
+const LS_PRES_RESP = "agape_presenca_resp_v1";
+const GIF_TIME   = 6000;
+const ZOOM_TIME  = 6000;
+
+const $ = (s)=>document.querySelector(s);
+
+function setText(sel, val){
+  if(!sel) return;
+  const isCSS =
+    sel.startsWith("#") || sel.startsWith(".") ||
+    sel.includes(" ") || sel.includes(",") ||
+    sel.includes("[") || sel.includes(">") || sel.includes(":");
+  const q = isCSS ? sel : ("#" + sel);
+  const el = document.querySelector(q);
+  if(el) el.textContent = (val ?? "");
+}
+
+const fmtBRL = (v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+
+let CFG = null;        // ✅ única vez
+let ADMIN_CFG = null;  // ✅ única vez
+
+let lastTotal = 0;
+let currentScreen="scr_splash1";
+let waitTimer=null;
+let waitOpenTimer=null;
+let waitPollingStarted=false;
+let payReady = true;
+let adminTapCount=0;
+let adminTapTimer=null;
+
+function toast(msg){
+  const t=$("#toast");
+  if(!t) return;
+  t.textContent=msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1700);
+}
+
+function showScreen(id, dir="forward"){
+  const from=document.getElementById(currentScreen);
+  const to=document.getElementById(id);
+  if(!from||!to||id===currentScreen) return;
+
+  to.classList.remove("exit-left","exit-right","enter-left","enter-right");
+  from.classList.remove("exit-left","exit-right","enter-left","enter-right");
+
+  if(dir==="forward") to.classList.add("enter-left"); else to.classList.add("enter-right");
+  to.classList.add("active");
+  to.classList.remove("hidden");
+
+  if (id === "scr_splash2") {
+    const lw = to.querySelector(".logoWrap");
+    const bt = to.querySelector(".brandText");
+    [lw, bt].forEach(el => {
+      if (!el) return;
+      el.style.animation = "none";
+      void el.offsetHeight;
+      el.style.animation = "";
+    });
+  }
+
+  void to.offsetWidth;
+  to.classList.remove("enter-left","enter-right");
+
+  if(dir==="forward") from.classList.add("exit-left"); else from.classList.add("exit-right");
+
+  setTimeout(()=>{
+    from.classList.remove("active","exit-left","exit-right");
+    currentScreen=id;
+  }, 460);
+}
+
+/* ==========================
+   NORMALIZAÇÃO CFG (FONTE ÚNICA: KINGHOST)
+   - Mantém compat: CFG.loja / CFG.sessao / CFG.produtos
+   - Canonical: CFG.config.loja / CFG.config.sessao / CFG.config.produtos
+========================== */
+function normalizeCFG(cfg){
+  if(!cfg || typeof cfg!=="object") cfg = {};
+
+  const hasWrapper = !!(cfg.config && typeof cfg.config === "object");
+  const root = hasWrapper ? cfg.config : cfg;
+
+  if(!root.loja || typeof root.loja!=="object") root.loja = {};
+  if(!root.sessao || typeof root.sessao!=="object") root.sessao = {};
+  if(!root.push || typeof root.push!=="object") root.push = {};
+  if(!root.convocacao || typeof root.convocacao!=="object") root.convocacao = {};
+  if(!root.ui || typeof root.ui!=="object") root.ui = {};
+  if(!Array.isArray(root.irmaos)) root.irmaos = [];
+  if(!Array.isArray(root.produtos)) root.produtos = [];
+
+  if(!Object.prototype.hasOwnProperty.call(root, "fechamento")){
+    if(Object.prototype.hasOwnProperty.call(root.sessao || {}, "fechamento")){
+      root.fechamento = !!root.sessao.fechamento;
+    }else{
+      root.fechamento = false;
+    }
+  }
+
+  cfg.config = root;
+
+  // aliases compat (mesma referência)
+  cfg.loja = root.loja;
+  cfg.sessao = root.sessao;
+  cfg.push = root.push;
+  cfg.convocacao = root.convocacao;
+  cfg.ui = root.ui;
+  cfg.irmaos = root.irmaos;
+  cfg.produtos = root.produtos;
+  cfg.fechamento = root.fechamento;
+
+  if(cfg.loja && typeof cfg.loja === "object"){
+    if(cfg.loja.logo_url && !cfg.ui.logo_url) cfg.ui.logo_url = cfg.loja.logo_url;
+    if(cfg.loja.logo && !cfg.ui.logo_url) cfg.ui.logo_url = cfg.loja.logo;
+  }
+
+  if(cfg.convocacao && typeof cfg.convocacao === "object"){
+    if(!cfg.convocacao.texto && cfg.sessao && cfg.sessao.chamado){
+      cfg.convocacao.texto = cfg.sessao.chamado;
+    }
+    if((cfg.convocacao.ativa === 1 || cfg.convocacao.ativa === "1" || cfg.convocacao.ativa === "true")) {
+      cfg.convocacao.ativa = true;
+    }
+  }
+
+  return cfg;
+}
+
+function toBool(v){
+  if(typeof v === "boolean") return v;
+  if(typeof v === "number") return v === 1;
+  if(typeof v === "string"){
+    const s = v.trim().toLowerCase();
+    return s === "1" || s === "true";
+  }
+  return !!v;
+}
+
+function isFechamentoAtivo(){
+  return toBool(CFG?.fechamento) || toBool(CFG?.sessao?.fechamento);
+}
+
+function getStageFromCFG(){
+  if(isFechamentoAtivo()) return "FECHAMENTO";
+  if(sessionIsOpen()) return "SESSAO_ABERTA";
+  if(isConvocacaoAtiva()) return "CONVOCACAO";
+  return "SEM_SESSAO";
+}
+
+let __goingOpenedSession = false;
+
+function goToOpenedSession(){
+  if(__goingOpenedSession) return;
+  __goingOpenedSession = true;
+
+  try{
+    const cfg = window.CFG || window.ADMIN_CFG || {};
+    const status = String(cfg?.sessao?.status || "").toLowerCase();
+    const fechamento = !!cfg?.fechamento;
+
+    // usuário precisa existir para entrar no fluxo interno
+    const user = getUser();
+    if(!user){
+      if(typeof showScreen === "function") showScreen("scr_login");
+      return;
+    }
+
+    if(status === "aberta" && !fechamento){
+      if(typeof showScreen === "function") showScreen("scr_consumo");
+      return;
+    }
+
+    if(status === "fechada" && fechamento){
+      if(typeof showScreen === "function") showScreen("scr_fechamento");
+      return;
+    }
+
+    if(status === "fechada"){
+      if(typeof showScreen === "function") showScreen("scr_wait");
+      return;
+    }
+
+    if(typeof showScreen === "function") showScreen("scr_wait");
+  } finally {
+    setTimeout(() => { __goingOpenedSession = false; }, 0);
+  }
+}
+function routeFromCFG(){
+  const u = getUser();
+
+  if(!u){
+    stopWaitPolling();
+    showScreen("scr_login","forward");
+    return;
+  }
+
+  const stage = getStageFromCFG();
+  if(stage === "FECHAMENTO"){
+    stopWaitPolling();
+    showScreen("scr_fechamento","forward");
+    return;
+  }
+  if(stage === "SESSAO_ABERTA"){
+    stopWaitPolling();
+    goToOpenedSession();
+    return;
+  }
+  if(stage === "CONVOCACAO"){
+    showScreen("scr_wait","forward");
+    startWaitPolling();
+    return;
+  }
+  showScreen("scr_wait","forward");
+  startWaitPolling();
+}
+
+async function loadConfig(){
+  const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json", { cache:"no-store" });
+  if(!r.ok) throw new Error("config HTTP " + r.status);
+  const j = await r.json();
+  CFG = normalizeCFG(j);
+  window.CFG = CFG;
+  return CFG;
+}
+window.loadConfig = loadConfig;
+window.normalizeCFG = normalizeCFG;
+
+function sessionIsOpen(){
+  return String(CFG?.sessao?.status||"").toLowerCase()==="aberta";
+}
+
+/* ==========================
+   STORAGE: CART / USER / CASH
+========================== */
+function getCart(){ try{return JSON.parse(localStorage.getItem(LS_CART)||"{}")}catch(_){return {}} }
+function setCart(c){ localStorage.setItem(LS_CART, JSON.stringify(c)); }
+function clearCart(){ localStorage.removeItem(LS_CART); }
+
+function getUser(){
+  try{
+    return JSON.parse(localStorage.getItem(LS_USER) || "null");
+  }catch(_){
+    return null;
+  }
+}
+function setUser(u){
+  localStorage.setItem(LS_USER, JSON.stringify(u));
+}
+
+function clearUser(){
+  localStorage.removeItem(LS_USER);
+}
+
+function getCashFromCFG(){
+  const n = Number(CFG?.sessao?.caixa_inicial);
+  return Number.isFinite(n) ? n : 0;
+}
+function getCash(){
+  const n = Number(localStorage.getItem(LS_CASH));
+  return Number.isFinite(n) ? n : getCashFromCFG();
+}
+function setCash(n){
+  localStorage.setItem(LS_CASH, String(Number(n) || 0));
+}
+function initCashFromConfig(){
+  const sessionDate = String(CFG?.sessao?.data || "").trim();
+  const savedDate   = localStorage.getItem(LS_CASH_DATE);
+  const hasCash     = localStorage.getItem(LS_CASH) !== null;
+
+  if(!hasCash || (sessionDate && savedDate !== sessionDate)){
+    setCash(getCashFromCFG());
+    localStorage.setItem(LS_CASH_DATE, sessionDate);
+  }
+}
+function renderCash(){
+  const el = document.getElementById("cashValue");
+  if(el) el.textContent = fmtBRL(getCash());
+}
+
+/* ==========================
+   PRESENÇA / ENVELOPE (mantive seu modelo)
+========================== */
+const LS_PRESENCA_ANS  = "agape_presenca_ans_v1";
+const LS_PRESENCA_READ = "agape_presenca_read_v1";
+
+function sessaoKey(){ return String(CFG?.sessao?.data || "").trim(); }
+
+function getPresencaMap(){
+  try{ return JSON.parse(localStorage.getItem(LS_PRESENCA_ANS) || "{}"); }
+  catch(_){ return {}; }
+}
+function getPresencaAns(){
+  const key = sessaoKey();
+  if(!key) return "";
+  return String(getPresencaMap()[key] || "");
+}
+async function setPresencaAns(ans){
+  const key = sessaoKey() || String(CFG?.convocacao?.id || CFG?.sessao?.data || "").trim();
+  if(!key){ if(typeof toast==="function") toast("Sessão sem identificador"); return; }
+
+  // salva local
+  const map = getPresencaMap();
+  map[key] = ans;
+  localStorage.setItem(LS_PRESENCA_ANS, JSON.stringify(map));
+
+  // envia servidor
+  const u = getUser() || {};
+  const userTel = String(u.telefone||u.tel||"").replace(/\D/g,"");
+  const userName = String(u.nome||"").trim();
+  if(!userTel) return;
+
+  const evt = { type: "confirmacao_presenca", status: ans || "NAO_CONFIRMADO", telefone: userTel, nome: userName, ts: Math.floor(Date.now()/1000) };
+  const payload = { sessao_id: key, event: evt };
+
+  try {
+    const response = await fetch("https://api.erpimpar.com.br/agape/consumo/presenca_confirm.php", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    if(!response.ok) throw new Error("HTTP " + response.status);
+    if(typeof toast === "function") toast("Presença confirmada!");
+  } catch(e) {
+    console.warn("[ERRO] Presença (offline):", e);
+    if(typeof toast === "function") toast("Sem rede: presença salva localmente");
+  }
+}
+function setReadPresenca(){
+  const key = sessaoKey();
+  if(!key) return;
+  localStorage.setItem(LS_PRESENCA_READ, key);
+}
+function refreshPresenceUI(){
+  const totalIrmaos = Array.isArray(CFG?.irmaos) ? CFG.irmaos.length : 0;
+  const ans = getPresencaAns();
+
+  const totalResp = ans ? 1 : 0;
+  const totalNao  = Math.max(0, totalIrmaos - totalResp);
+
+  const setNum = (id, v)=>{ const el=document.getElementById(id); if(el) el.textContent = String(v); };
+  setNum("rT", totalResp);
+  setNum("rN", totalNao);
+
+  const line = document.getElementById("presStatusLine");
+  if(line){
+    const label =
+      ans === "SESSAO_E_AGAPE" ? "Sessão e Ágape" :
+      ans === "SOMENTE_SESSAO" ? "Somente sessão" :
+      ans === "SOMENTE_AGAPE" ? "Somente ágape" :
+      ans === "NAO_VOU" ? "Não vou" : "";
+    line.textContent = ans ? `Você respondeu: ${label}.` : "Você ainda não respondeu.";
+  }
+}
+
+const LS_CONVOCACAO_READ = "agape_convocacao_read_v1";
+
+function getConvocacaoObj(){
+  return (CFG && (CFG.convocacao || (CFG.sessao && CFG.sessao.convocacao))) || null;
+}
+function getConvocacaoId(){ return String(getConvocacaoObj()?.id || "").trim(); }
+function isConvocacaoAtiva(){ return toBool(getConvocacaoObj()?.ativa); }
+function isConvocacaoLida(){
+  const id = getConvocacaoId();
+  if(!id) return false;
+  return localStorage.getItem(LS_CONVOCACAO_READ) === id;
+}
+function marcarConvocacaoLida(){
+  const id = getConvocacaoId();
+  if(!id) return;
+  localStorage.setItem(LS_CONVOCACAO_READ, id);
+}
+function updateConvocacaoBadge(){
+  const badge = document.getElementById("badgeConvocacao");
+  if(!badge) return;
+  const show = isConvocacaoAtiva() && !getPresencaAns();
+  badge.classList.toggle("hidden", !show);
+  badge.textContent = "!";
+}
+function updateEnvelopeUI(){ updateConvocacaoBadge(); }
+
+async function choosePresenca(val){
+  await setPresencaAns(val);
+  setReadPresenca();
+  refreshPresenceUI();
+  updateEnvelopeUI();
+  updateConvocacaoBadge();
+  updatePresenceConfirmedWait();
+
+  showPresSuccess();
+  setTimeout(()=>{
+    hidePresSuccess();
+    showScreen("scr_wait","back");
+  }, 3000);
+}
+
+
+function showPresSuccess(){
+  const ov = document.getElementById("presSuccess");
+  if(ov) ov.classList.remove("hidden");
+
+  const gif = document.getElementById("presGif");
+  if(gif){
+    const src = gif.getAttribute("src") || "./assets/presenca.gif";
+    gif.setAttribute("src", src.split("?")[0] + "?t=" + Date.now());
+  }
+}
+
+function hidePresSuccess(){
+  const ov = document.getElementById("presSuccess");
+  if(ov) ov.classList.add("hidden");
+}
+
+let _waitPresFxTimer = null;
+function startWaitPresencaFX(){
+  const el = document.getElementById("waitPresencaOk");
+  if(!el || el.classList.contains("hidden")) return;
+  if(_waitPresFxTimer) clearInterval(_waitPresFxTimer);
+
+  const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+
+  const applyOnce = ()=>{
+    const ans = getPresencaAns() || "";
+    const label =
+      ans === "SESSAO_E_AGAPE" ? "SESSÃO E ÁGAPE" :
+      ans === "SOMENTE_SESSAO" ? "SOMENTE SESSÃO" :
+      ans === "SOMENTE_AGAPE" ? "SOMENTE ÁGAPE" :
+      ans === "NAO_VOU" ? "NÃO VOU" : "CONFIRMADO";
+
+    el.textContent = pick([
+      "✅ PRESENÇA JÁ CONFIRMADA",
+      `✅ ESCOLHIDO: ${label}`,
+      "✅ CONFIRMADO COM SUCESSO"
+    ]);
+
+    el.classList.remove("pulse","blink");
+    el.classList.add(pick(["pulse","blink"]));
+  };
+
+  applyOnce();
+  _waitPresFxTimer = setInterval(applyOnce, 1800);
+}
+
+function updatePresenceConfirmedWait(){
+  const el = document.getElementById("waitPresencaOk");
+  if(!el) return;
+  const ans = getPresencaAns() || "";
+  el.classList.toggle("hidden", !ans);
+  if(ans) startWaitPresencaFX();
+}
+
+function openPresenca(){
+  if(!CFG?.sessao) return;
+
+  const elTxt = document.getElementById("presTexto");
+  if(elTxt){
+    elTxt.textContent = CFG.sessao.chamado || CFG?.convocacao?.texto || "Mensagem não configurada.";
+  }
+
+  const b1 = document.getElementById("btnRespSessaoAgape");
+  const b2 = document.getElementById("btnRespSessao");
+  const b3 = document.getElementById("btnRespAgape");
+  const b4 = document.getElementById("btnRespNaoVou");
+
+  if(b1) b1.onclick = () => choosePresenca("SESSAO_E_AGAPE");
+  if(b2) b2.onclick = () => choosePresenca("SOMENTE_SESSAO");
+  if(b3) b3.onclick = () => choosePresenca("SOMENTE_AGAPE");
+  if(b4) b4.onclick = () => choosePresenca("NAO_VOU");
+
+  marcarConvocacaoLida();
+  updateConvocacaoBadge();
+
+  localStorage.setItem(LS_PRES_LIDA, "1");
+  updateEnvelopeUI();
+
+  showScreen("scr_presenca","forward");
+  refreshPresenceUI();
+  updatePresenceConfirmedWait();
+}
+  /* ==========================
+   BRAND / UI
+========================== */
+function applyBrand(){
+  const setTextId = (id, val) => { const el=document.getElementById(id); if(el) el.textContent = val; };
+  const setSrc  = (id, src) => { const el=document.getElementById(id); if(el && src) el.src = src; };
+
+  const logoRaw = (CFG?.ui?.logo_url) ? CFG.ui.logo_url : "./assets/logo-Clementino-Brito.jpeg";
+  const logoUrl = /^https?:\/\//i.test(String(logoRaw||"")) ? logoRaw : "https://www.erpimpar.com.br/agape/" + String(logoRaw||"").replace(/^\.?\//,"");
+  ["brandLogo","brandLogoWait","brandLogoCons","brandLogoPres","payLogo"].forEach(id=>setSrc(id, logoUrl));
+  ["pixLogo","pixLogoWait"].forEach(id=>setSrc(id, "https://www.erpimpar.com.br/agape/assets/logo-pix.jpg"));
+
+  setTextId("lojaNome", CFG?.loja?.nome || "Loja");
+  setTextId("lojaSub",  CFG?.loja?.subtitulo || "");
+  setTextId("lojaNomeWait", CFG?.loja?.nome || "Loja");
+  setTextId("lojaSubWait",  CFG?.loja?.subtitulo || "");
+  setTextId("consLoja", CFG?.loja?.nome || "Loja");
+  setTextId("consSub",  CFG?.loja?.subtitulo || "");
+  setTextId("lojaNomePres", CFG?.loja?.nome || "Loja");
+  setTextId("payLoja", CFG?.loja?.nome || "Loja");
+
+  const pix = (CFG?.loja?.pix_chave || "").trim();
+  setTextId("pixChave", pix || "—");
+  setTextId("pixChaveWait", pix || "—");
+
+  const opened = (CFG?.sessao?.status || "").toLowerCase() === "aberta";
+
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,"0");
+  const mm = String(now.getMinutes()).padStart(2,"0");
+  const ss = String(now.getSeconds()).padStart(2,"0");
+  const nowStr = `${hh}:${mm}:${ss}`;
+  const d = (CFG?.sessao?.data || "").trim();
+  const sessaoStr = d ? `${d} — ${nowStr}` : `— — ${nowStr}`;
+
+  const dotColor = opened ? "var(--good)" : "var(--bad)";
+  ["sessaoDotLogin","sessaoDotCons","paySessaoDot","sessaoDotWait","sessaoDotPres"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.background = dotColor;
+  });
+
+  const sessaoLabel = opened ? "Sessão aberta" : "Sessão fechada";
+  const sessaoLine = `${sessaoLabel} — ${sessaoStr}`;
+  setTextId("sessaoLineLogin", sessaoLine);
+  setTextId("sessaoLineCons", sessaoLine);
+  setTextId("paySessaoLine", sessaoLine);
+  setTextId("sessaoLineWait", sessaoLine);
+  setTextId("sessaoLinePres", sessaoLine);
+  setTextId("sessaoStatus", opened ? "Aberta" : "Fechada");
+  setTextId("lastCheck", now.toLocaleString("pt-BR"));
+
+  updateEnvelopeUI();
+}
+
+/* ==========================
+   PRODUCTS / TOTAL
+========================== */
+function animateTotal(to){
+  const el1 = $("#totalValue");
+  const el2 = $("#payTotal");
+  const el3 = $("#pixValor");
+  if(!el1 || !el2 || !el3 ) { lastTotal = to; return; }
+
+  const from = Math.round(lastTotal);
+  const target = Math.round(to);
+
+  if(from === target){
+    el1.textContent = fmtBRL(to);
+    el2.textContent = fmtBRL(to);
+    el3.textContent = fmtBRL(to);
+    lastTotal = to;
+    return;
+  }
+  const dir = target > from ? 1 : -1;
+  let cur = from;
+  const stepMs = 18;
+  const timer = setInterval(()=>{
+    cur += dir;
+    el1.textContent = fmtBRL(cur);
+    el2.textContent = fmtBRL(cur);
+    el3.textContent = fmtBRL(cur);
+
+    if(cur === target){
+      clearInterval(timer);
+      el1.textContent = fmtBRL(to);
+      el2.textContent = fmtBRL(to);
+      el3.textContent = fmtBRL(to);
+      lastTotal = to;
+    }
+  }, stepMs);
+}
+  
+(function(){
+  const root = window.CFG?.config || window.CFG || {};
+  if (!window.CFG) window.CFG = {};
+  if (!Array.isArray(window.CFG.produtos) || !window.CFG.produtos.length) {
+    window.CFG.produtos = Array.isArray(root.produtos) ? root.produtos : [];
+  }
+})
+
+window.renderProdutos = function(){
+  const cfg = window.CFG?.config || window.CFG || {};
+  const produtos = Array.isArray(cfg.produtos) ? cfg.produtos : [];
+  const box = document.querySelector(".prodScroll");
+  if (!box) return;
+
+  const base = cfg.assets?.produtos_path || "./";
+  const cart = getCart();
+
+  box.innerHTML = produtos.map((p, i) => {
+    const img = base + (p.img || "");
+    const id = p.id ?? (i + 1);
+    const qtd = Number(cart[id] || 0);
+
+    return `
+      <div class="prodRow" data-id="${id}">
+        <div class="pIcon">
+          <img src="${img}" alt="${p.nome}" onerror="this.style.display='none'">
+        </div>
+        <div class="pMid">
+          <div class="pName">${p.nome || ""}</div>
+          <div class="pDesc">${p.desc || ""}</div>
+          <div class="pPrice">R$ ${Number(p.preco || 0).toFixed(2)}</div>
+        </div>
+        <div class="qtyWrap">
+          <button class="qtyBtn" onclick="window.__menosProduto(${id})">−</button>
+          <div class="qty" id="qty-${id}">${qtd}</div>
+          <button class="qtyBtn" onclick="window.__maisProduto(${id})">+</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  updateTotal();
+};
+
+window.__maisProduto = function(id){
+  const cart = getCart();
+  cart[id] = (cart[id] || 0) + 1;
+  setCart(cart);
+
+  const el = document.getElementById("qty-" + id);
+  if (el) el.textContent = cart[id];
+
+  updateTotal();
+};
+
+window.__menosProduto = function(id){
+  const cart = getCart();
+  cart[id] = Math.max(0, (cart[id] || 0) - 1);
+  setCart(cart);
+
+  const el = document.getElementById("qty-" + id);
+  if (el) el.textContent = cart[id];
+
+  updateTotal();
+};
+
+setTimeout(() => window.renderProdutos(), 300);
+
+function updateTotal(){
+  const cart = getCart();
+  const ROOT_CFG = CFG?.config || CFG || {};
+  const produtos = Array.isArray(ROOT_CFG.produtos) ? ROOT_CFG.produtos : [];
+  let total = 0;
+
+  for(const p of produtos){
+    total += Number(cart[p.id] || 0) * Number(p.preco || 0);
+  }
+
+  animateTotal(total);
+  return total;
+}
+  function findIrmao(tel,cim){
+  tel=String(tel||"").replace(/\D/g,"");
+  cim=String(cim||"").trim();
+  return (Array.isArray(CFG?.irmaos)?CFG.irmaos:[]).find(i =>
+    String(i.telefone||"").replace(/\D/g,"")===tel &&
+    String(i.cim||"").trim()===cim
+  );
+}
+
+function applyRememberedUser(){
+  const u = getUser();
+  const telWrap = document.getElementById("telWrap");
+  const telInp  = document.getElementById("inpTel");
+  const welcome = document.getElementById("welcomeTitle");
+  const hasPhone = !!(u && u.telefone && String(u.telefone).trim());
+
+  if (hasPhone){
+    if (telWrap) telWrap.style.display = "none";
+    if (telInp) {
+      telInp.value = String(u.telefone);
+      telInp.disabled = true;
+    }
+    if (welcome && u.nome) welcome.textContent = `Bem-vindo, ${u.nome} 👋`;
+  } else {
+    if (telWrap) telWrap.style.display = "";
+    if (telInp) {
+      telInp.disabled = false;
+    }
+    if (welcome) welcome.textContent = "Bem-vindo 👋";
+  }
+}
+
+function setupAdminTap(){
+  const logos = [$("#brandLogo"), $("#brandLogoWait")].filter(Boolean);
+  for(const el of logos){
+    el.addEventListener("click", ()=>{
+      adminTapCount++;
+      clearTimeout(adminTapTimer);
+      adminTapTimer=setTimeout(()=>adminTapCount=0, 1200);
+      if(adminTapCount>=2){
+        adminTapCount=0;
+        openAdmin();
+      }
+    });
+  }
+}
+
+/* ==========================
+   WAIT POLLING
+========================== */
+function nowDT(){ return new Date().toLocaleString("pt-BR"); }
+
+function stopWaitPolling(){
+  if(waitTimer){ clearInterval(waitTimer); waitTimer=null; }
+  if(waitOpenTimer){ clearInterval(waitOpenTimer); waitOpenTimer=null; }
+  waitPollingStarted=false;
+}
+
+function startWaitPolling(){
+  if(waitPollingStarted) return;
+  waitPollingStarted=true;
+  stopWaitPolling();
+
+  const tick = async ()=>{
+    try{
+      setText('lastCheck', nowDT());
+      CFG = await loadConfig();
+      updateConvocacaoBadge();
+      initCashFromConfig();
+      applyBrand();
+      renderCash();
+
+      const stage = getStageFromCFG();
+      if(stage === "FECHAMENTO"){
+        stopWaitPolling();
+        showScreen("scr_fechamento","forward");
+        return;
+      }
+      if(stage === "SESSAO_ABERTA"){
+        stopWaitPolling();
+        goToOpenedSession();
+        return;
+      }
+    }catch(_){}
+  };
+
+  tick();
+  waitTimer = setInterval(tick, 6000);
+
+  waitOpenTimer = setInterval(async ()=>{
+    if(currentScreen !== 'scr_wait') return;
+    try{
+      CFG = await loadConfig();
+      applyBrand();
+      const stage = getStageFromCFG();
+      if(stage === "FECHAMENTO"){
+        stopWaitPolling();
+        showScreen('scr_fechamento','forward');
+        return;
+      }
+      if(stage === "SESSAO_ABERTA"){
+        stopWaitPolling();
+        goToOpenedSession();
+      }
+    }catch(_){}
+  }, 15000);
+}
+
+/* ==========================
+   PIX / PAY (mantive igual)
+========================== */
+function escapeHtml(s){
+  return String(s||"")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+function cartEntries(cart){
+  if(!cart) return [];
+  if(!Array.isArray(cart) && typeof cart==="object"){
+    return Object.entries(cart).map(([id,q])=>({id:String(id), qtd:Number(q||0)}));
+  }
+  if(Array.isArray(cart)){
+    return cart.map(it=>({id:String(it.id), qtd:Number(it.qtd||it.qtd||0)}));
+  }
+  return [];
+}
+function emv(id, value){
+  const v = String(value);
+  const len = String(v.length).padStart(2,"0");
+  return `${id}${len}${v}`;
+}
+function crc16(payload){
+  let crc = 0xFFFF;
+  for(let i=0;i<payload.length;i++){
+    crc ^= (payload.charCodeAt(i) << 8);
+    for(let j=0;j<8;j++){
+      crc = (crc & 0x8000) ? (((crc << 1) ^ 0x1021) & 0xFFFF) : ((crc << 1) & 0xFFFF);
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4,"0");
+}
+function buildPixPayload({ key, amount, merchantName, merchantCity, txid }){
+  const k = String(key||"").trim();
+  const a = Number(amount||0).toFixed(2);
+
+  const mName = String(merchantName || "AGAPE").slice(0,25);
+  const mCity = String(merchantCity || "BRASIL").slice(0,15);
+  const tId   = String(txid || "AGAPE").slice(0,25);
+
+  const gui = emv("00","BR.GOV.BCB.PIX");
+  const chave = emv("01", k);
+  const mai = emv("26", gui + chave);
+
+  const payloadNoCrc =
+    emv("00","01") +
+    emv("01","12") +
+    mai +
+    emv("52","0000") +
+    emv("53","986") +
+    emv("54", a) +
+    emv("58","BR") +
+    emv("59", mName) +
+    emv("60", mCity) +
+    emv("62", emv("05", tId)) +
+    "6304";
+
+  return payloadNoCrc + crc16(payloadNoCrc);
+}
+
+function buildPayScreen(){
+  payReady = false;
+  setTimeout(()=>{ payReady = true; }, 350);
+
+  applyBrand();
+
+  const u = getUser() || {};
+  const nome = (u.nome||"").trim();
+  setText("payHello", nome ? `Oi meu irmão, ${nome}!` : "Oi meu irmão!");
+
+  const total = updateTotal();
+  setText("payTotal", fmtBRL(total));
+  setText("pixValor", fmtBRL(total));
+
+  const cart = getCart();
+  const entries = cartEntries(cart).filter(x=>x.qtd>0);
+
+  const prods = (CFG && Array.isArray(CFG.produtos)) ? CFG.produtos : [];
+  const byId = Object.fromEntries(prods.map(p=>[String(p.id), p]));
+
+  const lines = entries.map(e=>{
+    const p = byId[e.id] || {};
+    const nomeP = p.nome || `Item ${e.id}`;
+    const preco = Number(p.preco||0);
+    const sub = e.qtd * preco;
+    return {q:e.qtd, nome:nomeP, sub};
+  });
+
+  const box = document.getElementById("payItems");
+  if(box){
+    if(lines.length===0){
+      box.innerHTML = `<div style="opacity:.75;font-weight:900">Nenhum item selecionado.</div>`;
+    }else{
+      box.innerHTML = lines.map(l=>{
+        const left = `${l.q} ${l.nome}`;
+        const right = fmtBRL(l.sub);
+        return `<div class="payItemRow"><div class="payItemLeft">${escapeHtml(left)}</div><div class="payItemDots"></div><div class="payItemRight">${escapeHtml(right)}</div></div>`;
+      }).join("");
+    }
+  }
+}
+
+function openPixModal(){
+  const total = updateTotal();
+  const key = (CFG && CFG.loja && CFG.loja.pix_chave) ? String(CFG.loja.pix_chave).trim() : "";
+  if(!key){ toast("Chave Pix não configurada"); return; }
+
+  const elValor = document.getElementById("pixValor");
+  if(elValor) elValor.textContent = fmtBRL(total);
+
+  const payload = buildPixPayload({
+    key,
+    amount: total,
+    merchantName: (CFG && CFG.loja && CFG.loja.nome) ? CFG.loja.nome : "AGAPE",
+    merchantCity: (CFG && CFG.loja && CFG.loja.cidade) ? CFG.loja.cidade : "BRASIL",
+    txid: "AGAPE"
+  });
+
+  const elCode =
+    document.getElementById("pixChaveModal") ||
+    document.getElementById("pixChave") ||
+    document.getElementById("pixKeyText") ||
+    null;
+
+  if(elCode) elCode.textContent = payload;
+
+  const modal = document.getElementById("pixModal");
+  if(modal) modal.classList.remove("hidden");
+}
+
+function closePixModal(){
+  const modal = document.getElementById("pixModal");
+  if(modal) modal.classList.add("hidden");
+}
+
+async function copyText(txt){
+  try{ await navigator.clipboard.writeText(txt); toast("Copiado ✅"); }
+  catch(_){
+    const ta=document.createElement("textarea");
+    ta.value=txt; ta.style.position="fixed"; ta.style.left="-9999px";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ document.execCommand("copy"); toast("Copiado ✅"); } catch(__){ toast("Não foi possível copiar"); }
+    document.body.removeChild(ta);
+  }
+}
+
+function showPaySuccess(){
+  const ps = document.getElementById("paySuccess");
+  if(ps) ps.classList.remove("hidden");
+}
+function hidePaySuccess(){
+  const ps = document.getElementById("paySuccess");
+  if(ps) ps.classList.add("hidden");
+}
+
+function finalizePayment(tipo, msg){
+  const total = updateTotal();
+  if(tipo === "dinheiro" || tipo === "pix"){
+    setCash(getCash() + Number(total || 0));
+    renderCash();
+  }
+
+  toast(msg);
+  clearCart();
+  updateTotal();
+  closePixModal();
+  showPaySuccess();
+
+  setTimeout(()=>{
+    hidePaySuccess();
+    showScreen("scr_login","back");
+  }, 2200);
+}
+
+/* ==========================
+   PUSH (registrar sempre)
+========================== */
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+const VAPID_PUBLIC_KEY = "BCtLtf7ypOpSkMuuN_OmoV-jm7t6Fk34uMkK3wtjZUaw5hUBZwfs2XfGOb5WL1UzE-5uRDf_jSCYlu35wcFtRY4";
+const PUSH_SUBSCRIBE_URL = "https://api.erpimpar.com.br/agape/push/push_subscribe.php";
+
+async function registerPush() {
+  if (!("serviceWorker" in navigator)) return;
+  const reg = await navigator.serviceWorker.ready;
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return;
+
+  let subscription = await reg.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+
+  const sub = subscription.toJSON();
+  await fetch(PUSH_SUBSCRIBE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sub)
+  });
+}
+
+/* ==========================
+   ADMIN (corrigido: lê e salva o MESMO JSON)
+========================== */
+let ADMIN_TAB = "cfg";
+let ADMIN_BOUND = false;
+
+const ADMIN_SAVE_URL = "https://api.erpimpar.com.br/agape/consumo/admin_save_config.php";
+
+function adminToastOk(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
+function adminToastErr(msg){ (typeof toast==="function") ? toast(msg) : alert(msg); }
+function adminHide(screen){ document.getElementById(screen)?.classList.add("hidden"); }
+function adminEl(id){ return document.getElementById(id); }
+function adminVal(id){ return (adminEl(id)?.value ?? "").trim(); }
+function adminSetVal(id, v){ const el = adminEl(id); if(el) el.value = (v ?? ""); }
+function adminSanTel(s){ return String(s || "").replace(/\D+/g,""); }
+function adminJsonPretty(o){ try{ return JSON.stringify(o, null, 2); }catch(_){ return String(o); } }
+
+async function adminLoadFromServer(){
+  const r = await fetch("https://api.erpimpar.com.br/agape/consumo/agape_config.json", { cache:"no-store" });
+  if(!r.ok) throw new Error("ADMIN load HTTP " + r.status);
+  const j = await r.json();
+  ADMIN_CFG = normalizeCFG(j);      // ✅ normaliza o JSON carregado
+  window.ADMIN_CFG = ADMIN_CFG;
+
+  // ✅ mantém o app sincronizado também
+  CFG = ADMIN_CFG;
+  window.CFG = CFG;
+
+  ADMIN_TAB = "cfg";
+  adminSetActiveTab("cfg");
+}
+
+function adminRenderCfg(){
+  if(!ADMIN_CFG) return;
+  adminSetVal("a_loja_nome", ADMIN_CFG?.loja?.nome || "");
+  adminSetVal("a_loja_sub", ADMIN_CFG?.loja?.subtitulo || "");
+  adminSetVal("a_loja_pix", ADMIN_CFG?.loja?.pix_chave || "");
+  adminSetVal("a_loja_tes", ADMIN_CFG?.loja?.tesoureiro_whatsapp || "");
+  adminSetVal("a_logo_url", ADMIN_CFG?.ui?.logo_url || ADMIN_CFG?.loja?.logo_url || ADMIN_CFG?.loja?.logo || "");
+
+  const logoUrl = adminVal("a_logo_url") || "./assets/logo-Clementino-Brito.jpeg";
+  const img = adminEl("adminLogo");
+  if(img) img.src = logoUrl;
+}
+
+function adminRenderSessao(){
+  if(!ADMIN_CFG) return;
+  adminSetVal("a_sessao_status", ADMIN_CFG?.sessao?.status || "fechada");
+  adminSetVal("a_sessao_data", ADMIN_CFG?.sessao?.data || "");
+  adminSetVal("a_sessao_caixa", ADMIN_CFG?.sessao?.caixa_inicial ?? 0);
+  adminSetVal("a_sessao_chamado", ADMIN_CFG?.sessao?.chamado || "");
+
+  adminSetVal("a_conv_on", String(!!ADMIN_CFG?.convocacao?.ativa));
+  adminSetVal("a_conv_id", ADMIN_CFG?.convocacao?.id || "");
+  adminSetVal("a_conv_titulo", ADMIN_CFG?.convocacao?.titulo || "");
+  adminSetVal("a_conv_texto", ADMIN_CFG?.convocacao?.texto || "");
+
+  // ✅ push sempre ligado (sem fantasma)
+  adminSetVal("a_push_on", "true");
+  adminSetVal("a_push_titulo", ADMIN_CFG?.push?.titulo || "");
+  adminSetVal("a_push_msg", ADMIN_CFG?.push?.mensagem || "");
+  adminSetVal("a_push_url", ADMIN_CFG?.push?.url || "");
+}
+
+function adminSetActiveTab(tab){
+  ADMIN_TAB = tab;
+
+  document.querySelectorAll("#scr_admin .adminTab").forEach(b=>b.classList.remove("active"));
+  if(tab==="cfg") adminEl("tabCfg")?.classList.add("active");
+  if(tab==="sessao") adminEl("tabSessao")?.classList.add("active");
+  if(tab==="irmaos") adminEl("tabIrmaos")?.classList.add("active");
+
+  adminEl("adminViewCfg")?.classList.toggle("hidden", tab!=="cfg");
+  adminEl("adminViewSessao")?.classList.toggle("hidden", tab!=="sessao");
+  adminEl("adminViewIrmaos")?.classList.toggle("hidden", tab!=="irmaos");
+
+  if(tab==="cfg") adminRenderCfg();
+  if(tab==="sessao") adminRenderSessao();
+  if(tab==="irmaos" && typeof adminSyncIrmaosTab==="function") adminSyncIrmaosTab();
+}
+
+function adminApplyCurrentTabToCfg(){
+  if(!ADMIN_CFG) return;
+
+  if(ADMIN_TAB==="cfg"){
+    ADMIN_CFG.loja.nome = adminVal("a_loja_nome");
+    ADMIN_CFG.loja.subtitulo = adminVal("a_loja_sub");
+    ADMIN_CFG.loja.pix_chave = adminVal("a_loja_pix");
+    ADMIN_CFG.loja.tesoureiro_whatsapp = adminVal("a_loja_tes");
+    const logo = adminVal("a_logo_url");
+    if(logo) ADMIN_CFG.ui.logo_url = logo;
+  }
+
+  if(ADMIN_TAB==="sessao"){
+    ADMIN_CFG.sessao.status = adminVal("a_sessao_status");
+    ADMIN_CFG.sessao.data = adminVal("a_sessao_data");
+    ADMIN_CFG.sessao.caixa_inicial = Number(adminVal("a_sessao_caixa") || 0);
+    ADMIN_CFG.sessao.chamado = adminVal("a_sessao_chamado");
+
+    ADMIN_CFG.push.habilitado = true;
+
+    ADMIN_CFG.convocacao.ativa = (adminVal("a_conv_on")==="true");
+    ADMIN_CFG.convocacao.id = adminVal("a_conv_id");
+    ADMIN_CFG.convocacao.titulo = adminVal("a_conv_titulo");
+    ADMIN_CFG.convocacao.texto = adminVal("a_conv_texto");
+
+    // ✅ blindagem: se tiver conteúdo, conv fica ativa
+    const hasConv = !!(
+      String(ADMIN_CFG.sessao.chamado||"").trim() ||
+      String(ADMIN_CFG.convocacao.id||"").trim() ||
+      String(ADMIN_CFG.convocacao.titulo||"").trim() ||
+      String(ADMIN_CFG.convocacao.texto||"").trim()
+    );
+    if(hasConv) ADMIN_CFG.convocacao.ativa = true;
+  }
+}
+
+async function adminSave(){
+  try{
+    adminApplyCurrentTabToCfg();
+
+    const src = ADMIN_CFG || {};
+
+    const payload = {
+      config: {
+        loja: src.loja || {},
+        sessao: src.sessao || {},
+        push: src.push || {},
+        convocacao: src.convocacao || {},
+        ui: src.ui || {},
+        irmaos: Array.isArray(src.irmaos) ? src.irmaos : [],
+        produtos: Array.isArray(src.produtos) ? src.produtos : [],
+        fechamento: !!src.fechamento
+      }
+    };
+
+    const res = await fetch(ADMIN_SAVE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const json = await res.json();
+
+    if(!json.ok){
+      throw new Error(json.err || "falha_salvar");
+    }
+
+    return json;
+  }catch(err){
+    console.error("adminSave erro:", err);
+    throw err;
+  }
+}
+
+function adminBindUI(){
+  if(ADMIN_BOUND) return;
+  ADMIN_BOUND = true;
+
+  adminEl("tabCfg")?.addEventListener("click", ()=>adminSetActiveTab("cfg"));
+  adminEl("tabSessao")?.addEventListener("click", ()=>adminSetActiveTab("sessao"));
+  adminEl("tabIrmaos")?.addEventListener("click", ()=>adminSetActiveTab("irmaos"));
+
+  adminEl("btnAdminSair")?.addEventListener("click", ()=>{
+    adminHide("scr_admin");
+    showScreen("scr_login","back");
+  });
+
+  adminEl("btnAdminSalvar")?.addEventListener("click", async ()=>{
+    try{
+      if(!ADMIN_CFG || typeof ADMIN_CFG !== "object"){
+        throw new Error("ADMIN_CFG ausente");
+      }
+
+      if(!ADMIN_CFG.sessao || typeof ADMIN_CFG.sessao !== "object") ADMIN_CFG.sessao = {};
+      if(!ADMIN_CFG.convocacao || typeof ADMIN_CFG.convocacao !== "object") ADMIN_CFG.convocacao = {};
+      if(!ADMIN_CFG.push || typeof ADMIN_CFG.push !== "object") ADMIN_CFG.push = {};
+      if(typeof ADMIN_CFG.fechamento === "undefined") ADMIN_CFG.fechamento = false;
+
+      const prevConvAtiva = toBool(ADMIN_CFG?.convocacao?.ativa);
+      const prevConvId    = String(ADMIN_CFG?.convocacao?.id || "");
+      const prevStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
+
+      async function sendPush(title, body){
+        const r = await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({
+            title,
+            body,
+            icon: "https://erpimpar.com.br/agape/logo.jpeg",
+            badge: "https://erpimpar.com.br/agape/logo.jpeg",
+            url: location.href
+          })
+        });
+
+        const j = await r.json().catch(()=>null);
+        if(!r.ok || !j || !j.ok){
+          throw new Error("push_send.php falhou");
+        }
+        return j;
+      }
+
+      const textoChamado = String(
+        ADMIN_CFG?.convocacao?.texto ||
+        ADMIN_CFG?.sessao?.chamado ||
+        ""
+      ).trim();
+
+      const statusAtual = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
+      const querConvocar    = (ADMIN_TAB === "sessao" && textoChamado.length > 0);
+      const querAbrirSessao = (statusAtual === "aberta");
+      const querFecharSessao = (statusAtual === "fechada" && !querConvocar);
+
+      if(querConvocar){
+        ADMIN_CFG.sessao.status = "fechada";
+        ADMIN_CFG.convocacao.ativa = 1;
+        if(!ADMIN_CFG.convocacao.id) ADMIN_CFG.convocacao.id = ("conv_" + Date.now());
+        ADMIN_CFG.convocacao.ts = new Date().toISOString();
+        ADMIN_CFG.convocacao.texto = textoChamado;
+
+ADMIN_CFG.push.habilitado = true; 
+ADMIN_CFG.push.ativo = true; 
+ADMIN_CFG.fechamento = false;
+}
+
+if(querAbrirSessao){
+ADMIN_CFG.fechamento = false;
+}
+      
+if(querFecharSessao){
+  ADMIN_CFG.fechamento = true;
+  ADMIN_CFG.convocacao.ativa = 0;
+  ADMIN_CFG.push.habilitado = false;
+  ADMIN_CFG.push.ativo = false;
+ 
+}
+
+try{
+  await adminSave();
+  adminToastOk("Salvo no servidor ✅");
+}catch(e){
+  console.warn(e);
+  adminToastErr("Falha ao salvar no servidor");
+  return;
+}
+      const nowConvAtiva = toBool(ADMIN_CFG?.convocacao?.ativa);
+      const nowConvId    = String(ADMIN_CFG?.convocacao?.id || "");
+      const nowStatus    = String(ADMIN_CFG?.sessao?.status || "").toLowerCase();
+
+      const virouConvocada = (nowConvAtiva && (!prevConvAtiva || (nowConvId && nowConvId !== prevConvId)));
+      const virouAberta    = (nowStatus === "aberta" && prevStatus !== "aberta");
+
+      if(virouConvocada){
+        try{
+          const body = (ADMIN_CFG?.convocacao?.texto || ADMIN_CFG?.sessao?.chamado || "O Venerável convocou a próxima sessão. Abra o app para confirmar presença.").trim();
+          await sendPush("Sessão convocada", body);
+          adminToastOk("PUSH de convocação enviado ✅");
+        }catch(e){
+          console.warn(e);
+          adminToastErr("Falha ao enviar PUSH de convocação");
+        }
+      }
+
+      if(virouAberta){
+        try{
+          await sendPush("Sessão aberta para consumo", "Consumo liberado no Ágape. Abra o app para registrar seus itens.");
+          adminToastOk("PUSH de sessão aberta enviado ✅");
+        }catch(e){
+          console.warn(e);
+          adminToastErr("Falha ao enviar PUSH de sessão aberta");
+        }
+      }
+
+      try{
+        const cfgReload = await loadConfig();
+        window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+        window.CFG = normalizeCFG(cfgReload);
+      }catch(e){
+        console.warn("[WARN] Falha ao recarregar config:", e);
+      }
+
+      try{
+        applyBrand?.();
+        updateConvocacaoBadge?.();
+        initCashFromConfig?.();
+        renderCash?.();
+      }catch(_){}
+
+      if(typeof aplicarFluxoDoSistema === "function"){
+        aplicarFluxoDoSistema();
+      }
+
+    }catch(e){
+      console.warn(e);
+      adminToastErr("Erro ao processar salvamento");
+    }
+  });
+}  
+
+async function openAdmin(){
+  window.__AGAPE_ADMIN_MODE = true;
+  try{ if(typeof hideV0==="function") hideV0(); }catch(_){}
+
+  adminBindUI();
+
+  // ✅ garante CFG atualizado
+  try{ if(!CFG) await loadConfig(); }catch(_){}
+
+  const telTes = adminSanTel(CFG?.loja?.tesoureiro_whatsapp || "");
+  const typed = adminSanTel(prompt("Senha do Admin (telefone do tesoureiro):") || "");
+
+  if(telTes && (!typed || typed !== telTes)){
+    adminToastErr("Senha inválida");
+    window.__AGAPE_ADMIN_MODE = false;
+    return;
+  }
+
+  showScreen("scr_admin","forward");
+
+  try{
+    await adminLoadFromServer();
+    adminToastOk("Admin pronto ✅");
+  }catch(e){
+    console.warn(e);
+    adminToastErr("Falha ao carregar config do servidor");
+    ADMIN_CFG = normalizeCFG({});
+    window.ADMIN_CFG = ADMIN_CFG;
+    adminSetActiveTab("cfg");
+  }
+}
+
+/* ==========================
+   BOOT
+========================== */
+async function boot(){
+  // SW
+  if("serviceWorker" in navigator){
+    try{ await navigator.serviceWorker.register("./service-worker.js"); }catch(e){ console.warn("Erro SW", e); }
+  }
+
+  // CFG
+  try{ await loadConfig(); }catch(e){ console.warn("CFG fail", e); }
+
+  setTimeout(()=>{
+    const img = document.getElementById("splashSymbol");
+    if(img) img.src = "./assets/maconaria.gif";
+  }, 1200);
+
+  setTimeout(()=>{ showScreen("scr_splash2","forward"); }, GIF_TIME);
+
+  setTimeout(()=>{
+    applyBrand();
+    initCashFromConfig();
+    renderCash();
+    applyRememberedUser();
+    setupAdminTap();
+    updateEnvelopeUI();
+    refreshPresenceUI();
+
+    routeFromCFG();
+  }, GIF_TIME + ZOOM_TIME);
+
+  // LOGIN
+  document.getElementById("btnEntrar")?.addEventListener("click", async ()=>{
+    const u = getUser();
+    const savedTel = u?.telefone ? String(u.telefone).replace(/\D/g,"") : "";
+
+    const telInp = document.getElementById("inpTel");
+    const tel = savedTel || (telInp ? String(telInp.value||"").replace(/\D/g,"") : "");
+
+    const cimInp = document.getElementById("inpCIM");
+    const cim = cimInp ? String(cimInp.value||"").trim() : "";
+
+    if(!tel){ toast("Digite o telefone"); return; }
+    if(!cim){ toast("Digite o CIM"); return; }
+
+    try{ await loadConfig(); }catch(_){}
+    applyBrand();
+
+    const irmao = findIrmao(tel, cim);
+    if(!irmao){ toast("CIM inválido"); return; }
+
+    setUser({ nome: irmao.nome, telefone: String(irmao.telefone).replace(/\D/g,"") });
+    applyRememberedUser();
+
+    try{ await registerPush(); }catch(e){ console.warn("Push não registrado", e); }
+
+    routeFromCFG();
+  });
+
+  document.getElementById("btnSairLogin")?.addEventListener("click", ()=>{
+    try{
+      localStorage.removeItem(LS_USER);
+      const telInp = document.getElementById("inpTel");
+      const cimInp = document.getElementById("inpCIM");
+      if(telInp){ telInp.value = ""; telInp.disabled = false; }
+      if(cimInp){ cimInp.value = ""; }
+      applyRememberedUser();
+      if(typeof sairDoAplicativo === "function"){ sairDoAplicativo(); return; }
+      window.open("about:blank","_self");
+      window.close();
+    }catch(_){}
+  });
+
+  // QTY
+  document.addEventListener("click",(e)=>{
+    const btn=e.target.closest(".qtyBtn");
+    if(!btn) return;
+    const id=btn.getAttribute("data-id");
+    const act=btn.getAttribute("data-act");
+    const cart=getCart();
+    const cur=Number(cart[id]||0);
+    cart[id]= act==="inc" ? cur+1 : Math.max(0, cur-1);
+    setCart(cart);
+    const el=document.getElementById("qty_"+id);
+    if(el) el.textContent=String(cart[id]);
+    updateTotal();
+  });
+
+  // FECHAR -> PAGAMENTO
+  document.getElementById("btnFechar")?.addEventListener("click", ()=>{
+    const total = updateTotal();
+    if(total<=0){ toast("Selecione ao menos 1 item"); return; }
+    buildPayScreen();
+    hidePaySuccess();
+    closePixModal();
+    showScreen("scr_pagamento","forward");
+  });
+
+  document.getElementById("btnVoltarConsumo")?.addEventListener("click", ()=>{
+    closePixModal();
+    hidePaySuccess();
+    showScreen("scr_consumo","back");
+  });
+
+  document.getElementById("btnSair")?.addEventListener("click", ()=>{
+    closePixModal();
+    hidePaySuccess();
+    clearCart();
+    localStorage.removeItem(LS_USER);
+    const cim = document.getElementById("inpCIM"); if(cim) cim.value="";
+    const tel = document.getElementById("inpTel"); if(tel){ tel.value=""; tel.disabled=false; }
+    applyRememberedUser();
+    showScreen("scr_login","back");
+    toast("Saiu");
+  });
+
+  document.getElementById("btnPix")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    openPixModal();
+  });
+  document.getElementById("btnDinheiro")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    finalizePayment("dinheiro", "Registrado: dinheiro");
+  });
+  document.getElementById("btnProxima")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    finalizePayment("proxima", "Registrado: próxima sessão");
+  });
+
+  document.getElementById("btnCopyPix")?.addEventListener("click", ()=>{
+    const el = document.getElementById("pixChaveModal");
+    const payload = el ? (el.textContent || "").trim() : "";
+    if(!payload){ toast("Código Pix vazio"); return; }
+    copyText(payload);
+  });
+
+  ["btnPixCancel","btnPixCancel2"].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.addEventListener("click", closePixModal);
+  });
+
+  document.getElementById("btnPixOk")?.addEventListener("click", ()=>{
+    if(!payReady) return;
+    finalizePayment("pix", "Registrado: pix");
+  });
+
+  // Envelope abre presença
+  document.getElementById("btnEnvelope")?.addEventListener("click", openPresenca);
+  document.getElementById("btnFecharPresenca")?.addEventListener("click", ()=>showScreen("scr_wait","back"));
+}
+
+boot();
+</script>
+
+<!-- ===== V0 MODAL (sessão fechada) ===== -->
+<div id="modalV0" class="modal-overlay hidden">
+  <div class="modal-card v0-card">
+    <div class="v0-header" id="v0HeaderBtn" title="Duplo clique para entrar no ADM">
+      <img id="v0Logo" class="v0-logo" src="./assets/logo-Clementino-Brito.jpeg" alt="Logo">
+      <div>
+        <div id="v0LojaNome" class="v0-loja"></div>
+        <div class="v0-sub">App Ágape • Consumo & Pagamento</div>
+      </div>
+    </div>
+    <div class="v0-icon">!</div>
+    <div class="v0-title">Atenção</div>
+    <div class="v0-text">
+      O Venerável ainda não abriu a próxima sessão.<br><br>
+      Fique tranquilo, assim que a sessão for liberada,
+      você será notificado pelo aplicativo.
+    </div>
+    <button id="btnV0Ok" class="v0-btn">OK</button>
+  </div>
+</div>
+
+<script>
+/**
+ * V0: aparece SEMPRE que a sessão estiver FECHADA.
+ * - Sessão fechada => V0 aparece
+ * - Sessão aberta   => V0 some
+ * - Se estiver no ADM => V0 nunca cobre a tela
+ */
+
+// Logo fallback
+const DEFAULT_V0_LOGO = "https://erpimpar.com.br/agape/logo.jpeg";
+
+// Garanta que existe e começa falso
+window.__AGAPE_ADMIN_MODE = !!window.__AGAPE_ADMIN_MODE;
+
+function v0SessionIsOpen(){
+  try{
+    const st = String(window.CFG?.sessao?.status || "").toLowerCase();
+    return st === "aberta";
+  }catch(_){ return false; }
+}
+
+function v0ApplyBrand(){
+  try{
+    const lojaNome = (window.CFG?.loja?.nome || "").trim();
+    const logoSrc  = (window.CFG?.ui?.logo_url || window.CFG?.loja?.logo_url || window.CFG?.loja?.logo || "").trim();
+
+    const nameEl = document.getElementById("v0LojaNome");
+    if(nameEl) nameEl.textContent = lojaNome || "";
+
+    const img = document.getElementById("v0Logo");
+    if(img){
+      img.src = (logoSrc || DEFAULT_V0_LOGO);
+      img.onerror = function(){
+        if(img.src !== DEFAULT_V0_LOGO) img.src = DEFAULT_V0_LOGO;
+      };
+    }
+  }catch(_){}
+}
+
+function showV0(){
+  const modal = document.getElementById("modalV0");
+  if(!modal) return;
+
+  // se estiver no ADM, não mostra
+  if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+
+  v0ApplyBrand();
+  modal.classList.remove("hidden");
+}
+
+function hideV0(){
+  document.getElementById("modalV0")?.classList.add("hidden");
+}
+
+/* ====== V0/V1/V2 STATE MACHINE (CIRÚRGICO) ======
+   V0: sem convocação ativa (mensagem azul)
+   V1: convocação ativa + sessão fechada (mostra scr_wait com envelope/badge)
+   V2: sessão aberta (consumo)
+================================================== */
+
+function v0ToBool(v){
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") return v.trim().toLowerCase() === "true";
+  return !!v;
+}
+
+function v0ConvocacaoAtiva(){
+  try{
+    // compat: CFG.convocacao OU CFG.sessao.convocacao
+    const c = (window.CFG && (CFG.convocacao || (CFG.sessao && CFG.sessao.convocacao))) || null;
+    if(!c) return false;
+    return v0ToBool(c.ativa);
+  }catch(_){
+    return false;
+  }
+}
+
+// Você já tem v0SessionIsOpen() aí em cima (ou sessionIsOpen). Se não tiver, use esta:
+function v0SessionIsOpen(){
+  try{ return String(CFG?.sessao?.status||"").toLowerCase()==="aberta"; }
+  catch(_){ return false; }
+}
+
+function v0GetStage(){
+  // V2 ganha sempre
+  if(v0SessionIsOpen()) return "V2";
+  // Se foi convocada: V1
+  if(v0ConvocacaoAtiva()) return "V1";
+  // Se não foi convocada: V0
+  return "V0";
+}
+
+// Controle: V0 só quando NÃO convocado; V1 quando convocado; V2 quando aberto
+async function v0Tick(){
+  try{
+    if(window.__AGAPE_ADMIN_MODE){ hideV0(); return; }
+
+    const stage = v0GetStage();
+
+    if(stage === "V0"){
+      showV0();
+      return;
+    }
+
+    // stage V1 ou V2 => não pode existir V0 por cima
+    hideV0();
+
+    if(stage === "V1"){
+      // garante que o usuário cai na tela “sessão fechada ativa” (scr_wait)
+      try{
+        if(typeof showScreen === "function"){
+          if(typeof currentScreen !== "undefined" && currentScreen !== "scr_wait"){
+            showScreen("scr_wait", "forward");
+          }else if(typeof currentScreen === "undefined"){
+            showScreen("scr_wait", "forward");
+          }
+        }
+      }catch(_){}
+
+      // garante badge do envelope (bolinha vermelha)
+      try{
+        if(typeof updateConvocacaoBadge === "function") updateConvocacaoBadge();
+        if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+      }catch(_){}
+    }
+
+    // stage V2: só garante V0 fora e segue fluxo normal do app
+  }catch(_){}
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  // OK: fecha (no desktop tenta fechar aba; no PWA só esconde)
+  document.getElementById("btnV0Ok")?.addEventListener("click", ()=>{
+    hideV0();
+    try{
+      if(typeof sairDoAplicativo === "function"){ sairDoAplicativo(); return; }
+      window.open("about:blank","_self");
+      window.close();
+    }catch(_){}
+  });
+
+  // Duplo clique no header abre ADM (se existir openAdmin)
+document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    window.__AGAPE_ADMIN_MODE = true;
+    hideV0();
+    try{ if(typeof openAdmin === "function") openAdmin(); }catch(_){}
+  });
+
+  // Primeira checagem (curta) e depois monitora
+  setTimeout(v0Tick, 600);
+  setTimeout(v0Tick, 1200);
+
+ });
+  
+
+
+
+
+/* =========================================================
+   PATCH FORÇA BRUTA ÁGAPE - FINAL
+   ========================================================= */
+(function(){
+  if (window.__PATCH_AGAPE_FINAL__) return;
+  window.__PATCH_AGAPE_FINAL__ = true;
+
+  function ROOT(){
+    return window.CFG?.config || window.CFG || {};
+  }
+
+  function setBadgeOn(){
+    localStorage.removeItem("conv_lida");
+    const b = document.getElementById("badgeConvocacao");
+    if(b){
+      b.classList.remove("hidden");
+      b.textContent = "!";
+    }
+  }
+
+  function setBadgeOff(){
+    localStorage.setItem("conv_lida", "1");
+    const b = document.getElementById("badgeConvocacao");
+    if(b){
+      b.classList.add("hidden");
+    }
+  }
+
+  function cfgSetEstado(sessao, push, convocacao, fechamento){
+    if(!window.ADMIN_CFG) window.ADMIN_CFG = {};
+
+    ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
+    ADMIN_CFG.push = ADMIN_CFG.push || {};
+    ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
+
+    ADMIN_CFG.sessao.status = sessao;
+    ADMIN_CFG.push.habilitado = push;
+    ADMIN_CFG.push.ativo = push;
+    ADMIN_CFG.convocacao.ativa = convocacao;
+    ADMIN_CFG.fechamento = fechamento;
+
+    if(convocacao){
+      ADMIN_CFG.convocacao.id = "conv_" + Date.now();
+      ADMIN_CFG.convocacao.ts = new Date().toISOString();
+    }
+
+    return ADMIN_CFG;
+  }
+
+  async function sendPushPatch(title, body){
+    await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        title,
+        body,
+        icon: "https://erpimpar.com.br/agape/logo.jpeg",
+        badge: "https://erpimpar.com.br/agape/logo.jpeg",
+        url: location.href
+      })
+    });
+  }
+
+  async function save(){
+    if(typeof adminSave === "function"){
+      await adminSave();
+    }
+  }
+
+  async function reload(){
+    if(typeof loadConfig === "function"){
+      const cfgReload = await loadConfig();
+      window.CFG = normalizeCFG(cfgReload);
+    }
+  }
+
+  function irTela(id){
+    if(typeof showScreen === "function"){
+      showScreen(id,"forward");
+    }
+  }
+
+  function estado(){
+    const c = ROOT();
+    return {
+      sessao: String(c?.sessao?.status || "").toLowerCase(),
+      push: !!(c?.push?.ativo || c?.push?.habilitado),
+      conv: !!c?.convocacao?.ativa,
+      fechamento: !!c?.fechamento
+    };
+  }
+
+  /* =========================================================
+     BOTÃO ADM
+     ========================================================= */
+  async function confirmarADM(){
+    try{
+
+      const st = estado();
+
+      // 1 → 2 CONVOCAR
+      if(st.sessao === "fechada" && !st.conv){
+        cfgSetEstado("fechada", true, true, false);
+
+        await save();
+        await reload();
+
+        await sendPushPatch(
+          "Sessão convocada",
+          "Abra o app para confirmar presença"
+        );
+
+        setBadgeOn();
+        irTela("scr_wait");
+        return;
+      }
+
+      // 2 → 3 ABRIR
+      if(st.sessao === "fechada" && st.conv){
+        cfgSetEstado("aberta", true, true, false);
+
+        await save();
+        await reload();
+
+        await sendPushPatch(
+          "Sessão aberta",
+          "Consumo liberado"
+        );
+
+        setBadgeOn();
+        irTela("scr_consumo");
+        return;
+      }
+
+      // 3 → 4 FECHAR (CORRIGIDO AQUI 🔥)
+      if(st.sessao === "aberta"){
+        cfgSetEstado("fechada", false, false, true);
+
+        // 💣 LIMPA CONVOCAÇÃO COMPLETAMENTE
+        if(ADMIN_CFG.convocacao){
+          ADMIN_CFG.convocacao.ativa = false;
+          ADMIN_CFG.convocacao.id = "";
+          ADMIN_CFG.convocacao.ts = "";
+          ADMIN_CFG.convocacao.texto = "";
+          ADMIN_CFG.convocacao.lida_por = [];
+        }
+
+        localStorage.setItem("conv_lida","1");
+
+        await save();
+        await reload();
+
+        setBadgeOff();
+
+        setTimeout(()=>{
+          irTela("scr_fechamento"); // tela tesoureiro
+        },300);
+
+        return;
+      }
+
+      // 4 → 1 FINALIZA
+      if(st.fechamento){
+        cfgSetEstado("fechada", false, false, false);
+
+        await save();
+        await reload();
+
+        setBadgeOff();
+
+        irTela("scr_splash1");
+        return;
+      }
+
+    }catch(e){
+      console.warn(e);
+      alert("Erro no ADM");
+    }
+  }
+
+  function bind(){
+    const btn = document.getElementById("btnAdminSalvar");
+    if(!btn || btn.dataset.ok) return;
+
+    const novo = btn.cloneNode(true);
+    novo.dataset.ok = "1";
+    btn.parentNode.replaceChild(novo, btn);
+
+    novo.onclick = confirmarADM;
+  }
+
+  setInterval(bind, 1000);
+
+})();
+
+
+  /* =========================================================
+   PATCH FORÇA BRUTA ÁGAPE - FINAL
+   ========================================================= */
+;(function(){
+  if (window.__PATCH_AGAPE_FINAL__) return;
+  window.__PATCH_AGAPE_FINAL__ = true;
+
+  function ROOT(){
+    return window.CFG?.config || window.CFG || {};
+  }
+
+  function setBadgeOn(){
+    localStorage.removeItem("conv_lida");
+    const b = document.getElementById("badgeConvocacao");
+    if(b){
+      b.classList.remove("hidden");
+      b.textContent = "!";
+    }
+  }
+
+  function setBadgeOff(){
+    localStorage.setItem("conv_lida", "1");
+    const b = document.getElementById("badgeConvocacao");
+    if(b){
+      b.classList.add("hidden");
+    }
+  }
+
+  function cfgSetEstado(sessao, push, convocacao, fechamento){
+    if(!window.ADMIN_CFG) window.ADMIN_CFG = {};
+
+    ADMIN_CFG.sessao = ADMIN_CFG.sessao || {};
+    ADMIN_CFG.push = ADMIN_CFG.push || {};
+    ADMIN_CFG.convocacao = ADMIN_CFG.convocacao || {};
+
+    ADMIN_CFG.sessao.status = sessao;
+    ADMIN_CFG.push.habilitado = push;
+    ADMIN_CFG.push.ativo = push;
+    ADMIN_CFG.convocacao.ativa = convocacao;
+    ADMIN_CFG.fechamento = fechamento;
+
+    if(convocacao){
+      ADMIN_CFG.convocacao.id = "conv_" + Date.now();
+      ADMIN_CFG.convocacao.ts = new Date().toISOString();
+    }
+
+    return ADMIN_CFG;
+  }
+
+  async function sendPushPatch(title, body){
+    await fetch("https://api.erpimpar.com.br/agape/push/push_send.php", {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        title,
+        body,
+        icon: "https://erpimpar.com.br/agape/logo.jpeg",
+        badge: "https://erpimpar.com.br/agape/logo.jpeg",
+        url: location.href
+      })
+    });
+  }
+
+  async function save(){
+    if(typeof adminSave === "function"){
+      await adminSave();
+    }
+  }
+
+  async function reload(){
+    if(typeof loadConfig === "function"){
+      const cfgReload = await loadConfig();
+      window.CFG = normalizeCFG(cfgReload);
+    }
+  }
+
+  function irTela(id){
+    if(typeof showScreen === "function"){
+      showScreen(id,"forward");
+    }
+  }
+
+  function estado(){
+    const c = ROOT();
+    return {
+      sessao: String(c?.sessao?.status || "").toLowerCase(),
+      push: !!(c?.push?.ativo || c?.push?.habilitado),
+      conv: !!c?.convocacao?.ativa,
+      fechamento: !!c?.fechamento
+    };
+  }
+
+  /* =========================================================
+     BOTÃO ADM
+     ========================================================= */
+  async function confirmarADM(){
+    try{
+
+      const st = estado();
+
+      // 1 → 2 CONVOCAR
+      if(st.sessao === "fechada" && !st.conv){
+        cfgSetEstado("fechada", true, true, false);
+
+        await save();
+        await reload();
+
+        await sendPushPatch(
+          "Sessão convocada",
+          "Abra o app para confirmar presença"
+        );
+
+        setBadgeOn();
+        irTela("scr_wait");
+        return;
+      }
+
+      // 2 → 3 ABRIR
+      if(st.sessao === "fechada" && st.conv){
+        cfgSetEstado("aberta", true, true, false);
+
+        await save();
+        await reload();
+
+        await sendPushPatch(
+          "Sessão aberta",
+          "Consumo liberado"
+        );
+
+        setBadgeOn();
+        irTela("scr_consumo");
+        return;
+      }
+
+      // 3 → 4 FECHAR (CORRIGIDO AQUI 🔥)
+      if(st.sessao === "aberta"){
+        cfgSetEstado("fechada", false, false, true);
+
+        // 💣 LIMPA CONVOCAÇÃO COMPLETAMENTE
+        if(ADMIN_CFG.convocacao){
+          ADMIN_CFG.convocacao.ativa = false;
+          ADMIN_CFG.convocacao.id = "";
+          ADMIN_CFG.convocacao.ts = "";
+          ADMIN_CFG.convocacao.texto = "";
+          ADMIN_CFG.convocacao.lida_por = [];
+        }
+
+        localStorage.setItem("conv_lida","1");
+
+        await save();
+        await reload();
+
+        setBadgeOff();
+
+        setTimeout(()=>{
+          irTela("scr_fechamento"); // tela tesoureiro
+        },300);
+
+        return;
+      }
+
+      // 4 → 1 FINALIZA
+      if(st.fechamento){
+        cfgSetEstado("fechada", false, false, false);
+
+        await save();
+        await reload();
+
+        setBadgeOff();
+
+        irTela("scr_splash1");
+        return;
+      }
+
+    }catch(e){
+      console.warn(e);
+      alert("Erro no ADM");
+    }
+  }
+
+  function bind(){
+    const btn = document.getElementById("btnAdminSalvar");
+    if(!btn || btn.dataset.ok) return;
+
+    const novo = btn.cloneNode(true);
+    novo.dataset.ok = "1";
+    btn.parentNode.replaceChild(novo, btn);
+
+    novo.onclick = confirmarADM;
+  }
+
+  setInterval(bind, 1000);
+
+})();
+
+  /* =========================================================
+   TELA TESOUREIRO V2 + FINAL 4→1
+   BLOCO ÚNICO — COLAR NO FINAL DO SCRIPT
+========================================================= */
+;(function(){
+
+  if(window.__PACOTE_TESOUREIRO_FINAL__) return;
+  window.__PACOTE_TESOUREIRO_FINAL__ = true;
+
+  function CFGROOT(){
+    return window.CFG?.config || window.CFG || {};
+  }
+
+  /* =========================
+     CRIA TELA
+  ========================= */
+  function criarTelaTesoureiro(){
+
+    if(document.getElementById("scr_fechamento_v2")) return;
+
+    const scr = document.createElement("section");
+    scr.id = "scr_fechamento_v2";
+    scr.className = "screen";
+
+    scr.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg,#0b3d2b 0%, #0a2f3f 55%, #071f33 100%);padding:20px">
+
+        <div style="width:100%;max-width:420px;border-radius:22px;
+        background:rgba(6,28,44,.8);border:1px solid rgba(74,222,128,.4);
+        box-shadow:0 20px 50px rgba(0,0,0,.4);padding:22px;color:#fff">
+
+          <div id="logoTesoureiro"
+            style="display:flex;align-items:center;gap:12px;
+            border:1px solid #22c55e;border-radius:12px;padding:10px;cursor:pointer">
+
+            <img id="logoTesImg" src="" style="width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover">
+            <div>
+              <div style="font-weight:800;font-size:16px" id="nomeLojaTes">Ágape</div>
+              <div style="font-size:11px">Modo Tesoureiro • toque 5x</div>
+            </div>
+          </div>
+
+          <div style="text-align:center;margin-top:25px;font-size:50px">🛠️</div>
+
+          <div style="text-align:center;font-size:26px;font-weight:900;margin-top:10px">
+            Sessão fechada
+          </div>
+
+          <div style="text-align:center;margin-top:10px;font-size:14px;line-height:1.6">
+            Sessão fechada para contabilização.<br>
+            Toque 5x no logo para abrir o ADM.
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(scr);
+
+    preencherDados();
+    bindLogoADM();
+  }
+
+  function preencherDados(){
+    const cfg = CFGROOT();
+
+    const nome = document.getElementById("nomeLojaTes");
+    const logo = document.getElementById("logoTesImg");
+
+    if(nome) nome.textContent = cfg?.loja?.nome || "Ágape";
+
+    if(logo){
+      logo.src =
+        cfg?.loja?.logo_url ||
+        cfg?.loja?.logo ||
+        "./logo-Clementino-Brito.jpeg";
+    }
+  }
+
+  /* =========================
+     LOGO → ADM (5 cliques)
+  ========================= */
+  function bindLogoADM(){
+
+    const el = document.getElementById("logoTesoureiro");
+    if(!el) return;
+    if(el.dataset.ok) return;
+
+    el.dataset.ok = "1";
+
+    let taps = 0;
+    let timer = null;
+
+    el.onclick = function(){
+      taps++;
+      clearTimeout(timer);
+      timer = setTimeout(()=>taps=0,1200);
+
+      if(taps >= 5){
+        taps = 0;
+        if(typeof openAdmin === "function"){
+          openAdmin();
+        }
+      }
+    };
+  }
+
+  /* =========================
+     MOSTRA TELA NO FLUXO
+  ========================= */
+  const old = window.irTelaFechamentoTesoureiro;
+
+  window.irTelaFechamentoTesoureiro = function(){
+
+    criarTelaTesoureiro();
+
+    if(typeof showScreen === "function"){
+      showScreen("scr_fechamento_v2","forward");
+    }else if(typeof old === "function"){
+      old();
+    }
+  };
+
+  /* =========================
+     FINAL 4 → 1
+  ========================= */
+  async function finalizar4para1(){
+
+    try{
+
+      if(!window.ADMIN_CFG || typeof window.ADMIN_CFG !== "object"){
+        window.ADMIN_CFG = JSON.parse(JSON.stringify(CFGROOT()));
+      }
+
+      if(!ADMIN_CFG.sessao) ADMIN_CFG.sessao = {};
+      if(!ADMIN_CFG.push) ADMIN_CFG.push = {};
+      if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
+
+      // 👉 REGRA FINAL
+      ADMIN_CFG.sessao.status = "fechada";
+      ADMIN_CFG.push.habilitado = false;
+      ADMIN_CFG.push.ativo = false;
+      ADMIN_CFG.convocacao.ativa = false;
+      ADMIN_CFG.fechamento = false;
+
+      ADMIN_CFG.convocacao.id = "";
+      ADMIN_CFG.convocacao.texto = "";
+      ADMIN_CFG.convocacao.ts = "";
+      ADMIN_CFG.convocacao.lida_por = [];
+
+      if(typeof adminSave === "function"){
+        await adminSave();
+      }
+
+      if(typeof loadConfig === "function" && typeof normalizeCFG === "function"){
+        const cfgReload = await loadConfig();
+        window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+        window.CFG = normalizeCFG(cfgReload);
+      }
+
+      localStorage.setItem("conv_lida","1");
+
+      setTimeout(()=>{
+        if(typeof showScreen === "function"){
+          showScreen("scr_splash1","back");
+        }
+      },200);
+
+    }catch(e){
+      console.warn("erro finalizar 4→1", e);
+    }
+  }
+
+  /* =========================
+     BIND CONFIRMAR ADM
+  ========================= */
+  function bindConfirmar(){
+
+    const btn = document.getElementById("btnAdminSalvar");
+    if(!btn) return;
+    if(btn.dataset.ok41) return;
+
+    btn.dataset.ok41 = "1";
+
+    btn.addEventListener("click", async function(ev){
+
+      try{
+
+        const cfg = window.ADMIN_CFG || CFGROOT();
+
+        const status = String(cfg?.sessao?.status || "").toLowerCase();
+        const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
+        const convAtiva = !!cfg?.convocacao?.ativa;
+        const fechamento = !!cfg?.fechamento;
+
+        if(status === "fechada" && !pushAtivo && !convAtiva && fechamento){
+
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+
+          await finalizar4para1();
+
+          return false;
+        }
+
+      }catch(e){
+        console.warn("erro bind 4→1", e);
+      }
+
+    }, true);
+  }
+
+  document.addEventListener("DOMContentLoaded", function(){
+    setTimeout(bindConfirmar, 500);
+  });
+
+  setInterval(bindConfirmar, 1000);
+
+})();
+
+/* =========================================================
+   PATCH FORÇA BRUTA FINAL
+   5 ESTÁGIOS / 11 PASSOS
+   SÓ GRAVA JSON + FORÇA TELA
+========================================================= */
+
+function AGAPE_CFG_ROOT(){
+  return window.CFG?.config || window.CFG || {};
+}
+
+async function AGAPE_reloadCfg(){
+  try{
+    if(typeof loadConfig === "function" && typeof normalizeCFG === "function"){
+      const cfgReload = await loadConfig();
+      window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+      window.CFG = normalizeCFG(cfgReload);
+    }
+  }catch(e){
+    console.warn("AGAPE_reloadCfg erro", e);
+  }
+}
+
+async function AGAPE_saveCurrentAdminCfg(){
+  if(typeof adminSave === "function"){
+    await adminSave();
+  }
+}
+
+function AGAPE_forceScreen(id, dir){
+  try{
+    if(typeof showScreen === "function"){
+      showScreen(id, dir || "forward");
+    }
+  }catch(e){
+    console.warn("AGAPE_forceScreen erro", e);
+  }
+}
+
+function AGAPE_forceStage(sessao, push, convocacao, fechamento){
+  if(!window.ADMIN_CFG || typeof window.ADMIN_CFG !== "object"){
+    window.ADMIN_CFG = JSON.parse(JSON.stringify(AGAPE_CFG_ROOT()));
+  }
+
+  if(!ADMIN_CFG.sessao) ADMIN_CFG.sessao = {};
+  if(!ADMIN_CFG.push) ADMIN_CFG.push = {};
+  if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
+
+  ADMIN_CFG.sessao.status = sessao;
+  ADMIN_CFG.push.habilitado = !!push;
+  ADMIN_CFG.push.ativo = !!push;
+  ADMIN_CFG.convocacao.ativa = !!convocacao;
+  ADMIN_CFG.fechamento = !!fechamento;
+
+  if(convocacao){
+    ADMIN_CFG.convocacao.id = ADMIN_CFG.convocacao.id || ("conv_" + Date.now());
+    ADMIN_CFG.convocacao.ts = new Date().toISOString();
+  }else{
+    ADMIN_CFG.convocacao.id = "";
+    ADMIN_CFG.convocacao.texto = "";
+    ADMIN_CFG.convocacao.ts = "";
+    ADMIN_CFG.convocacao.lida_por = [];
+  }
+}
+
+/* =========================================================
+   PASSO 2
+   CONVOCAR
+   vai para estágio 2 / tela de espera
+========================================================= */
+async function AGAPE_irPasso2(){
+  AGAPE_forceStage("fechada", true, true, false);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.removeItem("conv_lida");
+  }catch(_){}
+
+  try{
+    if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+    if(typeof updateConvocacaoBadge === "function") updateConvocacaoBadge();
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_wait", "forward");
+}
+
+/* =========================================================
+   PASSO 7
+   ABRIR SESSÃO
+   vai para estágio 3 / tela de consumo
+========================================================= */
+async function AGAPE_irPasso7(){
+  AGAPE_forceStage("aberta", true, true, false);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.removeItem("conv_lida");
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_consumo", "forward");
+}
+
+/* =========================================================
+   PASSO 10
+   FECHAR SESSÃO
+   vai para estágio 4 / tela tesoureiro
+========================================================= */
+async function AGAPE_irPasso10(){
+  AGAPE_forceStage("fechada", false, false, true);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.setItem("conv_lida", "1");
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_fechamento_v2", "forward");
+}
+
+/* =========================================================
+   PASSO 11
+   FINALIZAR TESOUREIRO
+   volta para estágio 1 / tela inicial
+========================================================= */
+async function AGAPE_irPasso11(){
+  AGAPE_forceStage("fechada", false, false, false);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.setItem("conv_lida", "1");
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_splash1", "back");
+}
+
+/* =========================================================
+   BIND FORÇA BRUTA DO CONFIRMAR DO ADM
+========================================================= */
+function AGAPE_bindBotaoConfirmarForcaBruta(){
+  const btn = document.getElementById("btnAdminSalvar");
+  if(!btn) return;
+  if(btn.dataset.agapeForcaBruta === "1") return;
+  btn.dataset.agapeForcaBruta = "1";
+
+  btn.addEventListener("click", async function(ev){
+    try{
+      const cfg = window.ADMIN_CFG || AGAPE_CFG_ROOT();
+
+      const status = String(cfg?.sessao?.status || "").toLowerCase();
+      const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
+      const convAtiva = !!cfg?.convocacao?.ativa;
+      const fechamento = !!cfg?.fechamento;
+
+      // PASSO 11 -> volta pro passo 1
+      if(status === "fechada" && !pushAtivo && !convAtiva && fechamento){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso11();
+        return false;
+      }
+
+      // PASSO 10 -> vai pro tesoureiro
+      if(status === "fechada" && !pushAtivo && !convAtiva && !fechamento){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso10();
+        return false;
+      }
+
+      // PASSO 7 -> abre consumo
+      if(status === "aberta" && pushAtivo && convAtiva){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso7();
+        return false;
+      }
+
+      // PASSO 2 -> convocação
+      if(status === "fechada" && convAtiva){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso2();
+        return false;
+      }
+
+    }catch(e){
+      console.warn("AGAPE_bindBotaoConfirmarForcaBruta erro", e);
+    }
+  }, true);
+}
+
+/* =========================================================
+   TELA TESOUREIRO V2
+   entra no ADM com 5 cliques no logo
+========================================================= */
+function AGAPE_criarTelaTesoureiroV2(){
+  if(document.getElementById("scr_fechamento_v2")) return;
+
+  const cfg = AGAPE_CFG_ROOT();
+
+  const scr = document.createElement("section");
+  scr.id = "scr_fechamento_v2";
+  scr.className = "screen";
+  scr.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(180deg,#0b3d2b 0%, #0a2f3f 55%, #071f33 100%);">
+      <div style="width:100%;max-width:420px;border-radius:22px;background:rgba(6,28,44,.82);border:1px solid rgba(74,222,128,.35);box-shadow:0 20px 50px rgba(0,0,0,.4);padding:22px;color:#fff;">
+        <div id="AGAPE_logoTesV2" style="display:flex;align-items:center;gap:12px;border:1px solid #22c55e;border-radius:12px;padding:10px;cursor:pointer;">
+          <img src="${cfg?.loja?.logo_url || cfg?.loja?.logo || './logo-Clementino-Brito.jpeg'}" style="width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover;">
+          <div>
+            <div style="font-weight:800;font-size:16px">${cfg?.loja?.nome || "Ágape"}</div>
+            <div style="font-size:11px">Modo Tesoureiro • toque 5x no logo</div>
+          </div>
+        </div>
+
+        <div style="text-align:center;margin-top:25px;font-size:50px">🛠️</div>
+
+        <div style="text-align:center;font-size:28px;font-weight:900;margin-top:10px">
+          Sessão fechada para contabilização
+        </div>
+
+        <div style="text-align:center;margin-top:10px;font-size:14px;line-height:1.6">
+          O tesoureiro está finalizando a sessão.<br>
+          Entre no ADM pelo logo para concluir a conciliação.
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(scr);
+
+  const logo = document.getElementById("AGAPE_logoTesV2");
+  if(logo){
+    let taps = 0;
+    let timer = null;
+
+    logo.onclick = function(){
+      taps++;
+      clearTimeout(timer);
+      timer = setTimeout(function(){ taps = 0; }, 1200);
+
+      if(taps >= 5){
+        taps = 0;
+        if(typeof openAdmin === "function"){
+          openAdmin();
+        }
+      }
+    };
+  }
+}
+
+/* =========================================================
+   START
+========================================================= */
+document.addEventListener("DOMContentLoaded", function(){
+  setTimeout(function(){
+    AGAPE_criarTelaTesoureiroV2();
+    AGAPE_bindBotaoConfirmarForcaBruta();
+  }, 500);
+});
+
+setInterval(function(){
+  AGAPE_bindBotaoConfirmarForcaBruta();
+}, 1000);  
+
+</script>
+
+<script>
+/* =========================================================
+   AGAPE - FORÇA BRUTA FECHAMENTO DE CICLO
+   VERSÃO NOVA: 2026-04-03 22:30
+   11 PASSOS / 5 ESTÁGIOS
+   SEM LOCAL STORAGE / SEM MEMÓRIA PERSISTENTE
+========================================================= */
+(function(){
+  const APP_VERSION = "AGAPE_FORCA_BRUTA_V2026_04_03_2230";
+  window.AGAPE_APP_VERSION = APP_VERSION;
+
+  const mem = window.__AGAPE_MEM = {
+    user: null,
+    cart: [],
+    cash: 0,
+    presenca: {},
+    presencaRead: "",
+    convocacaoRead: ""
+  };
+
+  function isAgapeStorageKey(key){
+    key = String(key || "");
+    return /^agape_/i.test(key) || key === "conv_lida";
+  }
+
+  function wipePersistentStorage(){
+    try{
+      const ls = [];
+      for(let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(isAgapeStorageKey(k)) ls.push(k);
+      }
+      ls.forEach(k => { try{ localStorage.removeItem(k); }catch(_){}; });
+    }catch(_){}
+    try{
+      const ss = [];
+      for(let i=0;i<sessionStorage.length;i++){
+        const k = sessionStorage.key(i);
+        if(isAgapeStorageKey(k)) ss.push(k);
+      }
+      ss.forEach(k => { try{ sessionStorage.removeItem(k); }catch(_){}; });
+    }catch(_){}
+  }
+
+  // bloqueia persistência do app
+  try{
+    const rawSet = Storage.prototype.setItem;
+    const rawGet = Storage.prototype.getItem;
+    const rawRemove = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function(key, value){
+      if(isAgapeStorageKey(key)) return;
+      return rawSet.apply(this, arguments);
+    };
+    Storage.prototype.getItem = function(key){
+      if(isAgapeStorageKey(key)) return null;
+      return rawGet.apply(this, arguments);
+    };
+    Storage.prototype.removeItem = function(key){
+      if(isAgapeStorageKey(key)) return;
+      return rawRemove.apply(this, arguments);
+    };
+  }catch(e){
+    console.warn("AGAPE patch storage", e);
+  }
+
+  function resetMemoryOnly(){
+    mem.user = null;
+    mem.cart = [];
+    mem.cash = 0;
+    mem.presenca = {};
+    mem.presencaRead = "";
+    mem.convocacaoRead = "";
+  }
+
+  function clearInputs(){
+    try{
+      const telInp = document.getElementById("inpTel");
+      const cimInp = document.getElementById("inpCIM");
+      if(telInp){ telInp.value = ""; telInp.disabled = false; }
+      if(cimInp){ cimInp.value = ""; }
+      const telWrap = document.getElementById("telWrap");
+      if(telWrap) telWrap.style.display = "";
+      const welcome = document.getElementById("welcomeTitle");
+      if(welcome) welcome.textContent = "Bem-vindo 👋";
+    }catch(_){}
+  }
+
+  function clearAllAppState(){
+    resetMemoryOnly();
+    wipePersistentStorage();
+    clearInputs();
+    try{ if(typeof updateTotal === "function") updateTotal(); }catch(_){}
+    try{ if(typeof renderCash === "function") renderCash(); }catch(_){}
+    try{ if(typeof updateConvocacaoBadge === "function") updateConvocacaoBadge(); }catch(_){}
+    try{ if(typeof refreshPresenceUI === "function") refreshPresenceUI(); }catch(_){}
+  }
+
+  // ===== sobescreve API de memória do app =====
+  window.getUser = function(){ return mem.user ? JSON.parse(JSON.stringify(mem.user)) : null; };
+  window.setUser = function(u){ mem.user = u ? JSON.parse(JSON.stringify(u)) : null; };
+  window.clearUser = function(){ mem.user = null; clearInputs(); };
+
+  window.getCart = function(){ return Array.isArray(mem.cart) ? mem.cart.slice() : []; };
+  window.setCart = function(cart){ mem.cart = Array.isArray(cart) ? JSON.parse(JSON.stringify(cart)) : []; };
+  window.clearCart = function(){ mem.cart = []; };
+
+  window.getCash = function(){ return Number(mem.cash || 0); };
+  window.setCash = function(v){ mem.cash = Number(v || 0); };
+
+  window.getPresencaMap = function(){ return mem.presenca || {}; };
+  window.getPresencaAns = function(){
+    try{
+      const key = (typeof sessaoKey === "function" ? sessaoKey() : "") || String(window.CFG?.convocacao?.id || window.CFG?.sessao?.data || "").trim();
+      if(!key) return "";
+      return String((mem.presenca || {})[key] || "");
+    }catch(_){ return ""; }
+  };
+  window.setReadPresenca = function(){
+    try{
+      mem.presencaRead = (typeof sessaoKey === "function" ? sessaoKey() : "") || "";
+    }catch(_){
+      mem.presencaRead = "";
+    }
+  };
+  window.isConvocacaoLida = function(){
+    const id = (typeof getConvocacaoId === "function" ? getConvocacaoId() : "");
+    if(!id) return false;
+    return String(mem.convocacaoRead || "") === String(id);
+  };
+  window.marcarConvocacaoLida = function(){
+    const id = (typeof getConvocacaoId === "function" ? getConvocacaoId() : "");
+    if(id) mem.convocacaoRead = String(id);
+  };
+
+  window.applyRememberedUser = function(){
+    const u = mem.user;
+    const telWrap = document.getElementById("telWrap");
+    const telInp  = document.getElementById("inpTel");
+    const welcome = document.getElementById("welcomeTitle");
+    if (telWrap) telWrap.style.display = "";
+    if (telInp){
+      telInp.disabled = false;
+      if(!u) telInp.value = "";
+    }
+    if (welcome) welcome.textContent = u?.nome ? `Bem-vindo, ${u.nome} 👋` : "Bem-vindo 👋";
+  };
+
+  window.updateConvocacaoBadge = function(){
+    try{
+      const badge = document.getElementById("badgeConvocacao");
+      if(!badge) return;
+      const stage = AGAPE_BRUTE_getStage();
+      const ans = window.getPresencaAns ? getPresencaAns() : "";
+      if(stage === "CONVOCACAO" && !ans){
+        badge.classList.remove("hidden");
+      }else{
+        badge.classList.add("hidden");
+      }
+    }catch(_){}
+  };
+  window.updateEnvelopeUI = function(){ try{ updateConvocacaoBadge(); }catch(_){}; };
+
+  window.setPresencaAns = async function(ans){
+    const key = (typeof sessaoKey === "function" ? sessaoKey() : "") || String(window.CFG?.convocacao?.id || window.CFG?.sessao?.data || "").trim();
+    if(!key) return;
+    if(!mem.presenca) mem.presenca = {};
+    mem.presenca[key] = ans;
+
+    const u = getUser() || {};
+    const userTel = String(u.telefone || u.tel || "").replace(/\D/g,"");
+    const userName = String(u.nome || "").trim();
+
+    if(userTel){
+      const evt = { type: "confirmacao_presenca", status: ans || "NAO_CONFIRMADO", telefone: userTel, nome: userName, ts: Math.floor(Date.now()/1000) };
+      const payload = { sessao_id: key, event: evt };
+      try{
+        await fetch("https://api.erpimpar.com.br/agape/consumo/presenca_confirm.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }catch(e){
+        console.warn("Presença servidor", e);
+      }
+    }
+  };
+
+  const _origChoosePresenca = window.choosePresenca;
+  window.choosePresenca = async function(val){
+    await setPresencaAns(val);
+    setReadPresenca();
+    try{ refreshPresenceUI(); }catch(_){}
+    try{ updateEnvelopeUI(); }catch(_){}
+    try{ updatePresenceConfirmedWait(); }catch(_){}
+    if(typeof _origChoosePresenca === "function"){
+      try{ return await _origChoosePresenca(val); }catch(e){ console.warn(e); }
+    }
+    if(typeof showPresSuccess === "function") showPresSuccess();
+    setTimeout(()=>{
+      try{ if(typeof hidePresSuccess === "function") hidePresSuccess(); }catch(_){}
+      try{ if(typeof showScreen === "function") showScreen("scr_wait","back"); }catch(_){}
+    }, 2500);
+  };
+
+  function AGAPE_BRUTE_getStage(){
+    const cfg = window.CFG || window.ADMIN_CFG || {};
+    const status = String(cfg?.sessao?.status || "").toLowerCase();
+    const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
+    const convAtiva = !!cfg?.convocacao?.ativa;
+    const fechamento = !!cfg?.fechamento;
+
+    if(status === "fechada" && !pushAtivo && !convAtiva && !fechamento) return "SEM_SESSAO";
+    if(status === "fechada" && !!convAtiva) return "CONVOCACAO";
+    if(status === "aberta" && !fechamento) return "SESSAO_ABERTA";
+    if(status === "fechada" && !!fechamento) return "FECHAMENTO";
+    return "SEM_SESSAO";
+  }
+  window.AGAPE_BRUTE_getStage = AGAPE_BRUTE_getStage;
+
+  function AGAPE_BRUTE_forceRoute(){
+    const stage = AGAPE_BRUTE_getStage();
+    const user = getUser();
+    const ans = getPresencaAns();
+
+    if(stage === "SEM_SESSAO"){
+      clearAllAppState();
+      if(typeof showScreen === "function") showScreen("scr_splash1","back");
+      return;
+    }
+
+    if(stage === "CONVOCACAO"){
+      if(!user){
+        if(typeof showScreen === "function") showScreen("scr_login","forward");
+        return;
+      }
+      if(!ans){
+        if(typeof openPresenca === "function") openPresenca();
+        else if(typeof showScreen === "function") showScreen("scr_presenca","forward");
+        return;
+      }
+      if(typeof showScreen === "function") showScreen("scr_wait","back");
+      return;
+    }
+
+    if(stage === "SESSAO_ABERTA"){
+      if(!user){
+        if(typeof showScreen === "function") showScreen("scr_login","forward");
+        return;
+      }
+      if(typeof showScreen === "function") showScreen("scr_consumo","forward");
+      return;
+    }
+
+    if(stage === "FECHAMENTO"){
+      clearUser();
+      if(typeof showScreen === "function"){
+        if(document.getElementById("scr_fechamento_v2")) showScreen("scr_fechamento_v2","forward");
+        else showScreen("scr_fechamento","forward");
+      }
+      return;
+    }
+
+    if(typeof showScreen === "function") showScreen("scr_splash1","back");
+  }
+  window.routeFromCFG = AGAPE_BRUTE_forceRoute;
+  window.goToOpenedSession = AGAPE_BRUTE_forceRoute;
+
+  async function AGAPE_BRUTE_loginAndRoute(){
+    const telInp = document.getElementById("inpTel");
+    const cimInp = document.getElementById("inpCIM");
+
+    const tel = telInp ? String(telInp.value || "").replace(/\D/g,"") : "";
+    const cim = cimInp ? String(cimInp.value || "").trim() : "";
+
+    if(!tel){ if(typeof toast === "function") toast("Digite o telefone"); return false; }
+    if(!cim){ if(typeof toast === "function") toast("Digite o CIM"); return false; }
+
+    try{ if(typeof loadConfig === "function") await loadConfig(); }catch(_){}
+    try{ if(typeof applyBrand === "function") applyBrand(); }catch(_){}
+
+    const irmao = (typeof findIrmao === "function") ? findIrmao(tel, cim) : null;
+    if(!irmao){
+      if(typeof toast === "function") toast("CIM inválido");
+      return false;
+    }
+
+    setUser({ nome: irmao.nome, telefone: String(irmao.telefone).replace(/\D/g,"") });
+
+    try{ if(typeof registerPush === "function") await registerPush(); }catch(e){ console.warn("Push não registrado", e); }
+
+    AGAPE_BRUTE_forceRoute();
+    return true;
+  }
+
+  function bindBruteButtons(){
+    const btnEntrar = document.getElementById("btnEntrar");
+    if(btnEntrar && btnEntrar.dataset.agapeBruteLogin !== "1"){
+      btnEntrar.dataset.agapeBruteLogin = "1";
+      btnEntrar.addEventListener("click", async function(ev){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_BRUTE_loginAndRoute();
+        return false;
+      }, true);
+    }
+
+    const btnSair = document.getElementById("btnSairLogin");
+    if(btnSair && btnSair.dataset.agapeBruteSair !== "1"){
+      btnSair.dataset.agapeBruteSair = "1";
+      btnSair.addEventListener("click", function(ev){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        clearAllAppState();
+        if(typeof showScreen === "function") showScreen("scr_splash1","back");
+        return false;
+      }, true);
+    }
+
+    const btnEnv = document.getElementById("btnEnvelope");
+    if(btnEnv && btnEnv.dataset.agapeBruteEnvelope !== "1"){
+      btnEnv.dataset.agapeBruteEnvelope = "1";
+      btnEnv.addEventListener("click", function(ev){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        if(!getUser()){
+          if(typeof showScreen === "function") showScreen("scr_login","forward");
+          return false;
+        }
+        if(typeof openPresenca === "function") openPresenca();
+        else if(typeof showScreen === "function") showScreen("scr_presenca","forward");
+        return false;
+      }, true);
+    }
+  }
+
+  const _origFinalizePayment = window.finalizePayment;
+  window.finalizePayment = function(tipo, msg){
+    try{
+      const total = (typeof updateTotal === "function") ? Number(updateTotal() || 0) : 0;
+      if(tipo === "dinheiro" || tipo === "pix"){
+        setCash(getCash() + total);
+        try{ if(typeof renderCash === "function") renderCash(); }catch(_){}
+      }
+      clearCart();
+      try{ if(typeof updateTotal === "function") updateTotal(); }catch(_){}
+      try{ if(typeof closePixModal === "function") closePixModal(); }catch(_){}
+      try{ if(typeof showPaySuccess === "function") showPaySuccess(); }catch(_){}
+      if(typeof toast === "function") toast(msg || "Pagamento confirmado");
+      setTimeout(()=>{
+        try{ if(typeof hidePaySuccess === "function") hidePaySuccess(); }catch(_){}
+        clearUser();
+        if(typeof showScreen === "function") showScreen("scr_login","back");
+      }, 1800);
+    }catch(e){
+      console.warn("finalizePayment brute", e);
+      if(typeof _origFinalizePayment === "function") return _origFinalizePayment(tipo, msg);
+    }
+  };
+
+  // ===== força passos-chave exatamente como no PPT =====
+  window.AGAPE_irPasso2 = async function(){
+    if(typeof AGAPE_forceStage === "function") AGAPE_forceStage("fechada", true, true, false);
+    try{ if(typeof AGAPE_saveCurrentAdminCfg === "function") await AGAPE_saveCurrentAdminCfg(); }catch(_){}
+    try{ if(typeof AGAPE_reloadCfg === "function") await AGAPE_reloadCfg(); }catch(_){}
+    clearAllAppState();
+    if(typeof showScreen === "function") showScreen("scr_wait", "forward");
+    bindBruteButtons();
+    updateConvocacaoBadge();
+  };
+
+  window.AGAPE_irPasso7 = async function(){
+    if(typeof AGAPE_forceStage === "function") AGAPE_forceStage("aberta", true, true, false);
+    try{ if(typeof AGAPE_saveCurrentAdminCfg === "function") await AGAPE_saveCurrentAdminCfg(); }catch(_){}
+    try{ if(typeof AGAPE_reloadCfg === "function") await AGAPE_reloadCfg(); }catch(_){}
+    clearUser();
+    clearCart();
+    if(typeof showScreen === "function") showScreen("scr_login", "forward");
+  };
+
+  window.AGAPE_irPasso10 = async function(){
+    if(typeof AGAPE_forceStage === "function") AGAPE_forceStage("fechada", false, false, true);
+    try{ if(typeof AGAPE_saveCurrentAdminCfg === "function") await AGAPE_saveCurrentAdminCfg(); }catch(_){}
+    try{ if(typeof AGAPE_reloadCfg === "function") await AGAPE_reloadCfg(); }catch(_){}
+    clearUser();
+    if(typeof showScreen === "function"){
+      if(document.getElementById("scr_fechamento_v2")) showScreen("scr_fechamento_v2", "forward");
+      else showScreen("scr_fechamento", "forward");
+    }
+  };
+
+  window.AGAPE_irPasso11 = async function(){
+    if(typeof AGAPE_forceStage === "function") AGAPE_forceStage("fechada", false, false, false);
+    try{ if(typeof AGAPE_saveCurrentAdminCfg === "function") await AGAPE_saveCurrentAdminCfg(); }catch(_){}
+    try{ if(typeof AGAPE_reloadCfg === "function") await AGAPE_reloadCfg(); }catch(_){}
+    clearAllAppState();
+    if(typeof showScreen === "function") showScreen("scr_splash1", "back");
+  };
+
+  function bindVersionBadge(){
+    if(document.getElementById("agapeVersionBadgeBrute")) return;
+    const el = document.createElement("div");
+    el.id = "agapeVersionBadgeBrute";
+    el.textContent = APP_VERSION;
+    el.style.cssText = "position:fixed;right:10px;bottom:8px;z-index:999999;background:#071b2e;color:#7CFC98;border:1px solid rgba(124,252,152,.45);border-radius:999px;padding:6px 10px;font:700 11px/1.2 Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.95;pointer-events:none;";
+    document.body.appendChild(el);
+  }
+
+  function autoNaoVouOnExit(){
+    const stage = AGAPE_BRUTE_getStage();
+    const user = getUser();
+    const ans = getPresencaAns();
+    if(stage === "CONVOCACAO" && user && !ans){
+      try{ setPresencaAns("NAO_VOU"); }catch(_){}
+    }
+  }
+
+  window.addEventListener("beforeunload", autoNaoVouOnExit);
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "hidden") autoNaoVouOnExit();
+  });
+
+  document.addEventListener("DOMContentLoaded", function(){
+    wipePersistentStorage();
+    clearAllAppState();
+    bindVersionBadge();
+    bindBruteButtons();
+    setTimeout(function(){
+      try{ bindBruteButtons(); }catch(_){}
+      try{ AGAPE_BRUTE_forceRoute(); }catch(_){}
+    }, 800);
+  });
+
+  setInterval(function(){
+    try{ bindBruteButtons(); }catch(_){}
+    try{ updateConvocacaoBadge(); }catch(_){}
+  }, 700);
+
+  setInterval(function(){
+    try{
+      if(AGAPE_BRUTE_getStage() === "SEM_SESSAO"){
+        clearAllAppState();
+      }
+    }catch(_){}
+  }, 2000);
+
+  console.log(APP_VERSION);
+})();
+</script>
+
+</body>
+</html>
