@@ -4098,144 +4098,248 @@ document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
   setInterval(bindConfirmar, 1000);
 
 })();
- /* =========================================================
-   PATCH FINAL FEIO E DIRETO
-   - TELA TESOUREIRO V2
-   - FORÇA TELA POR ID
-   - FECHA CICLO 3->4 E 4->1
-   COLAR NO FINAL DO <script>
+/* =========================================================
+   PATCH FORÇA BRUTA FINAL
+   5 ESTÁGIOS / 11 PASSOS
+   SÓ GRAVA JSON + FORÇA TELA
 ========================================================= */
-;(function(){
-  if (window.__AGAPE_PATCH_BRUTO_FINAL__) return;
-  window.__AGAPE_PATCH_BRUTO_FINAL__ = true;
 
-  function ROOT() {
-    return window.CFG?.config || window.CFG || {};
-  }
+function AGAPE_CFG_ROOT(){
+  return window.CFG?.config || window.CFG || {};
+}
 
-  function toastOk(msg){
-    try{
-      if(typeof adminToastOk === "function") adminToastOk(msg);
-      else console.log(msg);
-    }catch(_){ console.log(msg); }
-  }
-
-  function toastErr(msg){
-    try{
-      if(typeof adminToastErr === "function") adminToastErr(msg);
-      else console.warn(msg);
-    }catch(_){ console.warn(msg); }
-  }
-
-  function showTela(id, dir){
-    try{
-      if(typeof showScreen === "function"){
-        showScreen(id, dir || "forward");
-      }
-    }catch(e){
-      console.warn("showTela erro", e);
+async function AGAPE_reloadCfg(){
+  try{
+    if(typeof loadConfig === "function" && typeof normalizeCFG === "function"){
+      const cfgReload = await loadConfig();
+      window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
+      window.CFG = normalizeCFG(cfgReload);
     }
+  }catch(e){
+    console.warn("AGAPE_reloadCfg erro", e);
+  }
+}
+
+async function AGAPE_saveCurrentAdminCfg(){
+  if(typeof adminSave === "function"){
+    await adminSave();
+  }
+}
+
+function AGAPE_forceScreen(id, dir){
+  try{
+    if(typeof showScreen === "function"){
+      showScreen(id, dir || "forward");
+    }
+  }catch(e){
+    console.warn("AGAPE_forceScreen erro", e);
+  }
+}
+
+function AGAPE_forceStage(sessao, push, convocacao, fechamento){
+  if(!window.ADMIN_CFG || typeof window.ADMIN_CFG !== "object"){
+    window.ADMIN_CFG = JSON.parse(JSON.stringify(AGAPE_CFG_ROOT()));
   }
 
-  /* =========================================================
-     TELA TESOUREIRO V2
-  ========================================================= */
-  function criarTelaTesoureiroV2(){
-    if(document.getElementById("scr_fechamento_v2")) return;
+  if(!ADMIN_CFG.sessao) ADMIN_CFG.sessao = {};
+  if(!ADMIN_CFG.push) ADMIN_CFG.push = {};
+  if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
 
-    const cfg = ROOT();
+  ADMIN_CFG.sessao.status = sessao;
+  ADMIN_CFG.push.habilitado = !!push;
+  ADMIN_CFG.push.ativo = !!push;
+  ADMIN_CFG.convocacao.ativa = !!convocacao;
+  ADMIN_CFG.fechamento = !!fechamento;
 
-    const scr = document.createElement("section");
-    scr.id = "scr_fechamento_v2";
-    scr.className = "screen";
-    scr.innerHTML = `
-      <div style="
-        min-height:100vh;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        padding:20px;
-        background:
-          radial-gradient(circle at top left, rgba(34,197,94,.18), transparent 28%),
-          radial-gradient(circle at top right, rgba(16,185,129,.14), transparent 22%),
-          linear-gradient(180deg,#0b3d2b 0%, #0a2f3f 55%, #071f33 100%);
-      ">
-        <div style="
-          width:100%;
-          max-width:420px;
-          border-radius:22px;
-          background:rgba(6,28,44,.82);
-          border:1px solid rgba(74,222,128,.35);
-          box-shadow:0 20px 50px rgba(0,0,0,.4);
-          padding:22px;
-          color:#fff;
-        ">
-          <div id="logoTesoureiroV2" style="
-            display:flex;
-            align-items:center;
-            gap:12px;
-            border:1px solid #22c55e;
-            border-radius:12px;
-            padding:10px;
-            cursor:pointer;
-          ">
-            <img
-              id="logoTesoureiroImgV2"
-              src="${cfg?.loja?.logo_url || cfg?.loja?.logo || './logo-Clementino-Brito.jpeg'}"
-              style="width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover"
-              alt="Logo"
-            />
-            <div>
-              <div style="font-weight:800;font-size:16px">
-                ${cfg?.loja?.nome || "Ágape"}
-              </div>
-              <div style="font-size:11px;opacity:.9">
-                Modo Tesoureiro • toque 5x no logo
-              </div>
-            </div>
-          </div>
+  if(convocacao){
+    ADMIN_CFG.convocacao.id = ADMIN_CFG.convocacao.id || ("conv_" + Date.now());
+    ADMIN_CFG.convocacao.ts = new Date().toISOString();
+  }else{
+    ADMIN_CFG.convocacao.id = "";
+    ADMIN_CFG.convocacao.texto = "";
+    ADMIN_CFG.convocacao.ts = "";
+    ADMIN_CFG.convocacao.lida_por = [];
+  }
+}
 
-          <div style="text-align:center;margin-top:24px;font-size:52px;">🛠️</div>
+/* =========================================================
+   PASSO 2
+   CONVOCAR
+   vai para estágio 2 / tela de espera
+========================================================= */
+async function AGAPE_irPasso2(){
+  AGAPE_forceStage("fechada", true, true, false);
 
-          <div style="
-            text-align:center;
-            font-size:28px;
-            font-weight:900;
-            margin-top:10px;
-            line-height:1.08;
-          ">
-            Sessão fechada
-          </div>
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
 
-          <div style="
-            text-align:center;
-            margin-top:10px;
-            font-size:14px;
-            line-height:1.6;
-            opacity:.96;
-          ">
-            Sessão fechada para contabilização do tesoureiro.<br>
-            Entre no ADM pelo logo para concluir a conciliação.
+  try{
+    localStorage.removeItem("conv_lida");
+  }catch(_){}
+
+  try{
+    if(typeof updateEnvelopeUI === "function") updateEnvelopeUI();
+    if(typeof updateConvocacaoBadge === "function") updateConvocacaoBadge();
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_wait", "forward");
+}
+
+/* =========================================================
+   PASSO 7
+   ABRIR SESSÃO
+   vai para estágio 3 / tela de consumo
+========================================================= */
+async function AGAPE_irPasso7(){
+  AGAPE_forceStage("aberta", true, true, false);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.removeItem("conv_lida");
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_consumo", "forward");
+}
+
+/* =========================================================
+   PASSO 10
+   FECHAR SESSÃO
+   vai para estágio 4 / tela tesoureiro
+========================================================= */
+async function AGAPE_irPasso10(){
+  AGAPE_forceStage("fechada", false, false, true);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.setItem("conv_lida", "1");
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_fechamento_v2", "forward");
+}
+
+/* =========================================================
+   PASSO 11
+   FINALIZAR TESOUREIRO
+   volta para estágio 1 / tela inicial
+========================================================= */
+async function AGAPE_irPasso11(){
+  AGAPE_forceStage("fechada", false, false, false);
+
+  await AGAPE_saveCurrentAdminCfg();
+  await AGAPE_reloadCfg();
+
+  try{
+    localStorage.setItem("conv_lida", "1");
+  }catch(_){}
+
+  AGAPE_forceScreen("scr_splash1", "back");
+}
+
+/* =========================================================
+   BIND FORÇA BRUTA DO CONFIRMAR DO ADM
+========================================================= */
+function AGAPE_bindBotaoConfirmarForcaBruta(){
+  const btn = document.getElementById("btnAdminSalvar");
+  if(!btn) return;
+  if(btn.dataset.agapeForcaBruta === "1") return;
+  btn.dataset.agapeForcaBruta = "1";
+
+  btn.addEventListener("click", async function(ev){
+    try{
+      const cfg = window.ADMIN_CFG || AGAPE_CFG_ROOT();
+
+      const status = String(cfg?.sessao?.status || "").toLowerCase();
+      const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
+      const convAtiva = !!cfg?.convocacao?.ativa;
+      const fechamento = !!cfg?.fechamento;
+
+      // PASSO 11 -> volta pro passo 1
+      if(status === "fechada" && !pushAtivo && !convAtiva && fechamento){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso11();
+        return false;
+      }
+
+      // PASSO 10 -> vai pro tesoureiro
+      if(status === "fechada" && !pushAtivo && !convAtiva && !fechamento){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso10();
+        return false;
+      }
+
+      // PASSO 7 -> abre consumo
+      if(status === "aberta" && pushAtivo && convAtiva){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso7();
+        return false;
+      }
+
+      // PASSO 2 -> convocação
+      if(status === "fechada" && convAtiva){
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        await AGAPE_irPasso2();
+        return false;
+      }
+
+    }catch(e){
+      console.warn("AGAPE_bindBotaoConfirmarForcaBruta erro", e);
+    }
+  }, true);
+}
+
+/* =========================================================
+   TELA TESOUREIRO V2
+   entra no ADM com 5 cliques no logo
+========================================================= */
+function AGAPE_criarTelaTesoureiroV2(){
+  if(document.getElementById("scr_fechamento_v2")) return;
+
+  const cfg = AGAPE_CFG_ROOT();
+
+  const scr = document.createElement("section");
+  scr.id = "scr_fechamento_v2";
+  scr.className = "screen";
+  scr.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(180deg,#0b3d2b 0%, #0a2f3f 55%, #071f33 100%);">
+      <div style="width:100%;max-width:420px;border-radius:22px;background:rgba(6,28,44,.82);border:1px solid rgba(74,222,128,.35);box-shadow:0 20px 50px rgba(0,0,0,.4);padding:22px;color:#fff;">
+        <div id="AGAPE_logoTesV2" style="display:flex;align-items:center;gap:12px;border:1px solid #22c55e;border-radius:12px;padding:10px;cursor:pointer;">
+          <img src="${cfg?.loja?.logo_url || cfg?.loja?.logo || './logo-Clementino-Brito.jpeg'}" style="width:40px;height:40px;border-radius:50%;background:#fff;object-fit:cover;">
+          <div>
+            <div style="font-weight:800;font-size:16px">${cfg?.loja?.nome || "Ágape"}</div>
+            <div style="font-size:11px">Modo Tesoureiro • toque 5x no logo</div>
           </div>
         </div>
+
+        <div style="text-align:center;margin-top:25px;font-size:50px">🛠️</div>
+
+        <div style="text-align:center;font-size:28px;font-weight:900;margin-top:10px">
+          Sessão fechada para contabilização
+        </div>
+
+        <div style="text-align:center;margin-top:10px;font-size:14px;line-height:1.6">
+          O tesoureiro está finalizando a sessão.<br>
+          Entre no ADM pelo logo para concluir a conciliação.
+        </div>
       </div>
-    `;
+    </div>
+  `;
 
-    document.body.appendChild(scr);
+  document.body.appendChild(scr);
 
-    bindLogoTesoureiroV2();
-  }
-
-  function bindLogoTesoureiroV2(){
-    const el = document.getElementById("logoTesoureiroV2");
-    if(!el) return;
-    if(el.dataset.boundTes === "1") return;
-    el.dataset.boundTes = "1";
-
+  const logo = document.getElementById("AGAPE_logoTesV2");
+  if(logo){
     let taps = 0;
     let timer = null;
 
-    el.onclick = function(){
+    logo.onclick = function(){
       taps++;
       clearTimeout(timer);
       timer = setTimeout(function(){ taps = 0; }, 1200);
@@ -4248,200 +4352,22 @@ document.getElementById("v0HeaderBtn")?.addEventListener("dblclick", (e)=>{
       }
     };
   }
+}
 
-  /* =========================================================
-     FORÇA TELA POR ID
-  ========================================================= */
-  const TELA_IDS = {
-    inicio: "scr_splash1",
-    espera: "scr_wait",
-    consumo: "scr_consumo",
-    tesoureiro: "scr_fechamento_v2"
-  };
+/* =========================================================
+   START
+========================================================= */
+document.addEventListener("DOMContentLoaded", function(){
+  setTimeout(function(){
+    AGAPE_criarTelaTesoureiroV2();
+    AGAPE_bindBotaoConfirmarForcaBruta();
+  }, 500);
+});
 
-  function forcarProximaTela(id){
-    try{
-      sessionStorage.setItem("__agape_forcar_tela__", id);
-    }catch(_){}
-  }
+setInterval(function(){
+  AGAPE_bindBotaoConfirmarForcaBruta();
+}, 1000);
 
-  function consumirTelaForcada(){
-    try{
-      const id = sessionStorage.getItem("__agape_forcar_tela__");
-      if(!id) return false;
-      sessionStorage.removeItem("__agape_forcar_tela__");
-      showTela(id, "forward");
-      return true;
-    }catch(_){
-      return false;
-    }
-  }
-
-  const oldAplicarFluxo = window.aplicarFluxoDoSistema;
-  window.aplicarFluxoDoSistema = function(){
-    if(consumirTelaForcada()) return;
-    if(typeof oldAplicarFluxo === "function"){
-      return oldAplicarFluxo.apply(this, arguments);
-    }
-  };
-
-  async function reloadCfgPatch(){
-    try{
-      if(typeof loadConfig === "function" && typeof normalizeCFG === "function"){
-        const cfgReload = await loadConfig();
-        window.AGAPE_CFG_RAW = JSON.parse(JSON.stringify(cfgReload));
-        window.CFG = normalizeCFG(cfgReload);
-      }
-    }catch(e){
-      console.warn("reloadCfgPatch erro", e);
-    }
-  }
-
-  /* =========================================================
-     SAVE SIMPLES
-  ========================================================= */
-  async function saveAdminPatch(){
-    if(typeof adminSave === "function"){
-      await adminSave();
-      return;
-    }
-    throw new Error("adminSave inexistente");
-  }
-
-  /* =========================================================
-     ESTÁGIO 4 -> 1
-     quando estiver em:
-     sessao fechada / push false / conv false / fechamento true
-     e clicar CONFIRMAR no ADM,
-     grava tudo falso e volta pra tela 1
-  ========================================================= */
-  async function finalizar4Para1Patch(){
-    if(!window.ADMIN_CFG || typeof window.ADMIN_CFG !== "object"){
-      window.ADMIN_CFG = JSON.parse(JSON.stringify(ROOT()));
-    }
-
-    if(!ADMIN_CFG.sessao) ADMIN_CFG.sessao = {};
-    if(!ADMIN_CFG.push) ADMIN_CFG.push = {};
-    if(!ADMIN_CFG.convocacao) ADMIN_CFG.convocacao = {};
-
-    ADMIN_CFG.sessao.status = "fechada";
-    ADMIN_CFG.push.habilitado = false;
-    ADMIN_CFG.push.ativo = false;
-    ADMIN_CFG.convocacao.ativa = false;
-    ADMIN_CFG.fechamento = false;
-
-    ADMIN_CFG.convocacao.id = "";
-    ADMIN_CFG.convocacao.texto = "";
-    ADMIN_CFG.convocacao.ts = "";
-    ADMIN_CFG.convocacao.lida_por = [];
-
-    await saveAdminPatch();
-    await reloadCfgPatch();
-
-    try{
-      localStorage.setItem("conv_lida", "1");
-    }catch(_){}
-
-    forcarProximaTela(TELA_IDS.inicio);
-    setTimeout(function(){
-      window.aplicarFluxoDoSistema?.();
-      showTela(TELA_IDS.inicio, "back");
-    }, 250);
-  }
-
-  /* =========================================================
-     ESTÁGIO 3 -> 4
-     quando vindo do consumo e fechar a sessão no ADM,
-     se o sistema insistir em ir pra consumo, força tesoureiro
-  ========================================================= */
-  async function forcar3Para4Patch(){
-    forcarProximaTela(TELA_IDS.tesoureiro);
-    setTimeout(function(){
-      window.aplicarFluxoDoSistema?.();
-      showTela(TELA_IDS.tesoureiro, "forward");
-    }, 250);
-  }
-
-  /* =========================================================
-     BIND DO CONFIRMAR DO ADM
-     FEIO E FORÇADO
-  ========================================================= */
-  function bindBtnAdminSalvarPatch(){
-    const btn = document.getElementById("btnAdminSalvar");
-    if(!btn) return;
-    if(btn.dataset.patchBruto === "1") return;
-    btn.dataset.patchBruto = "1";
-
-    btn.addEventListener("click", async function(ev){
-      try{
-        const cfg = window.ADMIN_CFG || ROOT();
-
-        const status = String(cfg?.sessao?.status || "").toLowerCase();
-        const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
-        const convAtiva = !!cfg?.convocacao?.ativa;
-        const fechamento = !!cfg?.fechamento;
-
-        // 4 -> 1
-        if(status === "fechada" && !pushAtivo && !convAtiva && fechamento){
-          ev.preventDefault();
-          ev.stopImmediatePropagation();
-          await finalizar4Para1Patch();
-          return false;
-        }
-
-        // 3 -> 4
-        // caso o velho fluxo salve fechamento=true e depois te jogue pro consumo,
-        // esse patch força a tela do tesoureiro
-        if(status === "fechada" && !pushAtivo && !convAtiva && !fechamento){
-          // não faz nada aqui, deixa fluxo normal
-          return;
-        }
-
-      }catch(e){
-        console.warn("bindBtnAdminSalvarPatch erro", e);
-      }
-    }, true);
-  }
-
-  /* =========================================================
-     VIGIA FECHAMENTO
-     se o JSON estiver em fechamento=true, força tela tesoureiro
-  ========================================================= */
-  function vigiarFechamentoPatch(){
-    try{
-      const cfg = ROOT();
-      const status = String(cfg?.sessao?.status || "").toLowerCase();
-      const pushAtivo = !!(cfg?.push?.ativo || cfg?.push?.habilitado);
-      const convAtiva = !!cfg?.convocacao?.ativa;
-      const fechamento = !!cfg?.fechamento;
-
-      if(status === "fechada" && !pushAtivo && !convAtiva && fechamento){
-        forcar3Para4Patch();
-      }
-    }catch(e){
-      console.warn("vigiarFechamentoPatch erro", e);
-    }
-  }
-
-  /* =========================================================
-     START
-  ========================================================= */
-  document.addEventListener("DOMContentLoaded", function(){
-    criarTelaTesoureiroV2();
-
-    setTimeout(function(){
-      bindBtnAdminSalvarPatch();
-      consumirTelaForcada();
-      vigiarFechamentoPatch();
-    }, 500);
-  });
-
-  setInterval(function(){
-    bindBtnAdminSalvarPatch();
-    vigiarFechamentoPatch();
-  }, 1200);
-
-})();
- </script>
+</script>
 </body>
 </html>
