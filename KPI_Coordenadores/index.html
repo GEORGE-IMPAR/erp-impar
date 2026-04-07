@@ -441,7 +441,7 @@
     aliasDataUrl: 'https://api.erpimpar.com.br/data/obras_alias.json',
     usarListaObraAtividades: true,
     
-    atividadePdfMetaUrl: '', // se você tiver um endpoint pronto, coloque aqui
+    atividadePdfMetaUrl: 'https://api.erpimpar.com.br/atividades/drafts/draft.json',
     atividadePdfMetaStorageKeys: ['ERPIMPAR_LAST_PDF_META', 'IMPAR_LAST_PDF_META', '__IMPAR_LAST_PDF_PAYLOAD__'],
     fuelStorageKey: 'ERPIMPAR_QPI_FUEL_ENTRIES_2026_04',
     coordinatorPhotos: {
@@ -677,32 +677,140 @@ async function loadCronRaw(){
     return { cron: null, score: bestScore };
   }
 
-  async function loadQpi1(){
-    if(CONFIG.atividadePdfMetaUrl){
-      try{
-        const j = await fetchJSON(CONFIG.atividadePdfMetaUrl + (CONFIG.atividadePdfMetaUrl.includes('?') ? '&' : '?') + 't=' + Date.now());
-        const ts = j?.gerado_em || j?.generated || j?.generatedAt || j?.timestamp || j?.finalizedAt || null;
-        if(ts) return buildQpi1(ts, 'endpoint');
-      }catch(e){}
-    }
-    for(const key of CONFIG.atividadePdfMetaStorageKeys){
-      try{
-        const raw = sessionStorage.getItem(key) || localStorage.getItem(key);
-        if(!raw) continue;
-        if(key === '__IMPAR_LAST_PDF_PAYLOAD__'){
-          const payload = JSON.parse(raw);
-          const ts = payload?.generated || payload?.generatedAt || payload?.gerado_em || payload?.timestamp || payload?.finalizedAt || null;
-          if(ts) return buildQpi1(ts, `storage:${key}`);
-        }else{
-          const obj = JSON.parse(raw);
-          const ts = obj?.gerado_em || obj?.generated || obj?.generatedAt || obj?.timestamp || obj?.finalizedAt || null;
-          if(ts) return buildQpi1(ts, `storage:${key}`);
-        }
-      }catch(e){}
-    }
-    return { score:0, timestamp:null, source:'não localizado' };
+  function toLocalMinus3(dateLike){
+  const dt = new Date(dateLike);
+  if (Number.isNaN(dt.getTime())) return null;
+  return new Date(dt.getTime() - 3 * 60 * 60 * 1000);
+}
+
+function formatYmdLocal(dt){
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function previousDayYmd(ymd){
+  const dt = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return '';
+  dt.setDate(dt.getDate() - 1);
+  return formatYmdLocal(dt);
+}
+
+function buildQpi1ByMinutes(totalMinutes, source, timestampLocal){
+  let score = 0;
+  if (totalMinutes <= 16 * 60) score = 100;
+  else if (totalMinutes <= 17 * 60) score = 50;
+  else score = 0;
+
+  return {
+    score,
+    timestamp: timestampLocal || null,
+    source
+  };
+}
+
+function buildQpi1FromDraftRule(draft, source){
+  const diaAtividade = String(
+    draft?.dayKey ||
+    draft?.rows?.[0]?.data ||
+    ''
+  ).trim();
+
+  const tsRaw =
+    draft?.generatedAt ||
+    draft?.generated ||
+    draft?.generatedAtUtc ||
+    draft?.timestamp ||
+    null;
+
+  if (!diaAtividade || !tsRaw) {
+    return { score:0, timestamp:null, source:`${source}:sem-base` };
   }
 
+  const local = toLocalMinus3(tsRaw);
+  if (!local) {
+    return { score:0, timestamp:null, source:`${source}:timestamp-invalido` };
+  }
+
+  const diaAnterior = previousDayYmd(diaAtividade);
+  const diaDoTimestamp = formatYmdLocal(local);
+
+  // só vale se a última alteração foi no dia anterior da atividade
+  if (diaDoTimestamp !== diaAnterior) {
+    return {
+      score: 0,
+      timestamp: local,
+      source: `${source}:fora-dia-anterior`
+    };
+  }
+
+  const totalMinutes = local.getHours() * 60 + local.getMinutes();
+  return buildQpi1ByMinutes(totalMinutes, `${source}:draft-dia-anterior`, local);
+}
+  
+async function loadQpi1(){
+  // 1) Se houver endpoint configurado, continua valendo como prioridade
+// 1) Se houver endpoint configurado, continua valendo como prioridade
+if(CONFIG.atividadePdfMetaUrl){
+  try{
+    const j = await fetchJSON(
+      CONFIG.atividadePdfMetaUrl +
+      (CONFIG.atividadePdfMetaUrl.includes('?') ? '&' : '?') +
+      't=' + Date.now()
+    );
+
+    // 🔥 NOVA REGRA: se vier estrutura de draft
+    if(j?.rows && j.rows.length){
+      const byDraft = buildQpi1FromDraftRule(j, 'endpoint:draft');
+      if(byDraft && byDraft.timestamp) return byDraft;
+    }
+
+    // fallback antigo (histórico, etc)
+    const ts = j?.gerado_em || j?.generated || j?.generatedAt || j?.timestamp || j?.finalizedAt || null;
+    if(ts) return buildQpi1(ts, 'endpoint');
+
+  }catch(e){}
+}
+  // 2) Prioridade para payload completo do draft/PDF
+  try{
+    const rawPayload =
+      sessionStorage.getItem('__IMPAR_LAST_PDF_PAYLOAD__') ||
+      localStorage.getItem('__IMPAR_LAST_PDF_PAYLOAD__');
+
+    if(rawPayload){
+      const payload = JSON.parse(rawPayload);
+      const byDraft = buildQpi1FromDraftRule(payload, 'storage:__IMPAR_LAST_PDF_PAYLOAD__');
+      if(byDraft && byDraft.timestamp) return byDraft;
+    }
+  }catch(e){}
+
+  // 3) Fallback para outras chaves antigas
+  for(const key of CONFIG.atividadePdfMetaStorageKeys){
+    try{
+      const raw = sessionStorage.getItem(key) || localStorage.getItem(key);
+      if(!raw) continue;
+
+      // se vier um objeto simples de histórico/finalização, usa regra antiga
+      if(key !== '__IMPAR_LAST_PDF_PAYLOAD__'){
+        const obj = JSON.parse(raw);
+
+        // se existir estrutura de draft, aplica regra nova
+        if(obj?.dayKey || obj?.rows?.[0]?.data){
+          const byDraft = buildQpi1FromDraftRule(obj, `storage:${key}`);
+          if(byDraft && byDraft.timestamp) return byDraft;
+        }
+
+        // fallback histórico/finalização
+        const ts = obj?.gerado_em || obj?.generated || obj?.generatedAt || obj?.timestamp || obj?.finalizedAt || null;
+        if(ts) return buildQpi1(ts, `storage:${key}`);
+      }
+    }catch(e){}
+  }
+
+  return { score:0, timestamp:null, source:'não localizado' };
+}
+  
 async function loadObrasQPI(){
   try {
     const url = 'https://api.erpimpar.com.br/data/obras_.kpi.json';
