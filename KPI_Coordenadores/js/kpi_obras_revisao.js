@@ -143,28 +143,24 @@ function abrirModalRevisaoKPI(item, onSave) {
 }
 function escapeHtml(str){ return String(str || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
 function escapeHtmlAttr(str){ return escapeHtml(str); }
+
 async function loadAliasState({ aliasApiList, aliasDataUrl, pendenciasUrl }) {
   try {
-    const [aliasesResp, pendenciasResp] = await Promise.all([
-      fetch(aliasApiList).then(r => r.json()).catch(()=>[]),
-      fetch(pendenciasUrl).then(r => r.json()).catch(()=>[])
-    ]);
+    const resp = await fetch(aliasApiList).then(r => r.json()).catch(() => null);
 
-    const aliases = Array.isArray(aliasesResp)
-      ? aliasesResp
-      : Array.isArray(aliasesResp?.data)
-        ? aliasesResp.data
-        : Array.isArray(aliasesResp?.aliases)
-          ? aliasesResp.aliases
-          : [];
+    const aliases =
+      Array.isArray(resp) ? resp :
+      Array.isArray(resp?.data) ? resp.data :
+      Array.isArray(resp?.aliases) ? resp.aliases :
+      Array.isArray(resp?.data?.aliases) ? resp.data.aliases :
+      [];
 
-    const pendencias = Array.isArray(pendenciasResp)
-      ? pendenciasResp
-      : Array.isArray(pendenciasResp?.data)
-        ? pendenciasResp.data
-        : Array.isArray(pendenciasResp?.pendencias)
-          ? pendenciasResp.pendencias
-          : [];
+    const pendencias =
+      Array.isArray(resp?.pendencias) ? resp.pendencias :
+      Array.isArray(resp?.data?.pendencias) ? resp.data.pendencias :
+      (() => {
+        return [];
+      })();
 
     return { aliases, pendencias };
   } catch (e) {
@@ -172,6 +168,7 @@ async function loadAliasState({ aliasApiList, aliasDataUrl, pendenciasUrl }) {
     return { aliases: [], pendencias: [] };
   }
 }
+
 async function salvarRevisao({ aliasApiSave, alias, canonica, naoSeAplica, usuario }) {
   try {
     await fetch(aliasApiSave, {
