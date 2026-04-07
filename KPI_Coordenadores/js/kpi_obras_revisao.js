@@ -145,21 +145,33 @@ function escapeHtml(str){ return String(str || '').replaceAll('&','&amp;').repla
 function escapeHtmlAttr(str){ return escapeHtml(str); }
 async function loadAliasState({ aliasApiList, aliasDataUrl, pendenciasUrl }) {
   try {
-    const [aliases, pendencias] = await Promise.all([
+    const [aliasesResp, pendenciasResp] = await Promise.all([
       fetch(aliasApiList).then(r => r.json()).catch(()=>[]),
       fetch(pendenciasUrl).then(r => r.json()).catch(()=>[])
     ]);
 
-    return {
-      aliases: Array.isArray(aliases) ? aliases : [],
-      pendencias: Array.isArray(pendencias) ? pendencias : []
-    };
+    const aliases = Array.isArray(aliasesResp)
+      ? aliasesResp
+      : Array.isArray(aliasesResp?.data)
+        ? aliasesResp.data
+        : Array.isArray(aliasesResp?.aliases)
+          ? aliasesResp.aliases
+          : [];
+
+    const pendencias = Array.isArray(pendenciasResp)
+      ? pendenciasResp
+      : Array.isArray(pendenciasResp?.data)
+        ? pendenciasResp.data
+        : Array.isArray(pendenciasResp?.pendencias)
+          ? pendenciasResp.pendencias
+          : [];
+
+    return { aliases, pendencias };
   } catch (e) {
     console.warn('Erro ao carregar aliasState:', e);
     return { aliases: [], pendencias: [] };
   }
 }
-
 async function salvarRevisao({ aliasApiSave, alias, canonica, naoSeAplica, usuario }) {
   try {
     await fetch(aliasApiSave, {
