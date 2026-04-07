@@ -398,17 +398,20 @@
             <ul>
               <li><strong>QPI 1:</strong> leitura do último horário disponível da geração do PDF (chave local e/ou endpoint configurado).</li>
               <li><strong>QPI 2:</strong> status da TV / Gestão à Vista, usando a mesma lógica do alerta de 7 dias.</li>
-              <li><strong>QPI 3:</strong> comparação entre obras do status da TV e cronogramas existentes, com normalização de nome e validação pelo mesmo coordenador.</li>
+              <li><strong>QPI 3:</strong> comparação entre obras da TV, lista oficial de obras, aliases persistidos e cronogramas existentes, com revisão manual e SLA de 7 dias.</li>
               <li><strong>QPI 4:</strong> data da última atualização gravada em cada cronograma.</li>
               <li><strong>QPI 5:</strong> lançamento manual do combustível com leitura acumulada e gráfico evolutivo mensal.</li>
             </ul>
           </div>
-          <div class="formula" style="margin-top:12px"><code>Normalização TV x Cronograma:
-- remove acentos
-- ignora maiúsculas/minúsculas
-- remove símbolos, traços e espaços extras
-- busca melhor similaridade
-- prioriza o mesmo coordenador</code></div>
+         <div class="formula" style="margin-top:12px"><code>Normalização TV x Lista x QPI:
+          - remove acentos
+          - ignora maiúsculas/minúsculas
+          - remove símbolos, traços e espaços extras
+          - tenta match pela lista oficial
+          - tenta match por alias salvo
+          - se não achar: entra em revisão
+          - se revisão vencer: penaliza
+          - se marcar não se aplica: exclui do cálculo</code></div>
         </article>
       </div>
     </section>
@@ -462,19 +465,20 @@
     weights: { qpi1:0.10, qpi2:0.30, qpi3:0.25, qpi4:0.25, qpi5:0.10 }
   };
 
-  const state = {
-    tvRaw: [],
-    cronRaw: [],
-    qpi1: { score:0, timestamp:null, source:'não localizado' },
-    fuelEntries: [],
-    fuelScore: 0,
-    aliasState: {
-        aliases: [],
-        pendencias: []
-    },
-    coordinatorResults: []
-  };
-
+const state = {
+  tvRaw: [],
+  cronRaw: [],
+  obrasQPI: [],
+  qpi1: { score:0, timestamp:null, source:'não localizado' },
+  fuelEntries: [],
+  fuelScore: 0,
+  coordinatorResults: [],
+  aliasState: {
+    aliases: [],
+    pendencias: []
+  }
+};
+  
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
 
@@ -700,6 +704,55 @@
     return { score:0, timestamp:null, source:'não localizado' };
   }
 
+  async function loadObrasQPI(){
+  const candidates = [
+    'https://api.erpimpar.com.br/data/obras_.kpi.json',
+    'https://api.erpimpar.com.br/data/obras_alias.json', // fallback de existência, não de conteúdo QPI
+    'https://api.erpimpar.com.br/tv/data/obras_.kpi.json',
+    './data/obras_.kpi.json'
+  ];
+
+  for (const url of candidates) {
+    try {
+      const j = await fetchJSON(`${url}?t=${Date.now()}`);
+      if (Array.isArray(j)) return j;
+      if (Array.isArray(j?.data)) return j.data;
+      if (Array.isArray(j?.obras)) return j.obras;
+    } catch (e) {}
+  }
+
+  return [];
+}
+
+function buildRevisionStatusMap(aliasState){
+  const pendencias = Array.isArray(aliasState?.pendencias) ? aliasState.pendencias : [];
+  const map = new Map();
+
+  for (const p of pendencias) {
+    const chave = normalize(p.obra_origem || '');
+    if (!chave) continue;
+    map.set(chave, p);
+  }
+
+  return map;
+}
+
+function getRevisionFinalStatus(matchItem, revisionMap){
+  const chave = normalize(matchItem?.obra_origem || matchItem?.obra_tv || '');
+  const pend = revisionMap.get(chave);
+
+  if (!pend) {
+    return matchItem.status_match || 'PENDENTE_REVISAO';
+  }
+
+  const status = String(pend.status_match || pend.status || '').trim().toUpperCase();
+  if (status === 'NAO_SE_APLICA') return 'NAO_SE_APLICA';
+  if (status === 'REVISAO_VENCIDA') return 'REVISAO_VENCIDA';
+  if (status === 'PENDENTE_REVISAO') return 'PENDENTE_REVISAO';
+
+  return matchItem.status_match || 'PENDENTE_REVISAO';
+}
+  
   function buildQpi1(ts, source){
     const dt = new Date(String(ts).replace(' ', 'T'));
     if(Number.isNaN(dt.getTime())) return { score:0, timestamp:null, source };
@@ -750,58 +803,155 @@
   }
 
   function computeCoordinatorResults(tvParsed, cronParsed, qpi1Score, qpi5Score){
-    const allIssues = [];
-    const results = CONFIG.coordinators.map(coord => {
-      const tvItems = tvParsed.filter(x => x.coord === coord);
-      const tvLate = tvItems.filter(x => x.diasSemAtualizacao > 7);
-      const tvOnTime = tvItems.filter(x => x.diasSemAtualizacao <= 7);
+  const allIssues = [];
 
-      const matched = tvItems.map(tv => {
-        const m = matchCronForTv(tv, cronParsed);
-        return { ...tv, matchedCron: m.cron, matchScore: m.score };
-      });
+  const revisado = window.KPI_REVISAO.processarObrasTV(
+    state.tvRaw || [],
+    state.obrasQPI || []
+  );
 
-      const revisado = window.KPI_REVISAO.processarObrasTV(
-         tvItems.map(x => ({ id:x.raw?.id || '', nome:x.nome, coordenador:x.coord })),
-         state.obrasQPI || [],
-         state.aliasState
-      );
-      
-      const withCron = matched.filter(x => !!x.matchedCron);
-      const withoutCron = matched.filter(x => !x.matchedCron);
-      const cronCoordItems = cronParsed.filter(c => c.coord === coord);
-      const cronLate = cronCoordItems.filter(c => c.diasSemAtualizacao > 7);
-      const cronOnTime = cronCoordItems.filter(c => c.diasSemAtualizacao <= 7);
+  const revisionMap = buildRevisionStatusMap(state.aliasState);
 
-      const qpi2 = tvItems.length ? (tvOnTime.length / tvItems.length) * 100 : 0;
-      const qpi3 = tvItems.length ? (withCron.length / tvItems.length) * 100 : 0;
-      const qpi4 = cronCoordItems.length ? (cronOnTime.length / cronCoordItems.length) * 100 : 0;
-      const qpi1 = qpi1Score;
-      const qpi5 = qpi5Score;
+  const revisadoPorCoord = CONFIG.coordinators.reduce((acc, coord) => {
+    acc[coord] = revisado.filter(x => String(x.coordenador || x.coordenador_tv || '').toUpperCase() === coord);
+    return acc;
+  }, {});
 
-      const score = (qpi1 * CONFIG.weights.qpi1) +
-                    (qpi2 * CONFIG.weights.qpi2) +
-                    (qpi3 * CONFIG.weights.qpi3) +
-                    (qpi4 * CONFIG.weights.qpi4) +
-                    (qpi5 * CONFIG.weights.qpi5);
+  const results = CONFIG.coordinators.map(coord => {
+    const tvItems = tvParsed.filter(x => x.coord === coord);
+    const tvLate = tvItems.filter(x => x.diasSemAtualizacao > 7);
+    const tvOnTime = tvItems.filter(x => x.diasSemAtualizacao <= 7);
 
-      const issues = [];
-      tvLate.forEach(item => issues.push({ nome:item.nome, tipo:'TV 7+ dias', detalhe:`${item.diasSemAtualizacao} dias sem atualização`, severity:'yellow' }));
-      withoutCron.forEach(item => issues.push({ nome:item.nome, tipo:'Sem cronograma', detalhe:'Obra está na TV e não localizou cronograma compatível', severity:'red' }));
-      cronLate.forEach(item => issues.push({ nome:item.nome, tipo:'Cronograma 7+ dias', detalhe:`${item.diasSemAtualizacao} dias sem atualização`, severity:'yellow' }));
+    const revisadosCoord = revisadoPorCoord[coord] || [];
 
-      allIssues.push(...issues.map(i => ({ ...i, coord })));
+    const matchedCron = revisadosCoord.map(item => {
+      const statusFinal = getRevisionFinalStatus(item, revisionMap);
+
+      const cronMatch = item.confiavel
+        ? matchCronForTv(
+            {
+              nome: item.obra_canonica || item.obra_lista || item.obra_tv || item.obra_origem || '',
+              coord: coord
+            },
+            cronParsed
+          )
+        : { cron:null, score:0 };
 
       return {
-        coord,
-        tvItems, cronCoordItems, tvLate, tvOnTime, withCron, withoutCron, cronLate, cronOnTime,
-        qpi1, qpi2, qpi3, qpi4, qpi5, score,
-        issues
+        ...item,
+        status_final_revisao: statusFinal,
+        matchedCron: cronMatch.cron,
+        matchScore: cronMatch.score
       };
     });
 
-    return { results, allIssues };
-  }
+    const matchOk = matchedCron.filter(x =>
+      ['MATCH_EXATO_QPI', 'MATCH_LISTA', 'MATCH_ALIAS_LISTA'].includes(x.status_match)
+    );
+
+    const pendenteRevisao = matchedCron.filter(x => x.status_final_revisao === 'PENDENTE_REVISAO');
+    const revisaoVencida = matchedCron.filter(x => x.status_final_revisao === 'REVISAO_VENCIDA');
+    const naoSeAplica = matchedCron.filter(x => x.status_final_revisao === 'NAO_SE_APLICA');
+
+    const withCron = matchOk.filter(x => !!x.matchedCron);
+    const withoutCron = matchOk.filter(x => !x.matchedCron);
+
+    const cronCoordItems = cronParsed.filter(c => c.coord === coord);
+    const cronLate = cronCoordItems.filter(c => c.diasSemAtualizacao > 7);
+    const cronOnTime = cronCoordItems.filter(c => c.diasSemAtualizacao <= 7);
+
+    const qpi2 = tvItems.length ? (tvOnTime.length / tvItems.length) * 100 : 100;
+
+    const baseQpi3Den = matchOk.length + revisaoVencida.length + withoutCron.length;
+    const baseQpi3Num = withCron.length;
+    const qpi3 = baseQpi3Den ? (baseQpi3Num / baseQpi3Den) * 100 : 100;
+
+    const qpi4 = cronCoordItems.length ? (cronOnTime.length / cronCoordItems.length) * 100 : 100;
+
+    const score =
+      (qpi1Score * 0.10) +
+      (qpi2 * 0.30) +
+      (qpi3 * 0.25) +
+      (qpi4 * 0.25) +
+      (qpi5Score * 0.10);
+
+    tvLate.forEach(x => {
+      allIssues.push({
+        nome: x.nome,
+        coord,
+        tipo: 'TV atrasada',
+        severity: 'red',
+        detalhe: `Obra da TV está há ${x.diasSemAtualizacao} dias sem atualização.`
+      });
+    });
+
+    withoutCron.forEach(x => {
+      allIssues.push({
+        nome: x.obra_tv || x.obra_origem || x.obra_canonica || 'Obra',
+        coord,
+        tipo: 'Sem cronograma',
+        severity: 'red',
+        detalhe: `Obra identificada com segurança, mas sem cronograma correspondente.`
+      });
+    });
+
+    pendenteRevisao.forEach(x => {
+      allIssues.push({
+        nome: x.obra_tv || x.obra_origem || 'Obra',
+        coord,
+        tipo: 'Pendente revisão',
+        severity: 'yellow',
+        detalhe: `A obra não foi identificada automaticamente. Ajuste o alias ou marque como não se aplica.`,
+        obraOrigem: x.obra_tv || x.obra_origem || ''
+      });
+    });
+
+    revisaoVencida.forEach(x => {
+      allIssues.push({
+        nome: x.obra_tv || x.obra_origem || 'Obra',
+        coord,
+        tipo: 'Revisão vencida',
+        severity: 'red',
+        detalhe: `A obra ficou pendente além do prazo e agora penaliza o KPI.`,
+        obraOrigem: x.obra_tv || x.obra_origem || ''
+      });
+    });
+
+    cronLate.forEach(x => {
+      allIssues.push({
+        nome: x.nome,
+        coord,
+        tipo: 'Cronograma atrasado',
+        severity: 'red',
+        detalhe: `Cronograma está há ${x.diasSemAtualizacao} dias sem atualização.`
+      });
+    });
+
+    return {
+      coord,
+      tvItems,
+      tvLate,
+      tvOnTime,
+      cronCoordItems,
+      cronLate,
+      cronOnTime,
+      withCron,
+      withoutCron,
+      pendenteRevisao,
+      revisaoVencida,
+      naoSeAplica,
+      matchedCron,
+      qpi1: qpi1Score,
+      qpi2,
+      qpi3,
+      qpi4,
+      qpi5: qpi5Score,
+      score
+    };
+  });
+
+  return { results, allIssues };
+}
 
   function renderCollectives(){
     const q1 = state.qpi1;
@@ -868,49 +1018,82 @@
   }
 
   function renderRankingAndIssues(allIssues){
-    const ranking = $('#rankingList');
-    const issues = $('#issuesList');
-    const sorted = [...state.coordinatorResults].sort((a,b)=>b.score-a.score);
+  const ranking = $('#rankingList');
+  const issues = $('#issuesList');
+  const sorted = [...state.coordinatorResults].sort((a,b)=>b.score-a.score);
 
-    ranking.innerHTML = sorted.map((item, idx) => {
-      const cls = classifyScore(item.score);
-      const meta = CONFIG.coordinatorMeta[item.coord] || { nomeCompleto:item.coord };
-      const desc = [];
-      if(item.tvLate.length) desc.push(`${item.tvLate.length} obra(s) da TV acima de 7 dias`);
-      if(item.withoutCron.length) desc.push(`${item.withoutCron.length} obra(s) da TV sem cronograma`);
-      if(item.cronLate.length) desc.push(`${item.cronLate.length} cronograma(s) sem update semanal`);
-      const txt = desc.length ? desc.join(' • ') : 'Performance estável, sem pendências críticas abertas.';
-      return `
-        <div class="row">
-          <div class="row-left">
-            <div class="pos">${idx+1}</div>
-            <div>
-              <h5>${escapeHtml(meta.nomeCompleto)} • ${pct(item.score)}</h5>
-              <p>${escapeHtml(txt)}</p>
-            </div>
+  ranking.innerHTML = sorted.map((item, idx) => {
+    const cls = classifyScore(item.score);
+    const meta = CONFIG.coordinatorMeta[item.coord] || { nomeCompleto:item.coord };
+    const desc = [];
+    if(item.tvLate.length) desc.push(`${item.tvLate.length} obra(s) da TV acima de 7 dias`);
+    if(item.withoutCron.length) desc.push(`${item.withoutCron.length} obra(s) válida(s) sem cronograma`);
+    if(item.pendenteRevisao.length) desc.push(`${item.pendenteRevisao.length} em revisão`);
+    if(item.revisaoVencida.length) desc.push(`${item.revisaoVencida.length} revisão(ões) vencida(s)`);
+    if(item.cronLate.length) desc.push(`${item.cronLate.length} cronograma(s) sem update semanal`);
+    const txt = desc.length ? desc.join(' • ') : 'Performance estável, sem pendências críticas abertas.';
+
+    return `
+      <div class="row">
+        <div class="row-left">
+          <div class="pos">${idx+1}</div>
+          <div>
+            <h5>${escapeHtml(meta.nomeCompleto)} • ${pct(item.score)}</h5>
+            <p>${escapeHtml(txt)}</p>
           </div>
-          <div class="badge badge-${cls.cls === 'good' ? 'green' : cls.cls === 'mid' ? 'yellow' : 'red'}">${cls.label}</div>
         </div>
-      `;
-    }).join('');
+        <div class="badge badge-${cls.cls === 'good' ? 'green' : cls.cls === 'mid' ? 'yellow' : 'red'}">${cls.label}</div>
+      </div>
+    `;
+  }).join('');
 
-    if(!allIssues.length){
-      issues.innerHTML = `<div class="row"><div><h5>Sem pendências críticas</h5><p>Nenhuma ocorrência crítica foi localizada nas bases lidas agora.</p></div><div class="badge badge-green">OK</div></div>`;
-      return;
-    }
-    <button class="pill-btn btn-ajustar-obra" data-obra="NOME_DA_OBRA">
-       Ajustar obra
-    </button>
-    issues.innerHTML = allIssues.slice(0, 12).map(i => `
+  if(!allIssues.length){
+    issues.innerHTML = `<div class="row"><div><h5>Sem pendências críticas</h5><p>Nenhuma ocorrência crítica foi localizada nas bases lidas agora.</p></div><div class="badge badge-green">OK</div></div>`;
+    return;
+  }
+
+  issues.innerHTML = allIssues.slice(0, 12).map(i => {
+    const isRevisao = i.tipo === 'Pendente revisão';
+    return `
       <div class="row">
         <div>
           <h5>${escapeHtml(i.nome)} • ${escapeHtml(i.coord)}</h5>
           <p>${escapeHtml(i.detalhe)}</p>
+          ${isRevisao ? `
+            <div style="margin-top:8px">
+              <button class="pill-btn btn-ajustar-obra" data-obra="${escapeHtml(i.obraOrigem || i.nome)}">
+                Ajustar obra
+              </button>
+            </div>
+          ` : ''}
         </div>
         <div class="badge badge-${i.severity === 'red' ? 'red' : 'yellow'}">${escapeHtml(i.tipo)}</div>
       </div>
-    `).join('');
-  }
+    `;
+  }).join('');
+
+  issues.querySelectorAll('.btn-ajustar-obra').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const obra = btn.dataset.obra || '';
+
+      window.KPI_REVISAO.abrirModalRevisao({
+        obraOrigem: obra,
+        listaObra: window.LIST_OBRA,
+        onSalvar: async ({ alias, canonica, naoSeAplica, usuario }) => {
+          await window.KPI_REVISAO.salvarRevisao({
+            aliasApiSave: CONFIG.aliasApiSave,
+            alias,
+            canonica,
+            naoSeAplica,
+            usuario
+          });
+
+          await boot();
+        }
+      });
+    });
+  });
+}
 
   function renderCalc(){
     const wrap = $('#calcGrid');
@@ -1076,25 +1259,7 @@
     });
   }
 
-  document.querySelectorAll('.btn-ajustar-obra').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const obra = btn.dataset.obra || '';
-    window.KPI_REVISAO.abrirModalRevisao({
-      obraOrigem: obra,
-      listaObra: window.LIST_OBRA,
-      onSalvar: async ({ alias, canonica, naoSeAplica, usuario }) => {
-        await window.KPI_REVISAO.salvarRevisao({
-          aliasApiSave: CONFIG.aliasApiSave,
-          alias,
-          canonica,
-          naoSeAplica,
-          usuario
-        });
-        await boot();
-      }
-    });
-  });
-});
+  
   
   function recompute(){
     const tvParsed = parseTvItems(state.tvRaw);
@@ -1115,47 +1280,46 @@
     }
   }
 
-  async function boot(){
-    applyMenu();
-    applyHeroDefault();
-    bindFuelForm();
+async function boot(){
+  applyMenu();
+  applyHeroDefault();
+  bindFuelForm();
 
-const [tvRaw, cronRaw, qpi1, aliasState] = await Promise.all([
-  loadTvRaw(),
-  loadCronRaw(),
-  loadQpi1(),
-  window.KPI_REVISAO.loadAliasState({
-    aliasApiList: CONFIG.aliasApiList,
-    aliasDataUrl: CONFIG.aliasDataUrl,
-    pendenciasUrl: CONFIG.pendenciasUrl
-  })
-]);
+  const [tvRaw, cronRaw, qpi1, obrasQPI, aliasState] = await Promise.all([
+    loadTvRaw(),
+    loadCronRaw(),
+    loadQpi1(),
+    loadObrasQPI(),
+    window.KPI_REVISAO.loadAliasState({
+      aliasApiList: CONFIG.aliasApiList,
+      aliasDataUrl: CONFIG.aliasDataUrl,
+      pendenciasUrl: CONFIG.pendenciasUrl
+    })
+  ]);
 
-state.tvRaw = tvRaw;
-state.cronRaw = cronRaw;
-state.qpi1 = qpi1;
-state.aliasState = aliasState;
-    state.tvRaw = tvRaw;
-    state.cronRaw = cronRaw;
-    state.qpi1 = qpi1;
+  state.tvRaw = tvRaw;
+  state.cronRaw = cronRaw;
+  state.qpi1 = qpi1;
+  state.obrasQPI = obrasQPI;
+  state.aliasState = aliasState;
 
-    renderFuel();
-    recompute();
+  renderFuel();
+  recompute();
 
-    const u = getLoggedUser();
-    if(u?.Nome && normalize(u.Nome).includes('FABIO')){
-      const meta = CONFIG.coordinatorMeta['FABIO'];
-      $('#heroPhoto').src = CONFIG.coordinatorPhotos['FABIO'];
-      $('#heroName').textContent = meta.nomeCompleto;
-      $('#heroMeta').innerHTML = `Coordenador de obras<br>${meta.telefone}<br>${meta.email}`;
-    } else if(u?.Nome && normalize(u.Nome).includes('NICOLAS')){
-      const meta = CONFIG.coordinatorMeta['NICOLAS'];
-      $('#heroPhoto').src = CONFIG.coordinatorPhotos['NICOLAS'];
-      $('#heroName').textContent = meta.nomeCompleto;
-      $('#heroMeta').innerHTML = `Coordenador de obras<br>${meta.telefone}<br>${meta.email}`;
-    }
+  const u = getLoggedUser();
+  if(u?.Nome && normalize(u.Nome).includes('FABIO')){
+    const meta = CONFIG.coordinatorMeta['FABIO'];
+    $('#heroPhoto').src = CONFIG.coordinatorPhotos['FABIO'];
+    $('#heroName').textContent = meta.nomeCompleto;
+    $('#heroMeta').innerHTML = `Coordenador de obras<br>${meta.telefone}<br>${meta.email}`;
+  } else if(u?.Nome && normalize(u.Nome).includes('NICOLAS')){
+    const meta = CONFIG.coordinatorMeta['NICOLAS'];
+    $('#heroPhoto').src = CONFIG.coordinatorPhotos['NICOLAS'];
+    $('#heroName').textContent = meta.nomeCompleto;
+    $('#heroMeta').innerHTML = `Coordenador de obras<br>${meta.telefone}<br>${meta.email}`;
   }
-
+}
+  
   window.addEventListener('DOMContentLoaded', () => {
     boot().catch(err => {
       console.error('Falha no boot do KPI:', err);
