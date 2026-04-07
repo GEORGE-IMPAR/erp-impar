@@ -143,12 +143,49 @@ function abrirModalRevisaoKPI(item, onSave) {
 }
 function escapeHtml(str){ return String(str || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
 function escapeHtmlAttr(str){ return escapeHtml(str); }
+async function loadAliasState({ aliasApiList, aliasDataUrl, pendenciasUrl }) {
+  try {
+    const [aliases, pendencias] = await Promise.all([
+      fetch(aliasApiList).then(r => r.json()).catch(()=>[]),
+      fetch(pendenciasUrl).then(r => r.json()).catch(()=>[])
+    ]);
+
+    return {
+      aliases: Array.isArray(aliases) ? aliases : [],
+      pendencias: Array.isArray(pendencias) ? pendencias : []
+    };
+  } catch (e) {
+    console.warn('Erro ao carregar aliasState:', e);
+    return { aliases: [], pendencias: [] };
+  }
+}
+
+async function salvarRevisao({ aliasApiSave, alias, canonica, naoSeAplica, usuario }) {
+  try {
+    await fetch(aliasApiSave, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        alias,
+        canonica,
+        naoSeAplica,
+        usuario
+      })
+    });
+  } catch (e) {
+    console.warn('Erro ao salvar revisão:', e);
+  }
+}
+window.KPI_REVISAO = {
+  loadAliasState,
+  salvarRevisao,
+  processarObrasTV,
+  abrirModalRevisaoKPI,
+  criarBotaoAjuste,
+  podeEntrarNoKPI,
+  penalizaNoKPI,
+  consolidarPorCoordenador
+};
 
 window.LIST_OBRA = LIST_OBRA;
 window.normalizarObra = normalizarObra;
-window.processarObrasTV = processarObrasTV;
-window.podeEntrarNoKPI = podeEntrarNoKPI;
-window.penalizaNoKPI = penalizaNoKPI;
-window.consolidarPorCoordenador = consolidarPorCoordenador;
-window.abrirModalRevisaoKPI = abrirModalRevisaoKPI;
-window.criarBotaoAjuste = criarBotaoAjuste;
