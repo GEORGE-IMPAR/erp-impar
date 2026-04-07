@@ -692,6 +692,12 @@ function formatYmdLocal(dt){
   return `${y}-${m}-${d}`;
 }
 
+function formatarDataBr(ymd){
+  if(!ymd) return '—';
+  const [y,m,d] = ymd.split('-');
+  return `${d}/${m}/${y}`;
+}  
+  
 function getDiaAtividade(draft){
   let d =
     draft?.dayKey ||
@@ -817,26 +823,30 @@ async function calcularMediaQpi1Mes(){
     const j = await resp.json();
 
     const dias = j?.dias || {};
+    const datas = Object.keys(dias).sort(); // 🔥 ordena datas
+
     const valores = Object.values(dias);
 
     if(!valores.length){
-      return { media: 0, dias: 0 };
+      return { media: 0, dias: 0, ultimaData: null };
     }
 
     const soma = valores.reduce((acc, v) => acc + v, 0);
     const media = soma / valores.length;
 
+    const ultimaData = datas[datas.length - 1];
+
     return {
       media,
-      dias: valores.length
+      dias: valores.length,
+      ultimaData
     };
 
   }catch(e){
     console.warn('Erro ao calcular média QPI1:', e);
-    return { media: 0, dias: 0 };
+    return { media: 0, dias: 0, ultimaData: null };
   }
 }  
-  
 async function loadQpi1(){
   // 1) Se houver endpoint configurado, continua valendo como prioridade
 // 1) Se houver endpoint configurado, continua valendo como prioridade
@@ -861,13 +871,14 @@ if(j?.rows && j.rows.length){
 
     const acumulado = await calcularMediaQpi1Mes();
 
-    return {
-      score: acumulado.media,
-      lastScore: byDraft.score,
-      timestamp: byDraft.timestamp,
-      dias: acumulado.dias,
-      source: 'mensal:qpi1'
-    };
+   return {
+     score: acumulado.media,
+     lastScore: byDraft.score,
+     timestamp: byDraft.timestamp,
+     dias: acumulado.dias,
+     ultimaData: acumulado.ultimaData,
+     source: 'mensal:qpi1'
+   };
   }
 }
     // fallback antigo (histórico, etc)
@@ -1172,9 +1183,13 @@ const revisado = window.KPI_REVISAO.processarObrasTV(
     $('#qpi1Score').textContent = pct(q1.score);
     $('#qpi1Score').className = `score-big ${q1Class}`;
     $('#qpi1Time').textContent = q1.timestamp ? q1.timestamp.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
-    $('#qpi1Note').textContent = q1.timestamp
-      ? `Fonte: ${q1.source}. Regra aplicada: até 16h = 100%, até 17h = 50%, depois = 0%.`
-      : 'Aguardando leitura da fonte do PDF. Se necessário, configure a URL do metadata no bloco CONFIG.';
+
+     const dataTexto = formatarDataBr(q1.ultimaData);
+
+     $('#qpi1Note').innerHTML = q1.timestamp
+        ? `📊 Performance mensal até <strong>${dataTexto}</strong>: <strong>${pct(q1.score)}</strong><br>
+           🕒 Última atualização: ${q1.timestamp.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`
+        : 'Aguardando leitura da fonte do PDF.';
     $('#qpi1Bar').className = `progress ${q1Class === 'good' ? '' : q1Class}`;
     $('#qpi1Bar span').style.width = `${clamp(q1.score,0,100)}%`;
 
