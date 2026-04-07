@@ -442,6 +442,8 @@
     usarListaObraAtividades: true,
     
     atividadePdfMetaUrl: 'https://api.erpimpar.com.br/atividades/drafts/draft.json',
+    kpiQpi1Url: 'https://api.erpimpar.com.br/data/kpi_qpi1.json',
+    kpiQpi1SaveUrl: 'https://api.erpimpar.com.br/salvar_kpi_qpi1.php',
     atividadePdfMetaStorageKeys: ['ERPIMPAR_LAST_PDF_META', 'IMPAR_LAST_PDF_META', '__IMPAR_LAST_PDF_PAYLOAD__'],
     fuelStorageKey: 'ERPIMPAR_QPI_FUEL_ENTRIES_2026_04',
     coordinatorPhotos: {
@@ -768,6 +770,72 @@ function buildQpi1FromDraftRule(draft, source){
   const totalMinutes = local.getHours() * 60 + local.getMinutes();
   return buildQpi1ByMinutes(totalMinutes, `${source}:draft-dia-anterior`, local);
 }
+
+// ===============================
+// QPI1 - STORAGE MENSAL
+// ===============================
+
+// salva o score do dia
+async function salvarQpi1Dia(dataYmd, score){
+  try{
+    // lê arquivo atual
+    let atual = { dias: {} };
+
+    try{
+      const resp = await fetch(CONFIG.kpiQpi1Url + '?t=' + Date.now());
+      atual = await resp.json();
+    }catch(e){
+      // se não existir ainda, cria do zero
+      atual = { dias: {} };
+    }
+
+    atual.dias = atual.dias || {};
+
+    // 🔥 evita duplicar gravação
+    if(atual.dias[dataYmd] !== undefined){
+      return;
+    }
+
+    atual.dias[dataYmd] = score;
+
+    // salva no servidor
+    await fetch(CONFIG.kpiQpi1SaveUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(atual)
+    });
+
+  }catch(e){
+    console.warn('Erro ao salvar QPI1:', e);
+  }
+}
+
+// calcula média do mês
+async function calcularMediaQpi1Mes(){
+  try{
+    const resp = await fetch(CONFIG.kpiQpi1Url + '?t=' + Date.now());
+    const j = await resp.json();
+
+    const dias = j?.dias || {};
+    const valores = Object.values(dias);
+
+    if(!valores.length){
+      return { media: 0, dias: 0 };
+    }
+
+    const soma = valores.reduce((acc, v) => acc + v, 0);
+    const media = soma / valores.length;
+
+    return {
+      media,
+      dias: valores.length
+    };
+
+  }catch(e){
+    console.warn('Erro ao calcular média QPI1:', e);
+    return { media: 0, dias: 0 };
+  }
+}  
   
 async function loadQpi1(){
   // 1) Se houver endpoint configurado, continua valendo como prioridade
@@ -781,11 +849,27 @@ if(CONFIG.atividadePdfMetaUrl){
     );
 
     // 🔥 NOVA REGRA: se vier estrutura de draft
-    if(j?.rows && j.rows.length){
-      const byDraft = buildQpi1FromDraftRule(j, 'endpoint:draft');
-      if(byDraft && byDraft.timestamp) return byDraft;
-    }
+if(j?.rows && j.rows.length){
+  const byDraft = buildQpi1FromDraftRule(j, 'endpoint:draft');
 
+  if(byDraft && byDraft.timestamp){
+
+    // 🔥 PASSO 4 AQUI
+    const dia = formatYmdLocal(byDraft.timestamp);
+
+    await salvarQpi1Dia(dia, byDraft.score);
+
+    const acumulado = await calcularMediaQpi1Mes();
+
+    return {
+      score: acumulado.media,
+      lastScore: byDraft.score,
+      timestamp: byDraft.timestamp,
+      dias: acumulado.dias,
+      source: 'mensal:qpi1'
+    };
+  }
+}
     // fallback antigo (histórico, etc)
     const ts = j?.gerado_em || j?.generated || j?.generatedAt || j?.timestamp || j?.finalizedAt || null;
     if(ts) return buildQpi1(ts, 'endpoint');
