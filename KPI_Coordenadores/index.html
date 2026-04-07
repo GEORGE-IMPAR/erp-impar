@@ -420,6 +420,8 @@
     </div>
   </div>
 
+<script src="./js/kpi_obras_revisao.js"></script>
+  
 <script>
 (() => {
   const CONFIG = {
@@ -434,6 +436,13 @@
       '/cronograma',
       '../cronograma'
     ],
+    
+    aliasApiList: 'https://api.erpimpar.com.br/listar_alias.php',
+    aliasApiSave: 'https://api.erpimpar.com.br/salvar_alias.php',
+    pendenciasUrl: 'https://api.erpimpar.com.br/data/kpi_pendencias.json',
+    aliasDataUrl: 'https://api.erpimpar.com.br/data/obras_alias.json',
+    usarListaObraAtividades: true,
+    
     atividadePdfMetaUrl: '', // se você tiver um endpoint pronto, coloque aqui
     atividadePdfMetaStorageKeys: ['ERPIMPAR_LAST_PDF_META', 'IMPAR_LAST_PDF_META', '__IMPAR_LAST_PDF_PAYLOAD__'],
     fuelStorageKey: 'ERPIMPAR_QPI_FUEL_ENTRIES_2026_04',
@@ -459,6 +468,10 @@
     qpi1: { score:0, timestamp:null, source:'não localizado' },
     fuelEntries: [],
     fuelScore: 0,
+    aliasState: {
+        aliases: [],
+        pendencias: []
+    },
     coordinatorResults: []
   };
 
@@ -748,6 +761,12 @@
         return { ...tv, matchedCron: m.cron, matchScore: m.score };
       });
 
+      const revisado = window.KPI_REVISAO.processarObrasTV(
+         tvItems.map(x => ({ id:x.raw?.id || '', nome:x.nome, coordenador:x.coord })),
+         state.obrasQPI || [],
+         state.aliasState
+      );
+      
       const withCron = matched.filter(x => !!x.matchedCron);
       const withoutCron = matched.filter(x => !x.matchedCron);
       const cronCoordItems = cronParsed.filter(c => c.coord === coord);
@@ -879,6 +898,9 @@
       issues.innerHTML = `<div class="row"><div><h5>Sem pendências críticas</h5><p>Nenhuma ocorrência crítica foi localizada nas bases lidas agora.</p></div><div class="badge badge-green">OK</div></div>`;
       return;
     }
+    <button class="pill-btn btn-ajustar-obra" data-obra="NOME_DA_OBRA">
+       Ajustar obra
+    </button>
     issues.innerHTML = allIssues.slice(0, 12).map(i => `
       <div class="row">
         <div>
@@ -1054,6 +1076,26 @@
     });
   }
 
+  document.querySelectorAll('.btn-ajustar-obra').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const obra = btn.dataset.obra || '';
+    window.KPI_REVISAO.abrirModalRevisao({
+      obraOrigem: obra,
+      listaObra: window.LIST_OBRA,
+      onSalvar: async ({ alias, canonica, naoSeAplica, usuario }) => {
+        await window.KPI_REVISAO.salvarRevisao({
+          aliasApiSave: CONFIG.aliasApiSave,
+          alias,
+          canonica,
+          naoSeAplica,
+          usuario
+        });
+        await boot();
+      }
+    });
+  });
+});
+  
   function recompute(){
     const tvParsed = parseTvItems(state.tvRaw);
     const cronParsed = parseCronItems(state.cronRaw);
@@ -1078,12 +1120,21 @@
     applyHeroDefault();
     bindFuelForm();
 
-    const [tvRaw, cronRaw, qpi1] = await Promise.all([
-      loadTvRaw(),
-      loadCronRaw(),
-      loadQpi1()
-    ]);
+const [tvRaw, cronRaw, qpi1, aliasState] = await Promise.all([
+  loadTvRaw(),
+  loadCronRaw(),
+  loadQpi1(),
+  window.KPI_REVISAO.loadAliasState({
+    aliasApiList: CONFIG.aliasApiList,
+    aliasDataUrl: CONFIG.aliasDataUrl,
+    pendenciasUrl: CONFIG.pendenciasUrl
+  })
+]);
 
+state.tvRaw = tvRaw;
+state.cronRaw = cronRaw;
+state.qpi1 = qpi1;
+state.aliasState = aliasState;
     state.tvRaw = tvRaw;
     state.cronRaw = cronRaw;
     state.qpi1 = qpi1;
