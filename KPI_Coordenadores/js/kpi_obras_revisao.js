@@ -146,21 +146,22 @@ function escapeHtmlAttr(str){ return escapeHtml(str); }
 
 async function loadAliasState({ aliasApiList, aliasDataUrl, pendenciasUrl }) {
   try {
-    const resp = await fetch(aliasApiList).then(r => r.json()).catch(() => null);
+    const [aliasesResp, pendenciasResp] = await Promise.all([
+      fetch(aliasDataUrl).then(r => r.json()).catch(() => []),
+      fetch(pendenciasUrl).then(r => r.json()).catch(() => [])
+    ]);
 
     const aliases =
-      Array.isArray(resp) ? resp :
-      Array.isArray(resp?.data) ? resp.data :
-      Array.isArray(resp?.aliases) ? resp.aliases :
-      Array.isArray(resp?.data?.aliases) ? resp.data.aliases :
+      Array.isArray(aliasesResp) ? aliasesResp :
+      Array.isArray(aliasesResp?.data?.aliases) ? aliasesResp.data.aliases :
+      Array.isArray(aliasesResp?.aliases) ? aliasesResp.aliases :
       [];
 
     const pendencias =
-      Array.isArray(resp?.pendencias) ? resp.pendencias :
-      Array.isArray(resp?.data?.pendencias) ? resp.data.pendencias :
-      (() => {
-        return [];
-      })();
+      Array.isArray(pendenciasResp) ? pendenciasResp :
+      Array.isArray(pendenciasResp?.data?.pendencias) ? pendenciasResp.data.pendencias :
+      Array.isArray(pendenciasResp?.pendencias) ? pendenciasResp.pendencias :
+      [];
 
     return { aliases, pendencias };
   } catch (e) {
