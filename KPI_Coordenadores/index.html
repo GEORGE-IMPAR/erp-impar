@@ -677,10 +677,10 @@ async function loadCronRaw(){
     return { cron: null, score: bestScore };
   }
 
-  function toLocalMinus3(dateLike){
+function toLocalDraftTime(dateLike){
   const dt = new Date(dateLike);
   if (Number.isNaN(dt.getTime())) return null;
-  return new Date(dt.getTime() - 3 * 60 * 60 * 1000);
+  return dt;
 }
 
 function formatYmdLocal(dt){
@@ -688,6 +688,31 @@ function formatYmdLocal(dt){
   const m = String(dt.getMonth() + 1).padStart(2, '0');
   const d = String(dt.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function getDiaAtividade(draft){
+  let d =
+    draft?.dayKey ||
+    draft?.rows?.[0]?.data ||
+    '';
+
+  d = String(d || '').trim();
+  if(!d) return '';
+
+  if(d.includes('__')){
+    d = d.split('__')[0];
+  }
+
+  if(d.includes('/')){
+    const [dd, mm, yyyy] = d.split('/');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  if(d.includes('-')){
+    return d.substring(0, 10);
+  }
+
+  return '';
 }
 
 function previousDayYmd(ymd){
@@ -711,11 +736,7 @@ function buildQpi1ByMinutes(totalMinutes, source, timestampLocal){
 }
 
 function buildQpi1FromDraftRule(draft, source){
-  const diaAtividade = String(
-    draft?.dayKey ||
-    draft?.rows?.[0]?.data ||
-    ''
-  ).trim();
+  const diaAtividade = getDiaAtividade(draft);
 
   const tsRaw =
     draft?.generatedAt ||
@@ -728,7 +749,7 @@ function buildQpi1FromDraftRule(draft, source){
     return { score:0, timestamp:null, source:`${source}:sem-base` };
   }
 
-  const local = toLocalMinus3(tsRaw);
+  const local = toLocalDraftTime(tsRaw);
   if (!local) {
     return { score:0, timestamp:null, source:`${source}:timestamp-invalido` };
   }
@@ -736,7 +757,6 @@ function buildQpi1FromDraftRule(draft, source){
   const diaAnterior = previousDayYmd(diaAtividade);
   const diaDoTimestamp = formatYmdLocal(local);
 
-  // só vale se a última alteração foi no dia anterior da atividade
   if (diaDoTimestamp !== diaAnterior) {
     return {
       score: 0,
