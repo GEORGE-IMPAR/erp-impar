@@ -604,19 +604,39 @@ const state = {
     return [];
   }
 
-  async function loadCronRaw(){
-    for(const base of CONFIG.cronBaseCandidates){
-      try{
-        const j = await fetchJSON(`${base}/listar.php?t=${Date.now()}`);
-        if(Array.isArray(j)) return j;
-        if(Array.isArray(j?.data)) return j.data;
-        if(Array.isArray(j?.cronogramas)) return j.cronogramas;
-        if(Array.isArray(j?.files)) return j.files.map(f => typeof f === 'string' ? ({ arquivo:f }) : f);
-      }catch(e){}
-    }
-    return [];
+async function loadCronRaw(){
+  for (const base of CONFIG.cronBaseCandidates) {
+    try {
+      const lista = await fetchJSON(`${base}/listar_obras.php?t=${Date.now()}`);
+
+      const obras = Array.isArray(lista?.obras)
+        ? lista.obras
+        : Array.isArray(lista)
+          ? lista
+          : [];
+
+      if (!obras.length) continue;
+
+      const detalhes = await Promise.all(
+        obras.map(async (item) => {
+          const id = String(item.id || '').padStart(3, '0');
+          if (!id) return null;
+
+          try {
+            const json = await fetchJSON(`${base}/../storage/data/obra_${id}.json?t=${Date.now()}`);
+            return json;
+          } catch (e) {
+            return null;
+          }
+        })
+      );
+
+      return detalhes.filter(Boolean);
+    } catch (e) {}
   }
 
+  return [];
+}
   function extractCoord(raw){
     const val = raw?.coordenador || raw?.Coordenador || raw?.responsavel || raw?.usuario || raw?.owner || '';
     const n = normalize(val);
