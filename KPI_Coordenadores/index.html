@@ -828,38 +828,39 @@ function buildQpi1FromDraftRule(draft, source){
 // salva o score do dia
 async function salvarQpi1Dia(dataYmd, score){
   try{
-    // lê arquivo atual
-    let atual = { dias: {} };
+    let atual = { mes: '', dias: {} };
 
     try{
       const resp = await fetch(CONFIG.kpiQpi1Url + '?t=' + Date.now());
       atual = await resp.json();
     }catch(e){
-      // se não existir ainda, cria do zero
-      atual = { dias: {} };
+      atual = { mes: '', dias: {} };
     }
 
     atual.dias = atual.dias || {};
 
-    // 🔥 evita duplicar gravação
-    if(atual.dias[dataYmd] !== undefined){
-      return;
+    // garante o mês do arquivo
+    if(!atual.mes){
+      atual.mes = dataYmd.substring(0, 7);
     }
 
+    // 🔥 agora sempre atualiza/sobrescreve o dia
     atual.dias[dataYmd] = score;
 
-    // salva no servidor
-    await fetch(CONFIG.kpiQpi1SaveUrl, {
+    const respSave = await fetch(CONFIG.kpiQpi1SaveUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(atual)
     });
 
+    const j = await respSave.json().catch(() => ({}));
+    console.log('salvarQpi1Dia:', { dataYmd, score, resposta: j });
+
   }catch(e){
     console.warn('Erro ao salvar QPI1:', e);
   }
 }
-
+  
 // calcula média do mês
 async function calcularMediaQpi1Mes(){
   try{
