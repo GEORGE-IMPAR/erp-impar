@@ -724,259 +724,7 @@ async function loadCronRaw(){
   }
 
 
-
-function formatYmdLocal(dt){
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, '0');
-  const d = String(dt.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function formatarDataBr(ymd){
-  if(!ymd) return '—';
-  const [y,m,d] = ymd.split('-');
-  return `${d}/${m}/${y}`;
-}  
-
-function getDiaAtividade(draft){
-  let d =
-    draft?.dayKey ||
-    draft?.rows?.[0]?.data ||
-    '';
-
-  d = String(d || '').trim();
-  if(!d) return '';
-
-  if(d.includes('__')){
-    d = d.split('__')[0];
-  }
-
-  if(d.includes('/')){
-    const [dd, mm, yyyy] = d.split('/');
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  if(d.includes('-')){
-    return d.substring(0, 10);
-  }
-
-  return '';
-}  
-
-function previousDayYmd(ymd){
-  const dt = new Date(`${ymd}T12:00:00`);
-  if (Number.isNaN(dt.getTime())) return '';
-  dt.setDate(dt.getDate() - 1);
-  return formatYmdLocal(dt);
-}
-
-function buildQpi1ByMinutes(totalMinutes, source, timestampLocal){
-  let score = 0;
-  if (totalMinutes <= 16 * 60) score = 100;
-  else if (totalMinutes <= 17 * 60) score = 50;
-  else score = 0;
-
-  return {
-    score,
-    timestamp: timestampLocal || null,
-    source
-  };
-}
-
-function buildQpi1FromDraftRule(draft, source){
-  const diaAtividade = getDiaAtividade(draft);
-
-  const tsRaw =
-    draft?.generatedAt ||
-    draft?.generated ||
-    draft?.generatedAtUtc ||
-    draft?.timestamp ||
-    null;
-
-  if (!diaAtividade || !tsRaw) {
-    return { score:0, timestamp:null, source:`${source}:sem-base` };
-  }
-
-  const local = toLocalDraftTime(tsRaw);
-  if (!local) {
-    return { score:0, timestamp:null, source:`${source}:timestamp-invalido` };
-  }
-
-  const diaAnterior = previousDayYmd(diaAtividade);
-  const diaDoTimestamp = formatYmdLocal(local);
-
-  if (diaDoTimestamp !== diaAnterior) {
-    return {
-      score: 0,
-      timestamp: local,
-      source: `${source}:fora-dia-anterior`
-    };
-  }
-
-  const totalMinutes = local.getHours() * 60 + local.getMinutes();
-  return buildQpi1ByMinutes(totalMinutes, `${source}:draft-dia-anterior`, local);
-}
-
-// ===============================
-// QPI1 - STORAGE MENSAL
-// ===============================
-
-// salva o score do dia
-async function salvarQpi1Dia(dataYmd, score){
-  try{
-    let atual = { mes: '', dias: {} };
-
-    try{
-      const resp = await fetch(CONFIG.kpiQpi1Url + '?t=' + Date.now());
-      atual = await resp.json();
-    }catch(e){
-      atual = { mes: '', dias: {} };
-    }
-
-    atual.dias = atual.dias || {};
-
-    if(!atual.mes){
-      atual.mes = dataYmd.substring(0, 7);
-    }
-
-    atual.dias[dataYmd] = score;
-
-    const respSave = await fetch(CONFIG.kpiQpi1SaveUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(atual)
-    });
-
-    const j = await respSave.json().catch(() => ({}));
-    console.log('salvarQpi1Dia:', { dataYmd, score, resposta: j });
-
-  }catch(e){
-    console.warn('Erro ao salvar QPI1:', e);
-  }
-}
-  
-// calcula média do mês
-async function calcularMediaQpi1Mes(){
-  try{
-    const resp = await fetch(CONFIG.kpiQpi1Url + '?t=' + Date.now());
-    const j = await resp.json();
-
-    const dias = j?.dias || {};
-    const datas = Object.keys(dias).sort(); // 🔥 ordena datas
-
-    const valores = Object.values(dias);
-
-    if(!valores.length){
-      return { media: 0, dias: 0, ultimaData: null };
-    }
-
-    const soma = valores.reduce((acc, v) => acc + v, 0);
-    const media = soma / valores.length;
-
-    const ultimaData = datas[datas.length - 1];
-
-    return {
-      media,
-      dias: valores.length,
-      ultimaData
-    };
-
-  }catch(e){
-    console.warn('Erro ao calcular média QPI1:', e);
-    return { media: 0, dias: 0, ultimaData: null };
-  }
-}  
-
-async function loadQpi1(){
-  // 1) prioridade: draft oficial / endpoint configurado
-  if(CONFIG.atividadePdfMetaUrl){
-    try{
-      const j = await fetchJSON(
-        CONFIG.atividadePdfMetaUrl +
-        (CONFIG.atividadePdfMetaUrl.includes('?') ? '&' : '?') +
-        't=' + Date.now()
-      );
-
-      console.log('[QPI1] draft endpoint:', j);
-
-      // draft completo
-      if(j?.rows && j.rows.length){
-        const byDraft = buildQpi1FromDraftRule(j, 'endpoint:draft');
-
-        console.log('[QPI1] byDraft:', byDraft);
-
-        if(byDraft && byDraft.timestamp){
-          const dia = previousDayYmd(getDiaAtividade(j));
-
-          console.log('[QPI1] dia para gravar:', dia, 'score:', byDraft.score);
-
-          await salvarQpi1Dia(dia, byDraft.score);
-
-          const acumulado = await calcularMediaQpi1Mes();
-
-          console.log('[QPI1] acumulado:', acumulado);
-
-          return {
-            score: acumulado.media,
-            lastScore: byDraft.score,
-            timestamp: byDraft.timestamp,
-            dias: acumulado.dias,
-            ultimaData: acumulado.ultimaData,
-            source: 'mensal:qpi1'
-          };
-        }
-      }
-
-      // fallback histórico simples
-      const ts = j?.gerado_em || j?.generated || j?.generatedAt || j?.timestamp || j?.finalizedAt || null;
-      if(ts) return buildQpi1(ts, 'endpoint');
-
-    }catch(e){
-      console.warn('[QPI1] erro endpoint:', e);
-    }
-  }
-
-  // 2) fallback storage
-  try{
-    const rawPayload =
-      sessionStorage.getItem('__IMPAR_LAST_PDF_PAYLOAD__') ||
-      localStorage.getItem('__IMPAR_LAST_PDF_PAYLOAD__');
-
-    if(rawPayload){
-      const payload = JSON.parse(rawPayload);
-      const byDraft = buildQpi1FromDraftRule(payload, 'storage:__IMPAR_LAST_PDF_PAYLOAD__');
-      if(byDraft && byDraft.timestamp) return byDraft;
-    }
-  }catch(e){
-    console.warn('[QPI1] erro storage payload:', e);
-  }
-
-  // 3) outras chaves antigas
-  for(const key of CONFIG.atividadePdfMetaStorageKeys){
-    try{
-      const raw = sessionStorage.getItem(key) || localStorage.getItem(key);
-      if(!raw) continue;
-
-      if(key !== '__IMPAR_LAST_PDF_PAYLOAD__'){
-        const obj = JSON.parse(raw);
-
-        if(obj?.dayKey || obj?.rows?.[0]?.data){
-          const byDraft = buildQpi1FromDraftRule(obj, `storage:${key}`);
-          if(byDraft && byDraft.timestamp) return byDraft;
-        }
-
-        const ts = obj?.gerado_em || obj?.generated || obj?.generatedAt || obj?.timestamp || obj?.finalizedAt || null;
-        if(ts) return buildQpi1(ts, `storage:${key}`);
-      }
-    }catch(e){
-      console.warn('[QPI1] erro storage key:', key, e);
-    }
-  }
-
-  return { score:0, timestamp:null, source:'não localizado' };
-}  
-  
-window.__loadQpi1__ = loadQpi1;  
+formatYmdLocal  
   
 async function loadObrasQPI(){
   try {
@@ -1221,32 +969,31 @@ const revisado = window.KPI_REVISAO.processarObrasTV(
   return { results, allIssues };
 }
 
-  function renderCollectives(){
-    const q1 = state.qpi1;
-    const q5 = state.fuelScore;
-    const q1Class = classifyScore(q1.score).cls;
-    const q5Class = classifyScore(q5).cls;
+function renderCollectives(){
+  const q1 = state.qpi1;
+  const q5 = state.fuelScore;
+  const q1Class = classifyScore(q1.score).cls;
+  const q5Class = classifyScore(q5).cls;
 
-    $('#qpi1Score').textContent = pct(q1.score);
-    $('#qpi1Score').className = `score-big ${q1Class}`;
-    $('#qpi1Time').textContent = q1.timestamp ? q1.timestamp.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+  $('#qpi1Score').textContent = pct(q1.score);
+  $('#qpi1Score').className = `score-big ${q1Class}`;
+  $('#qpi1Time').textContent = q1.timestamp ? q1.timestamp.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
 
-     const dataTexto = formatarDataBr(q1.ultimaData);
+  const dataTexto = formatarDataBr(q1.ultimaData);
 
-     $('#qpi1Note').innerHTML = q1.timestamp
-        ? `📊 Performance mensal até <strong>${dataTexto}</strong>: <strong>${pct(q1.score)}</strong><br>
-           🕒 Última atualização: ${q1.timestamp.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`
-        : 'Aguardando leitura da fonte do PDF.';
-    $('#qpi1Bar').className = `progress ${q1Class === 'good' ? '' : q1Class}`;
-    $('#qpi1Bar span').style.width = `${clamp(q1.score,0,100)}%`;
+  $('#qpi1Note').innerHTML = q1.timestamp
+    ? `📊 Performance mensal até <strong>${dataTexto}</strong>: <strong>${pct(q1.score)}</strong><br>🕒 Última atualização: ${q1.timestamp.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`
+    : 'Aguardando leitura da fonte do PDF.';
 
-    $('#qpi5Score').textContent = pct(q5);
-    $('#qpi5Score').className = `score-big ${q5Class}`;
-    $('#fuelAccumTop').textContent = money(state.fuelEntries.reduce((a,b)=>a+Number(b.value||0),0));
-    $('#qpi5Bar').className = `progress ${q5Class === 'good' ? '' : q5Class}`;
-    $('#qpi5Bar span').style.width = `${q5 === 100 ? 100 : q5 === 50 ? 70 : 100}%`;
-  }
+  $('#qpi1Bar').className = `progress ${q1Class === 'good' ? '' : q1Class}`;
+  $('#qpi1Bar span').style.width = `${clamp(q1.score,0,100)}%`;
 
+  $('#qpi5Score').textContent = pct(q5);
+  $('#qpi5Score').className = `score-big ${q5Class}`;
+  $('#fuelAccumTop').textContent = money(state.fuelEntries.reduce((a,b)=>a+Number(b.value||0),0));
+  $('#qpi5Bar').className = `progress ${q5Class === 'good' ? '' : q5Class}`;
+  $('#qpi5Bar span').style.width = `${q5 === 100 ? 100 : q5 === 50 ? 70 : 100}%`;
+}
   function renderSummary(topIssues){
     $('#sumTvWorks').textContent = String(state.tvRaw.length);
     $('#sumCrons').textContent = String(state.cronRaw.length);
