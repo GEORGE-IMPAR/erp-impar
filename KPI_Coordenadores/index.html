@@ -741,7 +741,7 @@ function formatarDataBr(ymd){
   const [y,m,d] = ymd.split('-');
   return `${d}/${m}/${y}`;
 }  
-  
+
 function getDiaAtividade(draft){
   let d =
     draft?.dayKey ||
@@ -765,7 +765,7 @@ function getDiaAtividade(draft){
   }
 
   return '';
-}
+}  
 
 function previousDayYmd(ymd){
   const dt = new Date(`${ymd}T12:00:00`);
@@ -806,6 +806,26 @@ function buildQpi1FromDraftRule(draft, source){
     return { score:0, timestamp:null, source:`${source}:timestamp-invalido` };
   }
 
+  const diaAnterior = previousDayYmd(diaAtividade);
+  const diaDoTimestamp = formatYmdLocal(local);
+
+  if (diaDoTimestamp !== diaAnterior) {
+    return {
+      score: 0,
+      timestamp: local,
+      source: `${source}:fora-dia-anterior`
+    };
+  }
+
+  const totalMinutes = local.getHours() * 60 + local.getMinutes();
+  return buildQpi1ByMinutes(totalMinutes, `${source}:draft-dia-anterior`, local);
+}
+  
+function toLocalDraftTime(dateLike){
+  const dt = new Date(dateLike);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
   const diaAnterior = previousDayYmd(diaAtividade);
   const diaDoTimestamp = formatYmdLocal(local);
 
@@ -890,47 +910,57 @@ async function calcularMediaQpi1Mes(){
     return { media: 0, dias: 0, ultimaData: null };
   }
 }  
+
 async function loadQpi1(){
-  // 1) Se houver endpoint configurado, continua valendo como prioridade
-// 1) Se houver endpoint configurado, continua valendo como prioridade
-if(CONFIG.atividadePdfMetaUrl){
-  try{
-    const j = await fetchJSON(
-      CONFIG.atividadePdfMetaUrl +
-      (CONFIG.atividadePdfMetaUrl.includes('?') ? '&' : '?') +
-      't=' + Date.now()
-    );
+  // 1) prioridade: draft oficial / endpoint configurado
+  if(CONFIG.atividadePdfMetaUrl){
+    try{
+      const j = await fetchJSON(
+        CONFIG.atividadePdfMetaUrl +
+        (CONFIG.atividadePdfMetaUrl.includes('?') ? '&' : '?') +
+        't=' + Date.now()
+      );
 
-    // 🔥 NOVA REGRA: se vier estrutura de draft
-if(j?.rows && j.rows.length){
-  const byDraft = buildQpi1FromDraftRule(j, 'endpoint:draft');
+      console.log('[QPI1] draft endpoint:', j);
 
-  if(byDraft && byDraft.timestamp){
+      // draft completo
+      if(j?.rows && j.rows.length){
+        const byDraft = buildQpi1FromDraftRule(j, 'endpoint:draft');
 
-    // 🔥 PASSO 4 AQUI
-    const dia = previous(getDiaAtividade(j));
+        console.log('[QPI1] byDraft:', byDraft);
 
-    await salvarQpi1Dia(dia, byDraft.score);
+        if(byDraft && byDraft.timestamp){
+          const dia = previousDayYmd(getDiaAtividade(j));
 
-    const acumulado = await calcularMediaQpi1Mes();
+          console.log('[QPI1] dia para gravar:', dia, 'score:', byDraft.score);
 
-   return {
-     score: acumulado.media,
-     lastScore: byDraft.score,
-     timestamp: byDraft.timestamp,
-     dias: acumulado.dias,
-     ultimaData: acumulado.ultimaData,
-     source: 'mensal:qpi1'
-   };
+          await salvarQpi1Dia(dia, byDraft.score);
+
+          const acumulado = await calcularMediaQpi1Mes();
+
+          console.log('[QPI1] acumulado:', acumulado);
+
+          return {
+            score: acumulado.media,
+            lastScore: byDraft.score,
+            timestamp: byDraft.timestamp,
+            dias: acumulado.dias,
+            ultimaData: acumulado.ultimaData,
+            source: 'mensal:qpi1'
+          };
+        }
+      }
+
+      // fallback histórico simples
+      const ts = j?.gerado_em || j?.generated || j?.generatedAt || j?.timestamp || j?.finalizedAt || null;
+      if(ts) return buildQpi1(ts, 'endpoint');
+
+    }catch(e){
+      console.warn('[QPI1] erro endpoint:', e);
+    }
   }
-}
-    // fallback antigo (histórico, etc)
-    const ts = j?.gerado_em || j?.generated || j?.generatedAt || j?.timestamp || j?.finalizedAt || null;
-    if(ts) return buildQpi1(ts, 'endpoint');
 
-  }catch(e){}
-}
-  // 2) Prioridade para payload completo do draft/PDF
+  // 2) fallback storage
   try{
     const rawPayload =
       sessionStorage.getItem('__IMPAR_LAST_PDF_PAYLOAD__') ||
@@ -941,34 +971,35 @@ if(j?.rows && j.rows.length){
       const byDraft = buildQpi1FromDraftRule(payload, 'storage:__IMPAR_LAST_PDF_PAYLOAD__');
       if(byDraft && byDraft.timestamp) return byDraft;
     }
-  }catch(e){}
+  }catch(e){
+    console.warn('[QPI1] erro storage payload:', e);
+  }
 
-  // 3) Fallback para outras chaves antigas
+  // 3) outras chaves antigas
   for(const key of CONFIG.atividadePdfMetaStorageKeys){
     try{
       const raw = sessionStorage.getItem(key) || localStorage.getItem(key);
       if(!raw) continue;
 
-      // se vier um objeto simples de histórico/finalização, usa regra antiga
       if(key !== '__IMPAR_LAST_PDF_PAYLOAD__'){
         const obj = JSON.parse(raw);
 
-        // se existir estrutura de draft, aplica regra nova
         if(obj?.dayKey || obj?.rows?.[0]?.data){
           const byDraft = buildQpi1FromDraftRule(obj, `storage:${key}`);
           if(byDraft && byDraft.timestamp) return byDraft;
         }
 
-        // fallback histórico/finalização
         const ts = obj?.gerado_em || obj?.generated || obj?.generatedAt || obj?.timestamp || obj?.finalizedAt || null;
         if(ts) return buildQpi1(ts, `storage:${key}`);
       }
-    }catch(e){}
+    }catch(e){
+      console.warn('[QPI1] erro storage key:', key, e);
+    }
   }
 
   return { score:0, timestamp:null, source:'não localizado' };
-}
-
+}  
+  
 window.__loadQpi1__ = loadQpi1;  
   
 async function loadObrasQPI(){
