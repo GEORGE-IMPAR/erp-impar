@@ -541,24 +541,36 @@ function setPage(newIndex, animate) {
 
 async function carregarProjetos() {
   try {
-
     const res = await fetch(API_BASE);
     const json = await res.json();
 
     if (!json.success) throw new Error('Erro API');
 
-    projetosAtuais = json.data.projetos;
-projetosAtuais.sort(compareProjetos);
+    projetosAtuais = json.data.projetos || [];
+    projetosAtuais.sort(compareProjetos);
 
-renderizarProjetos(new Set(), false);
-atualizarBadgeSync();
-iniciarPager();
+    const datasValidas = projetosAtuais
+      .map(p => ({
+        data: parseDataBR(p.data_atualizacao),
+        usuario: p.usuario_atualizacao || 'Sistema',
+        id: p.id
+      }))
+      .filter(x => x.data instanceof Date && !isNaN(x.data));
+
+    if (datasValidas.length) {
+      datasValidas.sort((a, b) => b.data - a.data);
+      ultimaAtualizacaoGlobal = datasValidas[0].data;
+      ultimaAtualizacaoUsuario = datasValidas[0].usuario;
+    }
+
+    renderizarProjetos(new Set(), false);
+    atualizarBadgeSync();
+    iniciarPager();
 
   } catch (e) {
     console.error(e);
   }
-}
-  
+}  
 function detectarAtualizacoes(projetosNovos) {
   const atualizados = new Set();
 
