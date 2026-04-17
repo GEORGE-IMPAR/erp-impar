@@ -612,7 +612,82 @@
   background:linear-gradient(90deg,#22c55e,#4ade80);
   box-shadow:0 0 14px rgba(34,197,94,.24);
 }
-  </style>
+  
+    body.tv-embedded header,
+    body.tv-embedded .topbox,
+    body.tv-embedded .toolbar,
+    body.tv-embedded footer,
+    body.tv-embedded #excelOverlay,
+    body.tv-embedded .status-msg{
+      display:none !important;
+    }
+    body.tv-embedded{
+      opacity:1 !important;
+    }
+    body.tv-embedded main{
+      padding:8px !important;
+      height:100vh !important;
+    }
+    body.tv-embedded .layout,
+    body.tv-embedded .container,
+    body.tv-embedded .cards-wrap{
+      width:100% !important;
+      max-width:none !important;
+      height:100% !important;
+      padding:0 !important;
+      border:none !important;
+      box-shadow:none !important;
+      background:transparent !important;
+    }
+    body.tv-embedded .cards-grid{
+      height:calc(100vh - 16px) !important;
+      grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+      grid-template-rows:repeat(2,1fr) !important;
+      gap:12px !important;
+      align-items:stretch !important;
+    }
+    body.tv-embedded .obra-card{
+      min-height:0 !important;
+      height:100% !important;
+      padding:12px !important;
+    }
+    body.tv-embedded .card-actions{
+      display:none !important;
+    }
+    body.tv-embedded .obra-top{
+      grid-template-columns:minmax(0,1.3fr) minmax(82px,.7fr) 72px !important;
+      gap:8px !important;
+      margin-bottom:8px !important;
+    }
+    body.tv-embedded .obra-name{
+      font-size:12px !important;
+      min-height:auto !important;
+      margin-bottom:4px !important;
+    }
+    body.tv-embedded .status-badge{
+      font-size:9px !important;
+      padding:4px 8px !important;
+      margin-bottom:6px !important;
+    }
+    body.tv-embedded .metric-box{
+      min-height:46px !important;
+      padding:7px 8px !important;
+    }
+    body.tv-embedded .metric-v{ font-size:15px !important; }
+    body.tv-embedded .donut-holder,
+    body.tv-embedded .donut{ width:62px !important; height:62px !important; }
+    body.tv-embedded .donut::after{ width:40px !important; height:40px !important; }
+    body.tv-embedded .donut-value{ font-size:10px !important; }
+    body.tv-embedded .timeline-card{ margin-bottom:8px !important; padding:8px 10px !important; }
+    body.tv-embedded .timeline-scale{ height:6px !important; }
+    body.tv-embedded .timeline-marker{ width:10px !important; height:10px !important; }
+    body.tv-embedded .obra-status-grid{ gap:6px !important; margin-bottom:8px !important; }
+    body.tv-embedded .status-box{ min-height:48px !important; padding:6px 4px !important; }
+    body.tv-embedded .status-box .sv{ font-size:15px !important; }
+    body.tv-embedded .obra-bars{ gap:6px !important; }
+    body.tv-embedded .obra-bar-row{ grid-template-columns:46px 1fr 36px !important; font-size:9px !important; }
+
+</style>
 </head>
 <body>
 <header>
@@ -687,12 +762,13 @@
   const KEY = "ERPIMPAR_USER";
   const API = "https://api.erpimpar.com.br/cronograma/";
   const cardsGrid = document.getElementById("cardsGrid");
-
+  const TV_MODE = new URLSearchParams(location.search).get("tv") === "1";
   const PAGE_SIZE = 6;
+  const PAGE_INTERVAL_MS = 20000;
   let pageIndex = 0;
   let pageTimer = null;
   let listaGlobal = [];
-  
+
   const statusMsg = document.getElementById("statusMsg");
   const excelImportInput = document.getElementById("excelImportInput");
   
@@ -1392,6 +1468,35 @@ function iniciarPagerFarol(){
 
   
   
+
+  function renderPaginaFarol(){
+    const totalPages = Math.max(1, Math.ceil(listaGlobal.length / PAGE_SIZE));
+    if(pageIndex >= totalPages) pageIndex = 0;
+    const start = pageIndex * PAGE_SIZE;
+    const slice = listaGlobal.slice(start, start + PAGE_SIZE);
+    cardsGrid.innerHTML = slice.map(cardObraHtml).join("");
+  }
+
+  function iniciarPagerFarol(){
+    if(pageTimer) clearInterval(pageTimer);
+    const totalPages = Math.max(1, Math.ceil(listaGlobal.length / PAGE_SIZE));
+    if(totalPages <= 1) return;
+    pageTimer = setInterval(() => {
+      pageIndex = (pageIndex + 1) % totalPages;
+      renderPaginaFarol();
+    }, PAGE_INTERVAL_MS);
+  }
+
+  function atualizarCicloTV(){
+    const totalPages = Math.max(1, Math.ceil(listaGlobal.length / PAGE_SIZE));
+    const cycleMs = totalPages * PAGE_INTERVAL_MS;
+    window.__TV_CYCLE_MS__ = cycleMs;
+    if (TV_MODE) {
+      try { window.parent.postMessage({ type:'ERP_IMPAR_TV_CYCLE_MS', value: cycleMs, page:'farol' }, '*'); } catch(e){}
+      try { window.parent.postMessage({ type:'ERP_IMPAR_TV_BADGE', text: '📊 Farol de Obras' }, '*'); } catch(e){}
+    }
+  }
+
   if(excelImportInput){
     excelImportInput.addEventListener("change", async (e) => {
       const file = e.target.files && e.target.files[0];
@@ -1425,6 +1530,7 @@ function iniciarPagerFarol(){
   window.__abrirCronograma = abrirCronograma;
   window.__compartilharResumo = compartilharResumo;
 
+  if (TV_MODE) document.body.classList.add("tv-embedded");
   document.body.classList.add("impar-enter");
   loadUser();
 
