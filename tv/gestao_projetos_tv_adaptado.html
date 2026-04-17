@@ -360,12 +360,6 @@
       to{ transform:translateX(0); opacity:1; }
     }
 
-
-    body.tv-mode header,
-    body.tv-mode footer{display:none !important;}
-    body.tv-mode main{padding:8px !important; height:100vh !important;}
-    body.tv-mode .container{max-width:none !important;}
-    body.tv-mode .projetos-grid{height:calc(100vh - 16px) !important;}
     @media (max-width:1200px){
       .projetos-grid{ gap:12px; }
       .card-titulo{ font-size:22px; }
@@ -373,7 +367,25 @@
       .farol{ width:52px; height:52px; font-size:32px; }
       .ultima-sync{ display:none; }
     }
-  </style>
+  
+    body.tv-embedded .btn-fullscreen,
+    body.tv-embedded header,
+    body.tv-embedded footer{
+      display:none !important;
+    }
+    body.tv-embedded main{
+      padding:8px !important;
+      height:100vh !important;
+    }
+    body.tv-embedded .container{
+      width:100% !important;
+      max-width:none !important;
+    }
+    body.tv-embedded .projetos-grid{
+      height:calc(100vh - 16px) !important;
+    }
+
+</style>
 </head>
 <body>
 
@@ -415,7 +427,7 @@
 
 <script>
 const API_BASE = 'https://api.erpimpar.com.br/tv';
-const TV_MODE = new URLSearchParams(location.search).get('tv') === '1' || window.top !== window.self;
+const TV_MODE = new URLSearchParams(location.search).get('tv') === '1';
 
 let projetosAtuais = [];
 let ultimaAtualizacaoGlobal = null;
@@ -432,6 +444,7 @@ let highlightProjectId = null;
 let highlightUntilTs = 0;
 
 window.addEventListener('DOMContentLoaded', () => {
+  if (TV_MODE) document.body.classList.add('tv-embedded');
   atualizarRelogio();
   setInterval(atualizarRelogio, 1000);
 
@@ -439,12 +452,6 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(carregarProjetos, 10000);
 
   iniciarPager();
-
-  if (TV_MODE) {
-    document.body.classList.add('tv-mode');
-    const btn = document.getElementById('btnFullscreen');
-    if (btn) btn.style.display = 'none';
-  }
 
   verificarFullscreen();
   document.addEventListener('fullscreenchange', verificarFullscreen);
@@ -478,10 +485,8 @@ function atualizarRelogio() {
   const data = agora.toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   const hora = agora.toLocaleTimeString('pt-BR');
 
-  const elData = document.getElementById('dataAtual');
-  const elHora = document.getElementById('relogio');
-  if (elData) elData.textContent = data.charAt(0).toUpperCase() + data.slice(1);
-  if (elHora) elHora.textContent = hora;
+  document.getElementById('dataAtual').textContent = data.charAt(0).toUpperCase() + data.slice(1);
+  document.getElementById('relogio').textContent = hora;
 }
 
 function parseDataBR(dataStr) {
@@ -561,7 +566,7 @@ async function carregarProjetos() {
       const projetosAtualizados = detectarAtualizacoes(projetosNovos);
       projetosAtuais = projetosNovos;
 
-      if (!TV_MODE && projetosAtualizados.size > 0) {
+      if (projetosAtualizados.size > 0) {
         const foco = encontrarMaisRecenteEntreAtualizados(projetosAtualizados);
         if (foco) {
           highlightProjectId = foco.id;
@@ -573,25 +578,23 @@ async function carregarProjetos() {
 
       renderizarProjetos(projetosAtualizados, false);
       atualizarBadgeSync();
-      atualizarCicloTV();
     } else {
       document.getElementById('projetosGrid').innerHTML = '<div class="loading">📭 Nenhum projeto cadastrado</div>';
-      atualizarCicloTV();
     }
   } catch (error) {
     console.error('Erro ao carregar projetos:', error);
     document.getElementById('projetosGrid').innerHTML = '<div class="loading">⚠️ Erro ao carregar projetos</div>';
-    atualizarCicloTV();
   }
 }
+
 
 function atualizarCicloTV(){
   const totalPages = Math.max(1, Math.ceil(projetosAtuais.length / PAGE_SIZE));
   const cycleMs = totalPages * PAGE_INTERVAL_MS;
   window.__TV_CYCLE_MS__ = cycleMs;
-  try {
-    window.parent.postMessage({ type:'ERP_IMPAR_TV_CYCLE_MS', value: cycleMs, page:'gestao' }, '*');
-  } catch(e) {}
+  if (TV_MODE) {
+    try { window.parent.postMessage({ type:'ERP_IMPAR_TV_CYCLE_MS', value: cycleMs, page:'gestao' }, '*'); } catch(e){}
+  }
 }
 
 function detectarAtualizacoes(projetosNovos) {
@@ -740,22 +743,19 @@ function renderizarProjetos(projetosAtualizados, animate) {
 function atualizarBadgeSync() {
   const badge = document.getElementById('ultimaSync');
 
-  if (!badge) return;
   if (ultimaAtualizacaoGlobal) {
     const dataFormatada = ultimaAtualizacaoGlobal.toLocaleString('pt-BR', {
       day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
     });
 
     const usuario = ultimaAtualizacaoUsuario || 'Sistema';
-    const txt = `✅ Última atualização: ${dataFormatada} — ${escapeHtml(usuario)}`;
-    badge.innerHTML = txt;
+    badge.innerHTML = `✅ Última atualização: ${dataFormatada} — ${escapeHtml(usuario)}`;
     badge.style.background = 'rgba(34,197,94,.2)';
     badge.style.borderColor = 'rgba(34,197,94,.5)';
-    if (TV_MODE) { try { window.parent.postMessage({ type:'ERP_IMPAR_TV_BADGE', text: txt }, '*'); } catch(e){} }
+    if (TV_MODE) { try { window.parent.postMessage({ type:'ERP_IMPAR_TV_BADGE', text: `✅ Última atualização: ${dataFormatada} — ${escapeHtml(usuario)}` }, '*'); } catch(e){} }
   } else {
-    const txt = '🔄 Gestão à Vista';
-    badge.innerHTML = txt;
-    if (TV_MODE) { try { window.parent.postMessage({ type:'ERP_IMPAR_TV_BADGE', text: txt }, '*'); } catch(e){} }
+    badge.innerHTML = '🔄 Aguardando dados...';
+    if (TV_MODE) { try { window.parent.postMessage({ type:'ERP_IMPAR_TV_BADGE', text: '🔄 Gestão à Vista' }, '*'); } catch(e){} }
   }
 }
 
