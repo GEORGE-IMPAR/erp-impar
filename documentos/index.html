@@ -375,7 +375,7 @@ const projetista = upper(
       clausulas, condicoesPagamento, valor, valorExtenso, prazoDias,
       dataContrato, dataExtenso,
 
-      meta: { origem: "GeradorDocs_Rebuild_V1", criadoEmISO: new Date().toISOString(), usuario_nome: (u.Nome||"Usuário"), usuario_email: (u.Email||"—") }
+      meta: { origem: "GeradorDocs_Rebuild_V5", criadoEmISO: new Date().toISOString(), usuario_nome: (u.Nome||"Usuário"), usuario_email: (u.Email||"—") }
     };
   }
 
@@ -1940,7 +1940,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 <footer>
   <div class="rodape-inner">
     <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
-    <div>v3.0 • validação limpa por etapa</div>
+    <div>v1.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -4135,6 +4135,251 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
   } else {
     initPatch();
   }
+})();
+</script>
+
+
+<script>
+/* =========================================================
+   HOTFIX FINAL ÍMPAR — corrige comparação antes do save
+   e reidrata anexos ao reabrir cadastro
+   ========================================================= */
+(function(){
+  "use strict";
+
+  function deepClone(v){ try{return JSON.parse(JSON.stringify(v??{}));}catch(e){return {};}}
+  function normalizeValue(v){
+    if(v === null || v === undefined) return '';
+    if(Array.isArray(v)) return v.map(normalizeValue).join(' | ');
+    if(typeof v === 'object'){
+      try{return JSON.stringify(v);}catch(e){return String(v);} }
+    return String(v).trim();
+  }
+  function sanitizePayloadForCompare(payload){
+    const p = deepClone(payload || {});
+    delete p.meta; delete p.anexosContrato; delete p.anexosOS;
+    return p;
+  }
+  function comparePayloadsStrict(original, current){
+    const base = sanitizePayloadForCompare(original);
+    const now = sanitizePayloadForCompare(current);
+    const labels = window.__PATCH_LABELS__ || {
+      codigo:'Código do projeto', nomeObra:'Nome da obra', servico:'Serviço', enderecoObra:'Endereço da obra', projetista:'Projetista',
+      nomeContratante:'Nome do contratante', contatoContratante:'Contato do contratante', cpfContatoContratante:'CPF do contato do contratante',
+      telefoneContratante:'Telefone do contratante', cepContratante:'CEP do contratante', cpfCnpjContratante:'CPF/CNPJ do contratante',
+      logradouroContratante:'Logradouro do contratante', numeroContratante:'Número do contratante', bairroContratante:'Bairro do contratante',
+      cidadeContratante:'Cidade do contratante', ufContratante:'UF do contratante', complementoContratante:'Complemento do contratante', emailContratante:'E-mail do contratante',
+      nomeContratada:'Nome da contratada', contatoContratada:'Contato da contratada', cpfContatoContratada:'CPF do contato da contratada',
+      telefoneContratada:'Telefone da contratada', cepContratada:'CEP da contratada', cpfCnpjContratada:'CPF/CNPJ da contratada',
+      logradouroContratada:'Logradouro da contratada', numeroContratada:'Número da contratada', bairroContratada:'Bairro da contratada',
+      cidadeContratada:'Cidade da contratada', ufContratada:'UF da contratada', complementoContratada:'Complemento da contratada', emailContratada:'E-mail da contratada',
+      clausulas:'Cláusulas', condicoesPagamento:'Condições de pagamento', valor:'Valor', valorExtenso:'Valor por extenso', prazoDias:'Prazo', dataContrato:'Data do contrato', dataExtenso:'Data por extenso'
+    };
+    const keys = Array.from(new Set([...Object.keys(base), ...Object.keys(now)]));
+    return keys.reduce((acc,key)=>{
+      const oldVal = normalizeValue(base[key]);
+      const newVal = normalizeValue(now[key]);
+      if(oldVal !== newVal){ acc.push({type:'field', key, label:labels[key] || key, oldValue:oldVal, newValue:newVal}); }
+      return acc;
+    },[]);
+  }
+  function attachmentName(item, idx){ return item?.name || item?.nome || item?.arquivo || item?.filename || `anexo_${idx+1}`; }
+  function normalizeAttachmentRecord(item, codigo, tipo, idx){
+    const basePublica = `https://api.erpimpar.com.br/word365/anexos_storage/${encodeURIComponent(codigo || '')}/${encodeURIComponent(tipo || '')}`;
+    if(item instanceof File) return item;
+    if(typeof item === 'string'){
+      const nome = item.split('/').pop() || `anexo_${idx+1}`;
+      return {nome, arquivo:nome, name:nome, path:item, url:`${basePublica}/${encodeURIComponent(nome)}`, href:`${basePublica}/${encodeURIComponent(nome)}`, origem:'servidor'};
+    }
+    const nome = item?.nome || item?.arquivo || item?.filename || item?.name || (String(item?.path||'').split('/').pop()) || `anexo_${idx+1}`;
+    const url = item?.url || item?.href || item?.link || `${basePublica}/${encodeURIComponent(nome)}`;
+    const path = item?.path || item?.caminho || item?.file_path || '';
+    return {...item, nome, arquivo:nome, name:nome, url, href:url, link:url, path, origem:item?.origem || 'servidor'};
+  }
+  function hydrateAnexosFromPayload(payload){
+    const codigo = payload?.codigo || document.getElementById('codigoProjeto')?.value || '';
+    const contrato = Array.isArray(payload?.anexosContrato) ? payload.anexosContrato.map((item, idx)=>normalizeAttachmentRecord(item, codigo, 'contrato', idx)) : [];
+    const os = Array.isArray(payload?.anexosOS) ? payload.anexosOS.map((item, idx)=>normalizeAttachmentRecord(item, codigo, 'os', idx)) : [];
+    window.anexosContrato = contrato;
+    window.anexosOS = os;
+    if(typeof window.renderListaAnexos === 'function'){
+      window.renderListaAnexos('contrato');
+      window.renderListaAnexos('os');
+    }
+  }
+  async function fetchProjectPayloadByCodigo(codigo){
+    const r = await fetch(`https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`, {cache:'no-store'});
+    if(!r.ok) throw new Error(`Falha ao carregar JSON do projeto (${r.status}).`);
+    const data = await r.json();
+    return (data && typeof data === 'object' && ('data' in data) && data.data) ? data.data : data;
+  }
+  function buildMergedAttachments(tipo, uploadedNow, originalPayload){
+    const key = tipo === 'contrato' ? 'anexosContrato' : 'anexosOS';
+    const prev = Array.isArray(originalPayload?.[key]) ? deepClone(originalPayload[key]) : [];
+    const enviados = Array.isArray(uploadedNow) ? uploadedNow : [];
+    return [...prev, ...enviados].map((item, idx) => normalizeAttachmentRecord(item, originalPayload?.codigo || document.getElementById('codigoProjeto')?.value || '', tipo, idx));
+  }
+  async function openOrGenerateWordFromPayload(codigo, tipo, nomeDoc, forceGenerate){
+    let consulta = await consultarDocumentoWord365(codigo, tipo);
+    if(consulta?.exists && !forceGenerate){
+      const url = consulta.webUrl || consulta.url || '';
+      if(url){
+        window.open(url, '_blank', 'noopener');
+        Swal.fire({icon:'success', title:`${nomeDoc} aberto`, html:'Documento aberto com sucesso.'});
+        window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
+        return true;
+      }
+    }
+    const gerado = await gerarBlobDocumentoPorTipo(codigo, tipo);
+    const uploadDoc = await subirDocParaWord365(gerado.blob, gerado.filename, codigo, tipo);
+    const finalUrl = uploadDoc?.webUrl || uploadDoc?.url || '';
+    if(finalUrl){
+      window.open(finalUrl, '_blank', 'noopener');
+      Swal.fire({icon:'success', title:`${nomeDoc} atualizado`, html:'Documento atualizado com sucesso.'});
+      window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
+      return true;
+    }
+    consulta = await consultarDocumentoWord365(codigo, tipo);
+    const fallbackUrl = consulta?.webUrl || consulta?.url || '';
+    if(fallbackUrl){
+      window.open(fallbackUrl, '_blank', 'noopener');
+      Swal.fire({icon:'success', title:`${nomeDoc} atualizado`, html:'Documento atualizado com sucesso.'});
+      window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
+      return true;
+    }
+    throw new Error('Não foi possível obter a URL final do documento no Word 365.');
+  }
+
+  async function askSelectiveUpdateCompat({changes, selectedFiles, hasExistingDoc}){
+    if(typeof window.askSelectiveUpdate === 'function'){
+      return await window.askSelectiveUpdate({tipo:'', changes, selectedFiles, hasExistingDoc});
+    }
+    return {selectedFieldIndexes: changes.map((_,i)=>i), selectedFileIndexes: selectedFiles.map((_,i)=>i)};
+  }
+
+  async function onFinalizarSalvarJsonHotfix(){
+    try{
+      try{ window.applyLoggedUser?.(); }catch(e){}
+      const currentPayload = buildPayload();
+      const codigo = currentPayload?.codigo || document.getElementById('codigoProjeto')?.value?.trim() || '';
+      if(!codigo){
+        Swal.fire({icon:'warning', title:'Campo obrigatório', text:'Informe o código do projeto para finalizar.'});
+        return;
+      }
+      currentPayload.codigo = codigo;
+
+      let originalPayload = {};
+      try{
+        originalPayload = await fetchProjectPayloadByCodigo(codigo);
+      }catch(err){
+        originalPayload = deepClone(window.__DOC_ORIGINAL__ || {});
+      }
+      if(!originalPayload || typeof originalPayload !== 'object') originalPayload = {};
+      if(!Object.keys(originalPayload).length) originalPayload = deepClone(currentPayload);
+      window.__DOC_ORIGINAL__ = deepClone(originalPayload);
+      hydrateAnexosFromPayload(originalPayload);
+
+      const tipo = await imparAskDocToGenerate('afterSave');
+      if(!tipo) return false;
+      const nomeDoc = tipo === 'contrato' ? 'Contrato' : 'Ordem de Serviço';
+      const allFiles = tipo === 'contrato' ? (window.anexosContrato || []) : (window.anexosOS || []);
+      const newFilesOnly = allFiles.filter(item => item instanceof File || item?.origem !== 'servidor');
+      let consultaExistente = {exists:false, webUrl:'', url:''};
+      try{ consultaExistente = await consultarDocumentoWord365(codigo, tipo); }catch(err){ console.warn(err); }
+
+      const changes = comparePayloadsStrict(originalPayload, currentPayload);
+      const selection = await askSelectiveUpdateCompat({changes, selectedFiles:newFilesOnly, hasExistingDoc: !!consultaExistente?.exists});
+      if(!selection) return false;
+
+      const selectedFieldIndexes = selection.selectedFieldIndexes || [];
+      const selectedFileIndexes = selection.selectedFileIndexes || [];
+      const selectedFiles = newFilesOnly.filter((_, idx)=>selectedFileIndexes.includes(idx));
+      const shouldUpdateWord = selectedFieldIndexes.length > 0 || selectedFiles.length > 0 || !consultaExistente?.exists;
+
+      if(!shouldUpdateWord && (consultaExistente.webUrl || consultaExistente.url)){
+        const url = consultaExistente.webUrl || consultaExistente.url;
+        window.open(url, '_blank', 'noopener');
+        Swal.fire({icon:'info', title:'Sem alterações aplicadas', html:`Nenhuma atualização foi marcada. O ${nomeDoc.toLowerCase()} atual foi aberto.`});
+        window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
+        return true;
+      }
+
+      showImparLoading('Atualizando documento…', `Comparando dados, enviando anexos e preparando ${nomeDoc}.`);
+      try{
+        let uploadedNow = [];
+        if(selectedFiles.length){
+          const uploadResult = await uploadAnexosWord365({codigo, tipo, arquivos:selectedFiles});
+          uploadedNow = Array.isArray(uploadResult?.enviados) ? uploadResult.enviados : [];
+        }
+
+        const mergedPayload = deepClone(originalPayload);
+        Object.keys(currentPayload).forEach((key)=>{ if(!(key in mergedPayload)) mergedPayload[key] = currentPayload[key]; });
+        selectedFieldIndexes.forEach((idx)=>{ const item = changes[idx]; if(item?.key) mergedPayload[item.key] = currentPayload[item.key]; });
+
+        if(tipo === 'contrato'){
+          mergedPayload.anexosContrato = buildMergedAttachments(tipo, uploadedNow, originalPayload);
+          mergedPayload.anexosOS = Array.isArray(originalPayload.anexosOS) ? deepClone(originalPayload.anexosOS) : [];
+        } else {
+          mergedPayload.anexosOS = buildMergedAttachments(tipo, uploadedNow, originalPayload);
+          mergedPayload.anexosContrato = Array.isArray(originalPayload.anexosContrato) ? deepClone(originalPayload.anexosContrato) : [];
+        }
+        mergedPayload.codigo = codigo;
+
+        await postJson(API_SAVE_JSON, mergedPayload);
+        window.__DOC_ORIGINAL__ = deepClone(mergedPayload);
+        window.__DOC_ORIGINAL_RAW__ = deepClone(mergedPayload);
+        hydrateAnexosFromPayload(mergedPayload);
+        return await openOrGenerateWordFromPayload(codigo, tipo, nomeDoc, true);
+      } finally {
+        hideImparLoading();
+      }
+    } catch(err){
+      hideImparLoading();
+      Swal.fire({icon:'error', title:'Erro ao atualizar documento', html: err?.message || String(err)});
+      console.error('Hotfix final erro:', err);
+      return false;
+    }
+  }
+
+  window.onFinalizarSalvarJson = onFinalizarSalvarJsonHotfix;
+  window.finalizeFlow = onFinalizarSalvarJsonHotfix;
+  window.gerarDocumento = async function(tipo){
+    // mantém compatibilidade para botões antigos
+    return await onFinalizarSalvarJsonHotfix();
+  };
+
+  function rebindFinalButtons(){
+    document.querySelectorAll('#btnFinalizar, #btnFinal, button, a').forEach((el)=>{
+      const txt = (el.textContent || '').toUpperCase();
+      if(!(el.id === 'btnFinalizar' || el.id === 'btnFinal' || txt.includes('FINALIZAR'))) return;
+      if(el.dataset.hotfixFinalBound === '1') return;
+      const clone = el.cloneNode(true);
+      el.parentNode.replaceChild(clone, el);
+      clone.dataset.hotfixFinalBound = '1';
+      clone.addEventListener('click', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); onFinalizarSalvarJsonHotfix(); });
+    });
+  }
+
+  async function syncFromServerByCodigo(codigo){
+    if(!codigo) return;
+    try{
+      const payload = await fetchProjectPayloadByCodigo(codigo);
+      window.__DOC_ORIGINAL__ = deepClone(payload || {});
+      window.__DOC_ORIGINAL_RAW__ = deepClone(payload || {});
+      hydrateAnexosFromPayload(payload || {});
+    } catch(err){ console.warn('Hotfix: falha ao sincronizar payload do servidor', err); }
+  }
+
+  document.addEventListener('click', (ev)=>{
+    const btn = ev.target.closest('.imparPickItem');
+    if(!btn) return;
+    const codigo = btn.getAttribute('data-codigo') || '';
+    if(!codigo) return;
+    setTimeout(()=>syncFromServerByCodigo(codigo), 900);
+  }, true);
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ()=>{ rebindFinalButtons(); const codigo = document.getElementById('codigoProjeto')?.value?.trim(); if(codigo) syncFromServerByCodigo(codigo);});
+  else { rebindFinalButtons(); const codigo = document.getElementById('codigoProjeto')?.value?.trim(); if(codigo) syncFromServerByCodigo(codigo); }
 })();
 </script>
 
