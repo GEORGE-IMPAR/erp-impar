@@ -1939,8 +1939,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
 <footer>
   <div class="rodape-inner">
-    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V2</div>
-    <div>v1.0 • validação limpa por etapa</div>
+    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V1</div>
+    <div>v3.0 • validação limpa por etapa</div>
   </div>
 </footer>
 
@@ -3610,26 +3610,7 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
     throw new Error(data?.message || "Falha ao enviar anexos.");
   }
 
-  const enviados = normalizeUploadedAttachments(data?.enviados, codigo, tipo);
-  return { ...data, enviados };
-}
-
-function normalizeUploadedAttachments(lista, codigo, tipo){
-  const arr = Array.isArray(lista) ? lista : [];
-  const basePublica = `https://api.erpimpar.com.br/word365/anexos_storage/${encodeURIComponent(codigo)}/${encodeURIComponent(tipo)}`;
-
-  return arr.map((item, idx) => {
-    if (typeof item === 'string') {
-      const nome = item.split('/').pop() || `anexo_${idx + 1}`;
-      return { nome, arquivo: nome, path: item, url: `${basePublica}/${encodeURIComponent(nome)}` };
-    }
-
-    const nome = item?.nome || item?.arquivo || item?.filename || item?.name || item?.file || (String(item?.path || '').split('/').pop()) || `anexo_${idx + 1}`;
-    const path = item?.path || item?.caminho || item?.file_path || '';
-    const url = item?.url || item?.link || item?.href || `${basePublica}/${encodeURIComponent(nome)}`;
-
-    return { ...item, nome, arquivo: nome, path, url, href: url, link: url };
-  });
+  return data;
 }
   
 </script>
@@ -3638,114 +3619,242 @@ function normalizeUploadedAttachments(lista, codigo, tipo){
 <script src="./gerar_os_docx.js"></script>
 <script src="./documento_final_actions.js"></script>
   
+
 <script>
 /* =========================================================
-   PATCH ÍMPAR — RESUMO DE ALTERAÇÕES PARA UPDATE DO WORD
-   - snapshot do JSON carregado
-   - checklist de alterações antes da geração
-   - update seletivo de campos e anexos
+   PATCH LIMPO ÍMPAR — sem obrigatoriedade + comparador + anexos
+   Baseado na versão ajustada, usando apenas funções reais do fluxo.
    ========================================================= */
 (function(){
-  const DOC_COMPARE_EXCLUDE = new Set([
-    'meta', 'criadoEmISO', 'usuario_nome', 'usuario_email', 'origem'
-  ]);
-
-  const DOC_COMPARE_LABELS = {
-    codigo: 'Código do projeto',
-    nomeObra: 'Nome da obra',
-    servico: 'Serviço',
-    enderecoObra: 'Endereço da obra',
-    projetista: 'Projetista',
-
-    nomeContratante: 'Nome do contratante',
-    contatoContratante: 'Contato do contratante',
-    cpfContatoContratante: 'CPF do contato do contratante',
-    telefoneContratante: 'Telefone do contratante',
-    emailContratante: 'E-mail do contratante',
-    cpfCnpjContratante: 'CPF/CNPJ do contratante',
-    cepContratante: 'CEP do contratante',
-    logradouroContratante: 'Logradouro do contratante',
-    numeroContratante: 'Número do contratante',
-    complementoContratante: 'Complemento do contratante',
-    bairroContratante: 'Bairro do contratante',
-    cidadeContratante: 'Cidade do contratante',
-    ufContratante: 'UF do contratante',
-
-    nomeContratada: 'Nome da contratada',
-    contatoContratada: 'Contato da contratada',
-    cpfContatoContratada: 'CPF do contato da contratada',
-    telefoneContratada: 'Telefone da contratada',
-    emailContratada: 'E-mail da contratada',
-    cpfCnpjContratada: 'CPF/CNPJ da contratada',
-    cepContratada: 'CEP da contratada',
-    logradouroContratada: 'Logradouro da contratada',
-    numeroContratada: 'Número da contratada',
-    complementoContratada: 'Complemento da contratada',
-    bairroContratada: 'Bairro da contratada',
-    cidadeContratada: 'Cidade da contratada',
-    ufContratada: 'UF da contratada',
-
-    clausulas: 'Cláusulas',
-    condicoesPagamento: 'Condições de pagamento',
-    valor: 'Valor',
-    valorExtenso: 'Valor por extenso',
-    prazoDias: 'Prazo em dias',
-    dataContrato: 'Data do contrato',
-    dataExtenso: 'Data por extenso'
-  };
+  "use strict";
 
   function deepClone(v){
     try { return JSON.parse(JSON.stringify(v ?? {})); }
     catch(e){ return {}; }
   }
 
-  function normalizeValue(v){
-    if (v === null || v === undefined) return '';
-    if (Array.isArray(v)) {
-      return v.map(normalizeValue).join(' | ');
+  const HIDE_REQ_CSS = `
+    .req-star{ display:none !important; }
+  `;
+  const st = document.createElement('style');
+  st.textContent = HIDE_REQ_CSS;
+  document.head.appendChild(st);
+
+  function makeEditableAddressFields(){
+    [
+      'logradouroContratante','bairroContratante','cidadeContratante','ufContratante',
+      'logradouroContratada','bairroContratada','cidadeContratada','ufContratada'
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.removeAttribute('readonly');
+      el.readOnly = false;
+    });
+  }
+
+  function disableRequiredValidation(){
+    window.validateStep2 = () => true;
+    window.validateStep3 = () => true;
+    window.validateStep4 = () => true;
+    window.validateStep5 = () => true;
+  }
+
+  function attachmentName(item, idx){
+    return item?.name || item?.nome || item?.arquivo || item?.filename || `anexo_${idx+1}`;
+  }
+
+  function normalizeAttachmentRecord(item, codigo, tipo, idx){
+    const basePublica = `https://api.erpimpar.com.br/word365/anexos_storage/${encodeURIComponent(codigo || '')}/${encodeURIComponent(tipo || '')}`;
+    if(item instanceof File){
+      return item;
     }
-    if (typeof v === 'object') {
+    if(typeof item === 'string'){
+      const nome = item.split('/').pop() || `anexo_${idx+1}`;
+      return {
+        nome, arquivo:nome, name:nome,
+        path:item,
+        url:`${basePublica}/${encodeURIComponent(nome)}`,
+        href:`${basePublica}/${encodeURIComponent(nome)}`,
+        origem:'servidor'
+      };
+    }
+    const nome = item?.nome || item?.arquivo || item?.filename || item?.name || (String(item?.path || '').split('/').pop()) || `anexo_${idx+1}`;
+    const url = item?.url || item?.href || item?.link || `${basePublica}/${encodeURIComponent(nome)}`;
+    const path = item?.path || item?.caminho || item?.file_path || '';
+    return {
+      ...item,
+      nome, arquivo:nome, name:nome, url, href:url, link:url, path,
+      origem: item?.origem || 'servidor'
+    };
+  }
+
+  function renderListaAnexosPatch(tipo){
+    const lista = tipo === 'contrato'
+      ? document.getElementById('listaAnexosContrato')
+      : document.getElementById('listaAnexosOS');
+    const arquivos = tipo === 'contrato' ? window.anexosContrato : window.anexosOS;
+    if(!lista) return;
+    lista.innerHTML = '';
+    if(!arquivos || !arquivos.length){
+      const vazio = document.createElement('div');
+      vazio.className = 'item-anexo-vazio';
+      vazio.textContent = 'Nenhum anexo selecionado.';
+      lista.appendChild(vazio);
+      return;
+    }
+    arquivos.forEach((file, index) => {
+      const row = document.createElement('div');
+      row.className = 'anexo-item';
+      const nome = document.createElement('span');
+      nome.textContent = attachmentName(file, index);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'anexo-remove';
+      btn.textContent = '×';
+      btn.addEventListener('click', () => removerAnexoPatch(tipo, index));
+      row.appendChild(nome);
+      row.appendChild(btn);
+      lista.appendChild(row);
+    });
+  }
+
+  function removerAnexoPatch(tipo, index){
+    if(tipo === 'contrato'){
+      window.anexosContrato.splice(index, 1);
+      renderListaAnexosPatch('contrato');
+      return;
+    }
+    window.anexosOS.splice(index, 1);
+    renderListaAnexosPatch('os');
+  }
+
+  function bindAnexosVisualPatch(){
+    const inputContrato = document.getElementById('anexoContrato');
+    const inputOS = document.getElementById('anexoOS');
+
+    if(inputContrato && !inputContrato.dataset.patchBound){
+      inputContrato.dataset.patchBound = '1';
+      inputContrato.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files || []);
+        window.anexosContrato = [...(window.anexosContrato || []), ...files];
+        renderListaAnexosPatch('contrato');
+        e.target.value = '';
+      });
+    }
+
+    if(inputOS && !inputOS.dataset.patchBound){
+      inputOS.dataset.patchBound = '1';
+      inputOS.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files || []);
+        window.anexosOS = [...(window.anexosOS || []), ...files];
+        renderListaAnexosPatch('os');
+        e.target.value = '';
+      });
+    }
+
+    renderListaAnexosPatch('contrato');
+    renderListaAnexosPatch('os');
+  }
+
+  window.anexosContrato = Array.isArray(window.anexosContrato) ? window.anexosContrato : [];
+  window.anexosOS = Array.isArray(window.anexosOS) ? window.anexosOS : [];
+  window.renderListaAnexos = renderListaAnexosPatch;
+  window.removerAnexo = removerAnexoPatch;
+
+  const LABELS = {
+    codigo:'Código do projeto',
+    nomeObra:'Nome da obra',
+    servico:'Serviço',
+    enderecoObra:'Endereço da obra',
+    projetista:'Projetista',
+    nomeContratante:'Nome do contratante',
+    contatoContratante:'Contato do contratante',
+    cpfContatoContratante:'CPF do contato do contratante',
+    telefoneContratante:'Telefone do contratante',
+    cepContratante:'CEP do contratante',
+    cpfCnpjContratante:'CPF/CNPJ do contratante',
+    logradouroContratante:'Logradouro do contratante',
+    numeroContratante:'Número do contratante',
+    bairroContratante:'Bairro do contratante',
+    cidadeContratante:'Cidade do contratante',
+    ufContratante:'UF do contratante',
+    complementoContratante:'Complemento do contratante',
+    emailContratante:'E-mail do contratante',
+    nomeContratada:'Nome da contratada',
+    contatoContratada:'Contato da contratada',
+    cpfContatoContratada:'CPF do contato da contratada',
+    telefoneContratada:'Telefone da contratada',
+    cepContratada:'CEP da contratada',
+    cpfCnpjContratada:'CPF/CNPJ da contratada',
+    logradouroContratada:'Logradouro da contratada',
+    numeroContratada:'Número da contratada',
+    bairroContratada:'Bairro da contratada',
+    cidadeContratada:'Cidade da contratada',
+    ufContratada:'UF da contratada',
+    complementoContratada:'Complemento da contratada',
+    emailContratada:'E-mail da contratada',
+    clausulas:'Cláusulas',
+    condicoesPagamento:'Condições de pagamento',
+    valor:'Valor',
+    valorExtenso:'Valor por extenso',
+    prazoDias:'Prazo',
+    dataContrato:'Data do contrato',
+    dataExtenso:'Data por extenso'
+  };
+
+  function normalizeValue(v){
+    if(v === null || v === undefined) return '';
+    if(Array.isArray(v)) return v.map(normalizeValue).join(' | ');
+    if(typeof v === 'object'){
       try { return JSON.stringify(v); } catch(e){ return String(v); }
     }
     return String(v).trim();
   }
 
-  function comparePayloads(original, current){
-    const base = original && typeof original === 'object' ? original : {};
-    const now = current && typeof current === 'object' ? current : {};
-    const keys = Array.from(new Set([...Object.keys(base), ...Object.keys(now)]));
-    const changes = [];
-
-    keys.forEach((key) => {
-      if (DOC_COMPARE_EXCLUDE.has(key)) return;
-      if (key === 'anexosContrato' || key === 'anexosOS') return;
-      const oldVal = normalizeValue(base[key]);
-      const newVal = normalizeValue(now[key]);
-      if (oldVal === newVal) return;
-      changes.push({
-        type: 'field',
-        key,
-        label: DOC_COMPARE_LABELS[key] || key,
-        oldValue: oldVal,
-        newValue: newVal,
-        apply: true
-      });
-    });
-
-    return changes;
+  function sanitizePayloadForCompare(payload){
+    const p = deepClone(payload || {});
+    delete p.meta;
+    delete p.anexosContrato;
+    delete p.anexosOS;
+    return p;
   }
 
-  function buildUpdatePreviewHtml(changes, files, tipo, containerMaxHeight){
-    const bodyMaxHeight = Math.max(220, Number(containerMaxHeight || 380));
-    const fieldRows = changes.map((item, idx) => {
-      const antigo = item.oldValue || '—';
-      const novo = item.newValue || '—';
+  function comparePayloadsStrict(original, current){
+    const base = sanitizePayloadForCompare(original);
+    const now = sanitizePayloadForCompare(current);
+    const keys = Array.from(new Set([...Object.keys(base), ...Object.keys(now)]));
+    return keys.reduce((acc, key) => {
+      const oldVal = normalizeValue(base[key]);
+      const newVal = normalizeValue(now[key]);
+      if(oldVal !== newVal){
+        acc.push({
+          type:'field',
+          key,
+          label: LABELS[key] || key,
+          oldValue: oldVal,
+          newValue: newVal
+        });
+      }
+      return acc;
+    }, []);
+  }
+
+  function escapeHtml(str){
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  }
+
+  function buildUpdatePreviewHtml(changes, files, bodyMaxHeight){
+    const fieldRows = (changes || []).map((item, idx) => {
+      const antigo = item.oldValue === '' ? '— vazio —' : item.oldValue;
+      const novo = item.newValue === '' ? '— vazio —' : item.newValue;
       return `
         <label style="display:block; margin:0 0 12px 0; padding:12px; border-radius:14px; border:1px solid rgba(148,163,184,.18); background:rgba(2,6,23,.36); cursor:pointer;">
           <div style="display:flex; align-items:flex-start; gap:10px;">
             <input type="checkbox" class="doc-update-check" data-kind="field" data-index="${idx}" checked style="margin-top:3px; width:18px; height:18px; accent-color:#22c55e;" />
             <div style="flex:1; min-width:0;">
-              <div style="font-weight:900; font-size:13px; color:#e5e7eb;">${item.label}</div>
+              <div style="font-weight:900; font-size:13px; color:#e5e7eb;">${escapeHtml(item.label)}</div>
               <div style="margin-top:8px; display:grid; gap:8px;">
                 <div style="padding:10px; border-radius:10px; background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.18);">
                   <div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#fca5a5; font-weight:900;">Atual</div>
@@ -3766,49 +3875,34 @@ function normalizeUploadedAttachments(lista, codigo, tipo){
         <div style="display:flex; align-items:flex-start; gap:10px;">
           <input type="checkbox" class="doc-update-check" data-kind="file" data-index="${idx}" checked style="margin-top:3px; width:18px; height:18px; accent-color:#22c55e;" />
           <div style="flex:1; min-width:0;">
-            <div style="font-weight:900; font-size:13px; color:#e5e7eb;">Anexar arquivo ao ${tipo === 'contrato' ? 'contrato' : 'documento'}</div>
-            <div style="margin-top:8px; padding:10px; border-radius:10px; background:rgba(59,130,246,.08); border:1px solid rgba(59,130,246,.18); color:rgba(255,255,255,.9); font-size:12px; word-break:break-word;">
-              ${escapeHtml(file.name || `anexo_${idx + 1}`)}
-            </div>
+            <div style="font-weight:900; font-size:13px; color:#e5e7eb;">Anexar arquivo</div>
+            <div style="margin-top:6px; font-size:12px; color:rgba(255,255,255,.86); white-space:pre-wrap; word-break:break-word;">${escapeHtml(attachmentName(file, idx))}</div>
           </div>
         </div>
-      </label>`).join('');
+      </label>
+    `).join('');
 
-    if (!fieldRows && !fileRows) {
-      return `<div style="padding:12px; border-radius:14px; background:rgba(2,6,23,.32); border:1px solid rgba(148,163,184,.18); color:rgba(255,255,255,.84); font-size:13px;">Nenhuma alteração detectada. Se quiser, você pode apenas abrir o documento atual.</div>`;
-    }
+    const vazio = (!fieldRows && !fileRows) ? `<div style="padding:18px; border-radius:14px; background:rgba(2,6,23,.36); border:1px solid rgba(148,163,184,.18); color:rgba(255,255,255,.82);">Nenhuma alteração detectada. Você pode abrir o documento atual sem atualizar.</div>` : '';
 
-    return `
-      <div style="text-align:left; max-height:${bodyMaxHeight}px; overflow:auto; padding-right:4px;">
-        <div style="margin-bottom:10px; font-size:13px; color:rgba(255,255,255,.82);">Marque apenas o que deve ser aplicado no Word.</div>
-        ${fieldRows ? `<div style="margin-bottom:16px;"><div style="font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#93c5fd; font-weight:900; margin-bottom:10px;">Campos alterados</div>${fieldRows}</div>` : ''}
-        ${fileRows ? `<div><div style="font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#86efac; font-weight:900; margin-bottom:10px;">Anexos selecionados</div>${fileRows}</div>` : ''}
-      </div>`;
+    return `<div style="max-height:${bodyMaxHeight}px; overflow:auto; padding-right:4px;">
+      ${fieldRows ? `<div style="margin-bottom:14px;"><div style="font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#93c5fd; font-weight:900; margin-bottom:10px;">Campos alterados</div>${fieldRows}</div>` : ''}
+      ${fileRows ? `<div><div style="font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#93c5fd; font-weight:900; margin-bottom:10px;">Novos anexos</div>${fileRows}</div>` : ''}
+      ${vazio}
+    </div>`;
   }
 
-  function escapeHtml(str){
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  async function askSelectiveUpdate({ tipo, changes, selectedFiles, hasExistingDoc }) {
+  async function askSelectiveUpdate({tipo, changes, selectedFiles, hasExistingDoc}){
     const activeCard = document.querySelector('.step-pane.active .card');
-    const popupMaxHeight = Math.max(360, Math.min(560, (activeCard?.clientHeight || 0) + 38 || Math.round(window.innerHeight * 0.62)));
-    const bodyMaxHeight = Math.max(220, popupMaxHeight - 205);
-    const html = buildUpdatePreviewHtml(changes, selectedFiles, tipo, bodyMaxHeight);
-    const confirmText = hasExistingDoc ? 'Atualizar Word' : 'Gerar Word';
-
+    const popupMaxHeight = Math.max(360, Math.min(560, (activeCard?.clientHeight || 420) + 24));
+    const bodyMaxHeight = popupMaxHeight - 205;
+    const html = buildUpdatePreviewHtml(changes, selectedFiles, bodyMaxHeight);
     const result = await Swal.fire({
       title: hasExistingDoc ? 'Resumo de alterações' : 'Gerar documento',
       html,
       icon: 'question',
       width: Math.min(860, (activeCard?.clientWidth || 860)),
       showCancelButton: true,
-      confirmButtonText: confirmText,
+      confirmButtonText: hasExistingDoc ? 'Atualizar Word' : 'Gerar Word',
       cancelButtonText: 'Cancelar',
       buttonsStyling: false,
       customClass: {
@@ -3819,20 +3913,18 @@ function normalizeUploadedAttachments(lista, codigo, tipo){
       },
       didOpen: () => {
         const popup = Swal.getPopup();
-        if (!popup) return;
+        if(!popup) return;
         popup.style.maxHeight = `${popupMaxHeight}px`;
         popup.style.height = `${popupMaxHeight}px`;
         popup.style.display = 'flex';
         popup.style.flexDirection = 'column';
         const htmlContainer = popup.querySelector('.swal2-html-container');
-        if (htmlContainer) {
+        if(htmlContainer){
           htmlContainer.style.flex = '1 1 auto';
           htmlContainer.style.overflow = 'hidden';
           htmlContainer.style.margin = '0';
         }
         const checks = Array.from(popup.querySelectorAll('.doc-update-check'));
-        if (!checks.length) return;
-
         const footer = document.createElement('div');
         footer.style.cssText = 'display:flex; gap:10px; margin:0 0 12px 0;';
         footer.innerHTML = `
@@ -3844,448 +3936,205 @@ function normalizeUploadedAttachments(lista, codigo, tipo){
       },
       preConfirm: () => {
         const popup = Swal.getPopup();
-        const selectedFieldIndexes = Array.from(popup.querySelectorAll('.doc-update-check[data-kind="field"]:checked')).map(el => Number(el.getAttribute('data-index')));
-        const selectedFileIndexes = Array.from(popup.querySelectorAll('.doc-update-check[data-kind="file"]:checked')).map(el => Number(el.getAttribute('data-index')));
+        const selectedFieldIndexes = Array.from(popup.querySelectorAll('.doc-update-check[data-kind="field"]:checked')).map(el => Number(el.dataset.index));
+        const selectedFileIndexes = Array.from(popup.querySelectorAll('.doc-update-check[data-kind="file"]:checked')).map(el => Number(el.dataset.index));
         return { selectedFieldIndexes, selectedFileIndexes };
       }
     });
-
-    if (!result.isConfirmed) return null;
+    if(!result.isConfirmed) return null;
     return result.value || { selectedFieldIndexes: [], selectedFileIndexes: [] };
   }
-
   window.askSelectiveUpdate = askSelectiveUpdate;
 
-  function mergeSelectedChanges({ original, current, selectedFieldIndexes, changes, tipo, keepOnlySelectedFiles }) {
-    const merged = deepClone(original && typeof original === 'object' ? original : {});
-    const currentPayload = deepClone(current && typeof current === 'object' ? current : {});
-
-    Object.keys(currentPayload).forEach((key) => {
-      if (!(key in merged)) merged[key] = currentPayload[key];
-    });
-
-    (selectedFieldIndexes || []).forEach((idx) => {
-      const item = changes[idx];
-      if (!item || !item.key) return;
-      merged[item.key] = currentPayload[item.key];
-    });
-
-    if (keepOnlySelectedFiles) {
-      if (tipo === 'contrato') merged.anexosOS = currentPayload.anexosOS || merged.anexosOS || [];
-      if (tipo === 'os') merged.anexosContrato = currentPayload.anexosContrato || merged.anexosContrato || [];
-    }
-
-    merged.meta = currentPayload.meta || merged.meta || {};
-    return merged;
+  function hydrateAnexosFromPayload(payload){
+    const codigo = payload?.codigo || document.getElementById('codigoProjeto')?.value || '';
+    const contrato = Array.isArray(payload?.anexosContrato) ? payload.anexosContrato.map((item, idx) => normalizeAttachmentRecord(item, codigo, 'contrato', idx)) : [];
+    const os = Array.isArray(payload?.anexosOS) ? payload.anexosOS.map((item, idx) => normalizeAttachmentRecord(item, codigo, 'os', idx)) : [];
+    window.anexosContrato = contrato;
+    window.anexosOS = os;
+    renderListaAnexosPatch('contrato');
+    renderListaAnexosPatch('os');
   }
 
-  function buildMergedAttachments(tipo, uploadedNow){
-    const key = tipo === 'contrato' ? 'anexosContrato' : 'anexosOS';
-    const original = Array.isArray(window.__DOC_ORIGINAL__?.[key]) ? window.__DOC_ORIGINAL__[key] : [];
-    const merged = [...original, ...(uploadedNow || [])];
-    const seen = new Set();
-    return merged.filter((item, idx) => {
-      const nome = item?.nome || item?.arquivo || item?.filename || item?.name || `anexo_${idx}`;
-      const url = item?.url || item?.link || item?.href || '';
-      const token = `${nome}__${url}`;
-      if (seen.has(token)) return false;
-      seen.add(token);
-      return true;
-    });
+  async function fetchProjectPayload(codigo){
+    const r = await fetch(`https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`, { cache:'no-store' });
+    const data = await r.json();
+    return (data && typeof data === 'object' && ('data' in data) && data.data) ? data.data : data;
+  }
+
+  const originalLoadProjectJson = window.loadProjectJson;
+  if(typeof originalLoadProjectJson === 'function'){
+    window.loadProjectJson = async function(codigo){
+      const result = await originalLoadProjectJson(codigo);
+      try{
+        const payload = await fetchProjectPayload(codigo);
+        window.__DOC_ORIGINAL_RAW__ = deepClone(payload || {});
+        window.__DOC_ORIGINAL__ = deepClone(buildPayload());
+        const current = deepClone(window.__DOC_ORIGINAL__ || {});
+        current.anexosContrato = Array.isArray(payload?.anexosContrato) ? deepClone(payload.anexosContrato) : [];
+        current.anexosOS = Array.isArray(payload?.anexosOS) ? deepClone(payload.anexosOS) : [];
+        window.__DOC_ORIGINAL__ = current;
+        hydrateAnexosFromPayload(payload || {});
+      }catch(err){
+        console.warn('Patch limpo: não foi possível hidratar payload original.', err);
+      }
+      return result;
+    };
+  }
+
+  const originalApplyJsonToFormLoose = window.applyJsonToFormLoose;
+  if(typeof originalApplyJsonToFormLoose === 'function'){
+    window.applyJsonToFormLoose = function(data){
+      const result = originalApplyJsonToFormLoose(data);
+      try{
+        window.__DOC_ORIGINAL_RAW__ = deepClone(data || {});
+        const current = deepClone(buildPayload());
+        current.anexosContrato = Array.isArray(data?.anexosContrato) ? deepClone(data.anexosContrato) : [];
+        current.anexosOS = Array.isArray(data?.anexosOS) ? deepClone(data.anexosOS) : [];
+        window.__DOC_ORIGINAL__ = current;
+        hydrateAnexosFromPayload(data || {});
+      }catch(err){}
+      return result;
+    };
   }
 
   async function openOrGenerateWordFromPayload(codigo, tipo, nomeDoc, forceGenerate){
     let consulta = await consultarDocumentoWord365(codigo, tipo);
-
-    if (!forceGenerate && consulta.exists && (consulta.webUrl || consulta.url)) {
+    if(!forceGenerate && consulta.exists && (consulta.webUrl || consulta.url)){
       const urlExistente = consulta.webUrl || consulta.url;
       window.open(urlExistente, '_blank', 'noopener');
       Swal.fire({ icon:'success', title:'Documento pronto', html:`${nomeDoc} aberto no Word 365 com sucesso.` });
-      DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+      window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
       return true;
     }
 
     const gerado = await gerarBlobDocumentoPorTipo(codigo, tipo);
     const uploadDoc = await subirDocParaWord365(gerado.blob, gerado.filename, codigo, tipo);
     const urlUpload = uploadDoc.webUrl || uploadDoc.url || '';
-
-    if (!urlUpload) {
+    if(!urlUpload){
       consulta = await consultarDocumentoWord365(codigo, tipo);
     }
-
     const finalUrl = urlUpload || consulta.webUrl || consulta.url || '';
-    if (!finalUrl) {
+    if(!finalUrl){
       throw new Error('O documento foi gerado, mas a URL do Word não foi retornada.');
     }
-
     window.open(finalUrl, '_blank', 'noopener');
     Swal.fire({ icon:'success', title:'Documento pronto', html:`${nomeDoc} aberto no Word 365 com sucesso.` });
-    DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+    window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
     return true;
   }
+  window.openOrGenerateWordFromPayload = openOrGenerateWordFromPayload;
 
-  const originalLoadProjectJson = window.loadProjectJson;
-  if (typeof originalLoadProjectJson === 'function') {
-    window.loadProjectJson = async function(codigo){
-      const result = await originalLoadProjectJson(codigo);
-      try {
-        const r = await fetch(`https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json`, { cache: 'no-store' });
-        const data = await r.json();
-        const payload = (data && typeof data === 'object' && ('data' in data) && data.data) ? data.data : data;
-        window.__DOC_ORIGINAL_RAW__ = deepClone(payload || {});
-        setTimeout(() => {
-          try { window.__DOC_ORIGINAL__ = deepClone(buildPayload()); }
-          catch(e){ window.__DOC_ORIGINAL__ = deepClone(payload || {}); }
-        }, 0);
-      } catch(err) {
-        console.warn('Não foi possível registrar snapshot original do projeto:', err);
-        window.__DOC_ORIGINAL__ = deepClone(buildPayload());
-      }
-      return result;
-    };
-  }
-
-  const originalApplyJsonToFormLoose = window.applyJsonToFormLoose;
-  if (typeof originalApplyJsonToFormLoose === 'function') {
-    window.applyJsonToFormLoose = function(data){
-      const result = originalApplyJsonToFormLoose(data);
-      window.__DOC_ORIGINAL_RAW__ = deepClone(data || {});
-      setTimeout(() => {
-        try { window.__DOC_ORIGINAL__ = deepClone(buildPayload()); }
-        catch(e){ window.__DOC_ORIGINAL__ = deepClone(data || {}); }
-      }, 0);
-      return result;
-    };
-  }
-
-  window.gerarDocumento = async function gerarDocumentoPatched(tipo){
-    const { codigo } = getProjetoMetaForFilename();
-
-    if(!codigo){
-      Swal.fire({ icon:'warning', title:'Informe o código do projeto', html:'Preencha o campo <b>CÓDIGO</b> para gerar o documento.' });
-      return false;
-    }
-
-    const nomeDoc = tipo === 'contrato' ? 'Contrato' : 'Ordem de Serviço';
-    const arquivos = tipo === 'contrato' ? anexosContrato : anexosOS;
-    const currentPayload = buildPayload();
-    if (!window.__DOC_ORIGINAL__ || !Object.keys(window.__DOC_ORIGINAL__).length) {
-      window.__DOC_ORIGINAL__ = deepClone(currentPayload);
-    }
-    const originalPayload = deepClone(window.__DOC_ORIGINAL__ || {});
-
-    let consultaExistente = { exists:false, webUrl:'', url:'' };
-    try {
-      consultaExistente = await consultarDocumentoWord365(codigo, tipo);
-    } catch(err) {
-      console.warn('Não foi possível consultar previamente o documento no Word 365:', err);
-    }
-
-    const changes = comparePayloads(originalPayload, currentPayload);
-    const selection = await askSelectiveUpdate({
-      tipo,
-      changes,
-      selectedFiles: arquivos,
-      hasExistingDoc: !!(consultaExistente?.exists)
-    });
-
-    if (!selection) return false;
-
-    const selectedFieldIndexes = selection.selectedFieldIndexes || [];
-    const selectedFileIndexes = selection.selectedFileIndexes || [];
-    const selectedFiles = (arquivos || []).filter((_, idx) => selectedFileIndexes.includes(idx));
-    const shouldUpdateWord = selectedFieldIndexes.length > 0 || selectedFiles.length > 0 || !consultaExistente?.exists;
-
-    if (!shouldUpdateWord && (consultaExistente.webUrl || consultaExistente.url)) {
-      const urlExistente = consultaExistente.webUrl || consultaExistente.url;
-      window.open(urlExistente, '_blank', 'noopener');
-      Swal.fire({ icon:'info', title:'Sem alterações aplicadas', html:`Nenhuma atualização foi marcada. O ${nomeDoc.toLowerCase()} atual foi aberto.` });
-      DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
-      return true;
-    }
-
-    showImparLoading('Atualizando documento…', `Comparando dados, enviando anexos e preparando ${nomeDoc}.`);
-
-    try {
-      let uploadedNow = [];
-      if (selectedFiles.length) {
-        const uploadResult = await uploadAnexosWord365({ codigo, tipo, arquivos: selectedFiles });
-        uploadedNow = Array.isArray(uploadResult?.enviados) ? uploadResult.enviados : [];
-      }
-
-      if (tipo === 'contrato') {
-        window.__ANEXOS_CONTRATO_UPLOADADOS__ = uploadedNow;
-      } else {
-        window.__ANEXOS_OS_UPLOADADOS__ = uploadedNow;
-      }
-
-      const mergedPayload = mergeSelectedChanges({
-        original: originalPayload,
-        current: currentPayload,
-        selectedFieldIndexes,
-        changes,
-        tipo,
-        keepOnlySelectedFiles: true
-      });
-
-      if (tipo === 'contrato') {
-        mergedPayload.anexosContrato = buildMergedAttachments(tipo, uploadedNow);
-      } else {
-        mergedPayload.anexosOS = buildMergedAttachments(tipo, uploadedNow);
-      }
-
-      mergedPayload.codigo = codigo;
-      await postJson(API_SAVE_JSON, mergedPayload);
-      window.__DOC_ORIGINAL__ = deepClone(mergedPayload);
-
-      if (tipo === 'contrato') {
-        anexosContrato = anexosContrato.filter((_, idx) => !selectedFileIndexes.includes(idx));
-        if (typeof renderListaAnexos === 'function') renderListaAnexos('contrato');
-      } else {
-        anexosOS = anexosOS.filter((_, idx) => !selectedFileIndexes.includes(idx));
-        if (typeof renderListaAnexos === 'function') renderListaAnexos('os');
-      }
-
-      return await openOrGenerateWordFromPayload(codigo, tipo, nomeDoc, true);
-    } catch(err) {
-      Swal.fire({ icon:'error', title:'Erro ao atualizar documento', html: err?.message || String(err) });
-      console.error('gerarDocumentoPatched erro:', err);
-      return false;
-    } finally {
-      hideImparLoading();
-    }
-  };
-})();
-</script>
-
-
-<script>
-/* ===== PATCH FINAL — comparador robusto + hidratação de anexos ===== */
-(function(){
-  function deepClone(v){ try { return JSON.parse(JSON.stringify(v ?? {})); } catch(e){ return {}; } }
-  function normalizeValue(v){
-    if (v === null || v === undefined) return '';
-    if (Array.isArray(v)) return v.map(normalizeValue).join(' | ');
-    if (typeof v === 'object') { try { return JSON.stringify(v); } catch(e){ return String(v); } }
-    return String(v).trim();
-  }
-  function normalizeAttachmentRecord(item, codigo, tipo, idx){
-    const basePublica = `https://api.erpimpar.com.br/word365/anexos_storage/${encodeURIComponent(codigo || '')}/${encodeURIComponent(tipo || '')}`;
-    if (typeof item === 'string') {
-      const nome = item.split('/').pop() || `anexo_${idx+1}`;
-      const url = `${basePublica}/${encodeURIComponent(nome)}`;
-      return { nome, name:nome, arquivo:nome, path:item, url, href:url, link:url, origem:'servidor' };
-    }
-    const nome = item?.nome || item?.arquivo || item?.filename || item?.name || item?.file || (String(item?.path || '').split('/').pop()) || `anexo_${idx+1}`;
-    const path = item?.path || item?.caminho || item?.file_path || '';
-    const url = item?.url || item?.link || item?.href || (nome ? `${basePublica}/${encodeURIComponent(nome)}` : '');
-    return { ...item, nome, name:nome, arquivo:nome, path, url, href:url, link:url, origem:item?.origem || 'servidor' };
-  }
-  function hydrateAnexosFromPayload(payload){
-    const codigo = payload?.codigo || document.getElementById('codigoProjeto')?.value || '';
-    const contrato = Array.isArray(payload?.anexosContrato) ? payload.anexosContrato.map((item, idx) => normalizeAttachmentRecord(item, codigo, 'contrato', idx)) : [];
-    const os = Array.isArray(payload?.anexosOS) ? payload.anexosOS.map((item, idx) => normalizeAttachmentRecord(item, codigo, 'os', idx)) : [];
-    if (Array.isArray(window.anexosContrato)) window.anexosContrato = contrato;
-    try { anexosContrato = contrato; } catch(e) {}
-    if (Array.isArray(window.anexosOS)) window.anexosOS = os;
-    try { anexosOS = os; } catch(e) {}
-    if (typeof window.renderListaAnexos === 'function') {
-      window.renderListaAnexos('contrato');
-      window.renderListaAnexos('os');
-    }
-  }
-  function sanitizePayloadForCompare(payload){
-    const p = deepClone(payload || {});
-    delete p.meta;
-    return p;
-  }
-  function comparePayloadsStrict(original, current){
-    const base = sanitizePayloadForCompare(original);
-    const now = sanitizePayloadForCompare(current);
-    const exclude = new Set(['anexosContrato','anexosOS']);
-    const labels = window.DOC_COMPARE_LABELS || {};
-    const keys = Array.from(new Set([...Object.keys(base), ...Object.keys(now)]));
-    const changes = [];
-    keys.forEach((key) => {
-      if (exclude.has(key)) return;
-      const oldVal = normalizeValue(base[key]);
-      const newVal = normalizeValue(now[key]);
-      if (oldVal === newVal) return;
-      changes.push({
-        type:'field',
-        key,
-        label: labels[key] || key,
-        oldValue: oldVal,
-        newValue: newVal,
-        apply: true
-      });
-    });
-    return changes;
-  }
-  function buildMergedAttachmentsRobust(tipo, uploadedNow, currentPayload){
+  function buildMergedAttachments(tipo, uploadedNow, originalPayload){
     const key = tipo === 'contrato' ? 'anexosContrato' : 'anexosOS';
-    const codigo = currentPayload?.codigo || document.getElementById('codigoProjeto')?.value || '';
-    const fromOriginal = Array.isArray(window.__DOC_ORIGINAL_RAW__?.[key]) ? window.__DOC_ORIGINAL_RAW__[key] : [];
-    const fromCurrent = Array.isArray(currentPayload?.[key]) ? currentPayload[key] : [];
-    const merged = [
-      ...fromOriginal.map((item, idx) => normalizeAttachmentRecord(item, codigo, tipo, idx)),
-      ...fromCurrent.map((item, idx) => normalizeAttachmentRecord(item, codigo, tipo, idx)),
-      ...(uploadedNow || []).map((item, idx) => normalizeAttachmentRecord(item, codigo, tipo, idx))
-    ];
+    const codigo = originalPayload?.codigo || document.getElementById('codigoProjeto')?.value || '';
+    const existing = Array.isArray(originalPayload?.[key]) ? originalPayload[key].map((item, idx) => normalizeAttachmentRecord(item, codigo, tipo, idx)) : [];
+    const merged = [...existing, ...(uploadedNow || []).map((item, idx) => normalizeAttachmentRecord(item, codigo, tipo, idx))];
     const seen = new Set();
     return merged.filter((item, idx) => {
-      const nome = item?.nome || item?.name || `anexo_${idx}`;
-      const url = item?.url || item?.path || '';
-      const token = `${nome}__${url}`;
-      if (seen.has(token)) return false;
+      const token = `${attachmentName(item, idx)}__${item?.url || item?.path || ''}`;
+      if(seen.has(token)) return false;
       seen.add(token);
       return true;
     });
   }
-  const originalRenderListaAnexos = window.renderListaAnexos;
-  if (typeof originalRenderListaAnexos === 'function') {
-    window.renderListaAnexos = function(tipo){
-      const lista = tipo === 'contrato'
-        ? document.getElementById('listaAnexosContrato')
-        : document.getElementById('listaAnexosOS');
-      const arquivos = tipo === 'contrato' ? (window.anexosContrato || anexosContrato || []) : (window.anexosOS || anexosOS || []);
-      if(!lista) return;
-      lista.innerHTML = '';
-      if(!arquivos.length){
-        const vazio = document.createElement('div');
-        vazio.className = 'item-anexo-vazio';
-        vazio.textContent = 'Nenhum anexo selecionado.';
-        lista.appendChild(vazio);
-        return;
-      }
-      arquivos.forEach((file, index) => {
-        const row = document.createElement('div');
-        row.className = 'anexo-item';
-        const nome = document.createElement('span');
-        nome.textContent = file?.name || file?.nome || file?.arquivo || `anexo_${index+1}`;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'anexo-remove';
-        btn.textContent = '×';
-        btn.addEventListener('click', () => window.removerAnexo(tipo, index));
-        row.appendChild(nome);
-        row.appendChild(btn);
-        lista.appendChild(row);
-      });
-    };
-    try { window.renderListaAnexos('contrato'); window.renderListaAnexos('os'); } catch(e) {}
-  }
-  const originalApplyJsonToFormLoose = window.applyJsonToFormLoose;
-  if (typeof originalApplyJsonToFormLoose === 'function') {
-    window.applyJsonToFormLoose = function(data){
-      const result = originalApplyJsonToFormLoose(data);
-      const payload = deepClone(data || {});
-      window.__DOC_ORIGINAL_RAW__ = payload;
-      window.__DOC_ORIGINAL__ = deepClone(payload);
-      hydrateAnexosFromPayload(payload);
-      return result;
-    };
-  }
-  const originalLoadProjectJson = window.loadProjectJson;
-  if (typeof originalLoadProjectJson === 'function') {
-    window.loadProjectJson = async function(codigo){
-      const result = await originalLoadProjectJson(codigo);
-      try {
-        const r = await fetch(`https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`, { cache:'no-store' });
-        const data = await r.json();
-        const payload = (data && typeof data === 'object' && ('data' in data) && data.data) ? data.data : data;
-        window.__DOC_ORIGINAL_RAW__ = deepClone(payload || {});
-        window.__DOC_ORIGINAL__ = deepClone(payload || {});
-        hydrateAnexosFromPayload(payload || {});
-      } catch(err) {
-        console.warn('Patch final: não foi possível hidratar o payload original.', err);
-      }
-      return result;
-    };
-  }
-  window.gerarDocumento = async function gerarDocumentoPatchFinal(tipo){
-    const meta = (typeof getProjetoMetaForFilename === 'function') ? getProjetoMetaForFilename() : { codigo: document.getElementById('codigoProjeto')?.value || '' };
-    const codigo = meta?.codigo || document.getElementById('codigoProjeto')?.value || '';
+
+  async function generateDocumentPatch(tipo){
+    const {codigo} = getProjetoMetaForFilename();
     if(!codigo){
       Swal.fire({ icon:'warning', title:'Informe o código do projeto', html:'Preencha o campo <b>CÓDIGO</b> para gerar o documento.' });
       return false;
     }
     const nomeDoc = tipo === 'contrato' ? 'Contrato' : 'Ordem de Serviço';
-    const arquivos = tipo === 'contrato' ? (window.anexosContrato || anexosContrato || []) : (window.anexosOS || anexosOS || []);
-    const currentPayload = (typeof buildPayload === 'function') ? buildPayload() : {};
+    const allFiles = tipo === 'contrato' ? (window.anexosContrato || []) : (window.anexosOS || []);
+    const currentPayload = buildPayload();
     currentPayload.codigo = codigo;
-    const originalPayload = deepClone(window.__DOC_ORIGINAL_RAW__ || window.__DOC_ORIGINAL__ || {});
+
+    let originalPayload = deepClone(window.__DOC_ORIGINAL__ || {});
+    if(!Object.keys(originalPayload).length){
+      originalPayload = deepClone(currentPayload);
+    }
+
     let consultaExistente = { exists:false, webUrl:'', url:'' };
-    try { consultaExistente = await consultarDocumentoWord365(codigo, tipo); } catch(err) { console.warn(err); }
+    try { consultaExistente = await consultarDocumentoWord365(codigo, tipo); } catch(err){ console.warn(err); }
+
+    const newFilesOnly = allFiles.filter(item => item instanceof File || item?.origem !== 'servidor');
     const changes = comparePayloadsStrict(originalPayload, currentPayload);
     const selection = await askSelectiveUpdate({
       tipo,
       changes,
-      selectedFiles: arquivos.filter(f => f instanceof File || f?.origem !== 'servidor'),
-      hasExistingDoc: !!(consultaExistente?.exists)
+      selectedFiles: newFilesOnly,
+      hasExistingDoc: !!consultaExistente?.exists
     });
-    if (!selection) return false;
+    if(!selection) return false;
+
     const selectedFieldIndexes = selection.selectedFieldIndexes || [];
     const selectedFileIndexes = selection.selectedFileIndexes || [];
-    const candidateFiles = arquivos.filter(f => f instanceof File || f?.origem !== 'servidor');
-    const selectedFiles = candidateFiles.filter((_, idx) => selectedFileIndexes.includes(idx));
+    const selectedFiles = newFilesOnly.filter((_, idx) => selectedFileIndexes.includes(idx));
     const shouldUpdateWord = selectedFieldIndexes.length > 0 || selectedFiles.length > 0 || !consultaExistente?.exists;
-    if (!shouldUpdateWord && (consultaExistente.webUrl || consultaExistente.url)) {
+
+    if(!shouldUpdateWord && (consultaExistente.webUrl || consultaExistente.url)){
       const urlExistente = consultaExistente.webUrl || consultaExistente.url;
       window.open(urlExistente, '_blank', 'noopener');
       Swal.fire({ icon:'info', title:'Sem alterações aplicadas', html:`Nenhuma atualização foi marcada. O ${nomeDoc.toLowerCase()} atual foi aberto.` });
-      if (window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal) window.DOC_FINAL_ACTIONS.abrirModalDocumentoFinal(tipo);
+      window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
       return true;
     }
+
     showImparLoading('Atualizando documento…', `Comparando dados, enviando anexos e preparando ${nomeDoc}.`);
-    try {
+    try{
       let uploadedNow = [];
-      if (selectedFiles.length) {
+      if(selectedFiles.length){
         const uploadResult = await uploadAnexosWord365({ codigo, tipo, arquivos: selectedFiles });
-        uploadedNow = Array.isArray(uploadResult?.enviados) ? uploadResult.enviados.map((item, idx) => normalizeAttachmentRecord(item, codigo, tipo, idx)) : [];
+        uploadedNow = Array.isArray(uploadResult?.enviados) ? uploadResult.enviados : [];
       }
-      const mergedPayload = deepClone(originalPayload || {});
+
+      const mergedPayload = deepClone(originalPayload);
       Object.keys(currentPayload).forEach((key) => {
-        if (!(key in mergedPayload)) mergedPayload[key] = currentPayload[key];
+        if(!(key in mergedPayload)) mergedPayload[key] = currentPayload[key];
       });
       selectedFieldIndexes.forEach((idx) => {
         const item = changes[idx];
-        if (item?.key) mergedPayload[item.key] = currentPayload[item.key];
+        if(item?.key) mergedPayload[item.key] = currentPayload[item.key];
       });
-      if (tipo === 'contrato') {
-        mergedPayload.anexosContrato = buildMergedAttachmentsRobust(tipo, uploadedNow, currentPayload);
-        mergedPayload.anexosOS = Array.isArray(originalPayload?.anexosOS) ? deepClone(originalPayload.anexosOS) : (Array.isArray(currentPayload?.anexosOS) ? deepClone(currentPayload.anexosOS) : []);
+
+      if(tipo === 'contrato'){
+        mergedPayload.anexosContrato = buildMergedAttachments(tipo, uploadedNow, originalPayload);
+        mergedPayload.anexosOS = Array.isArray(originalPayload.anexosOS) ? deepClone(originalPayload.anexosOS) : [];
       } else {
-        mergedPayload.anexosOS = buildMergedAttachmentsRobust(tipo, uploadedNow, currentPayload);
-        mergedPayload.anexosContrato = Array.isArray(originalPayload?.anexosContrato) ? deepClone(originalPayload.anexosContrato) : (Array.isArray(currentPayload?.anexosContrato) ? deepClone(currentPayload.anexosContrato) : []);
+        mergedPayload.anexosOS = buildMergedAttachments(tipo, uploadedNow, originalPayload);
+        mergedPayload.anexosContrato = Array.isArray(originalPayload.anexosContrato) ? deepClone(originalPayload.anexosContrato) : [];
       }
+
       mergedPayload.codigo = codigo;
       await postJson(API_SAVE_JSON, mergedPayload);
-      window.__DOC_ORIGINAL_RAW__ = deepClone(mergedPayload);
+
       window.__DOC_ORIGINAL__ = deepClone(mergedPayload);
+      window.__DOC_ORIGINAL_RAW__ = deepClone(mergedPayload);
       hydrateAnexosFromPayload(mergedPayload);
-      if (selectedFiles.length) {
-        if (tipo === 'contrato') {
-          const arr = (window.anexosContrato || anexosContrato || []).filter(item => !(item instanceof File) && item?.origem === 'servidor');
-          try { anexosContrato = arr; } catch(e) {}
-          window.anexosContrato = arr;
-          window.renderListaAnexos?.('contrato');
-        } else {
-          const arr = (window.anexosOS || anexosOS || []).filter(item => !(item instanceof File) && item?.origem === 'servidor');
-          try { anexosOS = arr; } catch(e) {}
-          window.anexosOS = arr;
-          window.renderListaAnexos?.('os');
-        }
-      }
+
       return await openOrGenerateWordFromPayload(codigo, tipo, nomeDoc, true);
-    } catch(err) {
+    } catch(err){
       Swal.fire({ icon:'error', title:'Erro ao atualizar documento', html: err?.message || String(err) });
-      console.error('gerarDocumentoPatchFinal erro:', err);
+      console.error('generateDocumentPatch erro:', err);
       return false;
     } finally {
       hideImparLoading();
     }
-  };
+  }
+
+  window.gerarDocumento = generateDocumentPatch;
+
+  function initPatch(){
+    makeEditableAddressFields();
+    disableRequiredValidation();
+    bindAnexosVisualPatch();
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initPatch);
+  } else {
+    initPatch();
+  }
 })();
 </script>
 
