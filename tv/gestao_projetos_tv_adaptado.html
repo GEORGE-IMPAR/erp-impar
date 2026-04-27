@@ -548,12 +548,15 @@ function getAnoMesAtual(){
 
 function getValorLancamentoCombustivel(item){
   const bruto = item?.valor ?? item?.value ?? item?.Valor ?? item?.valor_total ?? 0;
+
   if (typeof bruto === 'number') return Number.isFinite(bruto) ? bruto : 0;
+
   const normalizado = String(bruto || '0')
     .replace(/R\$/g, '')
     .replace(/\s/g, '')
     .replace(/\./g, '')
     .replace(',', '.');
+
   const n = Number(normalizado);
   return Number.isFinite(n) ? n : 0;
 }
@@ -564,75 +567,67 @@ function calcularScoreCombustivel(total){
   return 0;
 }
 
-async function carregarCombustivel(){
+/* 🔥 ESSA FUNÇÃO AGORA VIRA A FONTE OFICIAL DO GRÁFICO */
+async function loadFuelEntries(){
   try{
-    const response = await fetch(`${API_FUEL}?t=${Date.now()}`, { cache:'no-store' });
+    const response = await fetch(`${API_FUEL}?t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const json = await response.json();
     const lista = Array.isArray(json?.lancamentos) ? json.lancamentos : [];
 
+    return lista.map(item => ({
+      date: item.data || item.date || '',
+      value: getValorLancamentoCombustivel(item),
+      obs: item.obs || item.observacao || ''
+    }));
+
+  }catch(error){
+    console.warn('Erro ao carregar combustível do JSON:', error);
+    return [];
+  }
+}
+
+/* 🔥 MANTÉM PARA USO NO HEADER / TV */
+async function carregarCombustivel(){
+  try{
+    const entries = await loadFuelEntries();
+
     const anoMes = getAnoMesAtual();
 
-    // 🔥 FILTRA MÊS ATUAL
-    const listaMes = lista.filter(item =>
-      String(item?.data || item?.date || '').startsWith(anoMes)
+    const listaMes = entries.filter(item =>
+      String(item.date || '').startsWith(anoMes)
     );
 
-    // 🔥 ORDENA POR DATA
-    listaMes.sort((a,b) =>
-      String(a.data || a.date).localeCompare(String(b.data || b.date))
-    );
-
-    // 🔥 ACUMULADO (ESSENCIAL PRO GRÁFICO)
-    let acumulado = 0;
-    const serie = listaMes.map(item => {
-      acumulado += getValorLancamentoCombustivel(item);
-      return acumulado;
-    });
-
-    // 🔥 LABELS (DIAS)
-    const labels = listaMes.map(item => {
-      const d = String(item.data || item.date || '');
-      return d.split('-')[2] || '';
-    });
-
-    const total = acumulado;
+    const total = listaMes.reduce((acc, item) => acc + Number(item.value || 0), 0);
 
     combustivelMesAtual = total;
     combustivelScoreAtual = calcularScoreCombustivel(total);
 
-    // 🚨 AQUI ESTÁ O SEGREDO DO GRÁFICO
-    atualizarGraficoCombustivel(labels, serie);
-
     return total;
 
   }catch(error){
-    console.warn('Erro ao carregar combustível do KPI:', error);
+    console.warn('Erro ao calcular combustível:', error);
 
     combustivelMesAtual = 0;
     combustivelScoreAtual = 100;
-
-    atualizarGraficoCombustivel([], []);
 
     return 0;
   }
 }
 
-function atualizarGraficoCombustivel(labels, dados){
-  if(!window.fuelChart) return;
-
-  window.fuelChart.data.labels = labels;
-  window.fuelChart.data.datasets[1].data = dados;
-
-  window.fuelChart.update();
-}
-  
 function textoCombustivelTV(){
-  const valor = combustivelMesAtual.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  const valor = combustivelMesAtual.toLocaleString('pt-BR', {
+    style:'currency',
+    currency:'BRL'
+  });
+
   return `⛽ Combustível mês: ${valor} • KPI ${combustivelScoreAtual}%`;
 }
-
+  
 async function carregarProjetos() {
   try {
     const response = await fetch(`${API_BASE}/listar.php`);
