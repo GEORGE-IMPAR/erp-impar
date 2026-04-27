@@ -566,7 +566,7 @@ function calcularScoreCombustivel(total){
   if (total <= 7000) return 50;
   return 0;
 }
-
+  
 /* 🔥 ESSA FUNÇÃO AGORA VIRA A FONTE OFICIAL DO GRÁFICO */
 async function loadFuelEntries(){
   try{
@@ -591,6 +591,125 @@ async function loadFuelEntries(){
   }
 }
 
+async function renderFuel(){
+  const entries = await loadFuelEntries();
+
+  const anoMes = getAnoMesAtual();
+
+  const monthEntries = entries
+    .filter(item => String(item.date || '').startsWith(anoMes))
+    .sort((a,b) => String(a.date).localeCompare(String(b.date)));
+
+  const total = monthEntries.reduce((acc, item) => acc + Number(item.value || 0), 0);
+
+  combustivelMesAtual = total;
+  combustivelScoreAtual = calcularScoreCombustivel(total);
+
+  let acumulado = 0;
+
+  const labels = monthEntries.length
+    ? monthEntries.map(item => {
+        const d = String(item.date || '');
+        return d.split('-')[2] || '';
+      })
+    : ['1','2','3','4'];
+
+  const atualSeries = monthEntries.length
+    ? monthEntries.map(item => {
+        acumulado += Number(item.value || 0);
+        return acumulado;
+      })
+    : [0,0,0,0];
+
+  const metaSeries = labels.map(() => 5000);
+
+  if (typeof fuelChart !== 'undefined' && fuelChart) {
+    fuelChart.destroy();
+  }
+
+  const ctx = document.getElementById('fuelChart');
+  if (typeof Chart === 'undefined' || !ctx) return;
+
+  fuelChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Meta',
+          data: metaSeries,
+          borderColor: '#d946ef',
+          backgroundColor: 'rgba(217,70,239,.08)',
+          pointBackgroundColor: '#d946ef',
+          pointBorderColor: '#d946ef',
+          tension: 0,
+          borderWidth: 3,
+          pointRadius: 3
+        },
+        {
+          label: 'abr/26',
+          data: atualSeries,
+          borderColor: '#22c7ff',
+          backgroundColor: 'rgba(34,199,255,.10)',
+          pointBackgroundColor: '#22c7ff',
+          pointBorderColor: '#22c7ff',
+          tension: 0,
+          borderWidth: 3,
+          pointRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#eaf6ff',
+            boxWidth: 12,
+            usePointStyle: true,
+            pointStyle: 'line',
+            font: { weight: '700' }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(3,15,36,.95)',
+          borderColor: 'rgba(255,255,255,.12)',
+          borderWidth: 1,
+          titleColor: '#fff',
+          bodyColor: '#dff4ff',
+          displayColors: true,
+          callbacks: {
+            label: function(context){
+              return ` ${context.dataset.label}: ${money(context.parsed.y)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: 'rgba(238,246,255,.75)', font: { weight: '700' } },
+          grid: { color: 'rgba(255,255,255,.06)' },
+          title: { display: true, text: 'Dias', color: 'rgba(238,246,255,.72)', font: { weight: '800' } }
+        },
+        y: {
+          min: 0,
+          max: 6000,
+          ticks: {
+            stepSize: 1000,
+            color: 'rgba(238,246,255,.75)',
+            callback: function(value){ return money(value); }
+          },
+          grid: { color: 'rgba(255,255,255,.06)' },
+          title: { display: true, text: 'Valores', color: 'rgba(238,246,255,.72)', font: { weight: '800' } }
+        }
+      }
+    }
+  });
+}
+
+  
 /* 🔥 MANTÉM PARA USO NO HEADER / TV */
 async function carregarCombustivel(){
   try{
