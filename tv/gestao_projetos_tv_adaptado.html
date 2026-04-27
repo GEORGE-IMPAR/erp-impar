@@ -571,24 +571,63 @@ async function carregarCombustivel(){
 
     const json = await response.json();
     const lista = Array.isArray(json?.lancamentos) ? json.lancamentos : [];
+
     const anoMes = getAnoMesAtual();
 
-    const total = lista
-      .filter(item => String(item?.data || item?.date || '').startsWith(anoMes))
-      .reduce((acc, item) => acc + getValorLancamentoCombustivel(item), 0);
+    // 🔥 FILTRA MÊS ATUAL
+    const listaMes = lista.filter(item =>
+      String(item?.data || item?.date || '').startsWith(anoMes)
+    );
+
+    // 🔥 ORDENA POR DATA
+    listaMes.sort((a,b) =>
+      String(a.data || a.date).localeCompare(String(b.data || b.date))
+    );
+
+    // 🔥 ACUMULADO (ESSENCIAL PRO GRÁFICO)
+    let acumulado = 0;
+    const serie = listaMes.map(item => {
+      acumulado += getValorLancamentoCombustivel(item);
+      return acumulado;
+    });
+
+    // 🔥 LABELS (DIAS)
+    const labels = listaMes.map(item => {
+      const d = String(item.data || item.date || '');
+      return d.split('-')[2] || '';
+    });
+
+    const total = acumulado;
 
     combustivelMesAtual = total;
     combustivelScoreAtual = calcularScoreCombustivel(total);
 
+    // 🚨 AQUI ESTÁ O SEGREDO DO GRÁFICO
+    atualizarGraficoCombustivel(labels, serie);
+
     return total;
+
   }catch(error){
     console.warn('Erro ao carregar combustível do KPI:', error);
+
     combustivelMesAtual = 0;
     combustivelScoreAtual = 100;
+
+    atualizarGraficoCombustivel([], []);
+
     return 0;
   }
 }
 
+function atualizarGraficoCombustivel(labels, dados){
+  if(!window.fuelChart) return;
+
+  window.fuelChart.data.labels = labels;
+  window.fuelChart.data.datasets[1].data = dados;
+
+  window.fuelChart.update();
+}
+  
 function textoCombustivelTV(){
   const valor = combustivelMesAtual.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   return `⛽ Combustível mês: ${valor} • KPI ${combustivelScoreAtual}%`;
