@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP ÍMPAR • TV Master</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e);
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:#e5e7eb;
+    }
+    body{display:flex;flex-direction:column}
+    header{
+      padding:12px 16px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      background:rgba(2,6,23,.85);
+      border-bottom:2px solid rgba(34,197,94,.3);
+      flex-shrink:0;
+      position:relative;
+      height:78px;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width:0;
+    }
+    .logo-orb{
+      width:42px;height:42px;border-radius:999px;
+      position:relative;
+      background: conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);
+      box-shadow:0 10px 22px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.18) inset;
+      overflow:hidden;
+      flex:0 0 auto;
+    }
+    .logo-orb:before{
+      content:""; position:absolute; inset:-6px;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 55%);
+    }
+    .brand-text{display:flex; flex-direction:column; gap:1px;}
+    .brand-kicker{font-size:11px; letter-spacing:.22em; text-transform:uppercase; font-weight:800; opacity:.9;}
+    .brand-title{font-size:24px; font-weight:900; line-height:1;}
+    .brand-sub{font-size:15px; font-weight:800; opacity:.92;}
+
+    .header-info{
+      text-align:right;
+      font-size:13px;
+      min-width:0;
+    }
+    .header-info strong{
+      display:block;
+      font-size:16px;
+      color:#22c55e;
+      margin-bottom:4px;
+    }
+    .relogio{
+      font-size:32px;
+      font-weight:900;
+      font-variant-numeric:tabular-nums;
+    }
+
+    .ultima-sync{
+      position:absolute;
+      top:10px;
+      left:50%;
+      transform:translateX(-50%);
+      background:rgba(34,197,94,.15);
+      border:1px solid rgba(34,197,94,.4);
+      padding:8px 16px;
+      border-radius:999px;
+      font-size:12px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      animation:pulseSync 2s ease-in-out infinite;
+      z-index:2;
+      white-space:nowrap;
+      max-width:50vw;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    @keyframes pulseSync{
+      0%,100%{opacity:.9; transform:translateX(-50%) scale(1);}
+      50%{opacity:1; transform:translateX(-50%) scale(1.02);}
+    }
+
+    .tv-wrap{
+      width:100%;
+      height:calc(100vh - 78px);
+      position:relative;
+      background:#020617;
+      overflow:hidden;
+    }
+    iframe{
+      width:100%;
+      height:100%;
+      border:none;
+      display:block;
+      background:transparent;
+      opacity:1;
+    }
+    .fade-out{ animation:fadeOut .35s ease forwards; }
+    .fade-in{ animation:fadeIn .35s ease forwards; }
+    @keyframes fadeOut{ from{opacity:1} to{opacity:0} }
+    @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+  
+.btn-fullscreen{
+  position:fixed;
+  bottom:20px;
+  right:20px;
+  background:#22c55e;
+  color:#000;
+  border:none;
+  padding:14px 22px;
+  border-radius:12px;
+  font-weight:800;
+  cursor:pointer;
+  z-index:99999;
+  box-shadow:0 8px 20px rgba(34,197,94,.4);
+}
+
+.btn-fullscreen.hide{
+  display:none;
+}
+    
+  </style>
+</head>
+<body>
+<button class="btn-fullscreen" id="btnFullscreen" onclick="ativarFullscreen()">
+  🖥️ Tela Cheia
+</button>  
+<header>
+  <div class="brand">
+    <div class="logo-orb"></div>
+    <div class="brand-text">
+      <div class="brand-kicker">ERP</div>
+      <div class="brand-title">ÍMPAR</div>
+      <div class="brand-sub">Gestão à Vista</div>
+    </div>
+  </div>
+
+  <div class="ultima-sync" id="ultimaSync">🔄 Sincronizando...</div>
+
+  <div class="header-info">
+    <strong id="dataAtual">—</strong>
+    <div class="relogio" id="relogio">00:00:00</div>
+  </div>
+</header>
+
+<div class="tv-wrap">
+  <iframe id="tvFrame" src=""></iframe>
+</div>
+
+<script>
+  const paginas = [
+    { nome: 'Gestão à Vista', url: './gestao_projetos_tv_adaptado.html?tv=1', fallback: 100000 },
+    { nome: 'Farol de Obras', url: '../cronograma/farol_tv_adaptado.html?tv=1', fallback: 40000 },
+    { nome: 'KPIs', url: '../KPI_Coordenadores/index_tv_resumo_adaptado.html?tv=1&espelho=kpi', fallback: 35000 },
+    { nome: 'Alocação do Time',  url: '../atividades/alocacao_diaria_time_tv_diretoria.html?tv=1', fallback:30000},
+    { nome: 'Institucional ÍMPAR', url: './tv_marketing.html?tv=1', fallback: 14000}
+  ];
+
+  let indiceAtual = 0;
+  let timer = null;
+  let tempoAtual = paginas[0].fallback;
+  let cicloRecebidoDaPaginaAtual = false;
+
+  const frame = document.getElementById('tvFrame');
+  const badge = document.getElementById('ultimaSync');
+
+  function atualizarRelogio(){
+    const agora = new Date();
+    const data = agora.toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    const hora = agora.toLocaleTimeString('pt-BR');
+    document.getElementById('dataAtual').textContent = data.charAt(0).toUpperCase() + data.slice(1);
+    document.getElementById('relogio').textContent = hora;
+  }
+
+  function atualizarBadge(txt){
+    badge.textContent = txt || '🔄 Sincronizando...';
+  }
+
+  function carregarPagina(indice){
+    const pagina = paginas[indice];
+    tempoAtual = pagina.fallback;
+    cicloRecebidoDaPaginaAtual = false;
+    atualizarBadge(`📺 ${pagina.nome}`);
+
+    frame.classList.remove('fade-in');
+    frame.classList.add('fade-out');
+
+    setTimeout(() => {
+      frame.src = pagina.url + '&tvts=' + Date.now();
+      frame.classList.remove('fade-out');
+      frame.classList.add('fade-in');
+    }, 350);
+  }
+
+  function agendarProxima(){
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      indiceAtual = (indiceAtual + 1) % paginas.length;
+      carregarPagina(indiceAtual);
+      agendarProxima();
+    }, tempoAtual);
+  }
+
+  window.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (data.type === 'ERP_IMPAR_TV_CYCLE_MS' && Number(data.value) > 0) {
+      if (!cicloRecebidoDaPaginaAtual) {
+        cicloRecebidoDaPaginaAtual = true;
+        tempoAtual = Number(data.value);
+        agendarProxima();
+      }
+    }
+    if (data.type === 'ERP_IMPAR_TV_BADGE' && data.text) {
+      atualizarBadge(String(data.text));
+    }
+  });
+
+  atualizarRelogio();
+  setInterval(atualizarRelogio, 1000);
+  carregarPagina(indiceAtual);
+  agendarProxima();
+
+
+function ativarFullscreen(){
+  const el = document.documentElement;
+
+  if(el.requestFullscreen){
+    el.requestFullscreen();
+  }else if(el.webkitRequestFullscreen){
+    el.webkitRequestFullscreen();
+  }else if(el.msRequestFullscreen){
+    el.msRequestFullscreen();
+  }
+
+  document.getElementById('btnFullscreen').classList.add('hide');
+}
+
+document.addEventListener('fullscreenchange', () => {
+  if(!document.fullscreenElement){
+    document.getElementById('btnFullscreen').classList.remove('hide');
+  }
+});
+  
+</script>
+</body>
+</html>
