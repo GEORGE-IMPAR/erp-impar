@@ -93,18 +93,21 @@
 
     .tv-wrap{
       width:100%;
-      height:calc(100vh - 78px);
+      height:calc(100dvh - 78px);
       position:relative;
       background:#020617;
       overflow:hidden;
+      --tv-scale:1;
     }
     iframe{
-      width:100%;
-      height:100%;
+      width:calc(100% / var(--tv-scale));
+      height:calc(100% / var(--tv-scale));
       border:none;
       display:block;
       background:transparent;
       opacity:1;
+      transform:scale(var(--tv-scale));
+      transform-origin:top left;
     }
     .fade-out{ animation:fadeOut .35s ease forwards; }
     .fade-in{ animation:fadeIn .35s ease forwards; }
@@ -175,6 +178,34 @@
   const frame = document.getElementById('tvFrame');
   const badge = document.getElementById('ultimaSync');
 
+  const tvWrap = document.querySelector('.tv-wrap');
+  const header = document.querySelector('header');
+
+  function lerConfigEscala(){
+    const params = new URLSearchParams(window.location.search);
+    const baseW = Number(params.get('baseW')) || 1920;
+    const baseH = Number(params.get('baseH')) || 1080;
+    const overscan = Number(params.get('overscan')) || 0;
+    const escalaMax = Number(params.get('scaleMax')) || 1;
+    return { baseW, baseH, overscan, escalaMax };
+  }
+
+  function ajustarEscalaTV(){
+    const { baseW, baseH, overscan, escalaMax } = lerConfigEscala();
+    const viewportW = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+    const viewportH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+    const alturaHeader = header ? header.getBoundingClientRect().height : 78;
+    const larguraUtil = Math.max(viewportW - (overscan * 2), 1);
+    const alturaUtil = Math.max(viewportH - alturaHeader - (overscan * 2), 1);
+
+    const escalaLargura = larguraUtil / baseW;
+    const escalaAltura = alturaUtil / baseH;
+    const escala = Math.min(escalaLargura, escalaAltura, escalaMax);
+
+    tvWrap.style.setProperty('--tv-scale', Math.max(escala, 0.45).toFixed(4));
+  }
+
   function atualizarRelogio(){
     const agora = new Date();
     const data = agora.toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
@@ -225,6 +256,12 @@
       atualizarBadge(String(data.text));
     }
   });
+
+  ajustarEscalaTV();
+  window.addEventListener('resize', ajustarEscalaTV);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', ajustarEscalaTV);
+  }
 
   atualizarRelogio();
   setInterval(atualizarRelogio, 1000);
