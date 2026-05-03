@@ -115,10 +115,17 @@ function aplicarUsuario() {
   const img = $("userFoto");
   const ini = $("userIniciais");
 
-  if (foto) {
+  if (foto && String(foto).trim()) {
     img.src = foto;
     img.style.display = "block";
     ini.style.display = "none";
+
+    img.onerror = () => {
+      img.removeAttribute("src");
+      img.style.display = "none";
+      ini.textContent = iniciais;
+      ini.style.display = "block";
+    };
   } else {
     img.removeAttribute("src");
     img.style.display = "none";
@@ -174,17 +181,30 @@ function parseDataBR(dataStr) {
 }
 
 function idadeNota(dataStr) {
-  const dt = parseDataBR(dataStr);
-  if (!dt) return "-";
+  if (!dataStr || dataStr === "-") return "-";
 
+  let dt = null;
+  const raw = String(dataStr).trim();
+
+  if (raw.includes("/")) {
+    const [d, m, a] = raw.split("/").map(Number);
+    if (!d || !m || !a) return "-";
+    dt = new Date(a, m - 1, d);
+  } else {
+    dt = new Date(raw);
+  }
+
+  if (!dt || Number.isNaN(dt.getTime())) return "-";
+
+  dt.setHours(0, 0, 0, 0);
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
   const dias = Math.floor((hoje - dt) / 86400000);
 
-  if (dias > 90) return `<span class="old">${dias} dias</span>`;
-  if (dias > 30) return `<span style="color:#fbbf24;font-weight:800;">${dias} dias</span>`;
-  return `<span style="color:#86efac;font-weight:800;">${dias} dias</span>`;
+  if (dias > 180) return `<span class="old">${dias} dias</span>`;
+  if (dias > 60) return `<span style="color:#fbbf24;font-weight:900;">${dias} dias</span>`;
+  return `<span style="color:#86efac;font-weight:900;">${dias} dias</span>`;
 }
 
 async function getJson(url) {
@@ -266,37 +286,48 @@ async function buscarMateriais() {
   }
 }
 
+
+function getField(obj, campos, fallback = "-") {
+  for (const campo of campos) {
+    const valor = obj?.[campo];
+    if (valor !== undefined && valor !== null && String(valor).trim() !== "") {
+      return valor;
+    }
+  }
+  return fallback;
+}
+
 function renderResultados(data) {
   if (!data.length) {
-    $("tbodyResultados").innerHTML = `
+    document.getElementById('tbodyResultados').innerHTML = `
       <tr>
         <td colspan="9" class="empty">Nenhum material encontrado.</td>
       </tr>
     `;
-    $("contadorResultados").textContent = "0 materiais encontrados";
+    document.getElementById('contadorResultados').textContent = "0 materiais encontrados";
     return;
   }
 
-  $("contadorResultados").textContent = `${data.length} materiais encontrados`;
+  document.getElementById('contadorResultados').textContent = `${data.length} materiais encontrados`;
 
-  $("tbodyResultados").innerHTML = data.map((item, idx) => {
-    const material = item.material || item.descricao || "";
-    const fornecedor = item.fornecedor || item.fornecedor_cnpj || item.cnpj_emitente || "";
-    const nf = item.numero_nfe || item.nf || "";
-    const dataNota = item.data_saida || item.data || "";
-    const qtd = item.quantidade || "";
-    const un = item.unidade || "";
-    const valor = item.valor_unitario || item.valor || "";
+  document.getElementById('tbodyResultados').innerHTML = data.map((item, idx) => {
+    const material = getField(item, ["material", "descricao", "descricao_item", "xProd"]);
+    const fornecedor = getField(item, ["fornecedor", "emitente", "razao_social", "razao_social_emitente", "nome_emitente", "fornecedor_nome", "xNome", "cnpj_emitente", "fornecedor_cnpj"]);
+    const nf = getField(item, ["numero_nfe", "numero_nf", "numero_nota", "nNF", "nota", "nf"]);
+    const dataNota = getField(item, ["data_saida", "data_emissao", "dhEmi", "data", "emissao"]);
+    const qtd = getField(item, ["quantidade", "qCom", "qtd", "quantidade_item"]);
+    const un = getField(item, ["unidade", "uCom", "un"]);
+    const valor = getField(item, ["valor_unitario", "vUnCom", "valor", "preco_unitario_item"]);
 
     return `
       <tr>
         <td class="material">${escapeHtml(material)}</td>
-        <td>${escapeHtml(fornecedor || "-")}</td>
-        <td>${escapeHtml(nf || "-")}</td>
-        <td>${escapeHtml(dataNota || "-")}</td>
-        <td>${escapeHtml(qtd || "-")}</td>
-        <td>${escapeHtml(un || "-")}</td>
-        <td class="price">R$ ${escapeHtml(valor || "-")}</td>
+        <td>${escapeHtml(fornecedor)}</td>
+        <td>${escapeHtml(nf)}</td>
+        <td>${escapeHtml(dataNota)}</td>
+        <td>${escapeHtml(qtd)}</td>
+        <td>${escapeHtml(un)}</td>
+        <td class="price">R$ ${escapeHtml(valor)}</td>
         <td>${idadeNota(dataNota)}</td>
         <td>
           <button class="btn-secondary" style="padding:8px 12px;border-radius:12px;" onclick="adicionarOrcamento(${idx})">
