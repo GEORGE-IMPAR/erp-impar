@@ -1,9 +1,4 @@
 \
-/*
-  ERP ÍMPAR • Materiais Inteligentes
-  Frontend completo v1.3
-*/
-
 const API_BASE = "https://api.erpimpar.com.br/danfe";
 const OCR_RENDER_ENDPOINT = "https://ocr-danfe-impar.onrender.com/processar-lote";
 
@@ -25,7 +20,7 @@ function safeGetStorage(kind, key) {
   try {
     const storage = kind === "session" ? sessionStorage : localStorage;
     return (storage.getItem(key) || "").trim();
-  } catch (e) {
+  } catch {
     return "";
   }
 }
@@ -36,76 +31,19 @@ function readUserCandidate(raw) {
   try {
     const u = JSON.parse(raw);
 
-    const nome =
-      u.Nome ||
-      u.nome ||
-      u.name ||
-      u.userName ||
-      u.usuario ||
-      u.usuarioNome ||
-      u.userNome ||
-      "";
+    const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || u.userNome || "";
+    const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
+    const cargo = u.Cargo || u.cargo || u.Setor || u.setor || u.departamento || "Obras";
+    const telefone = u.Telefone || u.telefone || u.Tel || u.tel || u.whatsapp || u.celular || "";
+    const foto = u.Foto || u.foto || u.avatar || u.photo || u.imagem || u.image || u.profilePhoto || u.fotoPerfil || u.urlFoto || u.picture || "";
 
-    const email =
-      u.Email ||
-      u.email ||
-      u.mail ||
-      u.userEmail ||
-      u.usuarioEmail ||
-      "";
-
-    const cargo =
-      u.Cargo ||
-      u.cargo ||
-      u.Setor ||
-      u.setor ||
-      u.departamento ||
-      "Obras";
-
-    const telefone =
-      u.Telefone ||
-      u.telefone ||
-      u.Tel ||
-      u.tel ||
-      u.whatsapp ||
-      u.celular ||
-      "";
-
-    const foto =
-      u.Foto ||
-      u.foto ||
-      u.avatar ||
-      u.photo ||
-      u.imagem ||
-      u.image ||
-      u.profilePhoto ||
-      u.fotoPerfil ||
-      u.urlFoto ||
-      u.picture ||
-      "";
-
-    if (nome || email) {
-      return {
-        nome: nome || "Usuário",
-        email: email || "—",
-        cargo,
-        telefone,
-        foto
-      };
-    }
-  } catch (e) {
+    if (nome || email) return { nome: nome || "Usuário", email: email || "—", cargo, telefone, foto };
+  } catch {
     if (raw.includes("@")) {
       const parts = raw.split("|");
-      return {
-        nome: parts[0] || "Usuário",
-        email: parts[1] || raw,
-        cargo: "Obras",
-        telefone: "",
-        foto: ""
-      };
+      return { nome: parts[0] || "Usuário", email: parts[1] || raw, cargo: "Obras", telefone: "", foto: "" };
     }
   }
-
   return null;
 }
 
@@ -130,44 +68,25 @@ function getLoggedUser() {
     if (sessionUser) return sessionUser;
   }
 
-  return {
-    nome: "Usuário",
-    email: "—",
-    cargo: "Obras",
-    telefone: "",
-    foto: ""
-  };
+  return { nome: "Usuário", email: "—", cargo: "Obras", telefone: "", foto: "" };
 }
 
 function aplicarUsuario() {
   const user = getLoggedUser();
-
   const nome = user.nome || "Usuário";
-  const email = user.email || "—";
-  const cargo = user.cargo || "Obras";
-  const telefone = user.telefone || "";
-  const foto = user.foto || "";
-
-  const iniciais = nome
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(p => p[0])
-    .join("")
-    .toUpperCase() || "U";
+  const iniciais = nome.split(" ").filter(Boolean).slice(0, 2).map(p => p[0]).join("").toUpperCase() || "U";
 
   $("userNome").textContent = nome;
-  $("userCargo").textContent = cargo;
-  $("userTel").textContent = telefone || "—";
-
-  $("userEmail").textContent = email;
-  $("userEmail").href = email && email !== "—" ? `mailto:${email}` : "#";
+  $("userCargo").textContent = user.cargo || "Obras";
+  $("userTel").textContent = user.telefone || "—";
+  $("userEmail").textContent = user.email || "—";
+  $("userEmail").href = user.email && user.email !== "—" ? `mailto:${user.email}` : "#";
 
   const img = $("userFoto");
   const ini = $("userIniciais");
 
-  if (foto && String(foto).trim()) {
-    img.src = foto;
+  if (user.foto && String(user.foto).trim()) {
+    img.src = user.foto;
     img.style.display = "block";
     ini.style.display = "none";
 
@@ -177,7 +96,6 @@ function aplicarUsuario() {
       ini.textContent = iniciais;
       ini.style.display = "block";
     };
-
     return;
   }
 
@@ -230,13 +148,11 @@ function logOCR(msg, tipo = "INFO") {
 
 function parseDataBR(dataStr) {
   if (!dataStr || dataStr === "-") return null;
-
   const raw = String(dataStr).trim();
 
   if (raw.includes("/")) {
     const [d, m, a] = raw.split("/").map(Number);
     if (!d || !m || !a) return null;
-
     const dt = new Date(a, m - 1, d);
     dt.setHours(0, 0, 0, 0);
     return dt;
@@ -244,7 +160,6 @@ function parseDataBR(dataStr) {
 
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return null;
-
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
@@ -255,7 +170,6 @@ function idadeNota(dataStr) {
 
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
-
   const dias = Math.floor((hoje - dt) / 86400000);
 
   if (dias > 180) return `<span class="old">${dias} dias</span>`;
@@ -272,7 +186,6 @@ async function getJson(url) {
 
 function normalizarCards(json) {
   const cards = json.cards || json;
-
   return {
     notas: Number(cards.notas ?? cards.total_notas ?? 0),
     itens: Number(cards.itens ?? cards.materiais ?? cards.total_itens ?? 0),
@@ -294,11 +207,7 @@ async function carregarDashboard() {
     const totalGeral = cards.notas + cards.itens + cards.fornecedores;
     $("baseBar").style.width = totalGeral > 0 ? "100%" : "8%";
 
-    const atualizado =
-      json.ultima_atualizacao ||
-      json.config?.ultimo_processamento ||
-      new Date().toLocaleDateString("pt-BR");
-
+    const atualizado = json.ultima_atualizacao || json.config?.ultimo_processamento || new Date().toLocaleDateString("pt-BR");
     $("ultimaAtualizacao").textContent = atualizado;
     $("resumoBase").textContent = `${cards.notas} DANFEs • ${cards.itens} itens • ${cards.pendencias} pendência(s)`;
     $("pillStatusBase").textContent = "Base online";
@@ -311,33 +220,22 @@ async function carregarDashboard() {
 
 async function buscarMateriais() {
   const termo = $("busca").value.trim();
-
-  $("tbodyResultados").innerHTML = `
-    <tr>
-      <td colspan="9" class="empty">Buscando materiais...</td>
-    </tr>
-  `;
+  $("tbodyResultados").innerHTML = `<tr><td colspan="9" class="empty">Buscando materiais...</td></tr>`;
 
   try {
     let json;
-
     try {
       json = await getJson(`${API_BASE}/buscar.php?q=${encodeURIComponent(termo)}`);
-    } catch (e) {
+    } catch {
       json = await getJson(`${API_BASE}/listar_materiais.php?q=${encodeURIComponent(termo)}`);
     }
 
     const data = json.data || json.itens || [];
     ultimosResultados = data;
-
     renderResultados(data);
   } catch (e) {
     console.error(e);
-    $("tbodyResultados").innerHTML = `
-      <tr>
-        <td colspan="9" class="empty">Erro ao buscar materiais na API.</td>
-      </tr>
-    `;
+    $("tbodyResultados").innerHTML = `<tr><td colspan="9" class="empty">Erro ao buscar materiais na API.</td></tr>`;
     $("contadorResultados").textContent = "Falha na consulta";
   }
 }
@@ -345,22 +243,14 @@ async function buscarMateriais() {
 function getField(obj, campos, fallback = "-") {
   for (const campo of campos) {
     const valor = obj?.[campo];
-
-    if (valor !== undefined && valor !== null && String(valor).trim() !== "") {
-      return valor;
-    }
+    if (valor !== undefined && valor !== null && String(valor).trim() !== "") return valor;
   }
-
   return fallback;
 }
 
 function renderResultados(data) {
   if (!data.length) {
-    $("tbodyResultados").innerHTML = `
-      <tr>
-        <td colspan="9" class="empty">Nenhum material encontrado.</td>
-      </tr>
-    `;
+    $("tbodyResultados").innerHTML = `<tr><td colspan="9" class="empty">Nenhum material encontrado.</td></tr>`;
     $("contadorResultados").textContent = "0 materiais encontrados";
     return;
   }
@@ -386,11 +276,7 @@ function renderResultados(data) {
         <td>${escapeHtml(un)}</td>
         <td class="price">R$ ${escapeHtml(valor)}</td>
         <td>${idadeNota(dataNota)}</td>
-        <td>
-          <button class="btn-secondary" style="padding:8px 12px;border-radius:12px;" onclick="adicionarOrcamento(${idx})">
-            + Orçamento
-          </button>
-        </td>
+        <td><button class="btn-secondary" style="padding:8px 12px;border-radius:12px;" onclick="adicionarOrcamento(${idx})">+ Orçamento</button></td>
       </tr>
     `;
   }).join("");
@@ -399,7 +285,6 @@ function renderResultados(data) {
 function adicionarOrcamento(idx) {
   const item = ultimosResultados[idx];
   if (!item) return;
-
   itensOrcamento.push(item);
   renderOrcamento();
 }
@@ -436,7 +321,6 @@ function removerOrcamento(idx) {
 
 async function processarPDFs() {
   const files = $("pdfs").files;
-
   if (!files.length) {
     alert("Selecione pelo menos um PDF.");
     return;
@@ -445,7 +329,6 @@ async function processarPDFs() {
   $("progressBar").style.width = "10%";
   $("statusOCR").textContent = "Enviando PDFs para o motor OCR Render...";
   $("statusResumoOCR").textContent = `${files.length} arquivo(s)`;
-
   logOCR(`Enviando ${files.length} PDF(s) para ${OCR_RENDER_ENDPOINT}`);
 
   const formData = new FormData();
@@ -455,19 +338,12 @@ async function processarPDFs() {
     $("progressBar").style.width = "35%";
     logOCR("Processamento iniciado. Aguarde...");
 
-    const resp = await fetch(OCR_RENDER_ENDPOINT, {
-      method: "POST",
-      body: formData
-    });
-
+    const resp = await fetch(OCR_RENDER_ENDPOINT, { method: "POST", body: formData });
     $("progressBar").style.width = "78%";
 
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
     const json = await resp.json();
-
     const totalArquivos = Number(json.total_arquivos || 0);
     const resultados = json.resultados || [];
     const totalItens = resultados.reduce((acc, r) => acc + (Number(r.total_itens) || 0), 0);
@@ -498,13 +374,11 @@ async function processarPDFs() {
 
 function atualizarFileInfo() {
   const files = $("pdfs").files;
-
   if (!files.length) {
     $("fileInfo").textContent = "Nenhum arquivo selecionado.";
     $("statusResumoOCR").textContent = "0 arquivo(s)";
     return;
   }
-
   $("fileInfo").textContent = `${files.length} arquivo(s) selecionado(s).`;
   $("statusResumoOCR").textContent = `${files.length} arquivo(s)`;
 }
@@ -529,16 +403,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   $("pdfs").addEventListener("change", atualizarFileInfo);
-
   $("busca").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      buscarMateriais();
-    }
+    if (event.key === "Enter") buscarMateriais();
   });
 
   aplicarUsuario();
   renderOrcamento();
-
   await carregarDashboard();
   await buscarMateriais();
 });
