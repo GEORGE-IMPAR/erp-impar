@@ -1,8 +1,8 @@
-
-// =========================================================
-// ERP ÍMPAR • Materiais Inteligentes
-// Frontend: consulta KingHost + processamento OCR Render
-// =========================================================
+\
+/*
+  ERP ÍMPAR • Materiais Inteligentes
+  Frontend completo v1.3
+*/
 
 const API_BASE = "https://api.erpimpar.com.br/danfe";
 const OCR_RENDER_ENDPOINT = "https://ocr-danfe-impar.onrender.com/processar-lote";
@@ -30,6 +30,85 @@ function safeGetStorage(kind, key) {
   }
 }
 
+function readUserCandidate(raw) {
+  if (!raw) return null;
+
+  try {
+    const u = JSON.parse(raw);
+
+    const nome =
+      u.Nome ||
+      u.nome ||
+      u.name ||
+      u.userName ||
+      u.usuario ||
+      u.usuarioNome ||
+      u.userNome ||
+      "";
+
+    const email =
+      u.Email ||
+      u.email ||
+      u.mail ||
+      u.userEmail ||
+      u.usuarioEmail ||
+      "";
+
+    const cargo =
+      u.Cargo ||
+      u.cargo ||
+      u.Setor ||
+      u.setor ||
+      u.departamento ||
+      "Obras";
+
+    const telefone =
+      u.Telefone ||
+      u.telefone ||
+      u.Tel ||
+      u.tel ||
+      u.whatsapp ||
+      u.celular ||
+      "";
+
+    const foto =
+      u.Foto ||
+      u.foto ||
+      u.avatar ||
+      u.photo ||
+      u.imagem ||
+      u.image ||
+      u.profilePhoto ||
+      u.fotoPerfil ||
+      u.urlFoto ||
+      u.picture ||
+      "";
+
+    if (nome || email) {
+      return {
+        nome: nome || "Usuário",
+        email: email || "—",
+        cargo,
+        telefone,
+        foto
+      };
+    }
+  } catch (e) {
+    if (raw.includes("@")) {
+      const parts = raw.split("|");
+      return {
+        nome: parts[0] || "Usuário",
+        email: parts[1] || raw,
+        cargo: "Obras",
+        telefone: "",
+        foto: ""
+      };
+    }
+  }
+
+  return null;
+}
+
 function getLoggedUser() {
   const keys = [
     "ERPIMPAR_USER",
@@ -39,44 +118,16 @@ function getLoggedUser() {
     "user",
     "ERP_IMPAR_USER",
     "ERPIMPAR_LOGIN",
+    "ERPIMPARUSER",
     "USER"
   ];
 
   for (const key of keys) {
-    const raw = safeGetStorage("local", key) || safeGetStorage("session", key);
+    const localUser = readUserCandidate(safeGetStorage("local", key));
+    if (localUser) return localUser;
 
-    if (!raw) continue;
-
-    try {
-      const u = JSON.parse(raw);
-
-      const nome = u.Nome || u.nome || u.name || u.userName || u.usuario || u.usuarioNome || u.userNome || "";
-      const email = u.Email || u.email || u.mail || u.userEmail || u.usuarioEmail || "";
-      const cargo = u.Cargo || u.cargo || u.Setor || u.setor || "Obras";
-      const telefone = u.Telefone || u.telefone || u.Tel || u.tel || u.whatsapp || "";
-      const foto = u.Foto || u.foto || u.photo || u.avatar || "";
-
-      if (nome || email) {
-        return {
-          nome: nome || "Usuário",
-          email: email || "—",
-          cargo,
-          telefone,
-          foto
-        };
-      }
-    } catch (e) {
-      if (raw.includes("@")) {
-        const parts = raw.split("|");
-        return {
-          nome: parts[0] || "Usuário",
-          email: parts[1] || raw,
-          cargo: "Obras",
-          telefone: "",
-          foto: ""
-        };
-      }
-    }
+    const sessionUser = readUserCandidate(safeGetStorage("session", key));
+    if (sessionUser) return sessionUser;
   }
 
   return {
@@ -126,12 +177,14 @@ function aplicarUsuario() {
       ini.textContent = iniciais;
       ini.style.display = "block";
     };
-  } else {
-    img.removeAttribute("src");
-    img.style.display = "none";
-    ini.textContent = iniciais;
-    ini.style.display = "block";
+
+    return;
   }
+
+  img.removeAttribute("src");
+  img.style.display = "none";
+  ini.textContent = iniciais;
+  ini.style.display = "block";
 }
 
 function voltarMenu() {
@@ -140,19 +193,23 @@ function voltarMenu() {
 
 function abrirModal() {
   $("modalOCR").style.display = "flex";
+  document.body.style.overflow = "hidden";
 }
 
 function fecharModal() {
   $("modalOCR").style.display = "none";
+  document.body.style.overflow = "";
 }
 
 function abrirSucesso(texto) {
   $("successText").textContent = texto || "Processamento concluído.";
   $("successModal").style.display = "flex";
+  document.body.style.overflow = "hidden";
 }
 
 function fecharSucesso() {
   $("successModal").style.display = "none";
+  document.body.style.overflow = "";
   fecharModal();
 }
 
@@ -172,31 +229,30 @@ function logOCR(msg, tipo = "INFO") {
 }
 
 function parseDataBR(dataStr) {
-  if (!dataStr || !String(dataStr).includes("/")) return null;
-  const [d, m, a] = String(dataStr).split("/").map(Number);
-  if (!d || !m || !a) return null;
-  const dt = new Date(a, m - 1, d);
+  if (!dataStr || dataStr === "-") return null;
+
+  const raw = String(dataStr).trim();
+
+  if (raw.includes("/")) {
+    const [d, m, a] = raw.split("/").map(Number);
+    if (!d || !m || !a) return null;
+
+    const dt = new Date(a, m - 1, d);
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+  }
+
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return null;
+
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
 
 function idadeNota(dataStr) {
-  if (!dataStr || dataStr === "-") return "-";
+  const dt = parseDataBR(dataStr);
+  if (!dt) return "-";
 
-  let dt = null;
-  const raw = String(dataStr).trim();
-
-  if (raw.includes("/")) {
-    const [d, m, a] = raw.split("/").map(Number);
-    if (!d || !m || !a) return "-";
-    dt = new Date(a, m - 1, d);
-  } else {
-    dt = new Date(raw);
-  }
-
-  if (!dt || Number.isNaN(dt.getTime())) return "-";
-
-  dt.setHours(0, 0, 0, 0);
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
@@ -210,7 +266,6 @@ function idadeNota(dataStr) {
 async function getJson(url) {
   const sep = url.includes("?") ? "&" : "?";
   const resp = await fetch(url + sep + "t=" + Date.now(), { cache: "no-store" });
-
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return await resp.json();
 }
@@ -219,10 +274,10 @@ function normalizarCards(json) {
   const cards = json.cards || json;
 
   return {
-    notas: cards.notas ?? cards.total_notas ?? 0,
-    itens: cards.itens ?? cards.materiais ?? cards.total_itens ?? 0,
-    fornecedores: cards.fornecedores ?? cards.total_fornecedores ?? 0,
-    pendencias: cards.pendencias ?? cards.sem_item ?? cards.total_erros ?? 0
+    notas: Number(cards.notas ?? cards.total_notas ?? 0),
+    itens: Number(cards.itens ?? cards.materiais ?? cards.total_itens ?? 0),
+    fornecedores: Number(cards.fornecedores ?? cards.total_fornecedores ?? 0),
+    pendencias: Number(cards.pendencias ?? cards.sem_item ?? cards.total_erros ?? 0)
   };
 }
 
@@ -239,9 +294,10 @@ async function carregarDashboard() {
     const totalGeral = cards.notas + cards.itens + cards.fornecedores;
     $("baseBar").style.width = totalGeral > 0 ? "100%" : "8%";
 
-    const atualizado = json.config?.ultimo_processamento
-      ? new Date(json.config.ultimo_processamento).toLocaleDateString("pt-BR")
-      : new Date().toLocaleDateString("pt-BR");
+    const atualizado =
+      json.ultima_atualizacao ||
+      json.config?.ultimo_processamento ||
+      new Date().toLocaleDateString("pt-BR");
 
     $("ultimaAtualizacao").textContent = atualizado;
     $("resumoBase").textContent = `${cards.notas} DANFEs • ${cards.itens} itens • ${cards.pendencias} pendência(s)`;
@@ -286,31 +342,32 @@ async function buscarMateriais() {
   }
 }
 
-
 function getField(obj, campos, fallback = "-") {
   for (const campo of campos) {
     const valor = obj?.[campo];
+
     if (valor !== undefined && valor !== null && String(valor).trim() !== "") {
       return valor;
     }
   }
+
   return fallback;
 }
 
 function renderResultados(data) {
   if (!data.length) {
-    document.getElementById('tbodyResultados').innerHTML = `
+    $("tbodyResultados").innerHTML = `
       <tr>
         <td colspan="9" class="empty">Nenhum material encontrado.</td>
       </tr>
     `;
-    document.getElementById('contadorResultados').textContent = "0 materiais encontrados";
+    $("contadorResultados").textContent = "0 materiais encontrados";
     return;
   }
 
-  document.getElementById('contadorResultados').textContent = `${data.length} materiais encontrados`;
+  $("contadorResultados").textContent = `${data.length} materiais encontrados`;
 
-  document.getElementById('tbodyResultados').innerHTML = data.map((item, idx) => {
+  $("tbodyResultados").innerHTML = data.map((item, idx) => {
     const material = getField(item, ["material", "descricao", "descricao_item", "xProd"]);
     const fornecedor = getField(item, ["fornecedor", "emitente", "razao_social", "razao_social_emitente", "nome_emitente", "fornecedor_nome", "xNome", "cnpj_emitente", "fornecedor_cnpj"]);
     const nf = getField(item, ["numero_nfe", "numero_nf", "numero_nota", "nNF", "nota", "nf"]);
@@ -356,9 +413,9 @@ function renderOrcamento() {
   }
 
   $("listaOrcamento").innerHTML = itensOrcamento.map((item, idx) => {
-    const material = item.material || item.descricao || "";
-    const valor = item.valor_unitario || item.valor || "";
-    const fornecedor = item.fornecedor || item.fornecedor_cnpj || item.cnpj_emitente || "";
+    const material = getField(item, ["material", "descricao", "descricao_item", "xProd"]);
+    const valor = getField(item, ["valor_unitario", "vUnCom", "valor", "preco_unitario_item"]);
+    const fornecedor = getField(item, ["fornecedor", "emitente", "xNome", "cnpj_emitente", "fornecedor_cnpj"]);
 
     return `
       <div class="budget-item">
@@ -388,6 +445,7 @@ async function processarPDFs() {
   $("progressBar").style.width = "10%";
   $("statusOCR").textContent = "Enviando PDFs para o motor OCR Render...";
   $("statusResumoOCR").textContent = `${files.length} arquivo(s)`;
+
   logOCR(`Enviando ${files.length} PDF(s) para ${OCR_RENDER_ENDPOINT}`);
 
   const formData = new FormData();
@@ -410,7 +468,7 @@ async function processarPDFs() {
 
     const json = await resp.json();
 
-    const totalArquivos = json.total_arquivos || 0;
+    const totalArquivos = Number(json.total_arquivos || 0);
     const resultados = json.resultados || [];
     const totalItens = resultados.reduce((acc, r) => acc + (Number(r.total_itens) || 0), 0);
     const semItem = resultados.filter(r => !Number(r.total_itens)).length;
@@ -429,7 +487,6 @@ async function processarPDFs() {
     await buscarMateriais();
 
     abrirSucesso(`${totalArquivos} DANFE(s) processadas e ${totalItens} item(ns) extraídos.`);
-
   } catch (e) {
     console.error(e);
     $("progressBar").style.width = "100%";
@@ -441,6 +498,7 @@ async function processarPDFs() {
 
 function atualizarFileInfo() {
   const files = $("pdfs").files;
+
   if (!files.length) {
     $("fileInfo").textContent = "Nenhum arquivo selecionado.";
     $("statusResumoOCR").textContent = "0 arquivo(s)";
@@ -459,21 +517,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("btnLimparOCR").addEventListener("click", limparOCR);
   $("btnSuccessOk").addEventListener("click", fecharSucesso);
   $("btnBuscar").addEventListener("click", buscarMateriais);
+
   $("btnLimparBusca").addEventListener("click", () => {
     $("busca").value = "";
     buscarMateriais();
   });
+
   $("btnLimparOrcamento").addEventListener("click", () => {
     itensOrcamento = [];
     renderOrcamento();
   });
+
   $("pdfs").addEventListener("change", atualizarFileInfo);
+
   $("busca").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") buscarMateriais();
+    if (event.key === "Enter") {
+      buscarMateriais();
+    }
   });
 
   aplicarUsuario();
   renderOrcamento();
+
   await carregarDashboard();
   await buscarMateriais();
 });
