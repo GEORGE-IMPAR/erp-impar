@@ -1,4 +1,4 @@
-
+\
 const API_BASE = "https://api.erpimpar.com.br/danfe";
 const OCR_RENDER_ENDPOINT = "https://ocr-danfe-impar.onrender.com/processar-lote";
 
@@ -71,6 +71,28 @@ function getLoggedUser() {
   return { nome: "Usuário", email: "—", cargo: "Obras", telefone: "", foto: "" };
 }
 
+function normalizarFotoUsuario(foto) {
+  let url = String(foto || "").trim();
+
+  if (!url) return "";
+
+  if (
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith("data:")
+  ) {
+    return url;
+  }
+
+  url = url.replace(/^\.\//, "").replace(/^\.\.\//, "");
+
+  if (url.startsWith("/")) {
+    return url;
+  }
+
+  return "/" + url;
+}
+
 function aplicarUsuario() {
   const user = getLoggedUser();
   const nome = user.nome || "Usuário";
@@ -84,9 +106,10 @@ function aplicarUsuario() {
 
   const img = $("userFoto");
   const ini = $("userIniciais");
+  const fotoUrl = normalizarFotoUsuario(user.foto);
 
-  if (user.foto && String(user.foto).trim()) {
-    img.src = user.foto;
+  if (fotoUrl) {
+    img.src = fotoUrl;
     img.style.display = "block";
     ini.style.display = "none";
 
@@ -319,51 +342,90 @@ function removerOrcamento(idx) {
   renderOrcamento();
 }
 
+async function enviarLoteParaRender(filesLote) {
+  const formData = new FormData();
+  filesLote.forEach(file => formData.append("files", file));
+
+  const resp = await fetch(OCR_RENDER_ENDPOINT, {
+    method: "POST",
+    body: formData,
+    mode: "cors",
+    credentials: "omit"
+  });
+
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status}`);
+  }
+
+  return await resp.json();
+}
+
 async function processarPDFs() {
-  const files = $("pdfs").files;
+  const files = Array.from($("pdfs").files || []);
+
   if (!files.length) {
     alert("Selecione pelo menos um PDF.");
     return;
   }
 
-  $("progressBar").style.width = "10%";
-  $("statusOCR").textContent = "Enviando PDFs para o motor OCR Render...";
-  $("statusResumoOCR").textContent = `${files.length} arquivo(s)`;
-  logOCR(`Enviando ${files.length} PDF(s) para ${OCR_RENDER_ENDPOINT}`);
+  const TAMANHO_LOTE = 5;
+  const totalArquivosSelecionados = files.length;
+  const totalLotes = Math.ceil(totalArquivosSelecionados / TAMANHO_LOTE);
 
-  const formData = new FormData();
-  Array.from(files).forEach(file => formData.append("files", file));
+  $("progressBar").style.width = "3%";
+  $("statusOCR").textContent = "Preparando lotes para o motor OCR Render...";
+  $("statusResumoOCR").textContent = `${totalArquivosSelecionados} arquivo(s) em ${totalLotes} lote(s)`;
+
+  logOCR(`Iniciando processamento em lote: ${totalArquivosSelecionados} PDF(s), ${totalLotes} lote(s) de até ${TAMANHO_LOTE}.`);
+
+  let totalArquivos = 0;
+  let totalItens = 0;
+  let totalPendencias = 0;
+  let erros = 0;
 
   try {
-    $("progressBar").style.width = "35%";
-    logOCR("Processamento iniciado. Aguarde...");
+    for (let i = 0; i < totalLotes; i++) {
+      const inicio = i * TAMANHO_LOTE;
+      const fim = inicio + TAMANHO_LOTE;
+      const lote = files.slice(inicio, fim);
 
-    const resp = await fetch(OCR_RENDER_ENDPOINT, { method: "POST", body: formData });
-    $("progressBar").style.width = "78%";
+      const progressoInicio = Math.round((i / totalLotes) * 90) + 5;
+      $("progressBar").style.width = `${progressoInicio}%`;
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      $("statusOCR").textContent = `Processando lote ${i + 1} de ${totalLotes}...`;
+      $("statusResumoOCR").textContent = `${lote.length} arquivo(s) no lote atual`;
 
-    const json = await resp.json();
-    const totalArquivos = Number(json.total_arquivos || 0);
-    const resultados = json.resultados || [];
-    const totalItens = resultados.reduce((acc, r) => acc + (Number(r.total_itens) || 0), 0);
-    const semItem = resultados.filter(r => !Number(r.total_itens)).length;
+      logOCR(`Enviando lote ${i + 1}/${totalLotes}: ${lote.map(f => f.name).join(", ")}`);
 
-    logOCR(`Processamento finalizado: ${totalArquivos} arquivo(s), ${totalItens} item(ns), ${semItem} pendência(s).`, "OK");
+      const json = await enviarLoteParaRender(lote);
 
-    if (json.erp_sync) {
-      logOCR(`Sincronização ERP: ${JSON.stringify(json.erp_sync).slice(0, 500)}`, json.erp_sync.ok ? "OK" : "WARN");
+      const resultados = json.resultados || [];
+      const itensLote = resultados.reduce((acc, r) => acc + (Number(r.total_itens) || 0), 0);
+      const pendenciasLote = resultados.filter(r => !Number(r.total_itens)).length;
+
+      totalArquivos += Number(json.total_arquivos || resultados.length || lote.length);
+      totalItens += itensLote;
+      totalPendencias += pendenciasLote;
+
+      if (json.erp_sync) {
+        logOCR(`Lote ${i + 1}: sincronização ERP ${json.erp_sync.ok ? "OK" : "WARN"}.`, json.erp_sync.ok ? "OK" : "WARN");
+      }
+
+      logOCR(`Lote ${i + 1}/${totalLotes} concluído: ${itensLote} item(ns), ${pendenciasLote} pendência(s).`, "OK");
     }
 
     $("progressBar").style.width = "100%";
     $("statusOCR").textContent = "Base atualizada com sucesso.";
     $("statusResumoOCR").textContent = `${totalItens} item(ns) extraído(s)`;
 
+    logOCR(`Processamento finalizado: ${totalArquivos} arquivo(s), ${totalItens} item(ns), ${totalPendencias} pendência(s).`, "OK");
+
     await carregarDashboard();
     await buscarMateriais();
 
     abrirSucesso(`${totalArquivos} DANFE(s) processadas e ${totalItens} item(ns) extraídos.`);
   } catch (e) {
+    erros++;
     console.error(e);
     $("progressBar").style.width = "100%";
     $("statusOCR").textContent = "Erro no processamento OCR.";
