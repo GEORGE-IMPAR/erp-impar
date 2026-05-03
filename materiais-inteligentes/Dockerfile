@@ -16,5 +16,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV PORT=10000
+ENV ERP_SALVAR_ENDPOINT=https://api.erpimpar.com.br/danfe/salvar_resultado.php
 
-CMD ["python", "app_ocr.py"]
+CMD ["uvicorn", "app_ocr:app", "--host", "0.0.0.0", "--port", "10000"]
