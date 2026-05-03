@@ -1,1 +1,317 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ERP ÍMPAR • Materiais Inteligentes</title><style>:root{--bg1:#07111f;--bg2:#0b1f35;--card:#101c2f;--line:#20304a;--txt:#f8fbff;--muted:#9db7dd;--green:#22c55e;--red:#ef4444}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2));color:var(--txt)}.header{display:flex;align-items:center;gap:14px;padding:20px 26px;border-bottom:1px solid rgba(255,255,255,.07)}.logo-orb{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#06b6d4,#2563eb);box-shadow:0 0 28px rgba(34,197,94,.25)}h1{margin:0;font-size:25px}.header small{color:#9dc2ff}.back{margin-left:auto;color:#fff;text-decoration:none;border:1px solid #244064;padding:10px 14px;border-radius:12px;background:#0b1627;font-weight:800}.wrap{padding:18px;display:grid;gap:16px}.cards{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:14px}.card,.panel{background:linear-gradient(180deg,#10203a,#0a1424);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 14px 30px rgba(0,0,0,.22)}.card span{display:block;color:var(--muted);font-size:12px;font-weight:900;letter-spacing:.06em}.card strong{font-size:34px;display:block;margin-top:8px}.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}.panel h2{margin:0 0 12px;font-size:18px}.sub{color:#9dc2ff;font-size:12px;margin-top:-8px;margin-bottom:14px}.search{display:flex;gap:10px;margin-bottom:12px}.search input{flex:1;padding:13px;border-radius:12px;border:1px solid var(--line);background:#081323;color:#fff;font-weight:700}button{border:0;border-radius:12px;padding:13px 16px;background:linear-gradient(135deg,#22c55e,#16a34a);font-weight:900;cursor:pointer}.tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px;max-height:520px}table{width:100%;border-collapse:collapse;min-width:920px}th,td{padding:10px;border-bottom:1px solid #1c2b43;text-align:left;font-size:12px;vertical-align:top}th{position:sticky;top:0;background:#081323;color:#dbeafe;font-size:11px;text-transform:uppercase}.badge{display:inline-block;padding:6px 8px;border-radius:999px;background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.3);font-size:11px;font-weight:900}.price{font-weight:900}.muted{color:var(--muted)}.danger{color:#fca5a5}.ok{color:#86efac}@media(max-width:1000px){.grid,.cards{grid-template-columns:1fr}}</style></head><body><header class="header"><div class="logo-orb"></div><div><h1>ERP ÍMPAR • Materiais Inteligentes</h1><small>Banco histórico de materiais, fornecedores e preços extraídos de DANFEs.</small></div><a class="back" href="/">Voltar ao menu</a></header><main class="wrap"><section class="cards"><div class="card"><span>NOTAS PROCESSADAS</span><strong id="cNotas">0</strong></div><div class="card"><span>ITENS CATALOGADOS</span><strong id="cItens">0</strong></div><div class="card"><span>FORNECEDORES</span><strong id="cForn">0</strong></div><div class="card"><span>SEM ITEM / REVISÃO</span><strong id="cErros">0</strong></div></section><section class="grid"><div class="panel"><h2>Consulta de materiais</h2><div class="sub">Pesquise por descrição, NCM, código ou palavra-chave.</div><div class="search"><input id="q" placeholder="Ex.: DAMPER, CABO FLEX, DUTO, ARAME..." onkeydown="if(event.key==='Enter')buscar()"><button onclick="buscar()">Buscar</button></div><div class="tableWrap"><table><thead><tr><th>Material</th><th>Fornecedor</th><th>Data</th><th>Qtd</th><th>Un</th><th>Valor Unit.</th><th>NF</th><th>Modo</th></tr></thead><tbody id="tblMateriais"><tr><td colspan="8" class="muted">Digite uma busca acima.</td></tr></tbody></table></div></div><div class="panel"><h2>Últimos materiais importados</h2><div class="sub">Amostra do banco consolidado.</div><div class="tableWrap"><table><thead><tr><th>Material</th><th>Data</th><th>Valor</th></tr></thead><tbody id="tblUltimos"><tr><td colspan="3" class="muted">Carregando...</td></tr></tbody></table></div></div></section><section class="panel"><h2>Notas processadas</h2><div class="sub">Resumo para auditoria e revisão de falhas.</div><div class="tableWrap"><table><thead><tr><th>Arquivo</th><th>NF</th><th>Data</th><th>CNPJ</th><th>Itens</th><th>Status</th><th>Modo</th></tr></thead><tbody id="tblNotas"><tr><td colspan="7" class="muted">Carregando...</td></tr></tbody></table></div></section></main><script>const API='https://api.erpimpar.com.br/danfe';function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}function idade(data){if(!data||!data.includes('/'))return'';const[d,m,a]=data.split('/').map(Number);const dt=new Date(a,m-1,d);const hj=new Date();hj.setHours(0,0,0,0);dt.setHours(0,0,0,0);const dias=Math.floor((hj-dt)/86400000);const cls=dias>90?'danger':dias>30?'muted':'ok';return `<span class="${cls}">${esc(data)} • ${dias} dias</span>`}async function getJson(url){const r=await fetch(url+(url.includes('?')?'&':'?')+'t='+Date.now());return await r.json()}async function carregarDashboard(){const j=await getJson(API+'/dashboard.php');if(!j.ok)return;document.getElementById('cNotas').textContent=j.cards.notas||0;document.getElementById('cItens').textContent=j.cards.itens||0;document.getElementById('cForn').textContent=j.cards.fornecedores||0;document.getElementById('cErros').textContent=j.cards.sem_item||0;renderUltimos(j.ultimos_itens||[])}function renderUltimos(data){const tb=document.getElementById('tblUltimos');if(!data.length){tb.innerHTML='<tr><td colspan="3" class="muted">Sem dados.</td></tr>';return}tb.innerHTML=data.map(x=>`<tr><td>${esc(x.material)}</td><td>${idade(x.data_saida)}</td><td class="price">R$ ${esc(x.valor_unitario)}</td></tr>`).join('')}async function buscar(){const q=document.getElementById('q').value.trim();const j=await getJson(API+'/listar_materiais.php?q='+encodeURIComponent(q)+'&limite=500');const tb=document.getElementById('tblMateriais');if(!j.ok||!j.data.length){tb.innerHTML='<tr><td colspan="8" class="muted">Nenhum material encontrado.</td></tr>';return}tb.innerHTML=j.data.map(x=>`<tr><td>${esc(x.material)}</td><td>${esc(x.fornecedor_cnpj)}</td><td>${idade(x.data_saida)}</td><td>${esc(x.quantidade)}</td><td>${esc(x.unidade)}</td><td class="price">R$ ${esc(x.valor_unitario)}</td><td>${esc(x.numero_nfe)}</td><td><span class="badge">${esc(x.modo)}</span></td></tr>`).join('')}async function carregarNotas(){const j=await getJson(API+'/listar_notas.php');const tb=document.getElementById('tblNotas');if(!j.ok||!j.data.length){tb.innerHTML='<tr><td colspan="7" class="muted">Sem notas processadas.</td></tr>';return}tb.innerHTML=j.data.slice(0,300).map(n=>`<tr><td>${esc(n.arquivo)}</td><td>${esc(n.numero_nfe)}</td><td>${idade(n.data_saida)}</td><td>${esc(n.cnpj_emitente)}</td><td>${esc(n.total_itens)}</td><td>${Number(n.total_itens)>0?'<span class="badge">OK</span>':'<span class="danger">REVISAR</span>'}</td><td>${esc(n.modo)}</td></tr>`).join('')}carregarDashboard();carregarNotas();</script></body></html>
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP ÍMPAR • Materiais Inteligentes</title>
+
+<style>
+:root{
+    --bg1:#07111f;
+    --bg2:#0b1f35;
+    --bg3:#12385b;
+    --card:#10203a;
+    --line:#20304a;
+    --txt:#f8fbff;
+    --muted:#9db7dd;
+    --green:#22c55e;
+    --green2:#16a34a;
+}
+
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    font-family:Arial,Helvetica,sans-serif;
+    color:var(--txt);
+    background:
+        radial-gradient(circle at top left,rgba(34,197,94,.12),transparent 30%),
+        linear-gradient(135deg,var(--bg1),var(--bg2),var(--bg3));
+}
+
+.header{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:20px 26px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    background:rgba(7,17,31,.92);
+    position:sticky;
+    top:0;
+    z-index:10;
+    backdrop-filter:blur(10px);
+}
+
+.logo-orb{
+    width:52px;
+    height:52px;
+    border-radius:50%;
+    background:linear-gradient(135deg,#22c55e,#06b6d4,#2563eb);
+    box-shadow:0 0 30px rgba(34,197,94,.35);
+}
+
+.brand h1{
+    margin:0;
+    font-size:26px;
+}
+
+.brand small{
+    color:#9dc2ff;
+}
+
+.back{
+    margin-left:auto;
+    color:#fff;
+    text-decoration:none;
+    border:1px solid #244064;
+    padding:10px 14px;
+    border-radius:12px;
+    background:#0b1627;
+    font-weight:800;
+}
+
+.wrap{
+    padding:18px;
+    display:grid;
+    gap:18px;
+}
+
+.cards{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:16px;
+}
+
+.card{
+    background:linear-gradient(180deg,#10203a,#0a1424);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:18px;
+    box-shadow:0 14px 30px rgba(0,0,0,.22);
+}
+
+.card span{
+    color:var(--muted);
+    font-size:12px;
+    text-transform:uppercase;
+    font-weight:900;
+}
+
+.card strong{
+    display:block;
+    margin-top:10px;
+    font-size:36px;
+}
+
+.panel{
+    background:linear-gradient(180deg,#10203a,#0a1424);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:18px;
+}
+
+.panel h2{
+    margin-top:0;
+}
+
+.search{
+    display:flex;
+    gap:10px;
+    margin-bottom:14px;
+}
+
+.search input{
+    flex:1;
+    padding:12px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:#081323;
+    color:#fff;
+}
+
+button{
+    border:none;
+    border-radius:12px;
+    padding:12px 16px;
+    font-weight:900;
+    cursor:pointer;
+    background:linear-gradient(135deg,var(--green),var(--green2));
+}
+
+.tableWrap{
+    overflow:auto;
+    border:1px solid var(--line);
+    border-radius:14px;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th,td{
+    padding:10px;
+    border-bottom:1px solid #1c2b43;
+    text-align:left;
+    font-size:12px;
+}
+
+th{
+    background:#081323;
+    color:#dbeafe;
+}
+
+.badge{
+    background:rgba(34,197,94,.15);
+    color:#86efac;
+    border:1px solid rgba(34,197,94,.3);
+    padding:5px 8px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:900;
+}
+
+@media(max-width:1000px){
+    .cards{
+        grid-template-columns:1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+
+<div class="logo-orb"></div>
+
+<div class="brand">
+    <h1>ERP ÍMPAR • Materiais Inteligentes</h1>
+    <small>Base histórica de materiais, preços e fornecedores extraídos via OCR DANFE.</small>
+</div>
+
+<a class="back" href="/">
+    Voltar ao menu
+</a>
+
+</header>
+
+<main class="wrap">
+
+<section class="cards">
+
+<div class="card">
+    <span>Notas processadas</span>
+    <strong id="cNotas">0</strong>
+</div>
+
+<div class="card">
+    <span>Itens catalogados</span>
+    <strong id="cItens">0</strong>
+</div>
+
+<div class="card">
+    <span>Fornecedores</span>
+    <strong id="cFornecedores">0</strong>
+</div>
+
+<div class="card">
+    <span>Pendências</span>
+    <strong id="cPendencias">0</strong>
+</div>
+
+</section>
+
+<section class="panel">
+
+<h2>Consulta de materiais</h2>
+
+<div class="search">
+    <input id="busca" placeholder="Pesquisar material...">
+    <button onclick="buscar()">Buscar</button>
+</div>
+
+<div class="tableWrap">
+
+<table>
+
+<thead>
+<tr>
+    <th>Material</th>
+    <th>Fornecedor</th>
+    <th>Data</th>
+    <th>Qtd</th>
+    <th>UN</th>
+    <th>Valor</th>
+    <th>NF</th>
+    <th>Modo</th>
+</tr>
+</thead>
+
+<tbody id="tbody">
+<tr>
+<td colspan="8">Carregando...</td>
+</tr>
+</tbody>
+
+</table>
+
+</div>
+
+</section>
+
+</main>
+
+<script>
+
+const API = 'https://api.erpimpar.com.br/danfe';
+
+async function dashboard(){
+
+    const r = await fetch(API + '/dashboard.php?t=' + Date.now());
+    const j = await r.json();
+
+    if(!j.ok) return;
+
+    document.getElementById('cNotas').innerText = j.cards.notas || 0;
+    document.getElementById('cItens').innerText = j.cards.itens || 0;
+    document.getElementById('cFornecedores').innerText = j.cards.fornecedores || 0;
+    document.getElementById('cPendencias').innerText = j.cards.pendencias || 0;
+}
+
+async function buscar(){
+
+    const q = document.getElementById('busca').value;
+
+    const r = await fetch(API + '/listar_materiais.php?q=' + encodeURIComponent(q));
+    const j = await r.json();
+
+    const tbody = document.getElementById('tbody');
+
+    tbody.innerHTML = '';
+
+    (j.data || []).forEach(item=>{
+
+        tbody.innerHTML += `
+        <tr>
+            <td>${item.material || ''}</td>
+            <td>${item.cnpj_emitente || ''}</td>
+            <td>${item.data_saida || ''}</td>
+            <td>${item.quantidade || ''}</td>
+            <td>${item.unidade || ''}</td>
+            <td>${item.valor_unitario || ''}</td>
+            <td>${item.numero_nfe || ''}</td>
+            <td><span class="badge">${item.modo || ''}</span></td>
+        </tr>
+        `;
+    });
+}
+
+dashboard();
+buscar();
+
+</script>
+
+</body>
+</html>
