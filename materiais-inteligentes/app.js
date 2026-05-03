@@ -1,3 +1,4 @@
+\
 const API_BASE = "https://api.erpimpar.com.br/danfe";
 const OCR_RENDER_ENDPOINT = "https://ocr-danfe-impar.onrender.com/processar-lote";
 
@@ -472,4 +473,371 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderOrcamento();
   await carregarDashboard();
   await buscarMateriais();
+});
+
+
+/* =========================================================
+   V1.7 — INTELIGÊNCIA ORÇAMENTÁRIA
+   ========================================================= */
+
+function normalizarBuscaTexto(txt) {
+  return String(txt || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/(\d+)\s*,\s*(\d+)/g, "$1.$2")
+    .replace(/(\d+)\s*mm/g, "$1mm")
+    .replace(/(\d+)\s*\/\s*(\d+)/g, "$1/$2")
+    .replace(/[^a-z0-9/.\s]+/g, " ")
+    .replace(/\bflexivel\b/g, "flex")
+    .replace(/\bflexiveis\b/g, "flex")
+    .replace(/\bcabos\b/g, "cabo")
+    .replace(/\bdutos\b/g, "duto")
+    .replace(/\bdisjuntores\b/g, "disjuntor")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokensMaterial(txt) {
+  const stop = new Set(["de", "da", "do", "das", "dos", "com", "sem", "para", "em", "e", "a", "o"]);
+  return normalizarBuscaTexto(txt).split(" ").filter(t => t && !stop.has(t));
+}
+
+function scoreSimilaridade(a, b) {
+  const ta = tokensMaterial(a);
+  const tb = tokensMaterial(b);
+
+  if (!ta.length || !tb.length) return 0;
+
+  const sa = new Set(ta);
+  const sb = new Set(tb);
+
+  let comum = 0;
+  sa.forEach(t => {
+    if (sb.has(t)) comum++;
+  });
+
+  const jaccard = comum / new Set([...ta, ...tb]).size;
+
+  const na = normalizarBuscaTexto(a);
+  const nb = normalizarBuscaTexto(b);
+
+  let bonus = 0;
+
+  if (na.includes(nb) || nb.includes(na)) bonus += 0.25;
+
+  const medidasA = na.match(/\d+(?:\.\d+)?(?:mm|\/\d+)?/g) || [];
+  const medidasB = nb.match(/\d+(?:\.\d+)?(?:mm|\/\d+)?/g) || [];
+
+  medidasA.forEach(m => {
+    if (medidasB.includes(m)) bonus += 0.18;
+  });
+
+  return Math.min(100, Math.round((jaccard + bonus) * 100));
+}
+
+function recalcularSimilaridade() {
+  const termo = $("busca")?.value || "";
+
+  if (!termo.trim()) {
+    $("listaSimilaridade").innerHTML = `<div class="empty-card">Pesquise um material para receber sugestões inteligentes.</div>`;
+    return;
+  }
+
+  const candidatos = (ultimosResultados || [])
+    .map((item, idx) => {
+      const material = getField(item, ["material", "descricao", "descricao_item", "xProd"], "");
+      const fornecedor = getField(item, ["fornecedor", "emitente", "xNome", "cnpj_emitente", "fornecedor_cnpj"], "-");
+      const valor = getField(item, ["valor_unitario", "vUnCom", "valor", "preco_unitario_item"], "-");
+      const dataNota = getField(item, ["data_saida", "data_emissao", "dhEmi", "data", "emissao"], "-");
+
+      return {
+        idx,
+        item,
+        material,
+        fornecedor,
+        valor,
+        dataNota,
+        score: scoreSimilaridade(termo, material)
+      };
+    })
+    .filter(x => x.score >= 25)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 9);
+
+  if (!candidatos.length) {
+    $("listaSimilaridade").innerHTML = `<div class="empty-card">Nenhum material semelhante encontrado para esta busca.</div>`;
+    return;
+  }
+
+  $("listaSimilaridade").innerHTML = candidatos.map(c => `
+    <div class="sim-card">
+      <div class="sim-score">${c.score}% similar</div>
+      <div class="sim-title">${escapeHtml(c.material)}</div>
+      <div class="sim-meta">
+        Fornecedor: ${escapeHtml(c.fornecedor)}<br>
+        Data: ${escapeHtml(c.dataNota)}<br>
+        Valor: R$ ${escapeHtml(c.valor)}
+      </div>
+      <button class="btn-secondary" type="button" onclick="adicionarOrcamento(${c.idx})">
+        + Usar na proposta
+      </button>
+    </div>
+  `).join("");
+}
+
+const buscarMateriaisOriginalV17 = buscarMateriais;
+buscarMateriais = async function() {
+  await buscarMateriaisOriginalV17();
+  recalcularSimilaridade();
+};
+
+function moedaBR(valor) {
+  let n = String(valor ?? "0")
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+
+  const num = Number(n);
+
+  if (Number.isNaN(num)) return "R$ 0,00";
+
+  return num.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+
+function numeroBR(valor) {
+  let n = String(valor ?? "0")
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+
+  const num = Number(n);
+
+  return Number.isNaN(num) ? 0 : num;
+}
+
+function atualizarQtdOrcamento(idx, value) {
+  if (!itensOrcamento[idx]) return;
+
+  itensOrcamento[idx]._qtd_orcamento = value;
+  renderOrcamento();
+}
+
+function removerOrcamento(idx) {
+  itensOrcamento.splice(idx, 1);
+  renderOrcamento();
+}
+
+renderOrcamento = function() {
+  $("kOrcamento").textContent = itensOrcamento.length;
+
+  if (!itensOrcamento.length) {
+    $("listaOrcamento").innerHTML = `<div class="empty-card">Nenhum material selecionado ainda.</div>`;
+    return;
+  }
+
+  $("listaOrcamento").innerHTML = itensOrcamento.map((item, idx) => {
+    const material = getField(item, ["material", "descricao", "descricao_item", "xProd"], "-");
+    const valor = getField(item, ["valor_unitario", "vUnCom", "valor", "preco_unitario_item"], "0");
+    const fornecedor = getField(item, ["fornecedor", "emitente", "xNome", "cnpj_emitente", "fornecedor_cnpj"], "-");
+    const un = getField(item, ["unidade", "uCom", "un"], "-");
+    const qtdBase = getField(item, ["quantidade", "qCom", "qtd", "quantidade_item"], "1");
+    const qtdOrc = item._qtd_orcamento ?? qtdBase ?? "1";
+    const total = numeroBR(valor) * numeroBR(qtdOrc);
+
+    return `
+      <div class="budget-item">
+        <div>
+          <strong>${escapeHtml(material)}</strong><br>
+          <span style="color:rgba(238,246,255,.72);font-size:12px;">
+            ${escapeHtml(fornecedor)} • ${escapeHtml(un)} • ${moedaBR(valor)}
+          </span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <label style="font-size:11px;color:#9fdcff;font-weight:900;">QTD</label>
+          <input value="${escapeHtml(qtdOrc)}" onchange="atualizarQtdOrcamento(${idx}, this.value)">
+          <div class="budget-item-total">${moedaBR(total)}</div>
+          <button class="btn-secondary" style="padding:8px 12px;" onclick="removerOrcamento(${idx})">Remover</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+};
+
+function coletarDadosProposta() {
+  const cliente = $("orc-cliente")?.value || "";
+  const responsavel = $("orc-responsavel")?.value || "";
+  const validade = $("orc-validade")?.value || "";
+  const obs = $("orc-obs")?.value || "";
+
+  const itens = itensOrcamento.map((item, idx) => {
+    const material = getField(item, ["material", "descricao", "descricao_item", "xProd"], "-");
+    const fornecedor = getField(item, ["fornecedor", "emitente", "xNome", "cnpj_emitente", "fornecedor_cnpj"], "-");
+    const nf = getField(item, ["numero_nfe", "numero_nf", "numero_nota", "nNF", "nota", "nf"], "-");
+    const dataNota = getField(item, ["data_saida", "data_emissao", "dhEmi", "data", "emissao"], "-");
+    const un = getField(item, ["unidade", "uCom", "un"], "-");
+    const valor = getField(item, ["valor_unitario", "vUnCom", "valor", "preco_unitario_item"], "0");
+    const qtdBase = getField(item, ["quantidade", "qCom", "qtd", "quantidade_item"], "1");
+    const qtd = item._qtd_orcamento ?? qtdBase ?? "1";
+    const total = numeroBR(valor) * numeroBR(qtd);
+
+    return {
+      item: idx + 1,
+      material,
+      fornecedor,
+      nf,
+      dataNota,
+      un,
+      qtd,
+      valor,
+      total
+    };
+  });
+
+  const totalGeral = itens.reduce((acc, i) => acc + Number(i.total || 0), 0);
+
+  return {
+    cliente,
+    responsavel,
+    validade,
+    obs,
+    data: new Date().toLocaleDateString("pt-BR"),
+    itens,
+    totalGeral
+  };
+}
+
+function gerarHtmlProposta(dados) {
+  const linhas = dados.itens.map(i => `
+    <tr>
+      <td>${i.item}</td>
+      <td>${escapeHtml(i.material)}</td>
+      <td>${escapeHtml(i.fornecedor)}</td>
+      <td>${escapeHtml(i.nf)}</td>
+      <td>${escapeHtml(i.dataNota)}</td>
+      <td>${escapeHtml(i.un)}</td>
+      <td>${escapeHtml(i.qtd)}</td>
+      <td>${moedaBR(i.valor)}</td>
+      <td>${moedaBR(i.total)}</td>
+    </tr>
+  `).join("");
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Proposta Comercial - ERP ÍMPAR</title>
+<style>
+  body{font-family:Arial,sans-serif;color:#111;margin:36px;}
+  .head{border-bottom:4px solid #0f766e;padding-bottom:18px;margin-bottom:24px;}
+  .brand{font-size:26px;font-weight:900;color:#0f172a;}
+  .sub{color:#0f766e;font-weight:700;}
+  h1{font-size:24px;margin:24px 0 10px;}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0;}
+  .box{border:1px solid #ddd;padding:10px;border-radius:8px;}
+  table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}
+  th{background:#0f172a;color:white;padding:9px;text-align:left;}
+  td{border-bottom:1px solid #ddd;padding:8px;vertical-align:top;}
+  tr:nth-child(even){background:#f8fafc;}
+  .total{margin-top:22px;text-align:right;font-size:20px;font-weight:900;color:#0f766e;}
+  .obs{margin-top:22px;border-left:4px solid #0f766e;padding:12px;background:#f8fafc;}
+  .foot{margin-top:38px;font-size:11px;color:#555;border-top:1px solid #ddd;padding-top:12px;}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="brand">ERP ÍMPAR • Proposta Comercial</div>
+    <div class="sub">Base orçamentária gerada por Materiais Inteligentes</div>
+  </div>
+
+  <h1>Proposta / Base de Custos</h1>
+
+  <div class="meta">
+    <div class="box"><strong>Cliente / Obra:</strong><br>${escapeHtml(dados.cliente || "-")}</div>
+    <div class="box"><strong>Responsável:</strong><br>${escapeHtml(dados.responsavel || "-")}</div>
+    <div class="box"><strong>Data:</strong><br>${escapeHtml(dados.data)}</div>
+    <div class="box"><strong>Validade:</strong><br>${escapeHtml(dados.validade || "-")}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Material</th>
+        <th>Fornecedor base</th>
+        <th>NF</th>
+        <th>Data NF</th>
+        <th>UN</th>
+        <th>Qtd</th>
+        <th>Valor Unit.</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>${linhas}</tbody>
+  </table>
+
+  <div class="total">Total estimado: ${moedaBR(dados.totalGeral)}</div>
+
+  <div class="obs">
+    <strong>Observações:</strong><br>
+    ${escapeHtml(dados.obs || "Valores utilizados como referência histórica de compras. Validar disponibilidade e impostos antes da emissão final.")}
+  </div>
+
+  <div class="foot">
+    Documento gerado automaticamente pelo ERP ÍMPAR • Materiais Inteligentes.
+  </div>
+</body>
+</html>`;
+}
+
+function baixarArquivo(nome, conteudo, tipo) {
+  const blob = new Blob([conteudo], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function gerarPropostaWord() {
+  if (!itensOrcamento.length) {
+    alert("Selecione pelo menos um material para gerar a proposta.");
+    return;
+  }
+
+  const dados = coletarDadosProposta();
+  const html = gerarHtmlProposta(dados);
+  const nome = `proposta_materiais_${new Date().toISOString().slice(0,10)}.doc`;
+
+  baixarArquivo(nome, html, "application/msword;charset=utf-8");
+}
+
+function exportarOrcamentoJson() {
+  if (!itensOrcamento.length) {
+    alert("Selecione pelo menos um material para exportar.");
+    return;
+  }
+
+  const dados = coletarDadosProposta();
+  baixarArquivo(
+    `orcamento_materiais_${new Date().toISOString().slice(0,10)}.json`,
+    JSON.stringify(dados, null, 2),
+    "application/json;charset=utf-8"
+  );
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    $("btnRecalcularSimilaridade")?.addEventListener("click", recalcularSimilaridade);
+    $("btnGerarPropostaWord")?.addEventListener("click", gerarPropostaWord);
+    $("btnExportarOrcamentoJson")?.addEventListener("click", exportarOrcamentoJson);
+  }, 300);
 });
