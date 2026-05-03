@@ -26,10 +26,18 @@ app = FastAPI(title="ERP ÍMPAR - OCR DANFE em Lote - Motor Híbrido V3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+
+# ROTA EXPLÍCITA PARA PREFLIGHT CORS
+# Mantém segurança mínima para teste: libera qualquer origem/método/header.
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return {"ok": True}
 
 # =============================
 # NORMALIZAÇÃO
