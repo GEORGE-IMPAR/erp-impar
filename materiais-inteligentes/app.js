@@ -1,3 +1,4 @@
+\
 const API_BASE = "https://api.erpimpar.com.br/danfe";
 const OCR_RENDER_ENDPOINT = "https://ocr-danfe-impar.onrender.com/processar-lote";
 
@@ -128,7 +129,7 @@ function aplicarUsuario() {
 }
 
 function voltarMenu() {
-  window.location.href = "/menu.html";
+  window.location.href = "https://www.erpimpar.com.br/index.html";
 }
 
 function abrirModal() {
