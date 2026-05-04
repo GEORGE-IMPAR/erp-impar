@@ -175,7 +175,7 @@ function renderItens() {
       <td><input value="${it.valorUnitario ? moeda(it.valorUnitario) : ""}" placeholder="Valor unitário" data-field="valorUnitario"></td>
       <td><input value="${moeda(it.valorTotal)}" readonly></td>
       <td><input value="${saldo.toFixed(2).replace(".", ",")}%" readonly></td>
-      <td><button class="remove-btn" onclick="removerItem(${idx})">×</button></td>
+      <td><button class="remove-btn" onclick="removerItem(${idx})" type="button">×</button></td>
     `;
 
     tr.querySelectorAll("input[data-field]").forEach((input) => {
@@ -189,6 +189,11 @@ function renderItens() {
         it.valorTotal = (Number(it.quantidade) || 0) * (Number(it.valorUnitario) || 0);
         atualizarLinha(tr, it);
         atualizarResumo();
+      });
+
+      input.addEventListener("blur", () => {
+        const field = input.dataset.field;
+        if (field === "valorUnitario") input.value = it.valorUnitario ? moeda(it.valorUnitario) : "";
       });
     });
 
@@ -437,26 +442,6 @@ async function confirmarMedicao() {
   });
 }
 
-async function gerarContrato() {
-  const payload = montarPayload();
-
-  try {
-    const resp = await post(`${API_BASE}/salvar_contrato.php`, payload);
-
-    Swal.fire({
-      icon: "success",
-      title: "Contrato salvo",
-      html: `Contrato gravado.<br><br><b>ID:</b> ${resp.id || "—"}<br><br>Use o template DOCX do pacote para geração final.`
-    });
-  } catch (e) {
-    Swal.fire({
-      icon: "error",
-      title: "Erro ao salvar contrato",
-      text: e.message
-    });
-  }
-}
-
 function montarPayload() {
   const totalMedido = estado.itens.reduce((s, it) => {
     return s + ((Number(it.valorTotal) || 0) * (Number(it.percentualMedido) || 0) / 100);
@@ -484,7 +469,7 @@ function montarPayload() {
     },
     meta: {
       criado_em: new Date().toISOString(),
-      origem: "contrato_empreiteiro_rebuild_v3"
+      origem: "contrato_empreiteiro_v6_completo"
     }
   };
 }
@@ -509,6 +494,112 @@ async function post(url, data) {
   }
 
   return js;
+}
+
+function baixarContratoPorId(id) {
+  if (!id) return;
+  window.open(`${API_BASE}/gerar_contrato_por_id.php?id=${encodeURIComponent(id)}`, "_blank");
+}
+
+async function gerarContrato() {
+  const payload = montarPayload();
+
+  if (!payload.obra || !payload.empreiteiro) {
+    Swal.fire({
+      icon: "warning",
+      title: "Dados incompletos",
+      text: "Informe obra e empreiteiro antes de gerar o contrato."
+    });
+    return;
+  }
+
+  try {
+    const resp = await post(`${API_BASE}/salvar_contrato.php`, payload);
+    const id = resp.id || payload.id;
+
+    Swal.fire({
+      icon: "success",
+      title: "Contrato salvo",
+      html: `JSON gravado com sucesso.<br><br><b>ID:</b> ${id}<br><br>Iniciando download do contrato...`
+    });
+
+    setTimeout(() => {
+      baixarContratoPorId(id);
+    }, 600);
+
+  } catch (e) {
+    Swal.fire({
+      icon: "error",
+      title: "Erro ao salvar contrato",
+      text: e.message
+    });
+  }
+}
+
+async function abrirContratosSalvos() {
+  const body = document.getElementById("contratosSalvosBody");
+
+  if (!body) {
+    Swal.fire({
+      icon: "error",
+      title: "Modal não encontrado",
+      text: "O modal de contratos salvos não está no index.html."
+    });
+    return;
+  }
+
+  body.innerHTML = `
+    <tr>
+      <td colspan="6">Carregando contratos salvos...</td>
+    </tr>
+  `;
+
+  abrirModal("modalContratosSalvos");
+
+  try {
+    const res = await fetch(`${API_BASE}/listar_contratos.php?t=${Date.now()}`);
+    const js = await res.json();
+
+    const contratos = js.contratos || [];
+
+    if (!contratos.length) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="6">Nenhum contrato salvo encontrado.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    body.innerHTML = "";
+
+    contratos.forEach(c => {
+      const tr = document.createElement("tr");
+
+      tr.innerHTML = `
+        <td>${c.id || "—"}</td>
+        <td>${c.obra || "—"}</td>
+        <td>${c.empreiteiro || "—"}</td>
+        <td>${moeda(c.valor_contrato || 0)}</td>
+        <td>${c.data_extenso || c.data || "—"}</td>
+        <td>
+          <button class="btn-primary" style="min-width:150px;padding:10px 14px" onclick="baixarContratoPorId('${c.id}')" type="button">
+            Gerar DOCX
+          </button>
+        </td>
+      `;
+
+      body.appendChild(tr);
+    });
+
+  } catch (e) {
+    console.error(e);
+    body.innerHTML = `
+      <tr>
+        <td colspan="6">Erro ao carregar contratos salvos.</td>
+      </tr>
+    `;
+  }
 }
 
 async function carregarEmpreiteiros() {
