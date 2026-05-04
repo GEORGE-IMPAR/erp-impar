@@ -13,10 +13,12 @@ if (window.Swal && Swal.mixin) {
 }
 
 const estado = {
+  contratoId: null,
   itens: [],
   medicoes: [],
   pagos: 0,
-  empreiteiros: []
+  empreiteiros: [],
+  contratoCarregado: null
 };
 
 function moeda(n) {
@@ -38,6 +40,11 @@ function parseMoeda(v) {
 
 function val(id) {
   return (document.getElementById(id)?.value || "").trim();
+}
+
+function setVal(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value ?? "";
 }
 
 function dataISOHoje() {
@@ -102,17 +109,9 @@ function valorPorExtensoBRL(valor) {
   const resto = valor % 1000;
   const partes = [];
 
-  if (milhoes) {
-    partes.push(milhoes === 1 ? "um milhão" : `${ate999(milhoes)} milhões`);
-  }
-
-  if (milhares) {
-    partes.push(milhares === 1 ? "mil" : `${ate999(milhares)} mil`);
-  }
-
-  if (resto) {
-    partes.push(ate999(resto));
-  }
+  if (milhoes) partes.push(milhoes === 1 ? "um milhão" : `${ate999(milhoes)} milhões`);
+  if (milhares) partes.push(milhares === 1 ? "mil" : `${ate999(milhares)} mil`);
+  if (resto) partes.push(ate999(resto));
 
   return partes.join(" e ") + (valor === 1 ? " real" : " reais");
 }
@@ -269,13 +268,16 @@ async function salvarEmpreiteiro() {
     telefone: val("empTelefone"),
     cep: val("empCep"),
     cpf_cnpj: val("empDoc"),
+    documento: val("empDoc"),
     logradouro: val("empLogradouro"),
+    endereco: `${val("empLogradouro")}${val("empNumero") ? ", " + val("empNumero") : ""}${val("empBairro") ? " - " + val("empBairro") : ""}`,
     numero: val("empNumero"),
     bairro: val("empBairro"),
     cidade: val("empCidade"),
     uf: val("empUf"),
     complemento: val("empComplemento"),
-    email: val("empEmail")
+    email: val("empEmail"),
+    assinatura_nome: val("empContato") || val("empNome")
   };
 
   try {
@@ -288,6 +290,7 @@ async function salvarEmpreiteiro() {
   const opt = document.createElement("option");
   opt.textContent = dados.nome;
   opt.value = dados.nome;
+  opt.dataset.raw = JSON.stringify(dados);
   select.appendChild(opt);
   select.value = dados.nome;
 
@@ -442,19 +445,42 @@ async function confirmarMedicao() {
   });
 }
 
+function getEmpreiteiroSelecionadoObj() {
+  const sel = document.getElementById("empreiteiro");
+  const opt = sel?.selectedOptions?.[0];
+  if (!opt) return {};
+  try {
+    return JSON.parse(opt.dataset.raw || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+
 function montarPayload() {
   const totalMedido = estado.itens.reduce((s, it) => {
     return s + ((Number(it.valorTotal) || 0) * (Number(it.percentualMedido) || 0) / 100);
   }, 0);
 
   const valorContrato = parseMoeda(val("valorContrato"));
+  const empObj = getEmpreiteiroSelecionadoObj();
 
   return {
+    id: estado.contratoId || null,
     obra: val("obra"),
+    obra_nome: val("obra"),
     empreiteiro: val("empreiteiro"),
+    empreiteiro_nome: empObj.nome || val("empreiteiro"),
+    empreiteiro_documento: empObj.documento || empObj.cpf_cnpj || "",
+    empreiteiro_endereco: empObj.endereco || empObj.logradouro || "",
+    empreiteiro_cidade: empObj.cidade || "",
+    empreiteiro_uf: empObj.uf || "",
+    empreiteiro_assinatura_nome: empObj.assinatura_nome || empObj.contato || empObj.nome || val("empreiteiro"),
+    cidade_contrato: "São José",
+    escopo: val("condicoesPagamento"),
     condicoes_pagamento: val("condicoesPagamento"),
     criterios_preco: val("criteriosPreco"),
     valor_contrato: valorContrato,
+    valor_contrato_formatado: moeda(valorContrato).replace("R$ ", "").replace("R$ ", ""),
     valor_extenso: val("valorExtenso"),
     data: val("dataContrato"),
     data_extenso: val("dataExtenso"),
@@ -468,8 +494,9 @@ function montarPayload() {
       saldo: valorContrato - totalMedido
     },
     meta: {
-      criado_em: new Date().toISOString(),
-      origem: "contrato_empreiteiro_v6_completo"
+      criado_em: estado.contratoCarregado?.meta?.criado_em || new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+      origem: "contrato_empreiteiro_v7_template_original"
     }
   };
 }
@@ -501,6 +528,35 @@ function baixarContratoPorId(id) {
   window.open(`${API_BASE}/gerar_contrato_por_id.php?id=${encodeURIComponent(id)}`, "_blank");
 }
 
+async function atualizarContrato() {
+  const payload = montarPayload();
+
+  if (!estado.contratoId) {
+    Swal.fire({
+      icon: "warning",
+      title: "Nenhum contrato carregado",
+      text: "Para atualizar, primeiro carregue um contrato salvo ou gere um contrato novo."
+    });
+    return;
+  }
+
+  try {
+    const resp = await post(`${API_BASE}/salvar_contrato.php`, payload);
+
+    Swal.fire({
+      icon: "success",
+      title: "Contrato atualizado",
+      html: `JSON atualizado com sucesso.<br><br><b>ID:</b> ${resp.id || estado.contratoId}`
+    });
+  } catch (e) {
+    Swal.fire({
+      icon: "error",
+      title: "Erro ao atualizar contrato",
+      text: e.message
+    });
+  }
+}
+
 async function gerarContrato() {
   const payload = montarPayload();
 
@@ -517,10 +573,12 @@ async function gerarContrato() {
     const resp = await post(`${API_BASE}/salvar_contrato.php`, payload);
     const id = resp.id || payload.id;
 
+    estado.contratoId = id;
+
     Swal.fire({
       icon: "success",
       title: "Contrato salvo",
-      html: `JSON gravado com sucesso.<br><br><b>ID:</b> ${id}<br><br>Iniciando download do contrato...`
+      html: `JSON gravado com sucesso.<br><br><b>ID:</b> ${id}<br><br>Iniciando download do contrato no template original...`
     });
 
     setTimeout(() => {
@@ -582,8 +640,11 @@ async function abrirContratosSalvos() {
         <td>${c.empreiteiro || "—"}</td>
         <td>${moeda(c.valor_contrato || 0)}</td>
         <td>${c.data_extenso || c.data || "—"}</td>
-        <td>
-          <button class="btn-primary" style="min-width:150px;padding:10px 14px" onclick="baixarContratoPorId('${c.id}')" type="button">
+        <td style="white-space:nowrap">
+          <button class="btn-secondary" style="min-width:120px;padding:10px 14px" onclick="carregarContratoSalvo('${c.id}')" type="button">
+            Carregar
+          </button>
+          <button class="btn-primary" style="min-width:130px;padding:10px 14px" onclick="baixarContratoPorId('${c.id}')" type="button">
             Gerar DOCX
           </button>
         </td>
@@ -602,6 +663,65 @@ async function abrirContratosSalvos() {
   }
 }
 
+async function carregarContratoSalvo(id) {
+  try {
+    const res = await fetch(`${API_BASE}/obter_contrato.php?id=${encodeURIComponent(id)}&t=${Date.now()}`);
+    const js = await res.json();
+
+    if (!js.ok || !js.contrato) {
+      throw new Error(js.erro || "Contrato não encontrado.");
+    }
+
+    preencherTelaComContrato(js.contrato);
+    fecharModal("modalContratosSalvos");
+
+    Swal.fire({
+      icon: "success",
+      title: "Contrato carregado",
+      text: "Você pode editar a tabela, dados e clicar em Atualizar contrato."
+    });
+
+  } catch (e) {
+    Swal.fire({
+      icon: "error",
+      title: "Erro ao carregar contrato",
+      text: e.message
+    });
+  }
+}
+
+function preencherTelaComContrato(c) {
+  estado.contratoId = c.id || null;
+  estado.contratoCarregado = c;
+
+  setVal("obra", c.obra || c.obra_nome || "");
+  setVal("empreiteiro", c.empreiteiro || c.empreiteiro_nome || "");
+  setVal("condicoesPagamento", c.condicoes_pagamento || c.escopo || "");
+  setVal("criteriosPreco", c.criterios_preco || "");
+  setVal("valorContrato", moeda(c.valor_contrato || 0));
+  setVal("valorExtenso", c.valor_extenso || valorPorExtensoBRL(c.valor_contrato || 0));
+  setVal("dataContrato", c.data || "");
+  setVal("dataExtenso", c.data_extenso || dataPorExtenso(c.data || ""));
+  setVal("prazoDias", c.prazo_dias || "");
+
+  estado.itens = Array.isArray(c.itens) ? c.itens.map((it, idx) => ({
+    id: it.id || idx + 1,
+    descricao: it.descricao || "",
+    quantidade: Number(it.quantidade || 100),
+    valorUnitario: Number(it.valorUnitario ?? it.valor_unitario ?? 0),
+    valorTotal: Number(it.valorTotal ?? it.valor_total ?? 0),
+    percentualMedido: Number(it.percentualMedido || 0)
+  })) : [];
+
+  estado.medicoes = Array.isArray(c.medicoes) ? c.medicoes : [];
+  estado.pagos = Number(c.conta_corrente?.total_pago || 0);
+
+  if (!estado.itens.length) adicionarItem(false);
+  else renderItens();
+
+  atualizarResumo();
+}
+
 async function carregarEmpreiteiros() {
   try {
     const r = await fetch(`${API_BASE}/listar_empreiteiros.php?t=${Date.now()}`);
@@ -615,6 +735,7 @@ async function carregarEmpreiteiros() {
       const o = document.createElement("option");
       o.value = nome;
       o.textContent = nome;
+      o.dataset.raw = JSON.stringify(e);
       sel.appendChild(o);
     });
   } catch (e) {
