@@ -121,7 +121,6 @@ function onValorContrato() {
   const el = document.getElementById("valorExtenso");
   if (el) el.value = valorPorExtensoBRL(v);
   atualizarResumo();
-  renderExtrato();
 }
 
 function formatarValorContrato() {
@@ -304,6 +303,44 @@ async function salvarEmpreiteiro() {
   });
 }
 
+function renderHistoricoMedicoesModal() {
+  const box = document.getElementById("historicoMedicoesModal");
+  if (!box) return;
+
+  if (!estado.medicoes || !estado.medicoes.length) {
+    box.innerHTML = `<div class="historico-empty">Nenhuma medição registrada ainda.</div>`;
+    return;
+  }
+
+  box.innerHTML = "";
+
+  [...estado.medicoes].reverse().forEach(m => {
+    const card = document.createElement("div");
+    card.className = "historico-medicao-card";
+
+    const itensHtml = (m.itens || []).map(it => `
+      <div class="historico-medicao-item">
+        <b>Item ${it.item || "—"}</b> — ${it.descricao || "—"}<br>
+        Medido: <b>${Number(it.percentual || 0).toFixed(2).replace(".", ",")}%</b>
+        • Valor: <b>${moeda(it.valor || 0)}</b>
+      </div>
+    `).join("");
+
+    card.innerHTML = `
+      <div class="historico-medicao-top">
+        <span><span class="historico-medicao-id">▣ ${m.id || "MED"}</span> • ${m.data || "sem data"}</span>
+        <span class="historico-medicao-total">${moeda(m.total || 0)}</span>
+      </div>
+      <div class="historico-medicao-desc">
+        ${m.obs ? `<div style="margin-bottom:6px">${m.obs}</div>` : ""}
+        ${itensHtml || "Sem itens detalhados."}
+      </div>
+    `;
+
+    box.appendChild(card);
+  });
+}
+
 function abrirMedicao() {
   if (!estado.itens.length) {
     Swal.fire({
@@ -315,6 +352,7 @@ function abrirMedicao() {
   }
 
   document.getElementById("dataMedicao").value = dataISOHoje();
+  renderHistoricoMedicoesModal();
 
   const body = document.getElementById("medicaoBody");
   body.innerHTML = "";
@@ -389,6 +427,7 @@ async function confirmarMedicao() {
 
     if (p > 0) {
       it.percentualMedido = (Number(it.percentualMedido) || 0) + p;
+
       const saldoPercDepois = Math.max(0, 100 - (Number(it.percentualMedido) || 0));
       const saldoValorDepois = (Number(it.valorTotal) || 0) * saldoPercDepois / 100;
 
@@ -450,6 +489,7 @@ async function confirmarMedicao() {
   fecharModal("modalMedicao");
   renderItens();
   renderExtrato();
+  renderHistoricoMedicoesModal();
 
   const relatorioUrl = resp?.relatorio_url || `${API_BASE}/relatorio_medicao.php?contrato_id=${encodeURIComponent(estado.contratoId || "")}&medicao_id=${encodeURIComponent(medicao.id)}`;
 
@@ -459,8 +499,10 @@ async function confirmarMedicao() {
     html: `
       Histórico gravado.<br><br>
       <b>Total a pagar:</b> ${moeda(total)}<br><br>
-      <button class="impar-swal-confirm" onclick="window.open('${relatorioUrl}','_blank')">Abrir relatório</button>
-      <button class="impar-swal-confirm" onclick="compartilharMedicao('${medicao.id}')">Compartilhar</button>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="impar-swal-confirm" onclick="window.open('${relatorioUrl}','_blank')">Abrir relatório</button>
+        <button class="impar-swal-confirm" onclick="compartilharMedicao('${medicao.id}')">Compartilhar</button>
+      </div>
     `,
     showConfirmButton: true,
     confirmButtonText: "OK"
@@ -515,9 +557,9 @@ async function compartilharMedicao(medicaoId) {
 
   const linhas = (medicao.itens || []).map(i =>
     `Item ${i.item} - ${i.descricao}: ${Number(i.percentual || 0).toFixed(2).replace(".", ",")}% = ${moeda(i.valor || 0)}`
-  ).join("\\n");
+  ).join("\n");
 
-  const texto = `Medição ${medicao.id}\\nData: ${medicao.data}\\nEmpreiteiro: ${val("empreiteiro")}\\nObra: ${val("obra")}\\n\\n${linhas}\\n\\nTotal a pagar: ${moeda(medicao.total)}`;
+  const texto = `Medição ${medicao.id}\nData: ${medicao.data}\nEmpreiteiro: ${val("empreiteiro")}\nObra: ${val("obra")}\n\n${linhas}\n\nTotal a pagar: ${moeda(medicao.total)}`;
 
   if (navigator.share) {
     try {
@@ -552,6 +594,8 @@ function montarPayload() {
   const valorContrato = parseMoeda(val("valorContrato"));
   const empObj = getEmpreiteiroSelecionadoObj();
 
+  const escopoTela = val("escopoServico");
+
   return {
     id: estado.contratoId || null,
     obra: val("obra"),
@@ -564,8 +608,8 @@ function montarPayload() {
     empreiteiro_uf: empObj.uf || "",
     empreiteiro_assinatura_nome: empObj.assinatura_nome || empObj.contato || empObj.nome || val("empreiteiro"),
     cidade_contrato: "São José",
-    escopo: val("escopoServico") || val("condicoesPagamento"),
-    condicoes_pagamento: val("condicoesPagamento"),
+    escopo: escopoTela,
+    servico: escopoTela,
     criterios_preco: val("criteriosPreco"),
     valor_contrato: valorContrato,
     valor_contrato_formatado: moeda(valorContrato).replace("R$ ", "").replace("R$ ", ""),
@@ -584,7 +628,7 @@ function montarPayload() {
     meta: {
       criado_em: estado.contratoCarregado?.meta?.criado_em || new Date().toISOString(),
       atualizado_em: new Date().toISOString(),
-      origem: "contrato_empreiteiro_v7_template_original"
+      origem: "contrato_empreiteiro_v12_historico_medicoes"
     }
   };
 }
@@ -694,11 +738,7 @@ async function abrirContratosSalvos() {
     return;
   }
 
-  body.innerHTML = `
-    <tr>
-      <td colspan="6">Carregando contratos salvos...</td>
-    </tr>
-  `;
+  body.innerHTML = `<tr><td colspan="6">Carregando contratos salvos...</td></tr>`;
 
   abrirModal("modalContratosSalvos");
 
@@ -709,11 +749,7 @@ async function abrirContratosSalvos() {
     const contratos = js.contratos || [];
 
     if (!contratos.length) {
-      body.innerHTML = `
-        <tr>
-          <td colspan="6">Nenhum contrato salvo encontrado.</td>
-        </tr>
-      `;
+      body.innerHTML = `<tr><td colspan="6">Nenhum contrato salvo encontrado.</td></tr>`;
       return;
     }
 
@@ -743,11 +779,7 @@ async function abrirContratosSalvos() {
 
   } catch (e) {
     console.error(e);
-    body.innerHTML = `
-      <tr>
-        <td colspan="6">Erro ao carregar contratos salvos.</td>
-      </tr>
-    `;
+    body.innerHTML = `<tr><td colspan="6">Erro ao carregar contratos salvos.</td></tr>`;
   }
 }
 
@@ -784,7 +816,7 @@ function preencherTelaComContrato(c) {
 
   setVal("obra", c.obra || c.obra_nome || "");
   setVal("empreiteiro", c.empreiteiro || c.empreiteiro_nome || "");
-  setVal("escopoServico", c.escopo || c.servico || c.condicoes_pagamento || "");
+  setVal("escopoServico", c.escopo || c.servico || "");
   setVal("criteriosPreco", c.criterios_preco || "");
   setVal("valorContrato", moeda(c.valor_contrato || 0));
   setVal("valorExtenso", c.valor_extenso || valorPorExtensoBRL(c.valor_contrato || 0));
@@ -809,6 +841,7 @@ function preencherTelaComContrato(c) {
 
   atualizarResumo();
   renderExtrato();
+  renderHistoricoMedicoesModal();
 }
 
 async function carregarEmpreiteiros() {
