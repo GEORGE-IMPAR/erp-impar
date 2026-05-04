@@ -121,6 +121,7 @@ function onValorContrato() {
   const el = document.getElementById("valorExtenso");
   if (el) el.value = valorPorExtensoBRL(v);
   atualizarResumo();
+  renderExtrato();
 }
 
 function formatarValorContrato() {
@@ -372,6 +373,7 @@ async function confirmarMedicao() {
   const data = val("dataMedicao") || dataISOHoje();
   const obs = val("obsMedicao");
   const itensMedidos = [];
+  const extrato = [];
   let total = 0;
 
   document.querySelectorAll("#medicaoBody tr").forEach(tr => {
@@ -379,22 +381,32 @@ async function confirmarMedicao() {
     const it = estado.itens[idx];
 
     let p = Number(tr.querySelector("input[data-med-idx]").value) || 0;
-    const saldoPerc = Math.max(0, 100 - (Number(it.percentualMedido) || 0));
+    const saldoPercAntes = Math.max(0, 100 - (Number(it.percentualMedido) || 0));
 
-    if (p > saldoPerc) p = saldoPerc;
+    if (p > saldoPercAntes) p = saldoPercAntes;
 
     const valor = (Number(it.valorTotal) || 0) * p / 100;
 
     if (p > 0) {
       it.percentualMedido = (Number(it.percentualMedido) || 0) + p;
+      const saldoPercDepois = Math.max(0, 100 - (Number(it.percentualMedido) || 0));
+      const saldoValorDepois = (Number(it.valorTotal) || 0) * saldoPercDepois / 100;
+
       total += valor;
 
-      itensMedidos.push({
+      const linha = {
+        data,
         item: it.id,
         descricao: it.descricao,
         percentual: p,
-        valor
-      });
+        valor,
+        percentual_acumulado: it.percentualMedido,
+        saldo_percentual: saldoPercDepois,
+        saldo_valor: saldoValorDepois
+      };
+
+      itensMedidos.push(linha);
+      extrato.push(linha);
     }
   });
 
@@ -410,9 +422,11 @@ async function confirmarMedicao() {
   const medicao = {
     id: "MED-" + String(estado.medicoes.length + 1).padStart(3, "0"),
     data,
+    data_sistema: new Date().toISOString(),
     obs,
     total,
     itens: itensMedidos,
+    extrato,
     notificacao: {
       diretoria: true,
       financeiro: true,
@@ -422,27 +436,101 @@ async function confirmarMedicao() {
 
   estado.medicoes.push(medicao);
 
+  let resp = null;
+
   try {
-    const resp = await post(`${API_BASE}/salvar_medicao.php`, {
+    resp = await post(`${API_BASE}/salvar_medicao.php`, {
       contrato: montarPayload(),
       medicao
     });
-
-    if (resp && resp.pdf_url) {
-      window.open(resp.pdf_url, "_blank");
-    }
   } catch (e) {
     console.warn(e);
   }
 
   fecharModal("modalMedicao");
   renderItens();
+  renderExtrato();
+
+  const relatorioUrl = resp?.relatorio_url || `${API_BASE}/relatorio_medicao.php?contrato_id=${encodeURIComponent(estado.contratoId || "")}&medicao_id=${encodeURIComponent(medicao.id)}`;
 
   Swal.fire({
     icon: "success",
     title: "Medição registrada",
-    html: `Histórico gravado.<br><br><b>Total a pagar:</b> ${moeda(total)}<br><br>PDF e notificação ficam preparados no back-end.`
+    html: `
+      Histórico gravado.<br><br>
+      <b>Total a pagar:</b> ${moeda(total)}<br><br>
+      <button class="impar-swal-confirm" onclick="window.open('${relatorioUrl}','_blank')">Abrir relatório</button>
+      <button class="impar-swal-confirm" onclick="compartilharMedicao('${medicao.id}')">Compartilhar</button>
+    `,
+    showConfirmButton: true,
+    confirmButtonText: "OK"
   });
+}
+
+function renderExtrato() {
+  const body = document.getElementById("extratoBody");
+  if (!body) return;
+
+  const linhas = [];
+
+  estado.medicoes.forEach(m => {
+    (m.itens || []).forEach(it => {
+      linhas.push({
+        medicao: m.id,
+        data: m.data,
+        item: it.item,
+        descricao: it.descricao,
+        percentual: it.percentual,
+        valor: it.valor,
+        saldo_valor: it.saldo_valor
+      });
+    });
+  });
+
+  if (!linhas.length) {
+    body.innerHTML = `<tr><td colspan="7">Nenhuma medição registrada.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = "";
+
+  linhas.forEach(l => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${l.data || "—"}</td>
+      <td>${l.medicao || "—"}</td>
+      <td>${l.item || "—"}</td>
+      <td>${l.descricao || "—"}</td>
+      <td>${Number(l.percentual || 0).toFixed(2).replace(".", ",")}%</td>
+      <td>${moeda(l.valor || 0)}</td>
+      <td>${moeda(l.saldo_valor || 0)}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+async function compartilharMedicao(medicaoId) {
+  const medicao = estado.medicoes.find(m => m.id === medicaoId);
+  if (!medicao) return;
+
+  const linhas = (medicao.itens || []).map(i =>
+    `Item ${i.item} - ${i.descricao}: ${Number(i.percentual || 0).toFixed(2).replace(".", ",")}% = ${moeda(i.valor || 0)}`
+  ).join("\\n");
+
+  const texto = `Medição ${medicao.id}\\nData: ${medicao.data}\\nEmpreiteiro: ${val("empreiteiro")}\\nObra: ${val("obra")}\\n\\n${linhas}\\n\\nTotal a pagar: ${moeda(medicao.total)}`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: `Medição ${medicao.id}`,
+        text: texto
+      });
+      return;
+    } catch(e) {}
+  }
+
+  const url = "https://wa.me/?text=" + encodeURIComponent(texto);
+  window.open(url, "_blank");
 }
 
 function getEmpreiteiroSelecionadoObj() {
@@ -476,7 +564,7 @@ function montarPayload() {
     empreiteiro_uf: empObj.uf || "",
     empreiteiro_assinatura_nome: empObj.assinatura_nome || empObj.contato || empObj.nome || val("empreiteiro"),
     cidade_contrato: "São José",
-    escopo: val("condicoesPagamento"),
+    escopo: val("escopoServico") || val("condicoesPagamento"),
     condicoes_pagamento: val("condicoesPagamento"),
     criterios_preco: val("criteriosPreco"),
     valor_contrato: valorContrato,
@@ -696,7 +784,7 @@ function preencherTelaComContrato(c) {
 
   setVal("obra", c.obra || c.obra_nome || "");
   setVal("empreiteiro", c.empreiteiro || c.empreiteiro_nome || "");
-  setVal("condicoesPagamento", c.condicoes_pagamento || c.escopo || "");
+  setVal("escopoServico", c.escopo || c.servico || c.condicoes_pagamento || "");
   setVal("criteriosPreco", c.criterios_preco || "");
   setVal("valorContrato", moeda(c.valor_contrato || 0));
   setVal("valorExtenso", c.valor_extenso || valorPorExtensoBRL(c.valor_contrato || 0));
@@ -720,6 +808,7 @@ function preencherTelaComContrato(c) {
   else renderItens();
 
   atualizarResumo();
+  renderExtrato();
 }
 
 async function carregarEmpreiteiros() {
@@ -787,6 +876,7 @@ function popularInicial() {
   renderItens();
   atualizarDataExtenso();
   onValorContrato();
+  renderExtrato();
 }
 
 window.addEventListener("DOMContentLoaded", () => {
