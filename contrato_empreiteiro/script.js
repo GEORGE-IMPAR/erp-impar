@@ -243,7 +243,6 @@ function atualizarResumo() {
 
   document.getElementById("kpiContrato").textContent = moeda(totalContrato);
   document.getElementById("kpiMedido").textContent = moeda(totalMedido);
-  document.getElementById("kpiPago").textContent = moeda(estado.pagos);
   document.getElementById("kpiSaldo").textContent = moeda(saldo);
   document.getElementById("kpiSaldoPerc").textContent = percSaldo.toFixed(1).replace(".", ",") + "%";
 }
@@ -628,7 +627,7 @@ function montarPayload() {
     meta: {
       criado_em: estado.contratoCarregado?.meta?.criado_em || new Date().toISOString(),
       atualizado_em: new Date().toISOString(),
-      origem: "contrato_empreiteiro_v12_historico_medicoes"
+      origem: "contrato_empreiteiro_v13_tela_zerada_sem_pago"
     }
   };
 }
@@ -697,6 +696,15 @@ async function gerarContrato() {
       icon: "warning",
       title: "Dados incompletos",
       text: "Informe obra e empreiteiro antes de gerar o contrato."
+    });
+    return;
+  }
+
+  if (!estado.itens.length) {
+    Swal.fire({
+      icon: "warning",
+      title: "Tabela vazia",
+      text: "Adicione pelo menos um item na tabela base antes de gerar o contrato."
     });
     return;
   }
@@ -897,19 +905,26 @@ async function carregarObras() {
 }
 
 function popularInicial() {
-  estado.itens = [{
-    id: 1,
-    descricao: "Descrição",
-    quantidade: 100,
-    valorUnitario: 0,
-    valorTotal: 0,
-    percentualMedido: 0
-  }];
+  estado.contratoId = null;
+  estado.contratoCarregado = null;
+  estado.itens = [];
+  estado.medicoes = [];
+  estado.pagos = 0;
+
+  setVal("obra", "");
+  setVal("empreiteiro", "");
+  setVal("escopoServico", "");
+  setVal("criteriosPreco", "");
+  setVal("valorContrato", "");
+  setVal("valorExtenso", "");
+  setVal("dataContrato", "");
+  setVal("dataExtenso", "");
+  setVal("prazoDias", "");
 
   renderItens();
-  atualizarDataExtenso();
-  onValorContrato();
+  atualizarResumo();
   renderExtrato();
+  renderHistoricoMedicoesModal();
 }
 
 window.addEventListener("DOMContentLoaded", () => {
