@@ -2057,8 +2057,25 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
       });
     }
 
+
+    async function compartilharPdfAgape(blob, nomeArquivo) {
+      const file = new File([blob], nomeArquivo, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: 'Relatório Ágape',
+          text: 'Segue relatório do Ágape.',
+          files: [file]
+        });
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    }
+
     if (pdfGenerateBtn) {
-      pdfGenerateBtn.addEventListener('click', () => {
+      pdfGenerateBtn.addEventListener('click', async () => {
         const inicio = pdfDataInicio ? pdfDataInicio.value : '';
         const fim = pdfDataFim ? pdfDataFim.value : '';
 
@@ -2073,7 +2090,29 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
         }
 
         closePdfRange();
-        window.open(`${AGAPE_API_BASE}/gerar_pdf.php?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}&t=${Date.now()}`, '_blank');
+        showLoading('Gerando PDF...', 'Montando relatório profissional do Ágape...');
+
+        try {
+          const url = `${AGAPE_API_BASE}/gerar_pdf.php?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}&t=${Date.now()}`;
+          const resp = await fetch(url);
+
+          if (!resp.ok) {
+            const erro = await resp.text();
+            throw new Error(erro || 'Falha ao gerar PDF.');
+          }
+
+          const blob = await resp.blob();
+
+          hideLoading();
+
+          const nomeArquivo = `relatorio_agape_${inicio}_a_${fim}.pdf`;
+          await compartilharPdfAgape(blob, nomeArquivo);
+
+        } catch (error) {
+          hideLoading();
+          console.error('Erro PDF:', error);
+          showMessage('Erro ao gerar PDF', 'Não foi possível gerar ou compartilhar o relatório.');
+        }
       });
     }
 
