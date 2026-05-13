@@ -222,12 +222,16 @@
     const tabConsumo = document.getElementById('tabConsumo');
     const tabFrame = document.getElementById('tabFrame');
 
-    let agapeConfigAtual = null;
     const params = new URLSearchParams(window.location.search);
     const telefoneAtual = params.get('telefone') || '';
 
-    function getConfigRaiz(data) {
-      return data && data.config ? data.config : data;
+    let agapeConfigAtual = null;
+    let sessaoAtual = null;
+
+    function normalizarTelefone(telefone) {
+      let tel = String(telefone || '').replace(/\D/g, '');
+      if (tel.length > 11 && tel.startsWith('55')) tel = tel.slice(2);
+      return tel;
     }
 
     function brDateToIso(dataBR) {
@@ -236,15 +240,21 @@
     }
 
     function getDataSessaoIso() {
-      return brDateToIso(agapeConfigAtual?.sessao?.data || '');
+      return brDateToIso(sessaoAtual?.sessao?.data || agapeConfigAtual?.sessao?.data || '');
+    }
+
+    function usuarioConfirmou() {
+      const tel = normalizarTelefone(telefoneAtual);
+      if (!tel) return false;
+      return (sessaoAtual?.confirmacoes || []).some(item => normalizarTelefone(item.telefone) === tel);
     }
 
     async function carregarConfigAgape() {
       const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
       const data = await resp.json();
-      const cfg = getConfigRaiz(data);
-      agapeConfigAtual = cfg;
-      return cfg;
+      agapeConfigAtual = data.config || data;
+      sessaoAtual = data.sessao || null;
+      return agapeConfigAtual;
     }
 
     function montarUrl(nomeArquivo) {
@@ -256,18 +266,15 @@
       return `${nomeArquivo}?${qs.toString()}`;
     }
 
-    async function applyConsumoState() {
-      try {
-        const cfg = await carregarConfigAgape();
-        const agapeAtivo = !!cfg?.agape?.ativa;
-        tabConsumo.classList.toggle('disabled', !agapeAtivo);
-      } catch (error) {
-        tabConsumo.classList.add('disabled');
-      }
+    function atualizarEstadoAbas() {
+      const agapeAtivo = !!(sessaoAtual?.agape?.ativa || agapeConfigAtual?.agape?.ativa);
+      const confirmado = usuarioConfirmou();
+      tabConsumo.classList.toggle('disabled', !(agapeAtivo && confirmado));
     }
 
     async function openTab(name) {
       await carregarConfigAgape();
+      atualizarEstadoAbas();
 
       if (name === 'confirmar') {
         tabConfirmar.classList.add('active');
@@ -277,7 +284,14 @@
       }
 
       if (name === 'consumo') {
-        if (!agapeConfigAtual?.agape?.ativa) return;
+        const agapeAtivo = !!(sessaoAtual?.agape?.ativa || agapeConfigAtual?.agape?.ativa);
+        const confirmado = usuarioConfirmou();
+
+        if (!agapeAtivo || !confirmado) {
+          tabConsumo.classList.add('disabled');
+          return;
+        }
+
         tabConsumo.classList.add('active');
         tabConfirmar.classList.remove('active');
         tabFrame.src = montarUrl('consumo_tab.html');
@@ -316,12 +330,21 @@
 
     async function iniciar() {
       await setupLogo();
-      await applyConsumoState();
-      await openTab('confirmar');
+      await carregarConfigAgape();
+      atualizarEstadoAbas();
+
+      const agapeAtivo = !!(sessaoAtual?.agape?.ativa || agapeConfigAtual?.agape?.ativa);
+      const confirmado = usuarioConfirmou();
+
+      if (agapeAtivo && confirmado) {
+        await openTab('consumo');
+      } else {
+        await openTab('confirmar');
+      }
     }
 
     iniciar();
-  
+
   </script>
 </body>
 </html>

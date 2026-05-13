@@ -237,6 +237,34 @@
         0 -1px 0 rgba(0,0,0,0.12);
     }
 
+
+
+    .usuario-logado-box {
+      position: absolute;
+      left: 14px;
+      bottom: 10px;
+      max-width: calc(100% - 230px);
+      line-height: 1.15;
+      color: #111;
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .usuario-logado-label {
+      font-size: 13px;
+      font-weight: 800;
+      color: #222;
+    }
+
+    .usuario-logado-nome {
+      font-size: 15px;
+      font-weight: 900;
+      color: #000;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .actions {
       position: absolute;
       right: 14px;
@@ -666,6 +694,10 @@
     </div>
 
     <div class="footer-gray">
+      <div class="usuario-logado-box">
+        <div class="usuario-logado-label">Irmão logado:</div>
+        <div class="usuario-logado-nome" id="usuarioLogadoNome">Irmão</div>
+      </div>
       <div class="actions">
         <button class="btn blue" id="btnConfig" type="button">⚙</button>
         <button class="btn green" id="btnConfirmar" type="button">✓</button>
@@ -749,6 +781,7 @@
     const totalValue = document.getElementById('totalValue');
     const productsWrap = document.getElementById('productsWrap');
     const sessionTitle = document.getElementById('sessionTitle');
+    const usuarioLogadoNome = document.getElementById('usuarioLogadoNome');
 
     const loadingOverlay = document.getElementById('loadingOverlay');
     const loadingTitle = document.getElementById('loadingTitle');
@@ -776,6 +809,9 @@
     let configAtual = null;
     let usuarioAtual = null;
     let produtosAtual = [];
+    let sessaoAtual = null;
+    let salvarCarrinhoTimer = null;
+    let carregandoCarrinhoInicial = false;
 
     function getConfigRaiz(data) {
       return data && data.config ? data.config : data;
@@ -900,6 +936,7 @@
           if (qty > 0) qty--;
           qtyEl.textContent = qty;
           updateTotal();
+          agendarSalvarCarrinho();
         });
 
         incBtn.addEventListener('click', () => {
@@ -907,6 +944,7 @@
           qty++;
           qtyEl.textContent = qty;
           updateTotal();
+          agendarSalvarCarrinho();
         });
       });
 
@@ -917,14 +955,89 @@
       const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
       const data = await resp.json();
       configAtual = getConfigRaiz(data);
+      sessaoAtual = data.sessao || null;
 
-      if (!dataSessaoIso) dataSessaoIso = brDateToIso(configAtual?.sessao?.data || '');
+      if (!dataSessaoIso) dataSessaoIso = brDateToIso(sessaoAtual?.sessao?.data || configAtual?.sessao?.data || '');
       if (sessionTitle) sessionTitle.textContent = `SESSÃO – ${isoToBrDate(dataSessaoIso)}`;
       if (pixKey) pixKey.value = configAtual?.loja?.pix_chave || '';
 
       const tel = normalizarTelefone(telefoneAtual);
       usuarioAtual = (configAtual?.irmaos || []).find(irmao => normalizarTelefone(irmao.telefone) === tel) || null;
+      if (usuarioLogadoNome) usuarioLogadoNome.textContent = usuarioAtual?.nome || 'Irmão não identificado';
       renderProdutos(configAtual?.produtos || []);
+      aplicarCarrinhoExistente();
+    }
+
+    function getConsumoPendenteUsuario() {
+      const tel = normalizarTelefone(telefoneAtual);
+      if (!tel || !Array.isArray(sessaoAtual?.consumos)) return null;
+
+      const pendentes = sessaoAtual.consumos.filter(item => {
+        const mesmoTelefone = normalizarTelefone(item.telefone) === tel;
+        const status = String(item.status || '').toLowerCase();
+        return mesmoTelefone && (!status || status === 'pendente' || status === 'carrinho');
+      });
+
+      return pendentes.length ? pendentes[pendentes.length - 1] : null;
+    }
+
+    function aplicarCarrinhoExistente() {
+      const consumo = getConsumoPendenteUsuario();
+      if (!consumo || !Array.isArray(consumo.itens)) {
+        updateTotal();
+        return;
+      }
+
+      carregandoCarrinhoInicial = true;
+
+      consumo.itens.forEach(item => {
+        const codigo = String(item.codigo || '');
+        const id = String(item.id || '');
+        const product = Array.from(document.querySelectorAll('.product')).find(p => {
+          return String(p.dataset.codigo || '') === codigo || String(p.dataset.id || '') === id;
+        });
+
+        if (product) {
+          const qtyEl = product.querySelector('.qty-value');
+          if (qtyEl) qtyEl.textContent = Number(item.quantidade || 0);
+        }
+      });
+
+      carregandoCarrinhoInicial = false;
+      updateTotal();
+    }
+
+    function agendarSalvarCarrinho() {
+      if (carregandoCarrinhoInicial) return;
+      clearTimeout(salvarCarrinhoTimer);
+      salvarCarrinhoTimer = setTimeout(salvarCarrinho, 450);
+    }
+
+    async function salvarCarrinho() {
+      if (!usuarioAtual) return;
+
+      const itens = getItensSelecionados();
+      const total = getCurrentTotal();
+
+      try {
+        const resp = await fetch(`${AGAPE_API_BASE}/salvar_consumo.php?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            modo: 'carrinho',
+            data: dataSessaoIso,
+            telefone: usuarioAtual.telefone,
+            nome: usuarioAtual.nome,
+            itens,
+            total
+          })
+        });
+
+        const ret = await resp.json();
+        if (ret.success && ret.sessao) sessaoAtual = ret.sessao;
+      } catch (error) {
+        console.error('Erro ao salvar carrinho:', error);
+      }
     }
 
     function openPaymentModal() {
@@ -1010,6 +1123,7 @@
         hideLoading();
 
         if (ret.success) {
+          if (ret.sessao) sessaoAtual = ret.sessao;
           showMessage('Pagamento realizado', 'Consumo registrado com sucesso.');
         } else {
           showMessage('Erro', ret.message || 'Não foi possível registrar o consumo.');
@@ -1035,7 +1149,7 @@
       if (paymentOverlay.classList.contains('show')) return;
       showLoading('Abrindo painel...', 'Indo para a tela de configuração...');
       setTimeout(() => {
-        window.top.location.href = `index.html?admin=1&t=${Date.now()}`;
+        window.top.location.href = `index.html?admin=1&telefone=${encodeURIComponent(telefoneAtual)}&t=${Date.now()}`;
       }, 650);
     });
 
