@@ -215,6 +215,7 @@
   </section>
 
   <script>
+
     const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
 
     const tabConfirmar = document.getElementById('tabConfirmar');
@@ -222,9 +223,20 @@
     const tabFrame = document.getElementById('tabFrame');
 
     let agapeConfigAtual = null;
+    const params = new URLSearchParams(window.location.search);
+    const telefoneAtual = params.get('telefone') || '';
 
     function getConfigRaiz(data) {
       return data && data.config ? data.config : data;
+    }
+
+    function brDateToIso(dataBR) {
+      const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    }
+
+    function getDataSessaoIso() {
+      return brDateToIso(agapeConfigAtual?.sessao?.data || '');
     }
 
     async function carregarConfigAgape() {
@@ -235,84 +247,45 @@
       return cfg;
     }
 
-    function getDataSessaoBR() {
-      return agapeConfigAtual?.sessao?.data || '';
-    }
-
-    function replaceTextNodes(root, regex, replacement) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      const nodes = [];
-
-      while (walker.nextNode()) {
-        nodes.push(walker.currentNode);
-      }
-
-      nodes.forEach(node => {
-        if (regex.test(node.nodeValue)) {
-          node.nodeValue = node.nodeValue.replace(regex, replacement);
-        }
-      });
-    }
-
-    function atualizarIframeComConfig() {
-      const dataBR = getDataSessaoBR();
-      if (!dataBR) return;
-
-      try {
-        const doc = tabFrame.contentDocument || tabFrame.contentWindow.document;
-        if (!doc || !doc.body) return;
-
-        replaceTextNodes(
-          doc.body,
-          /SESSÃO\s*-\s*\d{2}\/\d{2}\/\d{4}/g,
-          `SESSÃO - ${dataBR}`
-        );
-      } catch (error) {
-        console.warn('Não foi possível atualizar a data dentro da aba:', error);
-      }
+    function montarUrl(nomeArquivo) {
+      const qs = new URLSearchParams();
+      qs.set('t', Date.now());
+      if (telefoneAtual) qs.set('telefone', telefoneAtual);
+      const dataIso = getDataSessaoIso();
+      if (dataIso) qs.set('data', dataIso);
+      return `${nomeArquivo}?${qs.toString()}`;
     }
 
     async function applyConsumoState() {
       try {
         const cfg = await carregarConfigAgape();
         const agapeAtivo = !!cfg?.agape?.ativa;
-
-        if (agapeAtivo) {
-          tabConsumo.classList.remove('disabled');
-        } else {
-          tabConsumo.classList.add('disabled');
-        }
-
-        atualizarIframeComConfig();
+        tabConsumo.classList.toggle('disabled', !agapeAtivo);
       } catch (error) {
         tabConsumo.classList.add('disabled');
       }
     }
 
     async function openTab(name) {
+      await carregarConfigAgape();
+
       if (name === 'confirmar') {
         tabConfirmar.classList.add('active');
         tabConsumo.classList.remove('active');
-        tabFrame.src = `confirmar_tab.html?t=${Date.now()}`;
+        tabFrame.src = montarUrl('confirmar_tab.html');
         return;
       }
 
       if (name === 'consumo') {
-        try {
-          const cfg = await carregarConfigAgape();
-          const agapeAtivo = !!cfg?.agape?.ativa;
-          if (!agapeAtivo) return;
-
-          tabConsumo.classList.add('active');
-          tabConfirmar.classList.remove('active');
-          tabFrame.src = `consumo_tab.html?t=${Date.now()}`;
-        } catch (error) {}
+        if (!agapeConfigAtual?.agape?.ativa) return;
+        tabConsumo.classList.add('active');
+        tabConfirmar.classList.remove('active');
+        tabFrame.src = montarUrl('consumo_tab.html');
       }
     }
 
     tabConfirmar.addEventListener('click', () => openTab('confirmar'));
     tabConsumo.addEventListener('click', () => openTab('consumo'));
-    tabFrame.addEventListener('load', atualizarIframeComConfig);
 
     async function setupLogo() {
       const logoImg = document.getElementById('logoImg');
@@ -320,33 +293,35 @@
         'logo-maconaria.png',
         'logo-maconaria.jpg',
         'logo-maconaria.jpeg',
+        'logo-Clementino-Brito.jpeg',
         'logo-loja---d.png',
         'logo-loja-d.png',
         'maconaria.png',
         'maconaria.jpg'
       ];
 
-      function tryLoad(src) {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(src);
-          img.onerror = reject;
-          img.src = src;
-        });
-      }
-
       for (const src of candidates) {
         try {
-          const validSrc = await tryLoad(src);
-          logoImg.src = validSrc;
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = src;
+          });
+          logoImg.src = src;
           return;
         } catch (error) {}
       }
     }
 
-    setupLogo();
-    applyConsumoState();
-    openTab('confirmar');
+    async function iniciar() {
+      await setupLogo();
+      await applyConsumoState();
+      await openTab('confirmar');
+    }
+
+    iniciar();
+  
   </script>
 </body>
 </html>

@@ -429,7 +429,7 @@
 <body>
   <section class="page">
     <div class="content">
-      <div class="session-title">SESSÃO – 10/04/2026</div>
+      <div class="session-title" id="sessionTitle">SESSÃO – --/--/----</div>
 
       <div class="panel">
         <div class="panel-title">ESCOLHA UMA OPÇÃO</div>
@@ -512,6 +512,12 @@
   </div>
 
   <script>
+
+    const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
+    const params = new URLSearchParams(window.location.search);
+    const telefoneAtual = params.get('telefone') || '';
+    let dataSessaoIso = params.get('data') || '';
+
     const loadingOverlay = document.getElementById('loadingOverlay');
     const loadingTitle = document.getElementById('loadingTitle');
     const loadingText = document.getElementById('loadingText');
@@ -526,8 +532,11 @@
     const btnSair = document.getElementById('btnSair');
     const confirmBox = document.getElementById('confirmBox');
     const optionCards = document.querySelectorAll('.option-card');
+    const sessionTitle = document.getElementById('sessionTitle');
 
     let selectedOption = 'SOMENTE SESSÃO';
+    let usuarioAtual = null;
+    let configAtual = null;
 
     function showLoading(title = 'Processando...', text = 'Aguarde...') {
       loadingTitle.textContent = title;
@@ -549,8 +558,42 @@
       messageOverlay.classList.remove('show');
     }
 
+    function getConfigRaiz(data) {
+      return data && data.config ? data.config : data;
+    }
+
+    function normalizarTelefone(telefone) {
+      let tel = String(telefone || '').replace(/\D/g, '');
+      if (tel.length > 11 && tel.startsWith('55')) tel = tel.slice(2);
+      return tel;
+    }
+
+    function brDateToIso(dataBR) {
+      const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    }
+
+    function isoToBrDate(dataIso) {
+      const m = String(dataIso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : dataIso;
+    }
+
+    async function carregarConfig() {
+      const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
+      const data = await resp.json();
+      configAtual = getConfigRaiz(data);
+
+      if (!dataSessaoIso) dataSessaoIso = brDateToIso(configAtual?.sessao?.data || '');
+      if (sessionTitle) sessionTitle.textContent = `SESSÃO – ${isoToBrDate(dataSessaoIso)}`;
+
+      const tel = normalizarTelefone(telefoneAtual);
+      usuarioAtual = (configAtual?.irmaos || []).find(irmao => normalizarTelefone(irmao.telefone) === tel) || null;
+      updateConfirmText();
+    }
+
     function updateConfirmText() {
-      confirmBox.innerHTML = `Ir. George, a opção selecionada é <span class="confirm-highlight">“${selectedOption}”</span>. Confirma?`;
+      const nome = usuarioAtual?.nome || 'Irmão';
+      confirmBox.innerHTML = `Ir. ${nome}, a opção selecionada é <span class="confirm-highlight">“${selectedOption}”</span>. Confirma?`;
     }
 
     function applySelection(optionName) {
@@ -581,32 +624,56 @@
 
     messageOkBtn.addEventListener('click', hideMessage);
 
-    btnConfirmar.addEventListener('click', () => {
+    btnConfirmar.addEventListener('click', async () => {
+      if (!usuarioAtual) {
+        showMessage('Usuário não identificado', 'Não foi possível identificar o irmão logado.');
+        return;
+      }
+
       showLoading('Confirmando presença...', 'Registrando a opção selecionada...');
 
-      setTimeout(() => {
+      try {
+        const resp = await fetch(`${AGAPE_API_BASE}/salvar_confirmacao.php?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: dataSessaoIso,
+            telefone: usuarioAtual.telefone,
+            nome: usuarioAtual.nome,
+            resposta: selectedOption
+          })
+        });
+
+        const ret = await resp.json();
         hideLoading();
-        showMessage('Escolha confirmada', `A opção “${selectedOption}” foi registrada com sucesso.`);
-      }, 850);
+
+        if (ret.success) {
+          showMessage('Escolha confirmada', `A opção “${selectedOption}” foi registrada com sucesso.`);
+        } else {
+          showMessage('Erro', ret.message || 'Não foi possível registrar sua escolha.');
+        }
+      } catch (error) {
+        hideLoading();
+        showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
+      }
     });
 
     btnConfig.addEventListener('click', () => {
       showLoading('Abrindo painel...', 'Indo para a tela de configuração...');
-
       setTimeout(() => {
-        window.top.location.href = 'index.html?admin=1';
+        window.top.location.href = `index.html?admin=1&t=${Date.now()}`;
       }, 650);
     });
 
     btnSair.addEventListener('click', () => {
       showLoading('Saindo...', 'Voltando para o login...');
-
       setTimeout(() => {
-        window.top.location.href = 'index.html';
+        window.top.location.href = `index.html?t=${Date.now()}`;
       }, 650);
     });
 
-    updateConfirmText();
+    carregarConfig().then(() => applySelection(selectedOption));
+  
   </script>
 </body>
 </html>

@@ -651,84 +651,12 @@
 <body>
   <section class="page">
     <div class="content">
-      <div class="session-title">SESSÃO – 10/04/2026</div>
+      <div class="session-title" id="sessionTitle">SESSÃO – --/--/----</div>
 
       <div class="panel">
         <div class="panel-title">PRODUTOS DISPONÍVEIS</div>
 
-        <div class="products-wrap">
-          <div class="product" data-price="5">
-            <div class="product-left">
-              <div class="product-image">
-                <img src="https://cdn-icons-png.flaticon.com/512/3105/3105807.png" alt="Água" />
-              </div>
-              <div class="product-info">
-                <div class="product-name">Água</div>
-                <div class="product-desc">Garrafinha</div>
-                <div class="product-price">R$ 5,00</div>
-              </div>
-            </div>
-            <div class="product-actions">
-              <button class="qty-btn" type="button" data-action="dec">−</button>
-              <div class="qty-value">0</div>
-              <button class="qty-btn" type="button" data-action="inc">+</button>
-            </div>
-          </div>
-
-          <div class="product" data-price="35">
-            <div class="product-left">
-              <div class="product-image">
-                <img src="https://cdn-icons-png.flaticon.com/512/1046/1046857.png" alt="Carvão" />
-              </div>
-              <div class="product-info">
-                <div class="product-name">Carvão</div>
-                <div class="product-desc">Saco 5kg</div>
-                <div class="product-price">R$ 35,00</div>
-              </div>
-            </div>
-            <div class="product-actions">
-              <button class="qty-btn" type="button" data-action="dec">−</button>
-              <div class="qty-value">0</div>
-              <button class="qty-btn" type="button" data-action="inc">+</button>
-            </div>
-          </div>
-
-          <div class="product" data-price="12">
-            <div class="product-left">
-              <div class="product-image">
-                <img src="https://cdn-icons-png.flaticon.com/512/3075/3075977.png" alt="Refrigerante" />
-              </div>
-              <div class="product-info">
-                <div class="product-name">Refrigerante</div>
-                <div class="product-desc">Lata 350ml</div>
-                <div class="product-price">R$ 12,00</div>
-              </div>
-            </div>
-            <div class="product-actions">
-              <button class="qty-btn" type="button" data-action="dec">−</button>
-              <div class="qty-value">0</div>
-              <button class="qty-btn" type="button" data-action="inc">+</button>
-            </div>
-          </div>
-
-          <div class="product" data-price="25">
-            <div class="product-left">
-              <div class="product-image">
-                <img src="https://cdn-icons-png.flaticon.com/512/1046/1046784.png" alt="Jantar" />
-              </div>
-              <div class="product-info">
-                <div class="product-name">Jantar</div>
-                <div class="product-desc">Porção</div>
-                <div class="product-price">R$ 25,00</div>
-              </div>
-            </div>
-            <div class="product-actions">
-              <button class="qty-btn" type="button" data-action="dec">−</button>
-              <div class="qty-value">0</div>
-              <button class="qty-btn" type="button" data-action="inc">+</button>
-            </div>
-          </div>
-        </div>
+        <div class="products-wrap" id="productsWrap"></div>
 
         <div class="total-box">
           <div class="total-text">Ir. George, seu consumo até o momento, totalizou o valor de</div>
@@ -812,8 +740,15 @@
   </div>
 
   <script>
+
+    const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
+    const params = new URLSearchParams(window.location.search);
+    const telefoneAtual = params.get('telefone') || '';
+    let dataSessaoIso = params.get('data') || '';
+
     const totalValue = document.getElementById('totalValue');
-    const products = document.querySelectorAll('.product');
+    const productsWrap = document.getElementById('productsWrap');
+    const sessionTitle = document.getElementById('sessionTitle');
 
     const loadingOverlay = document.getElementById('loadingOverlay');
     const loadingTitle = document.getElementById('loadingTitle');
@@ -838,29 +773,32 @@
     const btnSair = document.getElementById('btnSair');
 
     let selectedPaymentMethod = null;
+    let configAtual = null;
+    let usuarioAtual = null;
+    let produtosAtual = [];
+
+    function getConfigRaiz(data) {
+      return data && data.config ? data.config : data;
+    }
+
+    function normalizarTelefone(telefone) {
+      let tel = String(telefone || '').replace(/\D/g, '');
+      if (tel.length > 11 && tel.startsWith('55')) tel = tel.slice(2);
+      return tel;
+    }
+
+    function brDateToIso(dataBR) {
+      const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    }
+
+    function isoToBrDate(dataIso) {
+      const m = String(dataIso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : dataIso;
+    }
 
     function formatBRL(value) {
-      return `R$ ${value.toFixed(2).replace('.', ',')}`;
-    }
-
-    function updateTotal() {
-      let total = 0;
-      products.forEach(product => {
-        const price = Number(product.dataset.price || 0);
-        const qty = Number(product.querySelector('.qty-value').textContent || 0);
-        total += price * qty;
-      });
-      totalValue.textContent = formatBRL(total);
-    }
-
-    function getCurrentTotal() {
-      let total = 0;
-      products.forEach(product => {
-        const price = Number(product.dataset.price || 0);
-        const qty = Number(product.querySelector('.qty-value').textContent || 0);
-        total += price * qty;
-      });
-      return total;
+      return `R$ ${Number(value || 0).toFixed(2).replace('.', ',')}`;
     }
 
     function showLoading(title = 'Processando...', text = 'Aguarde...') {
@@ -881,6 +819,112 @@
 
     function hideMessage() {
       messageOverlay.classList.remove('show');
+    }
+
+    function updateTotal() {
+      let total = 0;
+      document.querySelectorAll('.product').forEach(product => {
+        const price = Number(product.dataset.price || 0);
+        const qty = Number(product.querySelector('.qty-value').textContent || 0);
+        total += price * qty;
+      });
+      totalValue.textContent = formatBRL(total);
+    }
+
+    function getItensSelecionados() {
+      const itens = [];
+      document.querySelectorAll('.product').forEach(product => {
+        const qtd = Number(product.querySelector('.qty-value').textContent || 0);
+        if (qtd <= 0) return;
+
+        const preco = Number(product.dataset.price || 0);
+        itens.push({
+          id: product.dataset.id || '',
+          codigo: product.dataset.codigo || '',
+          nome: product.dataset.nome || '',
+          preco,
+          quantidade: qtd,
+          total: preco * qtd
+        });
+      });
+      return itens;
+    }
+
+    function getCurrentTotal() {
+      return getItensSelecionados().reduce((soma, item) => soma + item.total, 0);
+    }
+
+    function renderProdutos(produtos) {
+      productsWrap.innerHTML = '';
+      produtosAtual = produtos || [];
+
+      if (!produtosAtual.length) {
+        productsWrap.innerHTML = '<div style="color:#114d72;font-weight:900;padding:18px;">Nenhum produto cadastrado.</div>';
+        updateTotal();
+        return;
+      }
+
+      productsWrap.innerHTML = produtosAtual.map(produto => {
+        const img = produto.img || produto.icon || '';
+        const nome = produto.nome || produto.codigo || 'Produto';
+        const desc = produto.desc || '';
+        const preco = Number(produto.preco || 0);
+        return `
+          <div class="product" data-id="${produto.id || ''}" data-codigo="${produto.codigo || ''}" data-nome="${nome}" data-price="${preco}">
+            <div class="product-left">
+              <div class="product-image">
+                <img src="${img}" alt="${nome}" />
+              </div>
+              <div class="product-info">
+                <div class="product-name">${nome}</div>
+                <div class="product-desc">${desc}</div>
+                <div class="product-price">${formatBRL(preco)}</div>
+              </div>
+            </div>
+            <div class="product-actions">
+              <button class="qty-btn" data-action="dec" type="button">−</button>
+              <div class="qty-value">0</div>
+              <button class="qty-btn" data-action="inc" type="button">+</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.querySelectorAll('.product').forEach(product => {
+        const decBtn = product.querySelector('[data-action="dec"]');
+        const incBtn = product.querySelector('[data-action="inc"]');
+        const qtyEl = product.querySelector('.qty-value');
+
+        decBtn.addEventListener('click', () => {
+          let qty = Number(qtyEl.textContent || 0);
+          if (qty > 0) qty--;
+          qtyEl.textContent = qty;
+          updateTotal();
+        });
+
+        incBtn.addEventListener('click', () => {
+          let qty = Number(qtyEl.textContent || 0);
+          qty++;
+          qtyEl.textContent = qty;
+          updateTotal();
+        });
+      });
+
+      updateTotal();
+    }
+
+    async function carregarConfig() {
+      const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
+      const data = await resp.json();
+      configAtual = getConfigRaiz(data);
+
+      if (!dataSessaoIso) dataSessaoIso = brDateToIso(configAtual?.sessao?.data || '');
+      if (sessionTitle) sessionTitle.textContent = `SESSÃO – ${isoToBrDate(dataSessaoIso)}`;
+      if (pixKey) pixKey.value = configAtual?.loja?.pix_chave || '';
+
+      const tel = normalizarTelefone(telefoneAtual);
+      usuarioAtual = (configAtual?.irmaos || []).find(irmao => normalizarTelefone(irmao.telefone) === tel) || null;
+      renderProdutos(configAtual?.produtos || []);
     }
 
     function openPaymentModal() {
@@ -913,95 +957,85 @@
         pixKey.select();
         document.execCommand('copy');
       }
-
       copyPixBtn.textContent = 'Copiado';
-      setTimeout(() => {
-        copyPixBtn.textContent = 'Copiar';
-      }, 1200);
+      setTimeout(() => { copyPixBtn.textContent = 'Copiar'; }, 1200);
     }
 
     function resetConsumptionScreen() {
-      products.forEach(product => {
-        product.querySelector('.qty-value').textContent = '0';
-      });
+      document.querySelectorAll('.product .qty-value').forEach(el => { el.textContent = '0'; });
       updateTotal();
     }
 
     messageOkBtn.addEventListener('click', () => {
       hideMessage();
       resetConsumptionScreen();
-      window.top.location.href = 'index.html';
     });
 
     btnDinheiro.addEventListener('click', () => selectPayment('dinheiro'));
     btnPix.addEventListener('click', () => selectPayment('pix'));
     copyPixBtn.addEventListener('click', copyPixKey);
 
-    btnPaymentOk.addEventListener('click', () => {
+    btnPaymentOk.addEventListener('click', async () => {
       if (!selectedPaymentMethod) {
         showMessage('Forma de pagamento', 'Escolha Dinheiro ou Pix para continuar.');
         return;
       }
 
-      closePaymentModal();
-      showLoading('Finalizando pagamento...', 'Registrando o pagamento realizado...');
+      const itens = getItensSelecionados();
+      const total = getCurrentTotal();
 
-      setTimeout(() => {
+      if (!usuarioAtual) {
+        showMessage('Usuário não identificado', 'Não foi possível identificar o irmão logado.');
+        return;
+      }
+
+      closePaymentModal();
+      showLoading('Finalizando pagamento...', 'Registrando o consumo realizado...');
+
+      try {
+        const resp = await fetch(`${AGAPE_API_BASE}/salvar_consumo.php?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: dataSessaoIso,
+            telefone: usuarioAtual.telefone,
+            nome: usuarioAtual.nome,
+            forma_pagamento: selectedPaymentMethod,
+            itens,
+            total
+          })
+        });
+
+        const ret = await resp.json();
         hideLoading();
-        showMessage('Pagamento realizado', 'Pagamento realizado com sucesso.');
-      }, 900);
+
+        if (ret.success) {
+          showMessage('Pagamento realizado', 'Consumo registrado com sucesso.');
+        } else {
+          showMessage('Erro', ret.message || 'Não foi possível registrar o consumo.');
+        }
+      } catch (error) {
+        hideLoading();
+        showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
+      }
     });
 
     btnPaymentCancel.addEventListener('click', closePaymentModal);
 
-    products.forEach(product => {
-      const decBtn = product.querySelector('[data-action="dec"]');
-      const incBtn = product.querySelector('[data-action="inc"]');
-      const qtyEl = product.querySelector('.qty-value');
-
-      decBtn.addEventListener('click', () => {
-        let qty = Number(qtyEl.textContent || 0);
-        if (qty > 0) {
-          qtyEl.style.transform = 'scale(0.92)';
-          setTimeout(() => {
-            qty--;
-            qtyEl.textContent = qty;
-            qtyEl.style.transform = '';
-            updateTotal();
-          }, 60);
-        }
-      });
-
-      incBtn.addEventListener('click', () => {
-        let qty = Number(qtyEl.textContent || 0);
-        qtyEl.style.transform = 'scale(1.08)';
-        setTimeout(() => {
-          qty++;
-          qtyEl.textContent = qty;
-          qtyEl.style.transform = '';
-          updateTotal();
-        }, 60);
-      });
-    });
-
     btnConfirmar.addEventListener('click', () => {
       const total = getCurrentTotal();
-
       if (total <= 0) {
         showMessage('Nenhum item selecionado', 'Selecione pelo menos um produto antes de confirmar.');
         return;
       }
-
       openPaymentModal();
     });
 
     btnConfig.addEventListener('click', () => {
       if (paymentOverlay.classList.contains('show')) return;
-
       showLoading('Abrindo painel...', 'Indo para a tela de configuração...');
-
       setTimeout(() => {
-        window.top.location.href = 'index.html?admin=1';
+        window.top.location.href = `index.html?admin=1&t=${Date.now()}`;
       }, 650);
     });
 
@@ -1010,15 +1044,14 @@
         closePaymentModal();
         return;
       }
-
       showLoading('Saindo...', 'Voltando para o login...');
-
       setTimeout(() => {
-        window.top.location.href = 'index.html';
+        window.top.location.href = `index.html?t=${Date.now()}`;
       }, 650);
     });
 
-    updateTotal();
+    carregarConfig();
+  
   </script>
 </body>
 </html>

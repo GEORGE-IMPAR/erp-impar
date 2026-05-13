@@ -813,9 +813,7 @@
       position: fixed;
       inset: 0;
       z-index: 80;
-      background:
-        radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, transparent 25%),
-        #000000;
+      background: #000;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1552,6 +1550,7 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
   </div>
 
   <script>
+
     const tabs = document.querySelectorAll('.tab');
     const screens = document.querySelectorAll('.screen');
     const actions = document.getElementById('actions');
@@ -1570,10 +1569,12 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
     const loginTelefone = document.getElementById('loginTelefone');
     const loginCim = document.getElementById('loginCim');
     const loginExitBtn = document.getElementById('loginExitBtn');
+
     const detailOverlay = document.getElementById('detailOverlay');
     const detailList = document.getElementById('detailList');
     const detailCloseBtn = document.getElementById('detailCloseBtn');
     const detailTitle = document.getElementById('detailTitle');
+
     const pdfOverlay = document.getElementById('pdfOverlay');
     const pdfDataInicio = document.getElementById('pdfDataInicio');
     const pdfDataFim = document.getElementById('pdfDataFim');
@@ -1583,13 +1584,45 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
     const splashScreen = document.getElementById('splashScreen');
     const splashGif = document.getElementById('splashGif');
 
-    let currentScreen = 'config';
-
     const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
+    const isAdminDirect = new URLSearchParams(window.location.search).get('admin') === '1';
+
+    let currentScreen = 'config';
     let agapeConfigAtual = null;
+    let sessaoAtual = null;
     let usuarioAgapeAtual = null;
 
-    const isAdminDirect = new URLSearchParams(window.location.search).get('admin') === '1';
+    let statusConvocacao = false;
+    let statusPush = false;
+    let statusSessao = false;
+
+    const statusConvocacaoBtn = document.getElementById('statusConvocacaoBtn');
+    const statusPushBtn = document.getElementById('statusPushBtn');
+    const statusSessaoConsumoBtn = document.getElementById('statusSessaoConsumoBtn');
+    const statusSessaoExtratoBtn = document.getElementById('statusSessaoExtratoBtn');
+
+    const metricTitles = {
+      somente_sessao: 'SOMENTE SESSÃO',
+      somente_agape: 'SOMENTE ÁGAPE',
+      sessao_agape: 'SESSÃO E ÁGAPE',
+      nao_participa: 'NÃO PARTICIPARÃO',
+      faltam_retornar: 'FALTAM RETORNAR',
+      total_irmaos: 'TOTAL DE IRMÃOS',
+      pagamentos_dinheiro: 'PAGAMENTOS EM DINHEIRO',
+      pagamentos_pix: 'PAGAMENTOS EM PIX',
+      pagamentos_pendentes: 'PAGAMENTOS PENDENTES',
+      valor_dinheiro: 'VALOR EM DINHEIRO',
+      valor_pix: 'VALOR EM PIX',
+      valor_pendente: 'VALOR PENDENTE',
+      irmaos_presentes: 'IRMÃOS PRESENTES',
+      irmaos_ausentes: 'IRMÃOS AUSENTES',
+      valor_total_agape: 'VALOR TOTAL DO ÁGAPE',
+      produtos_consumidos: 'PRODUTOS CONSUMIDOS',
+      irmaos_pendente_acerto: 'IRMÃOS PENDENTES',
+      valor_pendente_acerto: 'VALOR PENDENTE'
+    };
+
+    let detailData = {};
 
     function showLoading(title = 'Carregando...', text = 'Aguarde...') {
       loadingTitle.textContent = title;
@@ -1611,131 +1644,72 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
       messageOverlay.classList.remove('show');
     }
 
+    if (messageOkBtn) messageOkBtn.addEventListener('click', hideMessage);
 
+    function getConfigRaiz(data) {
+      return data && data.config ? data.config : data;
+    }
 
-    const detailTitles = {
-      somente_sessao: 'SOMENTE SESSÃO',
-      somente_agape: 'SOMENTE ÁGAPE',
-      sessao_agape: 'SESSÃO E ÁGAPE',
-      nao_participa: 'NÃO PARTICIPARÃO',
-      faltam_retornar: 'FALTAM RETORNAR',
-      total_irmaos: 'TOTAL DE IRMÃOS',
-      pagamentos_dinheiro: 'PAGAMENTOS EM DINHEIRO',
-      pagamentos_pix: 'PAGAMENTOS EM PIX',
-      pagamentos_pendentes: 'PAGAMENTOS PENDENTES',
-      valor_dinheiro: 'VALOR EM DINHEIRO',
-      valor_pix: 'VALOR EM PIX',
-      valor_pendente: 'VALOR PENDENTE',
-      irmaos_presentes: 'IRMÃOS PRESENTES',
-      irmaos_ausentes: 'IRMÃOS AUSENTES',
-      valor_total_agape: 'VALOR TOTAL DO ÁGAPE',
-      produtos_consumidos: 'PRODUTOS CONSUMIDOS',
-      irmaos_pendente_acerto: 'IRMÃOS PENDENTES',
-      valor_pendente_acerto: 'VALOR PENDENTE'
-    };
+    function normalizarTelefone(telefone) {
+      let tel = String(telefone || '').replace(/\D/g, '');
+      if (tel.length > 11 && tel.startsWith('55')) tel = tel.slice(2);
+      return tel;
+    }
 
-    const detailData = {
-      somente_sessao: [
-        'Ir. Rafael Francisco Ramos<br />Escolha: SOMENTE SESSÃO',
-        'Ir. Cezar Leite<br />Escolha: SOMENTE SESSÃO',
-        'Ir. Paulo Mendes<br />Escolha: SOMENTE SESSÃO'
-      ],
-      somente_agape: [
-        'Ir. Antônio Ferreira<br />Escolha: SOMENTE ÁGAPE',
-        'Ir. João Carvalho<br />Escolha: SOMENTE ÁGAPE',
-        'Ir. Marcos Souza<br />Escolha: SOMENTE ÁGAPE',
-        'Ir. Luiz Fernando Pereira<br />Escolha: SOMENTE ÁGAPE',
-        'Ir. Vilson Silva Alves<br />Escolha: SOMENTE ÁGAPE'
-      ],
-      sessao_agape: [
-        'Ir. George Peterson Ramos<br />Escolha: SESSÃO E ÁGAPE',
-        'Ir. Gilberto A. Espindola<br />Escolha: SESSÃO E ÁGAPE',
-        'Ir. Israel F. Souza<br />Escolha: SESSÃO E ÁGAPE',
-        'Ir. Jadir Dos Santos Cruz<br />Escolha: SESSÃO E ÁGAPE'
-      ],
-      nao_participa: [
-        'Ir. Edson Do Carmo<br />Escolha: NÃO PODEREI IR',
-        'Ir. Mario Benedet<br />Escolha: NÃO PODEREI IR'
-      ],
-      faltam_retornar: [
-        'Ir. Edson Paulo',
-        'Ir. Edmar Pernes Da Silva',
-        'Ir. Helder Souza',
-        'Ir. Iloir Adur',
-        'Ir. Nicholas T. Kruel'
-      ],
-      total_irmaos: [
-        'Total cadastrado: 40 irmãos',
-        'Com retorno: 21 irmãos',
-        'Faltam retornar: 19 irmãos'
-      ],
-      pagamentos_dinheiro: [
-        'Ir. Rafael Francisco Ramos',
-        'Ir. Cezar Leite',
-        'Ir. João Carvalho',
-        'Ir. Marcos Souza'
-      ],
-      pagamentos_pix: [
-        'Ir. George Peterson Ramos',
-        'Ir. Paulo Mendes',
-        'Ir. Antônio Ferreira',
-        'Ir. Vilson Silva Alves'
-      ],
-      pagamentos_pendentes: [
-        'Ir. Luiz Fernando Pereira',
-        'Ir. Mauro Dutra Jr.',
-        'Ir. Orlando Mantovani'
-      ],
-      valor_dinheiro: [
-        'Dinheiro recebido: R$ 250,00',
-        'Registros: 06 pagamentos'
-      ],
-      valor_pix: [
-        'PIX recebido: R$ 85,00',
-        'Registros: 04 pagamentos'
-      ],
-      valor_pendente: [
-        'Pendente para acerto: R$ 65,00',
-        'Registros pendentes: 11 pagamentos'
-      ],
-      irmaos_presentes: [
-        'Ir. George Peterson Ramos',
-        'Ir. Rafael Francisco Ramos',
-        'Ir. Cezar Leite',
-        'Ir. Antônio Ferreira'
-      ],
-      irmaos_ausentes: [
-        'Ir. Edson Do Carmo',
-        'Ir. Mario Benedet',
-        'Ir. Orlando Mantovani'
-      ],
-      valor_total_agape: [
-        'Valor total apurado: R$ 728,00',
-        'PIX: R$ 85,00',
-        'Dinheiro: R$ 250,00',
-        'Pendente: R$ 171,00'
-      ],
-      produtos_consumidos: [
-        'Cerveja Heineken 600ml: 12 unidades',
-        'Água: 8 unidades',
-        'Refrigerante Coca-Cola: 5 unidades',
-        'Jantar: 21 unidades'
-      ],
-      irmaos_pendente_acerto: [
-        'Ir. Rafael Francisco Ramos',
-        'Ir. Cezar Leite'
-      ],
-      valor_pendente_acerto: [
-        'Ir. Rafael Francisco Ramos — R$ 85,00',
-        'Ir. Cezar Leite — R$ 86,00'
-      ]
-    };
+    function formatBRL(value) {
+      return Number(value || 0).toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+      });
+    }
+
+    function isoToBrDate(dataIso) {
+      const m = String(dataIso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : dataIso;
+    }
+
+    function brDateToIso(dataBR) {
+      const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+    }
+
+    function getIrmaos() {
+      return Array.isArray(agapeConfigAtual?.irmaos) ? agapeConfigAtual.irmaos : [];
+    }
+
+    function getDataSessaoIsoAtual() {
+      const dataEl = document.getElementById('dataSessao');
+      if (dataEl && dataEl.value) return dataEl.value;
+      return brDateToIso(agapeConfigAtual?.sessao?.data || '');
+    }
+
+    function setMetric(key, value) {
+      const card = document.querySelector(`[data-detail="${key}"]`);
+      if (!card) return;
+
+      const numberEl = card.querySelector('.metric-number');
+      const moneyEl = card.querySelector('.metric-money');
+
+      if (moneyEl) {
+        moneyEl.textContent = typeof value === 'number' ? formatBRL(value) : String(value || 'R$ 0,00');
+        return;
+      }
+
+      if (numberEl) {
+        const n = Number(value || 0);
+        numberEl.textContent = String(n).padStart(2, '0');
+      }
+    }
+
+    function nomesLista(irmaos) {
+      return (irmaos || []).map(irmao => `Ir. ${irmao.nome || ''}`.trim());
+    }
 
     function showDetail(key) {
       if (!detailOverlay || !detailList) return;
 
       const items = detailData[key] || ['Nenhum registro encontrado.'];
-      if (detailTitle) detailTitle.textContent = detailTitles[key] || 'DETALHES';
+      if (detailTitle) detailTitle.textContent = metricTitles[key] || 'DETALHES';
       detailList.innerHTML = items.map(item => `<div class="item-block">${item}</div>`).join('');
       detailOverlay.classList.add('show');
     }
@@ -1750,173 +1724,193 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
       showDetail(card.dataset.detail);
     });
 
-    if (detailCloseBtn) {
-      detailCloseBtn.addEventListener('click', hideDetail);
-    }
-
+    if (detailCloseBtn) detailCloseBtn.addEventListener('click', hideDetail);
     if (detailOverlay) {
       detailOverlay.addEventListener('click', event => {
         if (event.target === detailOverlay) hideDetail();
       });
     }
 
-    function openPdfRange() {
-      if (!pdfOverlay) return;
-
-      const hoje = new Date();
-      const isoHoje = hoje.toISOString().slice(0, 10);
-
-      if (pdfDataInicio && !pdfDataInicio.value) pdfDataInicio.value = isoHoje;
-      if (pdfDataFim && !pdfDataFim.value) pdfDataFim.value = isoHoje;
-
-      pdfOverlay.classList.add('show');
+    function paintStatus(button, isOn) {
+      if (!button) return;
+      const knob = button.querySelector('.knob');
+      button.classList.remove('green', 'red');
+      button.classList.add(isOn ? 'green' : 'red');
+      if (knob) knob.textContent = isOn ? '🔓' : '🔒';
     }
 
-    function closePdfRange() {
-      if (pdfOverlay) pdfOverlay.classList.remove('show');
+    function syncStatusUI() {
+      paintStatus(statusConvocacaoBtn, statusConvocacao);
+      paintStatus(statusPushBtn, statusPush);
+      paintStatus(statusSessaoConsumoBtn, statusSessao);
+      paintStatus(statusSessaoExtratoBtn, statusSessao);
     }
 
-    if (pdfCancelBtn) {
-      pdfCancelBtn.addEventListener('click', closePdfRange);
+    function resetarMetricas() {
+      const irmaos = getIrmaos();
+      const totalIrmaos = irmaos.length;
+
+      setMetric('somente_sessao', 0);
+      setMetric('somente_agape', 0);
+      setMetric('sessao_agape', 0);
+      setMetric('nao_participa', 0);
+      setMetric('faltam_retornar', totalIrmaos);
+      setMetric('total_irmaos', totalIrmaos);
+
+      setMetric('pagamentos_dinheiro', 0);
+      setMetric('pagamentos_pix', 0);
+      setMetric('pagamentos_pendentes', 0);
+      setMetric('valor_dinheiro', 0);
+      setMetric('valor_pix', 0);
+      setMetric('valor_pendente', 0);
+
+      setMetric('irmaos_presentes', 0);
+      setMetric('irmaos_ausentes', 0);
+      setMetric('valor_total_agape', 0);
+      setMetric('produtos_consumidos', 0);
+      setMetric('irmaos_pendente_acerto', 0);
+      setMetric('valor_pendente_acerto', 0);
+
+      detailData = {
+        somente_sessao: ['Nenhum irmão confirmou essa opção.'],
+        somente_agape: ['Nenhum irmão confirmou essa opção.'],
+        sessao_agape: ['Nenhum irmão confirmou essa opção.'],
+        nao_participa: ['Nenhum irmão confirmou essa opção.'],
+        faltam_retornar: nomesLista(irmaos),
+        total_irmaos: nomesLista(irmaos),
+        pagamentos_dinheiro: ['Nenhum pagamento em dinheiro.'],
+        pagamentos_pix: ['Nenhum pagamento em PIX.'],
+        pagamentos_pendentes: ['Nenhum pagamento pendente.'],
+        valor_dinheiro: ['Valor em dinheiro: R$ 0,00'],
+        valor_pix: ['Valor em PIX: R$ 0,00'],
+        valor_pendente: ['Valor pendente: R$ 0,00'],
+        irmaos_presentes: ['Nenhum consumo registrado.'],
+        irmaos_ausentes: ['Nenhum consumo registrado.'],
+        valor_total_agape: ['Valor total do Ágape: R$ 0,00'],
+        produtos_consumidos: ['Nenhum produto consumido.'],
+        irmaos_pendente_acerto: ['Nenhum irmão pendente.'],
+        valor_pendente_acerto: ['Valor pendente: R$ 0,00']
+      };
     }
 
-    if (pdfOverlay) {
-      pdfOverlay.addEventListener('click', event => {
-        if (event.target === pdfOverlay) closePdfRange();
+    function aplicarMetricasSessao(sessao) {
+      resetarMetricas();
+
+      if (!sessao) return;
+
+      const irmaos = getIrmaos();
+      const confirmacoes = Array.isArray(sessao.confirmacoes) ? sessao.confirmacoes : [];
+      const consumos = Array.isArray(sessao.consumos) ? sessao.consumos : [];
+
+      const porOpcao = {
+        'SOMENTE SESSÃO': [],
+        'SOMENTE ÁGAPE': [],
+        'SESSÃO E ÁGAPE': [],
+        'NÃO PODEREI IR': []
+      };
+
+      confirmacoes.forEach(item => {
+        const opcao = item.resposta || item.opcao || item.escolha || '';
+        if (porOpcao[opcao]) porOpcao[opcao].push(item);
       });
-    }
 
-    if (pdfGenerateBtn) {
-      pdfGenerateBtn.addEventListener('click', () => {
-        const inicio = pdfDataInicio ? pdfDataInicio.value : '';
-        const fim = pdfDataFim ? pdfDataFim.value : '';
+      const telefonesComRetorno = new Set(confirmacoes.map(item => normalizarTelefone(item.telefone)));
+      const faltam = irmaos.filter(irmao => !telefonesComRetorno.has(normalizarTelefone(irmao.telefone)));
 
-        if (!inicio || !fim) {
-          showMessage('Período obrigatório', 'Informe a data inicial e a data final para gerar o PDF.');
-          return;
+      setMetric('somente_sessao', porOpcao['SOMENTE SESSÃO'].length);
+      setMetric('somente_agape', porOpcao['SOMENTE ÁGAPE'].length);
+      setMetric('sessao_agape', porOpcao['SESSÃO E ÁGAPE'].length);
+      setMetric('nao_participa', porOpcao['NÃO PODEREI IR'].length);
+      setMetric('faltam_retornar', faltam.length);
+      setMetric('total_irmaos', irmaos.length);
+
+      detailData.somente_sessao = porOpcao['SOMENTE SESSÃO'].length ? porOpcao['SOMENTE SESSÃO'].map(i => `Ir. ${i.nome}<br>Escolha: SOMENTE SESSÃO`) : ['Nenhum irmão confirmou essa opção.'];
+      detailData.somente_agape = porOpcao['SOMENTE ÁGAPE'].length ? porOpcao['SOMENTE ÁGAPE'].map(i => `Ir. ${i.nome}<br>Escolha: SOMENTE ÁGAPE`) : ['Nenhum irmão confirmou essa opção.'];
+      detailData.sessao_agape = porOpcao['SESSÃO E ÁGAPE'].length ? porOpcao['SESSÃO E ÁGAPE'].map(i => `Ir. ${i.nome}<br>Escolha: SESSÃO E ÁGAPE`) : ['Nenhum irmão confirmou essa opção.'];
+      detailData.nao_participa = porOpcao['NÃO PODEREI IR'].length ? porOpcao['NÃO PODEREI IR'].map(i => `Ir. ${i.nome}<br>Escolha: NÃO PODEREI IR`) : ['Nenhum irmão confirmou essa opção.'];
+      detailData.faltam_retornar = faltam.length ? nomesLista(faltam) : ['Todos os irmãos já retornaram.'];
+      detailData.total_irmaos = nomesLista(irmaos);
+
+      if (!consumos.length) return;
+
+      let qtdDinheiro = 0;
+      let qtdPix = 0;
+      let qtdPendente = 0;
+      let valorDinheiro = 0;
+      let valorPix = 0;
+      let valorPendente = 0;
+      const nomesConsumiram = new Set();
+      const produtos = new Map();
+      const pendentes = [];
+
+      consumos.forEach(consumo => {
+        const forma = String(consumo.forma_pagamento || consumo.pagamento || '').toLowerCase();
+        const total = Number(consumo.total || consumo.valor_total || consumo.valor || 0);
+        const nome = consumo.nome || consumo.irmao || '';
+        if (nome) nomesConsumiram.add(nome);
+
+        if (forma.includes('dinheiro')) {
+          qtdDinheiro++;
+          valorDinheiro += total;
+        } else if (forma.includes('pix')) {
+          qtdPix++;
+          valorPix += total;
+        } else {
+          qtdPendente++;
+          valorPendente += total;
+          pendentes.push(consumo);
         }
 
-        if (inicio > fim) {
-          showMessage('Período inválido', 'A data inicial não pode ser maior que a data final.');
-          return;
-        }
-
-        closePdfRange();
-        showLoading('Gerando PDF...', 'Preparando histórico do período selecionado...');
-
-        setTimeout(() => {
-          hideLoading();
-          showMessage('PDF preparado', `Histórico solicitado de ${inicio} até ${fim}.`);
-        }, 900);
-      });
-    }
-
-    messageOkBtn.addEventListener('click', hideMessage);
-
-    function renderActions(screenId) {
-      if (screenId === 'extrato') {
-        actions.innerHTML = `
-          <button class="btn blue" id="btnPdf" type="button" title="PDF">PDF</button>
-          <button class="btn green" id="btnSalvar" type="button" title="Confirmar">✓</button>
-          <button class="btn red" id="btnCancelar" type="button" title="Sair">✕</button>
-        `;
-      } else {
-        actions.innerHTML = `
-          <button class="btn green" id="btnSalvar" type="button" title="Confirmar">✓</button>
-          <button class="btn red" id="btnCancelar" type="button" title="Sair">✕</button>
-        `;
-      }
-
-      bindActionButtons();
-    const dataSessaoEl = document.getElementById('dataSessao');
-    if (dataSessaoEl) dataSessaoEl.addEventListener('change', carregarSessaoPorData);
-    carregarConfigBackend();
-    }
-
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const target = tab.dataset.screen;
-        if (target === currentScreen) return;
-
-        tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-
-        screens.forEach(screen => {
-          screen.classList.remove('active');
-          if (screen.id === target) {
-            void screen.offsetWidth;
-            screen.classList.add('active');
-          }
+        (consumo.itens || []).forEach(item => {
+          const nomeProduto = item.nome || item.produto || item.codigo || 'Produto';
+          const qtd = Number(item.quantidade || item.qtd || 0);
+          const valor = Number(item.total || item.valor_total || (Number(item.preco || 0) * qtd));
+          const atual = produtos.get(nomeProduto) || { qtd: 0, valor: 0 };
+          atual.qtd += qtd;
+          atual.valor += valor;
+          produtos.set(nomeProduto, atual);
         });
-
-        currentScreen = target;
-        renderActions(target);
       });
-    });
 
-function sairDoPainelAdmin() {
-  showLoading('Saindo...', 'Voltando para o aplicativo...');
+      setMetric('pagamentos_dinheiro', qtdDinheiro);
+      setMetric('pagamentos_pix', qtdPix);
+      setMetric('pagamentos_pendentes', qtdPendente);
+      setMetric('valor_dinheiro', valorDinheiro);
+      setMetric('valor_pix', valorPix);
+      setMetric('valor_pendente', valorPendente);
 
-  setTimeout(() => {
-    window.location.href = 'app.html?t=' + Date.now();
-  }, 350);
-}
-    
-    function encerrarTelaLogin() {
-      showLoading('Saindo...', 'Encerrando o aplicativo...');
-     
+      setMetric('irmaos_presentes', nomesConsumiram.size);
+      setMetric('irmaos_ausentes', Math.max(0, irmaos.length - nomesConsumiram.size));
+      setMetric('valor_total_agape', valorDinheiro + valorPix + valorPendente);
+      setMetric('produtos_consumidos', produtos.size);
+      setMetric('irmaos_pendente_acerto', pendentes.length);
+      setMetric('valor_pendente_acerto', valorPendente);
 
-      setTimeout(() => {
-        try {
-          window.open('', '_self');
-          window.close();
-        } catch (error) {}
-
-        setTimeout(() => {
-          hideLoading();
-          document.body.innerHTML = `
-            <div style="min-height:100vh;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;text-align:center;padding:24px;">
-              <div>
-                <div style="font-size:24px;font-weight:900;margin-bottom:10px;">Aplicativo encerrado</div>
-                <div style="font-size:14px;font-weight:700;opacity:.8;">Pode fechar esta aba com segurança.</div>
-              </div>
-            </div>
-          `;
-          document.documentElement.style.background = '#000';
-          document.body.style.background = '#000';
-        }, 350);
-      }, 350);
+      detailData.pagamentos_dinheiro = qtdDinheiro ? consumos.filter(c => String(c.forma_pagamento || '').toLowerCase().includes('dinheiro')).map(c => `Ir. ${c.nome}<br>${formatBRL(c.total || 0)}`) : ['Nenhum pagamento em dinheiro.'];
+      detailData.pagamentos_pix = qtdPix ? consumos.filter(c => String(c.forma_pagamento || '').toLowerCase().includes('pix')).map(c => `Ir. ${c.nome}<br>${formatBRL(c.total || 0)}`) : ['Nenhum pagamento em PIX.'];
+      detailData.pagamentos_pendentes = pendentes.length ? pendentes.map(c => `Ir. ${c.nome}<br>${formatBRL(c.total || 0)}`) : ['Nenhum pagamento pendente.'];
+      detailData.valor_dinheiro = [`Dinheiro recebido: ${formatBRL(valorDinheiro)}`, `Registros: ${qtdDinheiro}`];
+      detailData.valor_pix = [`PIX recebido: ${formatBRL(valorPix)}`, `Registros: ${qtdPix}`];
+      detailData.valor_pendente = [`Pendente para acerto: ${formatBRL(valorPendente)}`, `Registros: ${qtdPendente}`];
+      detailData.irmaos_presentes = Array.from(nomesConsumiram).map(nome => `Ir. ${nome}`);
+      detailData.irmaos_ausentes = nomesLista(irmaos.filter(i => !nomesConsumiram.has(i.nome)));
+      detailData.valor_total_agape = [`Valor total do Ágape: ${formatBRL(valorDinheiro + valorPix + valorPendente)}`, `PIX: ${formatBRL(valorPix)}`, `Dinheiro: ${formatBRL(valorDinheiro)}`, `Pendente: ${formatBRL(valorPendente)}`];
+      detailData.produtos_consumidos = produtos.size ? Array.from(produtos.entries()).map(([nome, p]) => `${nome}: ${p.qtd} un. — ${formatBRL(p.valor)}`) : ['Nenhum produto consumido.'];
+      detailData.irmaos_pendente_acerto = pendentes.length ? pendentes.map(c => `Ir. ${c.nome}`) : ['Nenhum irmão pendente.'];
+      detailData.valor_pendente_acerto = [`Valor pendente: ${formatBRL(valorPendente)}`];
     }
-
-    function sairDoAplicativo() {
-      if (isAdminDirect || (loginScreen && loginScreen.classList.contains('hidden'))) {
-        sairDoPainelAdmin();
-        return;
-      }
-
-      encerrarTelaLogin();
-    }
-
 
     async function carregarConfigBackend() {
       try {
         const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
         const data = await resp.json();
-        if (data.success) {
-          agapeConfigAtual = data.config;
-          aplicarConfigNaTela(data.config);
-        }
-      } catch (err) {}
-    }
-
-    function brDateToIso(dataBR) {
-      const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
-    }
-
-    function isoToBrDate(dataIso) {
-      const m = String(dataIso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      return m ? `${m[3]}/${m[2]}/${m[1]}` : dataIso;
+        const config = getConfigRaiz(data);
+        agapeConfigAtual = config;
+        aplicarConfigNaTela(config);
+        resetarMetricas();
+      } catch (err) {
+        showMessage('Erro de conexão', 'Não foi possível carregar o agape_config.json.');
+      }
     }
 
     function aplicarConfigNaTela(config) {
@@ -1938,12 +1932,15 @@ function sairDoPainelAdmin() {
     async function carregarSessaoPorData() {
       const dataEl = document.getElementById('dataSessao');
       if (!dataEl || !dataEl.value) return;
+
       try {
         showLoading('Consultando sessão...', 'Verificando histórico da data selecionada...');
         const resp = await fetch(`${AGAPE_API_BASE}/carregar_sessao.php?data=${encodeURIComponent(dataEl.value)}&t=${Date.now()}`);
         const data = await resp.json();
         hideLoading();
+
         if (data.success && data.exists && data.sessao) {
+          sessaoAtual = data.sessao;
           const sess = data.sessao;
           document.getElementById('valorCaixa').value = Number(sess?.sessao?.caixa_inicial || 0).toFixed(2);
           document.getElementById('textoConvocacao').value = sess?.sessao?.chamado || '';
@@ -1951,8 +1948,17 @@ function sairDoPainelAdmin() {
           statusPush = !!sess?.push?.habilitado;
           statusSessao = !!sess?.agape?.ativa;
           syncStatusUI();
+          aplicarMetricasSessao(sess);
           showMessage('Sessão encontrada', 'Os dados dessa sessão foram carregados para conferência.');
+          return;
         }
+
+        sessaoAtual = null;
+        statusConvocacao = false;
+        statusPush = false;
+        statusSessao = false;
+        syncStatusUI();
+        resetarMetricas();
       } catch (err) {
         hideLoading();
         showMessage('Erro', 'Não foi possível carregar a sessão selecionada.');
@@ -1993,6 +1999,11 @@ function sairDoPainelAdmin() {
           return;
         }
 
+        if (ret.sessao) {
+          sessaoAtual = ret.sessao;
+          aplicarMetricasSessao(sessaoAtual);
+        }
+
         if (statusPush && statusConvocacao) {
           try {
             const pushResp = await fetch(`${AGAPE_API_BASE}/push_send.php?t=${Date.now()}`, {
@@ -2005,23 +2016,73 @@ function sairDoPainelAdmin() {
                 url: 'https://www.erpimpar.com.br/agape/index.html'
               })
             });
-
-            const pushText = await pushResp.text();
-            console.log('Retorno push:', pushText);
+            console.log('Push:', await pushResp.text());
           } catch (erroPush) {
             console.error('Erro ao enviar push:', erroPush);
           }
         }
 
-        showMessage(
-          'Configuração salva',
-          `Sessão gravada com sucesso em ${ret.arquivo || 'arquivo da sessão'}.`
-        );
-
+        showMessage('Configuração salva', `Sessão gravada com sucesso em ${ret.arquivo || 'arquivo da sessão'}.`);
       } catch (err) {
         hideLoading();
         showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
       }
+    }
+
+    function openPdfRange() {
+      if (!pdfOverlay) return;
+      const hoje = new Date().toISOString().slice(0, 10);
+      if (pdfDataInicio && !pdfDataInicio.value) pdfDataInicio.value = hoje;
+      if (pdfDataFim && !pdfDataFim.value) pdfDataFim.value = hoje;
+      pdfOverlay.classList.add('show');
+    }
+
+    function closePdfRange() {
+      if (pdfOverlay) pdfOverlay.classList.remove('show');
+    }
+
+    if (pdfCancelBtn) pdfCancelBtn.addEventListener('click', closePdfRange);
+    if (pdfOverlay) {
+      pdfOverlay.addEventListener('click', event => {
+        if (event.target === pdfOverlay) closePdfRange();
+      });
+    }
+
+    if (pdfGenerateBtn) {
+      pdfGenerateBtn.addEventListener('click', () => {
+        const inicio = pdfDataInicio ? pdfDataInicio.value : '';
+        const fim = pdfDataFim ? pdfDataFim.value : '';
+
+        if (!inicio || !fim) {
+          showMessage('Período obrigatório', 'Informe a data inicial e a data final para gerar o PDF.');
+          return;
+        }
+
+        if (inicio > fim) {
+          showMessage('Período inválido', 'A data inicial não pode ser maior que a data final.');
+          return;
+        }
+
+        closePdfRange();
+        window.open(`${AGAPE_API_BASE}/gerar_pdf.php?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}&t=${Date.now()}`, '_blank');
+      });
+    }
+
+    function renderActions(screenId) {
+      if (screenId === 'extrato') {
+        actions.innerHTML = `
+          <button class="btn blue" id="btnPdf" type="button" title="PDF">PDF</button>
+          <button class="btn green" id="btnSalvar" type="button" title="Confirmar">✓</button>
+          <button class="btn red" id="btnCancelar" type="button" title="Sair">✕</button>
+        `;
+      } else {
+        actions.innerHTML = `
+          <button class="btn green" id="btnSalvar" type="button" title="Confirmar">✓</button>
+          <button class="btn red" id="btnCancelar" type="button" title="Sair">✕</button>
+        `;
+      }
+
+      bindActionButtons();
     }
 
     function bindActionButtons() {
@@ -2031,158 +2092,163 @@ function sairDoPainelAdmin() {
 
       if (saveBtn) {
         saveBtn.onclick = () => {
-          showLoading('Processando...', 'Finalizando operação...');
+          if (currentScreen === 'config' || currentScreen === 'consumo') {
+            salvarConfigBackend();
+            return;
+          }
 
-          setTimeout(() => {
-            hideLoading();
+          if (currentScreen === 'confirma') {
+            showMessage('Tela bloqueada', 'Esta tela está disponível apenas para consulta.');
+            return;
+          }
 
-            if (currentScreen === 'config') {
-              salvarConfigBackend();
-              return;
-            } else if (currentScreen === 'confirma') {
-              showMessage('Tela bloqueada', 'Esta tela está disponível apenas para consulta.');
-            } else if (currentScreen === 'consumo') {
-              showMessage('Tela bloqueada', 'Esta tela está disponível apenas para acompanhamento.');
-            } else if (currentScreen === 'extrato') {
-              showMessage('Extrato preparado', 'A versão final foi preparada com sucesso.');
-            }
-          }, 700);
+          if (currentScreen === 'extrato') {
+            showMessage('Extrato', 'Use o botão PDF para exportar o histórico.');
+          }
         };
       }
 
-      if (cancelBtn) {
-        cancelBtn.onclick = () => {
-          sairDoAplicativo();
-        };
-      }
-
-      if (pdfBtn) {
-        pdfBtn.onclick = () => {
-          openPdfRange();
-        };
-      }
+      if (cancelBtn) cancelBtn.onclick = sairDoAplicativo;
+      if (pdfBtn) pdfBtn.onclick = openPdfRange;
     }
 
-
-let statusConvocacao = false;
-let statusPush = false;
-let statusSessao = false;
-
-const statusConvocacaoBtn = document.getElementById('statusConvocacaoBtn');
-const statusPushBtn = document.getElementById('statusPushBtn');
-const statusSessaoConsumoBtn = document.getElementById('statusSessaoConsumoBtn');
-const statusSessaoExtratoBtn = document.getElementById('statusSessaoExtratoBtn');
-
-function paintStatus(button, isOn) {
-  if (!button) return;
-
-  const knob = button.querySelector('.knob');
-
-  button.classList.remove('green', 'red');
-  button.classList.add(isOn ? 'green' : 'red');
-
-  if (knob) {
-    knob.textContent = isOn ? '🔓' : '🔒';
-  }
-}
-
-function syncStatusUI() {
-  paintStatus(statusConvocacaoBtn, statusConvocacao);
-  paintStatus(statusPushBtn, statusPush);
-  paintStatus(statusSessaoConsumoBtn, statusSessao);
-  paintStatus(statusSessaoExtratoBtn, statusSessao);
-}
-
-if (statusConvocacaoBtn) {
-  statusConvocacaoBtn.addEventListener('click', () => {
-    statusConvocacao = !statusConvocacao;
-    syncStatusUI();
-  });
-}
-
-if (statusPushBtn) {
-  statusPushBtn.addEventListener('click', () => {
-    statusPush = !statusPush;
-    syncStatusUI();
-  });
-}
-
-if (statusSessaoConsumoBtn) {
-  statusSessaoConsumoBtn.addEventListener('click', () => {
-    statusSessao = !statusSessao;
-    syncStatusUI();
-  });
-}
-
-if (statusSessaoExtratoBtn) {
-  statusSessaoExtratoBtn.addEventListener('click', () => {
-    statusSessao = !statusSessao;
-    syncStatusUI();
-  });
-}
-
-syncStatusUI();
-    
-
-
-    if (loginExitBtn) {
-      loginExitBtn.addEventListener('click', encerrarTelaLogin);
+    function sairDoPainelAdmin() {
+      showLoading('Saindo...', 'Voltando para o aplicativo...');
+      setTimeout(() => {
+        window.location.href = `app.html?t=${Date.now()}`;
+      }, 350);
     }
 
-    loginBtn.addEventListener('click', async () => {
-      const telefone = loginTelefone.value.trim();
-      const cim = loginCim.value.trim();
+    function encerrarTelaLogin() {
+      showLoading('Saindo...', 'Encerrando o aplicativo...');
+      setTimeout(() => {
+        hideLoading();
+        document.body.innerHTML = `
+          <div style="min-height:100vh;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;text-align:center;padding:24px;">
+            <div>
+              <div style="font-size:24px;font-weight:900;margin-bottom:10px;">Aplicativo encerrado</div>
+              <div style="font-size:14px;font-weight:700;opacity:.8;">Pode fechar esta aba com segurança.</div>
+            </div>
+          </div>
+        `;
+      }, 350);
+    }
 
-      if (!telefone || !cim) {
-        showMessage('Login incompleto', 'Preencha o telefone e o CIM para acessar.');
+    function sairDoAplicativo() {
+      if (isAdminDirect || (loginScreen && loginScreen.classList.contains('hidden'))) {
+        sairDoPainelAdmin();
         return;
       }
+      encerrarTelaLogin();
+    }
 
-      showLoading('Validando acesso...', 'Consultando sessão...');
+    if (statusConvocacaoBtn) {
+      statusConvocacaoBtn.addEventListener('click', () => {
+        statusConvocacao = !statusConvocacao;
+        syncStatusUI();
+      });
+    }
 
-      try {
-        const resp = await fetch(`${AGAPE_API_BASE}/login.php`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ telefone, cim })
+    if (statusPushBtn) {
+      statusPushBtn.addEventListener('click', () => {
+        statusPush = !statusPush;
+        syncStatusUI();
+      });
+    }
+
+    if (statusSessaoConsumoBtn) {
+      statusSessaoConsumoBtn.addEventListener('click', () => {
+        statusSessao = !statusSessao;
+        syncStatusUI();
+      });
+    }
+
+    if (statusSessaoExtratoBtn) {
+      statusSessaoExtratoBtn.addEventListener('click', () => {
+        statusSessao = !statusSessao;
+        syncStatusUI();
+      });
+    }
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.screen;
+        if (target === currentScreen) return;
+
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        screens.forEach(screen => {
+          screen.classList.remove('active');
+          if (screen.id === target) {
+            void screen.offsetWidth;
+            screen.classList.add('active');
+          }
         });
-        const data = await resp.json();
-        hideLoading();
 
-        if (!data.success) {
-          showMessage('Acesso negado', data.message || 'Telefone ou CIM inválido.');
-          return;
-        }
-
-        if (!data.convocacao_ativa && !data.admin) {
-          showMessage(
-            'Nenhuma sessão ativa',
-            'Nenhuma sessão ativa, mas não se preocupe, assim que o Venerável abrir nova sessão, será enviado uma notificação pelo aplicativo.'
-          );
-          return;
-        }
-
-        if (data.admin) {
-          window.location.href = 'index.html?admin=1&t=' + Date.now();
-        } else {
-          window.location.href = 'app.html?t=' + Date.now();
-        }
-      } catch (err) {
-        hideLoading();
-        showMessage('Erro de conexão', 'Não foi possível consultar o servidor do Ágape.');
-      }
+        currentScreen = target;
+        renderActions(target);
+      });
     });
+
+    if (loginBtn) {
+      loginBtn.addEventListener('click', async () => {
+        const telefone = loginTelefone.value.trim();
+        const cim = loginCim.value.trim();
+
+        if (!telefone || !cim) {
+          showMessage('Login incompleto', 'Preencha o telefone e o CIM para acessar.');
+          return;
+        }
+
+        showLoading('Validando acesso...', 'Consultando autorização no servidor...');
+
+        try {
+          const resp = await fetch(`${AGAPE_API_BASE}/login.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ telefone, cim })
+          });
+
+          const data = await resp.json();
+          hideLoading();
+
+          if (!data.success && data.sem_sessao) {
+            showMessage('Nenhuma sessão ativa', data.message || 'Nenhuma sessão ativa.');
+            return;
+          }
+
+          if (!data.success) {
+            showMessage('Acesso negado', data.message || 'Telefone ou CIM inválido.');
+            return;
+          }
+
+          usuarioAgapeAtual = data.usuario || null;
+
+          if (data.admin) {
+            window.location.href = `index.html?admin=1&telefone=${encodeURIComponent(telefone)}&t=${Date.now()}`;
+          } else {
+            window.location.href = `app.html?telefone=${encodeURIComponent(telefone)}&t=${Date.now()}`;
+          }
+        } catch (err) {
+          hideLoading();
+          showMessage('Erro de conexão', 'Não foi possível validar o acesso.');
+        }
+      });
+    }
+
+    if (loginExitBtn) loginExitBtn.addEventListener('click', encerrarTelaLogin);
 
     async function setupLogo(targetImgId, targetBoxId) {
       const logoImg = document.getElementById(targetImgId);
       const logoBox = document.getElementById(targetBoxId);
-
       if (!logoImg || !logoBox) return;
 
       const candidates = [
         'logo-maconaria.png',
         'logo-maconaria.jpg',
         'logo-maconaria.jpeg',
+        'logo-Clementino-Brito.jpeg',
         'logo-loja---d.png',
         'logo-loja-d.png',
         'maconaria.gif',
@@ -2190,19 +2256,15 @@ syncStatusUI();
         'maconaria.jpg'
       ];
 
-      function tryLoad(src) {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(src);
-          img.onerror = reject;
-          img.src = src;
-        });
-      }
-
       for (const src of candidates) {
         try {
-          const validSrc = await tryLoad(src);
-          logoImg.src = validSrc;
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = src;
+          });
+          logoImg.src = src;
           return;
         } catch (error) {}
       }
@@ -2214,19 +2276,15 @@ syncStatusUI();
     async function setupSplashGif() {
       const candidates = ['maconaria.gif', 'maconaria.png', 'maconaria.jpg'];
 
-      function tryLoad(src) {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(src);
-          img.onerror = reject;
-          img.src = src;
-        });
-      }
-
       for (const src of candidates) {
         try {
-          const validSrc = await tryLoad(src);
-          splashGif.src = validSrc;
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = src;
+          });
+          splashGif.src = src;
           return;
         } catch (error) {}
       }
@@ -2235,22 +2293,24 @@ syncStatusUI();
     function showAdminDirect() {
       if (splashScreen) splashScreen.style.display = 'none';
       if (loginScreen) loginScreen.classList.add('hidden');
+      carregarConfigBackend();
+      renderActions('config');
+      const dataSessaoEl = document.getElementById('dataSessao');
+      if (dataSessaoEl) dataSessaoEl.addEventListener('change', carregarSessaoPorData);
     }
 
     function startSplashFlow() {
       setupSplashGif();
-
       setTimeout(() => {
         splashScreen.classList.add('hidden');
       }, 4000);
     }
 
-    bindActionButtons();
-    const dataSessaoEl = document.getElementById('dataSessao');
-    if (dataSessaoEl) dataSessaoEl.addEventListener('change', carregarSessaoPorData);
-    carregarConfigBackend();
     setupLogo('logoImg', 'logoBox');
     setupLogo('loginLogoImg', 'loginLogoBox');
+    resetarMetricas();
+    syncStatusUI();
+    renderActions('config');
 
     if (isAdminDirect) {
       showAdminDirect();
@@ -2258,8 +2318,8 @@ syncStatusUI();
       startSplashFlow();
     }
   </script>
-
   <script src="PATCH_PUSH_FRONT.js"></script>
+<script src="PATCH_PUSH_FRONT.js"></script>
   
 </body>
 </html>
