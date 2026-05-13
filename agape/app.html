@@ -215,60 +215,104 @@
   </section>
 
   <script>
+    const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
+
     const tabConfirmar = document.getElementById('tabConfirmar');
     const tabConsumo = document.getElementById('tabConsumo');
     const tabFrame = document.getElementById('tabFrame');
 
-    const AGAPE_API_BASE = 'https://www.api.erpimpar.com.br/agape';
+    let agapeConfigAtual = null;
 
-    function sessaoAberta() {
-      try {
-        const cfg = JSON.parse(localStorage.getItem('AGAPE_CONFIG') || '{}');
-        if (cfg && cfg.agape && typeof cfg.agape.ativa !== 'undefined') return !!cfg.agape.ativa;
-      } catch (e) {}
-      return localStorage.getItem('sessaoAberta') === 'true';
+    function getConfigRaiz(data) {
+      return data && data.config ? data.config : data;
     }
 
-    async function atualizarEstadoBackend() {
-      try {
-        const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
-        const data = await resp.json();
-        if (data.success) {
-          localStorage.setItem('AGAPE_CONFIG', JSON.stringify(data.config));
-          localStorage.setItem('sessaoAberta', String(!!data.config?.agape?.ativa));
-          applyConsumoState();
+    async function carregarConfigAgape() {
+      const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
+      const data = await resp.json();
+      const cfg = getConfigRaiz(data);
+      agapeConfigAtual = cfg;
+      return cfg;
+    }
+
+    function getDataSessaoBR() {
+      return agapeConfigAtual?.sessao?.data || '';
+    }
+
+    function replaceTextNodes(root, regex, replacement) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+
+      while (walker.nextNode()) {
+        nodes.push(walker.currentNode);
+      }
+
+      nodes.forEach(node => {
+        if (regex.test(node.nodeValue)) {
+          node.nodeValue = node.nodeValue.replace(regex, replacement);
         }
-      } catch (err) {}
+      });
     }
 
-    function applyConsumoState() {
-      if (sessaoAberta()) {
-        tabConsumo.classList.remove('disabled');
-      } else {
+    function atualizarIframeComConfig() {
+      const dataBR = getDataSessaoBR();
+      if (!dataBR) return;
+
+      try {
+        const doc = tabFrame.contentDocument || tabFrame.contentWindow.document;
+        if (!doc || !doc.body) return;
+
+        replaceTextNodes(
+          doc.body,
+          /SESSÃO\s*-\s*\d{2}\/\d{2}\/\d{4}/g,
+          `SESSÃO - ${dataBR}`
+        );
+      } catch (error) {
+        console.warn('Não foi possível atualizar a data dentro da aba:', error);
+      }
+    }
+
+    async function applyConsumoState() {
+      try {
+        const cfg = await carregarConfigAgape();
+        const agapeAtivo = !!cfg?.agape?.ativa;
+
+        if (agapeAtivo) {
+          tabConsumo.classList.remove('disabled');
+        } else {
+          tabConsumo.classList.add('disabled');
+        }
+
+        atualizarIframeComConfig();
+      } catch (error) {
         tabConsumo.classList.add('disabled');
       }
     }
 
-    function openTab(name) {
+    async function openTab(name) {
       if (name === 'confirmar') {
         tabConfirmar.classList.add('active');
         tabConsumo.classList.remove('active');
-        tabFrame.src = 'confirmar_tab.html';
+        tabFrame.src = `confirmar_tab.html?t=${Date.now()}`;
         return;
       }
 
       if (name === 'consumo') {
-        if (!sessaoAberta()) return;
-        tabConsumo.classList.add('active');
-        tabConfirmar.classList.remove('active');
-        tabFrame.src = 'consumo_tab.html';
+        try {
+          const cfg = await carregarConfigAgape();
+          const agapeAtivo = !!cfg?.agape?.ativa;
+          if (!agapeAtivo) return;
+
+          tabConsumo.classList.add('active');
+          tabConfirmar.classList.remove('active');
+          tabFrame.src = `consumo_tab.html?t=${Date.now()}`;
+        } catch (error) {}
       }
     }
 
     tabConfirmar.addEventListener('click', () => openTab('confirmar'));
     tabConsumo.addEventListener('click', () => openTab('consumo'));
-
-    window.addEventListener('storage', applyConsumoState);
+    tabFrame.addEventListener('load', atualizarIframeComConfig);
 
     async function setupLogo() {
       const logoImg = document.getElementById('logoImg');
@@ -302,7 +346,6 @@
 
     setupLogo();
     applyConsumoState();
-    atualizarEstadoBackend();
     openTab('confirmar');
   </script>
 </body>
