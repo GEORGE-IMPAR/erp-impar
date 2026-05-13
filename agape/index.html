@@ -1983,19 +1983,55 @@ function sairDoPainelAdmin() {
         });
         const ret = await resp.json();
         hideLoading();
-        if (ret.success) {
-          localStorage.setItem('statusConvocacao', String(statusConvocacao));
-          localStorage.setItem('sessaoAberta', String(statusSessao));
-          showMessage('Configuração salva', `Sessão gravada com sucesso em ${ret.arquivo || 'arquivo da sessão'}.`);
-        } else {
-          showMessage('Erro ao salvar', ret.message || 'Não foi possível salvar a configuração.');
-        }
-      } catch (err) {
-        hideLoading();
-        showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
-      }
-    }
 
+if (ret.success) {
+
+  if (statusPush && statusConvocacao) {
+
+    try {
+
+      await fetch(`${AGAPE_API_BASE}/push_send.php?t=${Date.now()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+
+        body: JSON.stringify({
+          tipo: 'convocacao',
+          titulo: 'Convocação Ágape',
+          mensagem:
+            chamadoEl.value ||
+            'Sessão convocada. Toque para confirmar presença.',
+
+          url: 'https://www.erpimpar.com.br/agape/index.html'
+        })
+      });
+
+      console.log('Push enviado com sucesso.');
+
+    } catch (erroPush) {
+
+      console.error('Erro ao enviar push:', erroPush);
+
+    }
+  }
+
+  showMessage(
+    'Configuração salva',
+    `Sessão gravada com sucesso em ${
+      ret.arquivo || 'arquivo da sessão'
+    }.`
+  );
+
+} else {
+
+  showMessage(
+    'Erro ao salvar',
+    ret.message || 'Não foi possível salvar a configuração.'
+  );
+
+}
+        
     function bindActionButtons() {
       const saveBtn = document.getElementById('btnSalvar');
       const cancelBtn = document.getElementById('btnCancelar');
@@ -2036,9 +2072,9 @@ function sairDoPainelAdmin() {
     }
 
 
-let statusConvocacao = localStorage.getItem('statusConvocacao') === 'true';
-let statusPush = localStorage.getItem('enviarNotificacaoAgape') === 'true';
-let statusSessao = localStorage.getItem('sessaoAberta') === 'true';
+let statusConvocacao = false;
+let statusPush = false;
+let statusSessao = false;
 
 const statusConvocacaoBtn = document.getElementById('statusConvocacaoBtn');
 const statusPushBtn = document.getElementById('statusPushBtn');
@@ -2068,7 +2104,6 @@ function syncStatusUI() {
 if (statusConvocacaoBtn) {
   statusConvocacaoBtn.addEventListener('click', () => {
     statusConvocacao = !statusConvocacao;
-    localStorage.setItem('statusConvocacao', String(statusConvocacao));
     syncStatusUI();
   });
 }
@@ -2076,7 +2111,6 @@ if (statusConvocacaoBtn) {
 if (statusPushBtn) {
   statusPushBtn.addEventListener('click', () => {
     statusPush = !statusPush;
-    localStorage.setItem('enviarNotificacaoAgape', String(statusPush));
     syncStatusUI();
   });
 }
@@ -2084,7 +2118,6 @@ if (statusPushBtn) {
 if (statusSessaoConsumoBtn) {
   statusSessaoConsumoBtn.addEventListener('click', () => {
     statusSessao = !statusSessao;
-    localStorage.setItem('sessaoAberta', String(statusSessao));
     syncStatusUI();
   });
 }
@@ -2092,7 +2125,6 @@ if (statusSessaoConsumoBtn) {
 if (statusSessaoExtratoBtn) {
   statusSessaoExtratoBtn.addEventListener('click', () => {
     statusSessao = !statusSessao;
-    localStorage.setItem('sessaoAberta', String(statusSessao));
     syncStatusUI();
   });
 }
@@ -2137,12 +2169,6 @@ syncStatusUI();
           );
           return;
         }
-
-        localStorage.setItem('AGAPE_USUARIO', JSON.stringify(data.usuario));
-        localStorage.setItem('AGAPE_CONFIG', JSON.stringify(data.config));
-        localStorage.setItem('statusConvocacao', String(data.convocacao_ativa));
-        localStorage.setItem('sessaoAberta', String(data.agape_ativa));
-        localStorage.setItem('agapeAdmin', String(data.admin));
 
         window.location.href = 'app.html';
       } catch (err) {
