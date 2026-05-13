@@ -1585,7 +1585,9 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
     const splashGif = document.getElementById('splashGif');
 
     const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
-    const isAdminDirect = new URLSearchParams(window.location.search).get('admin') === '1';
+    const urlParamsAgape = new URLSearchParams(window.location.search);
+    const isAdminDirect = urlParamsAgape.get('admin') === '1';
+    const telefoneLogadoParam = urlParamsAgape.get('telefone') || '';
 
     let currentScreen = 'config';
     let agapeConfigAtual = null;
@@ -2114,8 +2116,14 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
 
     function sairDoPainelAdmin() {
       showLoading('Saindo...', 'Voltando para o aplicativo...');
+
+      const telefoneDestino = telefoneLogadoParam || loginTelefone?.value?.trim() || usuarioAgapeAtual?.telefone || '';
+      const qs = new URLSearchParams();
+      qs.set('t', Date.now());
+      if (telefoneDestino) qs.set('telefone', telefoneDestino);
+
       setTimeout(() => {
-        window.location.href = `app.html?t=${Date.now()}`;
+        window.location.href = `app.html?${qs.toString()}`;
       }, 350);
     }
 
@@ -2225,10 +2233,20 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
 
           usuarioAgapeAtual = data.usuario || null;
 
-          if (data.admin) {
-            window.location.href = `index.html?admin=1&telefone=${encodeURIComponent(telefone)}&t=${Date.now()}`;
+          const qs = new URLSearchParams();
+          qs.set('telefone', telefone);
+          qs.set('t', Date.now());
+
+          // Regra oficial:
+          // - Venerável/Tesoureiro só entram no ADM quando NÃO houver convocação ativa,
+          //   para poder abrir/configurar a sessão.
+          // - Se a convocação já estiver ativa, qualquer usuário validado, inclusive admin,
+          //   vai direto para o app de funcionalidades.
+          if (data.admin && !data.convocacao_ativa) {
+            qs.set('admin', '1');
+            window.location.href = `index.html?${qs.toString()}`;
           } else {
-            window.location.href = `app.html?telefone=${encodeURIComponent(telefone)}&t=${Date.now()}`;
+            window.location.href = `app.html?${qs.toString()}`;
           }
         } catch (err) {
           hideLoading();
@@ -2319,7 +2337,6 @@ Convido todos os irmãos para nossa próxima sessão de sexta-feira (10/04/2026)
     }
   </script>
   <script src="PATCH_PUSH_FRONT.js"></script>
-<script src="PATCH_PUSH_FRONT.js"></script>
   
 </body>
 </html>
