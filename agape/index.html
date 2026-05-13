@@ -815,7 +815,7 @@
       z-index: 80;
       background:
         radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, transparent 25%),
-        #2a2a2a;
+        #000000;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1963,15 +1963,20 @@ function sairDoPainelAdmin() {
       const dataEl = document.getElementById('dataSessao');
       const caixaEl = document.getElementById('valorCaixa');
       const chamadoEl = document.getElementById('textoConvocacao');
-      if (!dataEl.value) {
+
+      if (!dataEl || !dataEl.value) {
         showMessage('Data obrigatória', 'Informe a data da sessão antes de salvar.');
         return;
       }
+
       showLoading('Salvando sessão...', 'Gravando dados no servidor...');
+
       try {
-        const resp = await fetch(`${AGAPE_API_BASE}/salvar_config.php`, {
+        const resp = await fetch(`${AGAPE_API_BASE}/salvar_config.php?t=${Date.now()}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify({
             data: dataEl.value,
             caixa_inicial: Number(caixaEl.value || 0),
@@ -1981,57 +1986,53 @@ function sairDoPainelAdmin() {
             agape_ativa: !!statusSessao
           })
         });
+
         const ret = await resp.json();
         hideLoading();
 
-if (ret.success) {
+        if (!ret.success) {
+          showMessage(
+            'Erro ao salvar',
+            ret.message || 'Não foi possível salvar a configuração.'
+          );
+          return;
+        }
 
-  if (statusPush && statusConvocacao) {
+        if (statusPush && statusConvocacao) {
+          try {
+            const pushResp = await fetch(`${AGAPE_API_BASE}/push_send.php?t=${Date.now()}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                tipo: 'convocacao',
+                titulo: 'Convocação Ágape',
+                mensagem:
+                  chamadoEl.value ||
+                  'Sessão convocada. Toque para confirmar presença.',
+                url: 'https://www.erpimpar.com.br/agape/index.html'
+              })
+            });
 
-    try {
+            const pushText = await pushResp.text();
+            console.log('Retorno push:', pushText);
+          } catch (erroPush) {
+            console.error('Erro ao enviar push:', erroPush);
+          }
+        }
 
-      await fetch(`${AGAPE_API_BASE}/push_send.php?t=${Date.now()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        showMessage(
+          'Configuração salva',
+          `Sessão gravada com sucesso em ${ret.arquivo || 'arquivo da sessão'}.`
+        );
 
-        body: JSON.stringify({
-          tipo: 'convocacao',
-          titulo: 'Convocação Ágape',
-          mensagem:
-            chamadoEl.value ||
-            'Sessão convocada. Toque para confirmar presença.',
-
-          url: 'https://www.erpimpar.com.br/agape/index.html'
-        })
-      });
-
-      console.log('Push enviado com sucesso.');
-
-    } catch (erroPush) {
-
-      console.error('Erro ao enviar push:', erroPush);
-
+      } catch (err) {
+        hideLoading();
+        showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
+      }
     }
-  }
 
-  showMessage(
-    'Configuração salva',
-    `Sessão gravada com sucesso em ${
-      ret.arquivo || 'arquivo da sessão'
-    }.`
-  );
-
-} else {
-
-  showMessage(
-    'Erro ao salvar',
-    ret.message || 'Não foi possível salvar a configuração.'
-  );
-
-}
-        
     function bindActionButtons() {
       const saveBtn = document.getElementById('btnSalvar');
       const cancelBtn = document.getElementById('btnCancelar');
@@ -2170,7 +2171,11 @@ syncStatusUI();
           return;
         }
 
-        window.location.href = 'app.html';
+        if (data.admin) {
+          window.location.href = 'index.html?admin=1&t=' + Date.now();
+        } else {
+          window.location.href = 'app.html?t=' + Date.now();
+        }
       } catch (err) {
         hideLoading();
         showMessage('Erro de conexão', 'Não foi possível consultar o servidor do Ágape.');
