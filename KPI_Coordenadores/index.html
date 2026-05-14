@@ -599,7 +599,7 @@ body {
             <button id="btnAddFuel" class="btn" type="button">Salvar lançamento</button>
           </div>
              <div id="fuelListWrap" class="fuel-list-wrap">
-               <div class="fuel-list-title">Lançamentos do mês atual</div>
+               <div class="fuel-list-title">Lançamentos do mês selecionado</div>
                <div id="fuelList" class="fuel-list"></div>
             </div>
         </div>
@@ -1144,18 +1144,20 @@ async function calcularMediaQpi1Mes(){
     const j = await resp.json();
 
     const dias = j?.dias || {};
-    const datas = Object.keys(dias).sort(); // 🔥 ordena datas
+    const ym = getCurrentYearMonth();
 
-    const valores = Object.values(dias);
+    const entradasMes = Object.entries(dias)
+      .filter(([data]) => String(data || '').startsWith(ym))
+      .sort(([a], [b]) => String(a).localeCompare(String(b)));
 
-    if(!valores.length){
+    if(!entradasMes.length){
       return { media: 0, dias: 0, ultimaData: null };
     }
 
+    const valores = entradasMes.map(([, v]) => Number(v) || 0);
     const soma = valores.reduce((acc, v) => acc + v, 0);
     const media = soma / valores.length;
-
-    const ultimaData = datas[datas.length - 1];
+    const ultimaData = entradasMes[entradasMes.length - 1][0];
 
     return {
       media,
@@ -1305,16 +1307,66 @@ function getRevisionFinalStatus(matchItem, revisionMap){
     return { score, timestamp: dt, source };
   }
 
+  function parseFuelValue(v){
+    if(typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    let s = String(v ?? '').trim();
+    if(!s) return 0;
+    s = s.replace(/R\$/gi, '').replace(/\s/g, '');
+
+    // pt-BR: 1.234,56
+    if(s.includes(',')){
+      s = s.replace(/\./g, '').replace(',', '.');
+    }
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function normalizeFuelEntry(item){
+    if(!item || typeof item !== 'object') return null;
+
+    const date =
+      item.date ||
+      item.data ||
+      item.Data ||
+      item.DATA ||
+      item.dt ||
+      '';
+
+    const value =
+      item.value ??
+      item.valor ??
+      item.Valor ??
+      item.VALOR ??
+      item.valor_total ??
+      item.total ??
+      0;
+
+    const normalizedDate = String(date || '').slice(0, 10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) return null;
+
+    return {
+      date: normalizedDate,
+      value: parseFuelValue(value),
+      obs: item.obs || item.observacao || item.observação || item.Observacao || item.OBS || ''
+    };
+  }
+
+  function normalizeFuelEntries(entries){
+    return (Array.isArray(entries) ? entries : [])
+      .map(normalizeFuelEntry)
+      .filter(Boolean);
+  }
+
   async function loadFuelEntries(){
     try{
       const resp = await fetch(CONFIG.kpiCombustivelUrl + '?t=' + Date.now(), { cache:'no-store' });
       if(resp.ok){
         const j = await resp.json();
         const arr = Array.isArray(j) ? j : (Array.isArray(j?.lancamentos) ? j.lancamentos : []);
-        if(Array.isArray(arr)){
-          safeSetStorage(CONFIG.fuelStorageKey, JSON.stringify(arr));
-          return arr;
-        }
+        const normalized = normalizeFuelEntries(arr);
+        safeSetStorage(CONFIG.fuelStorageKey, JSON.stringify(normalized));
+        return normalized;
       }
     }catch(e){
       console.warn('Combustível: não foi possível ler o JSON da API. Usando fallback local.', e);
@@ -1323,14 +1375,17 @@ function getRevisionFinalStatus(matchItem, revisionMap){
     try{
       const raw = safeGetStorage('local', CONFIG.fuelStorageKey);
       const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      return normalizeFuelEntries(arr);
     }catch(e){ return []; }
   }
 
   async function saveFuelEntries(entries){
+    const normalizedEntries = normalizeFuelEntries(entries);
+
     const payload = {
+      mes: getCurrentYearMonth(),
       atualizadoEm: new Date().toISOString(),
-      lancamentos: Array.isArray(entries) ? entries : []
+      lancamentos: normalizedEntries
     };
 
     const resp = await fetch(CONFIG.kpiCombustivelSaveUrl, {
@@ -1761,6 +1816,11 @@ function getCurrentYearMonth(){
   return MES_REF_PADRAO.replace('_','-');
 }
 
+
+function getSelectedMonthFirstDay(){
+  return `${getCurrentYearMonth()}-01`;
+}
+
 function getMonthEntries(entries){
   const ym = getCurrentYearMonth();
   return (entries || []).filter(e => String(e.date || '').startsWith(ym));
@@ -1827,7 +1887,7 @@ function renderFuelList(entries){
     .sort((a,b) => String(a.date).localeCompare(String(b.date)));
 
   if(!monthEntries.length){
-    wrap.innerHTML = `<div class="fuel-empty">Nenhum lançamento no mês atual.</div>`;
+    wrap.innerHTML = `<div class="fuel-empty">Nenhum lançamento no mês selecionado.</div>`;
     return;
   }
 
@@ -1972,7 +2032,7 @@ async function renderFuel(){
   let __draftQpiChecking = false;
   
 function bindFuelForm(){
-  $('#fuelDate').value = nowDateStr();
+  $('#fuelDate').value = getSelectedMonthFirstDay();
   $('#btnAddFuel').addEventListener('click', async () => {
     const date = $('#fuelDate').value;
     const value = Number($('#fuelValue').value || 0);
@@ -1980,6 +2040,11 @@ function bindFuelForm(){
 
     if(!date || value <= 0){
       alert('Preencha data e valor do combustível.');
+      return;
+    }
+
+    if(!String(date).startsWith(getCurrentYearMonth())){
+      alert('A data do combustível precisa estar dentro do mês selecionado.');
       return;
     }
 
