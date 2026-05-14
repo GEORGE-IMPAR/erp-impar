@@ -476,10 +476,17 @@ body {
           <p>KPIs de avaliação dos coordenadores • painel executivo</p>
         </div>
       </div>
+ 
       <div class="header-actions">
-        <button class="pill-btn" id="btnVoltarMenu" type="button">🏠 Menu principal</button>
-        <div class="pill gradient">Abril/2026</div>
+          <select id="monthSelector" class="sel" style="width:220px;height:42px;border-radius:14px;background:#081a3a;color:white;border:1px solid rgba(255,255,255,.15);padding:0 14px;font-weight:700;text-transform:uppercase;">
+          </select>
+          <button class="pill-btn" id="btnVoltarMenu" type="button">🏠 Menu principal</button>
+          <div
+            class="pill gradient"
+            id="mesRefLabel">
+          </div>
       </div>
+
     </header>
 
     <section class="topbox">
@@ -650,9 +657,123 @@ body {
   </div>
 
 <script src="./js/kpi_obras_revisao.js"></script>
-  
+
+<!-- ========================================= -->
+<!-- KPI_COORDENADORES - AJUSTES CONSOLIDADOS -->
+<!-- ========================================= -->
+
+<!-- ===================================================== -->
+<!-- 1. ADICIONAR LOGO APÓS O INÍCIO DO SCRIPT PRINCIPAL -->
+<!-- ===================================================== -->
+
 <script>
-(() => {
+
+const hoje = new Date();
+
+const MES_ATUAL = hoje.getMonth() + 1;
+const ANO_ATUAL = hoje.getFullYear();
+
+const MES_REF_PADRAO =
+  localStorage.getItem('ERPIMPAR_KPI_MONTH') ||
+  `${ANO_ATUAL}_${String(MES_ATUAL).padStart(2,'0')}`;
+
+const partesMes = MES_REF_PADRAO.split('_');
+
+const dataMesRef = new Date(
+  Number(partesMes[0]),
+  Number(partesMes[1]) - 1,
+  1
+);
+
+const MES_REF_LABEL =
+  dataMesRef.toLocaleDateString('pt-BR', {
+    month:'long',
+    year:'numeric'
+  }).toUpperCase();
+
+
+
+/* ========================================= */
+/* STATE */
+/* ========================================= */
+
+const state = {
+
+  fuelStorageKey:
+    `ERPIMPAR_QPI_FUEL_ENTRIES_${MES_REF_PADRAO}`,
+
+  ...
+};
+
+
+
+
+/* ========================================= */
+/* HEADER MONTH */
+/* ========================================= */
+
+document.addEventListener('DOMContentLoaded', () => {
+
+  const mesLabel = document.getElementById('mesRefLabel');
+
+  if(mesLabel){
+    mesLabel.textContent = MES_REF_LABEL;
+  }
+
+  const monthSelector =
+    document.getElementById('monthSelector');
+
+  if(monthSelector){
+
+    const agora = new Date();
+
+    for(let i = 0; i < 12; i++){
+
+      const d = new Date(
+        agora.getFullYear(),
+        agora.getMonth() - i,
+        1
+      );
+
+      const val =
+        `${d.getFullYear()}_${String(
+          d.getMonth() + 1
+        ).padStart(2,'0')}`;
+
+      const txt =
+        d.toLocaleDateString('pt-BR',{
+          month:'long',
+          year:'numeric'
+        });
+
+      const opt = document.createElement('option');
+
+      opt.value = val;
+      opt.textContent = txt.toUpperCase();
+
+      if(val === MES_REF_PADRAO){
+        opt.selected = true;
+      }
+
+      monthSelector.appendChild(opt);
+    }
+
+    monthSelector.addEventListener('change', () => {
+
+      localStorage.setItem(
+        'ERPIMPAR_KPI_MONTH',
+        monthSelector.value
+      );
+
+      location.reload();
+    });
+  }
+});
+</script>
+
+<script>
+
+  (() => {
   const CONFIG = {
     menuUrl: '/menu.html',
     tvBaseCandidates: [
@@ -1631,9 +1752,46 @@ issues.querySelectorAll('.btn-ajustar-obra').forEach(btn => {
     wrap.innerHTML = state.coordinatorResults.map(item => {
       const meta = CONFIG.coordinatorMeta[item.coord] || { nomeCompleto:item.coord };
       const issues = [];
-      item.tvLate.forEach(x => issues.push(`${x.nome} → TV com ${x.diasSemAtualizacao} dias sem atualização.`));
-      item.withoutCron.forEach(x => issues.push(`${x.nome} → obra da TV sem cronograma correspondente.`));
-      item.cronLate.forEach(x => issues.push(`${x.nome} → cronograma com ${x.diasSemAtualizacao} dias sem atualização.`));
+      
+      item.tvLate.forEach(x => {
+        const nomeObra =
+         x.nome ||
+         x.obra ||
+         x.nomeObra ||
+         x.titulo ||
+         x.name ||
+         JSON.stringify(x);
+        issues.push(
+          `${nomeObra} → TV com ${x.diasSemAtualizacao} dias sem atualização.`
+        );
+      });
+   
+      item.withoutCron.forEach(x => {
+         const nomeObra =
+           x.nome ||
+           x.obra ||
+           x.nomeObra ||
+           x.titulo ||
+           x.name ||
+           JSON.stringify(x);
+        issues.push(
+          `${nomeObra} → obra da TV sem cronograma correspondente.`
+        );
+      });
+
+      item.cronLate.forEach(x => {
+        const nomeObra =
+          x.nome ||
+          x.obra ||
+          x.nomeObra ||
+          x.titulo ||
+          x.name ||
+          JSON.stringify(x);
+         issues.push(
+          `${nomeObra} → cronograma com ${x.diasSemAtualizacao} dias sem atualização.`
+         );
+      });
+          
       if(!issues.length) issues.push('Sem impactos críticos localizados.');
 
       const formula = [
@@ -1662,8 +1820,7 @@ issues.querySelectorAll('.btn-ajustar-obra').forEach(btn => {
   }
 
 function getCurrentYearMonth(){
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  return MES_REF_PADRAO.replace('_','-');
 }
 
 function getMonthEntries(entries){
@@ -1799,7 +1956,14 @@ async function renderFuel(){
           pointRadius: 3
         },
         {
-          label: 'abr/26',
+          label:
+            dataMesRef.toLocaleDateString(
+            'pt-BR',
+            {
+              month:'short',
+              year:'2-digit'
+            }
+          )
           data: atualSeries,
           borderColor: '#22c7ff',
           backgroundColor: 'rgba(34,199,255,.10)',
