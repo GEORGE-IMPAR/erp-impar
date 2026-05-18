@@ -398,6 +398,62 @@
       cursor: pointer;
     }
 
+
+    .qr-presenca-btn {
+      width: 100%;
+      margin-top: 10px;
+      min-height: 44px;
+      border: none;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #4097eb 0%, #256fc4 100%);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 8px rgba(0,0,0,0.18);
+    }
+
+    .convocacao-text-box,
+    .qr-text-box {
+      max-height: 48vh;
+      overflow-y: auto;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 12px;
+      text-align: left;
+      color: rgba(255,255,255,0.92);
+      font-size: 15px;
+      line-height: 1.42;
+      font-weight: 700;
+      white-space: pre-wrap;
+    }
+
+    .qr-video {
+      width: 100%;
+      max-height: 260px;
+      border-radius: 14px;
+      background: #000;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .qr-input {
+      width: 100%;
+      height: 44px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 800;
+      outline: none;
+      padding: 0 12px;
+      margin-top: 12px;
+      text-align: center;
+    }
+
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -501,6 +557,10 @@
           <span class="confirm-highlight">“SOMENTE SESSÃO”</span>.
           Confirma?
         </div>
+
+        <button class="qr-presenca-btn" id="btnQrPresenca" type="button">
+          📷 VALIDAR PRESENÇA NA SESSÃO
+        </button>
       </div>
     </div>
 
@@ -543,6 +603,29 @@
     </div>
   </div>
 
+
+  <div class="overlay" id="convocacaoOverlay">
+    <div class="modal-card">
+      <div class="modal-title">Convocação</div>
+      <div class="modal-text">Leia a convocação antes de escolher sua presença.</div>
+      <div class="convocacao-text-box" id="convocacaoTextoBox"></div>
+      <button class="modal-btn" id="convocacaoOkBtn" type="button">✓</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="qrOverlay">
+    <div class="modal-card">
+      <div class="modal-title">Validar presença</div>
+      <div class="modal-text">
+        Aponte a câmera para o QR Code disponível na sala da sessão.
+      </div>
+      <video class="qr-video" id="qrVideo" muted playsinline></video>
+      <input class="qr-input" id="qrCodigoManual" type="text" placeholder="ou digite o código do QR Code" />
+      <button class="modal-btn" id="qrValidarBtn" type="button">✓</button>
+      <button class="modal-btn" id="qrFecharBtn" type="button" style="background:#dc3030;color:#fff;margin-left:8px;">×</button>
+    </div>
+  </div>
+
   <script>
 
     const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
@@ -562,6 +645,15 @@
     const btnConfirmar = document.getElementById('btnConfirmar');
     const btnConfig = document.getElementById('btnConfig');
     const btnSair = document.getElementById('btnSair');
+    const btnQrPresenca = document.getElementById('btnQrPresenca');
+    const convocacaoOverlay = document.getElementById('convocacaoOverlay');
+    const convocacaoTextoBox = document.getElementById('convocacaoTextoBox');
+    const convocacaoOkBtn = document.getElementById('convocacaoOkBtn');
+    const qrOverlay = document.getElementById('qrOverlay');
+    const qrVideo = document.getElementById('qrVideo');
+    const qrCodigoManual = document.getElementById('qrCodigoManual');
+    const qrValidarBtn = document.getElementById('qrValidarBtn');
+    const qrFecharBtn = document.getElementById('qrFecharBtn');
     const confirmBox = document.getElementById('confirmBox');
     const optionCards = document.querySelectorAll('.option-card');
     const sessionTitle = document.getElementById('sessionTitle');
@@ -570,6 +662,10 @@
     let selectedOption = 'SOMENTE SESSÃO';
     let usuarioAtual = null;
     let configAtual = null;
+    let sessaoAtual = null;
+    let jaConfirmouPresenca = false;
+    let qrStream = null;
+    let qrScanAtivo = false;
 
     function showLoading(title = 'Processando...', text = 'Aguarde...') {
       loadingTitle.textContent = title;
@@ -590,6 +686,125 @@
     function hideMessage() {
       messageOverlay.classList.remove('show');
     }
+
+
+    function showConvocacao(texto) {
+      if (!convocacaoOverlay || !convocacaoTextoBox) return;
+      convocacaoTextoBox.textContent = texto || 'Sessão convocada. Toque em confirmar para escolher sua presença.';
+      convocacaoOverlay.classList.add('show');
+    }
+
+    function hideConvocacao() {
+      if (convocacaoOverlay) convocacaoOverlay.classList.remove('show');
+    }
+
+    async function pararQrCamera() {
+      qrScanAtivo = false;
+      if (qrStream) {
+        qrStream.getTracks().forEach(track => track.stop());
+        qrStream = null;
+      }
+      if (qrVideo) {
+        qrVideo.pause();
+        qrVideo.srcObject = null;
+        qrVideo.style.display = 'none';
+      }
+    }
+
+    async function abrirQrPresenca() {
+      if (!usuarioAtual) {
+        showMessage('Usuário não identificado', 'Não foi possível identificar o irmão logado.');
+        return;
+      }
+
+      if (!jaConfirmouPresenca) {
+        showMessage('Confirmação necessária', 'Confirme sua opção de presença antes de validar o QR Code da sessão.');
+        return;
+      }
+
+      qrCodigoManual.value = '';
+      qrOverlay.classList.add('show');
+
+      if ('BarcodeDetector' in window && navigator.mediaDevices?.getUserMedia) {
+        try {
+          qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          qrVideo.srcObject = qrStream;
+          qrVideo.style.display = 'block';
+          await qrVideo.play();
+
+          const detector = new BarcodeDetector({ formats: ['qr_code'] });
+          qrScanAtivo = true;
+
+          const loop = async () => {
+            if (!qrScanAtivo) return;
+
+            try {
+              const codes = await detector.detect(qrVideo);
+              if (codes && codes.length) {
+                const codigo = codes[0].rawValue || '';
+                if (codigo) {
+                  qrCodigoManual.value = codigo;
+                  await validarPresencaQr(codigo);
+                  return;
+                }
+              }
+            } catch (e) {}
+
+            requestAnimationFrame(loop);
+          };
+
+          loop();
+
+        } catch (error) {
+          qrVideo.style.display = 'none';
+        }
+      }
+    }
+
+    async function fecharQrPresenca() {
+      await pararQrCamera();
+      qrOverlay.classList.remove('show');
+    }
+
+    async function validarPresencaQr(codigo) {
+      codigo = String(codigo || '').trim();
+
+      if (!codigo) {
+        showMessage('QR Code obrigatório', 'Leia ou digite o código do QR Code da sessão.');
+        return;
+      }
+
+      await pararQrCamera();
+      qrOverlay.classList.remove('show');
+      showLoading('Validando presença...', 'Registrando presença real na sessão...');
+
+      try {
+        const resp = await fetch(`${AGAPE_API_BASE}/validar_presenca_qrcode.php?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: dataSessaoIso,
+            telefone: usuarioAtual.telefone,
+            nome: usuarioAtual.nome,
+            codigo
+          })
+        });
+
+        const ret = await resp.json();
+        hideLoading();
+
+        if (ret.success) {
+          showMessage('Presença validada', 'Sua presença real na sessão foi registrada com sucesso.');
+        } else {
+          showMessage('QR Code inválido', ret.message || 'Não foi possível validar sua presença.');
+        }
+      } catch (error) {
+        hideLoading();
+        showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
+      }
+    }
+
+
 
     function getConfigRaiz(data) {
       return data && data.config ? data.config : data;
@@ -615,20 +830,24 @@
       const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
       const data = await resp.json();
       configAtual = getConfigRaiz(data);
+      sessaoAtual = data.sessao || null;
 
-      if (!dataSessaoIso) dataSessaoIso = brDateToIso(configAtual?.sessao?.data || '');
+      if (!dataSessaoIso) dataSessaoIso = brDateToIso(sessaoAtual?.sessao?.data || configAtual?.sessao?.data || '');
       if (sessionTitle) sessionTitle.textContent = `SESSÃO – ${isoToBrDate(dataSessaoIso)}`;
 
       const tel = normalizarTelefone(telefoneAtual);
       usuarioAtual = (configAtual?.irmaos || []).find(irmao => normalizarTelefone(irmao.telefone) === tel) || null;
       if (usuarioLogadoNome) usuarioLogadoNome.textContent = usuarioAtual?.nome || 'Irmão não identificado';
 
-      const confirmacoes = Array.isArray(data.sessao?.confirmacoes) ? data.sessao.confirmacoes : [];
+      const confirmacoes = Array.isArray(sessaoAtual?.confirmacoes) ? sessaoAtual.confirmacoes : [];
       const jaConfirmou = confirmacoes.find(item => normalizarTelefone(item.telefone) === tel);
+      jaConfirmouPresenca = !!jaConfirmou?.resposta;
+
       if (jaConfirmou?.resposta) {
         applySelection(jaConfirmou.resposta);
       } else {
         updateConfirmText();
+        showConvocacao(sessaoAtual?.sessao?.chamado || configAtual?.sessao?.chamado || '');
       }
     }
 
@@ -665,6 +884,11 @@
 
     messageOkBtn.addEventListener('click', hideMessage);
 
+    if (convocacaoOkBtn) convocacaoOkBtn.addEventListener('click', hideConvocacao);
+    if (btnQrPresenca) btnQrPresenca.addEventListener('click', abrirQrPresenca);
+    if (qrFecharBtn) qrFecharBtn.addEventListener('click', fecharQrPresenca);
+    if (qrValidarBtn) qrValidarBtn.addEventListener('click', () => validarPresencaQr(qrCodigoManual.value));
+
     btnConfirmar.addEventListener('click', async () => {
       if (!usuarioAtual) {
         showMessage('Usuário não identificado', 'Não foi possível identificar o irmão logado.');
@@ -689,6 +913,8 @@
         hideLoading();
 
         if (ret.success) {
+          jaConfirmouPresenca = true;
+          sessaoAtual = ret.sessao || sessaoAtual;
           showMessage('Escolha confirmada', `A opção “${selectedOption}” foi registrada com sucesso.`);
         } else {
           showMessage('Erro', ret.message || 'Não foi possível registrar sua escolha.');
