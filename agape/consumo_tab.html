@@ -597,6 +597,35 @@
       align-items: center;
     }
 
+
+    /* ===== MODAIS DESTACADOS v7.2 ===== */
+    .overlay {
+      background: rgba(0, 0, 0, 0.76) !important;
+      backdrop-filter: blur(3px);
+    }
+
+    .modal-card,
+    .payment-shell {
+      background:
+        radial-gradient(circle at top, rgba(74, 126, 78, 0.35) 0%, transparent 34%),
+        linear-gradient(180deg, #243629 0%, #0b171f 100%) !important;
+      border: 3px solid rgba(235, 235, 235, 0.88) !important;
+      box-shadow:
+        0 22px 70px rgba(0, 0, 0, 0.72),
+        0 0 0 1px rgba(255,255,255,0.18),
+        0 0 26px rgba(255,255,255,0.16) !important;
+    }
+
+    .modal-title,
+    .payment-top {
+      color: #ffffff !important;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.55);
+    }
+
+    .modal-text {
+      color: rgba(255,255,255,0.88) !important;
+    }
+
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -788,7 +817,7 @@
         </div>
 
         <div class="pix-box" id="pixBox">
-          <div class="pix-label">Pix pronto para pagamento</div>
+          <div class="pix-label">Pix copia e cola</div>
 
           <div class="pix-info">
             <div class="pix-info-item">Valor<strong id="pixValorInfo">R$ 0,00</strong></div>
@@ -1112,6 +1141,54 @@
       pixBox.classList.remove('show');
     }
 
+
+    function emvField(id, value) {
+      value = String(value || '');
+      return id + String(value.length).padStart(2, '0') + value;
+    }
+
+    function crc16Pix(payload) {
+      let crc = 0xFFFF;
+
+      for (let i = 0; i < payload.length; i++) {
+        crc ^= payload.charCodeAt(i) << 8;
+
+        for (let j = 0; j < 8; j++) {
+          if ((crc & 0x8000) !== 0) {
+            crc = (crc << 1) ^ 0x1021;
+          } else {
+            crc <<= 1;
+          }
+
+          crc &= 0xFFFF;
+        }
+      }
+
+      return crc.toString(16).toUpperCase().padStart(4, '0');
+    }
+
+    function gerarPixCopiaECola(chave, valor, descricao) {
+      const merchantAccount =
+        emvField('00', 'br.gov.bcb.pix') +
+        emvField('01', chave) +
+        emvField('02', descricao || 'AGAPE');
+
+      const payloadSemCRC =
+        emvField('00', '01') +
+        emvField('26', merchantAccount) +
+        emvField('52', '0000') +
+        emvField('53', '986') +
+        emvField('54', Number(valor || 0).toFixed(2)) +
+        emvField('58', 'BR') +
+        emvField('59', 'AGAPE') +
+        emvField('60', 'BRASIL') +
+        emvField('62', emvField('05', 'AGAPE')) +
+        '6304';
+
+      return payloadSemCRC + crc16Pix(payloadSemCRC);
+    }
+
+
     function selectPayment(method) {
       selectedPaymentMethod = method;
       btnDinheiro.classList.toggle('selected', method === 'dinheiro');
@@ -1119,14 +1196,16 @@
       pixBox.classList.toggle('show', method === 'pix');
 
       if (method === 'pix') {
-        const valor = formatBRL(getCurrentTotal());
+        const total = getCurrentTotal();
+        const valor = formatBRL(total);
         const data = isoToBrDate(dataSessaoIso);
+        const chave = configAtual?.loja?.pix_chave || '';
+        const descricao = `Agape ${data} ${usuarioAtual?.nome || ''}`.substring(0, 70);
+        const pixPayload = gerarPixCopiaECola(chave, total, descricao);
+
         if (pixValorInfo) pixValorInfo.textContent = valor;
         if (pixDataInfo) pixDataInfo.textContent = data;
-
-        const chave = configAtual?.loja?.pix_chave || pixKey.value || '';
-        const descricao = `Ágape ${data} - ${usuarioAtual?.nome || ''}`;
-        pixKey.value = `Chave: ${chave} | Valor: ${valor} | Data: ${data} | Descrição: ${descricao}`;
+        if (pixKey) pixKey.value = pixPayload;
       }
     }
 
@@ -1169,6 +1248,8 @@
         return;
       }
 
+      const formaPagamentoSelecionada = selectedPaymentMethod;
+
       closePaymentModal();
       showLoading('Finalizando pagamento...', 'Registrando o consumo realizado...');
 
@@ -1180,7 +1261,7 @@
             data: dataSessaoIso,
             telefone: usuarioAtual.telefone,
             nome: usuarioAtual.nome,
-            forma_pagamento: selectedPaymentMethod,
+            forma_pagamento: formaPagamentoSelecionada,
             itens,
             total
           })
