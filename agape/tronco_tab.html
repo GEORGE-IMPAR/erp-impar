@@ -712,6 +712,7 @@
     let mostrarValor = false;
     let qrStream = null;
     let qrScanAtivo = false;
+    let monitorTroncoTimer = null;
 
     function showLoading(title = 'Processando...', text = 'Aguarde...') {
       loadingTitle.textContent = title;
@@ -805,6 +806,52 @@
     }
 
 
+
+    function irParaConsumoDoDoador() {
+      const qs = new URLSearchParams(window.location.search);
+      const telefone = qs.get('telefone') || telefoneAtual || '';
+      const data = qs.get('data') || dataSessaoIso || '';
+
+      window.top.location.href =
+        `app.html?telefone=${encodeURIComponent(telefone)}&data=${encodeURIComponent(data)}&tab=consumo&t=${Date.now()}`;
+    }
+
+    function pararMonitorTronco() {
+      if (monitorTroncoTimer) {
+        clearInterval(monitorTroncoTimer);
+        monitorTroncoTimer = null;
+      }
+    }
+
+    function iniciarMonitorTronco(token) {
+      pararMonitorTronco();
+
+      if (!token) return;
+
+      monitorTroncoTimer = setInterval(async () => {
+        try {
+          const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
+          const data = await resp.json();
+          const sessao = data.sessao || null;
+          const doacoes = Array.isArray(sessao?.tronco?.doacoes) ? sessao.tronco.doacoes : [];
+          const doacao = doacoes.find(item => item.token === token);
+
+          if (doacao && doacao.validado) {
+            pararMonitorTronco();
+            qrGeradoOverlay.classList.remove('show');
+            showMessage('Tronco coletado', 'Seu tronco foi coletado. Você será direcionado para pagamento.');
+
+            setTimeout(() => {
+              irParaConsumoDoDoador();
+            }, 1200);
+          }
+        } catch (error) {
+          console.error('Erro ao monitorar tronco:', error);
+        }
+      }, 2500);
+    }
+
+
     function abrirValor() {
       if (!usuarioAtual) {
         showMessage('Usuário não identificado', 'Não foi possível identificar o irmão logado.');
@@ -857,6 +904,8 @@
         const payload = ret.qr_payload || ret.token;
         qrTroncoImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=12&data=${encodeURIComponent(payload)}`;
         qrGeradoOverlay.classList.add('show');
+
+        iniciarMonitorTronco(ret.token || ret.doacao?.token);
 
       } catch (error) {
         hideLoading();
@@ -950,19 +999,8 @@
         hideLoading();
 
         if (ret.success) {
-          showMessage('Tronco coletado', 'Tronco coletado com sucesso.');
-
+          showMessage('Tronco coletado', 'Tronco coletado com sucesso. Pode seguir para o próximo irmão.');
           await carregarConfig();
-
-          setTimeout(() => {
-            const qs = new URLSearchParams(window.location.search);
-            const telefone = qs.get('telefone') || '';
-            const data = qs.get('data') || '';
-
-            window.top.location.href =
-              `app.html?telefone=${encodeURIComponent(telefone)}&data=${encodeURIComponent(data)}&tab=consumo&t=${Date.now()}`;
-          }, 1200);
-
         } else {
           showMessage('QR Code inválido', ret.message || 'Não foi possível validar o tronco.');
         }
@@ -989,6 +1027,7 @@
     });
 
     btnSair.addEventListener('click', () => {
+      pararMonitorTronco();
       window.top.location.href = `index.html?t=${Date.now()}`;
     });
 
