@@ -582,18 +582,23 @@
 
         <div class="tronco-card">
           <div class="tronco-info">
-            Irmão, informe sua contribuição de forma reservada. O valor individual não será exibido para quem estiver coletando.
+            <strong>Valor coletado pelo aplicativo</strong><br>
+            Gere ou leia o QR Code do tronco. O valor individual permanece reservado.
           </div>
 
           <div class="tronco-actions">
-            <button class="tronco-action-btn green" id="btnGerarTronco" type="button">GERAR TRONCO</button>
-            <button class="tronco-action-btn blue" id="btnLerTronco" type="button">LER QR CODE DO TRONCO</button>
-            <button class="tronco-action-btn blue" id="btnTotalTronco" type="button">VALOR TOTAL DO TRONCO</button>
+            <button class="tronco-action-btn green" id="btnGerarTronco" type="button">GERAR CÓDIGO</button>
+            <button class="tronco-action-btn blue" id="btnLerTronco" type="button">LER CÓDIGO</button>
           </div>
 
-          <div class="saldo-secreto">
-            <span>Meu tronco: <span id="valorTroncoOculto">••••••</span></span>
-            <button class="eye-btn" id="btnOlho" type="button">👁</button>
+          <div class="tronco-info">
+            <strong>Coletado em dinheiro</strong><br>
+            Informe somente o valor físico recolhido na sessão.
+          </div>
+
+          <div class="tronco-actions">
+            <button class="tronco-action-btn green" id="btnDinheiroTronco" type="button">LANÇAR DINHEIRO</button>
+            <button class="tronco-action-btn blue" id="btnTotalTronco" type="button">VALOR TOTAL DO TRONCO</button>
           </div>
         </div>
       </div>
@@ -642,6 +647,19 @@
     </div>
   </div>
 
+
+  <div class="overlay" id="dinheiroOverlay">
+    <div class="modal-card">
+      <div class="modal-title">Coletado em dinheiro</div>
+      <div class="modal-text">Informe o valor físico recolhido no tronco da sessão.</div>
+      <input class="value-input" id="valorDinheiroInput" type="tel" inputmode="decimal" placeholder="R$ 0,00" />
+      <div class="inline-actions">
+        <button class="modal-btn" id="dinheiroOkBtn" type="button">OK</button>
+        <button class="modal-btn red" id="dinheiroFecharBtn" type="button">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="overlay" id="qrGeradoOverlay">
     <div class="modal-card">
       <div class="modal-title">QR Code do tronco</div>
@@ -674,10 +692,9 @@
 
     const sessionTitle = document.getElementById('sessionTitle');
     const usuarioLogadoNome = document.getElementById('usuarioLogadoNome');
-    const valorTroncoOculto = document.getElementById('valorTroncoOculto');
-    const btnOlho = document.getElementById('btnOlho');
     const btnGerarTronco = document.getElementById('btnGerarTronco');
     const btnLerTronco = document.getElementById('btnLerTronco');
+    const btnDinheiroTronco = document.getElementById('btnDinheiroTronco');
     const btnTotalTronco = document.getElementById('btnTotalTronco');
     const btnSair = document.getElementById('btnSair');
 
@@ -695,6 +712,11 @@
     const valorOkBtn = document.getElementById('valorOkBtn');
     const valorFecharBtn = document.getElementById('valorFecharBtn');
 
+    const dinheiroOverlay = document.getElementById('dinheiroOverlay');
+    const valorDinheiroInput = document.getElementById('valorDinheiroInput');
+    const dinheiroOkBtn = document.getElementById('dinheiroOkBtn');
+    const dinheiroFecharBtn = document.getElementById('dinheiroFecharBtn');
+
     const qrGeradoOverlay = document.getElementById('qrGeradoOverlay');
     const qrTroncoImg = document.getElementById('qrTroncoImg');
     const qrGeradoOkBtn = document.getElementById('qrGeradoOkBtn');
@@ -709,7 +731,6 @@
     let sessaoAtual = null;
     let usuarioAtual = null;
     let meuTronco = null;
-    let mostrarValor = false;
     let qrStream = null;
     let qrScanAtivo = false;
     let monitorTroncoTimer = null;
@@ -766,14 +787,7 @@
       return data && data.config ? data.config : data;
     }
 
-    function atualizarValorOculto() {
-      if (!meuTronco) {
-        valorTroncoOculto.textContent = '••••••';
-        return;
-      }
-
-      valorTroncoOculto.textContent = mostrarValor ? formatBRL(meuTronco.valor) : '••••••';
-    }
+    function atualizarValorOculto() {}
 
     async function carregarConfig() {
       const resp = await fetch(`${AGAPE_API_BASE}/carregar_config.php?t=${Date.now()}`);
@@ -797,13 +811,18 @@
 
 
     function mostrarTotalTronco() {
-      const total = Number(sessaoAtual?.tronco?.total_validado || 0);
+      const totalApp = Number(sessaoAtual?.tronco?.total_validado || 0);
+      const totalDinheiro = Number(sessaoAtual?.tronco?.dinheiro_coletado || 0);
+      const totalGeral = totalApp + totalDinheiro;
 
       showMessage(
         'Valor total do tronco',
-        `Total do tronco da sessão: ${formatBRL(total)}`
+        `Total coletado pelo aplicativo: ${formatBRL(totalApp)}
+Total em dinheiro: ${formatBRL(totalDinheiro)}
+Total arrecadado no tronco: ${formatBRL(totalGeral)}`
       );
     }
+
 
 
 
@@ -849,6 +868,55 @@
           console.error('Erro ao monitorar tronco:', error);
         }
       }, 2500);
+    }
+
+
+
+    function abrirDinheiroTronco() {
+      valorDinheiroInput.value = '';
+      dinheiroOverlay.classList.add('show');
+      setTimeout(() => valorDinheiroInput.focus(), 200);
+    }
+
+    function fecharDinheiroTronco() {
+      dinheiroOverlay.classList.remove('show');
+    }
+
+    async function salvarDinheiroTronco() {
+      const valor = parseValor(valorDinheiroInput.value);
+
+      if (!valor || valor <= 0) {
+        showMessage('Valor obrigatório', 'Informe o valor recolhido em dinheiro.');
+        return;
+      }
+
+      fecharDinheiroTronco();
+      showLoading('Salvando dinheiro...', 'Atualizando o total do tronco...');
+
+      try {
+        const resp = await fetch(`${AGAPE_API_BASE}/salvar_tronco_dinheiro.php?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: dataSessaoIso,
+            valor
+          })
+        });
+
+        const ret = await resp.json();
+        hideLoading();
+
+        if (ret.success) {
+          sessaoAtual = ret.sessao || sessaoAtual;
+          showMessage('Dinheiro lançado', 'Valor em dinheiro registrado no tronco.');
+          await carregarConfig();
+        } else {
+          showMessage('Erro', ret.message || 'Não foi possível salvar o valor em dinheiro.');
+        }
+      } catch (error) {
+        hideLoading();
+        showMessage('Erro de conexão', 'Não foi possível conectar ao servidor.');
+      }
     }
 
 
@@ -1016,15 +1084,14 @@
     valorFecharBtn.addEventListener('click', fecharValor);
     valorOkBtn.addEventListener('click', gerarTronco);
     btnLerTronco.addEventListener('click', abrirLeitor);
+    btnDinheiroTronco.addEventListener('click', abrirDinheiroTronco);
+    dinheiroFecharBtn.addEventListener('click', fecharDinheiroTronco);
+    dinheiroOkBtn.addEventListener('click', salvarDinheiroTronco);
     btnTotalTronco.addEventListener('click', mostrarTotalTronco);
     qrFecharBtn.addEventListener('click', fecharLeitor);
     qrValidarBtn.addEventListener('click', () => validarTronco(qrManualInput.value));
     qrGeradoOkBtn.addEventListener('click', () => qrGeradoOverlay.classList.remove('show'));
 
-    btnOlho.addEventListener('click', () => {
-      mostrarValor = !mostrarValor;
-      atualizarValorOculto();
-    });
 
     btnSair.addEventListener('click', () => {
       pararMonitorTronco();
