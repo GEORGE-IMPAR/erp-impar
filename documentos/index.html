@@ -1260,7 +1260,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   border: 1px solid rgba(255,255,255,.12) !important;
 }
 
-/* Cancelar VERMELHO */
+/* Fechar VERMELHO */
 .impar-swal-cancel{
   background: linear-gradient(135deg,#ef4444,#b91c1c) !important;
   color:#fff !important;
@@ -3186,7 +3186,10 @@ async function oferecerCompartilhamentoDocumento(meta){
     }
   });
 
-  if(!res.isConfirmed) return;
+  if(!res.isConfirmed){
+    if(typeof voltarNovoCadastroDocumentos === "function") voltarNovoCadastroDocumentos();
+    return;
+  }
 
   try{
     showImparLoading("Gerando link de compartilhamento…", "Preparando o link do documento no OneDrive.");
@@ -3213,6 +3216,8 @@ async function oferecerCompartilhamentoDocumento(meta){
         confirmButton: "impar-swal-confirm"
       }
     });
+
+    if(typeof voltarNovoCadastroDocumentos === "function") voltarNovoCadastroDocumentos();
   }catch(err){
     hideImparLoading();
     Swal.fire({
@@ -3235,6 +3240,67 @@ function sanitizeFilenamePart(s){
     .replace(/\s+/g, " ")
     .trim();
 }
+
+
+
+function limparMemoriaModuloDocumentos(){
+  const preservar = new Set([
+    'ERPIMPAR_USER','usuarioLogado','impar_user','imparUser','user','ERP_IMPAR_USER','ERPIMPAR_LOGIN','ERPIMPARUSER','USER'
+  ]);
+  const deveLimpar = (k) => {
+    const u = String(k || '').toUpperCase();
+    if (preservar.has(k)) return false;
+    return (
+      u.includes('DOC') || u.includes('DOCUMENT') || u.includes('CONTRATO') ||
+      u.includes('CONTRATANTE') || u.includes('CONTRATADA') || u.includes('WORD365') ||
+      u.includes('ANEXO') || u.includes('ANEXOS') || u.includes('PROJETO') ||
+      u.includes('PROJECT') || u.includes('CODIGO') || u.includes('GERADOR')
+    );
+  };
+  try{
+    [localStorage, sessionStorage].forEach(store => {
+      const remover = [];
+      for(let i=0; i<store.length; i++){
+        const k = store.key(i);
+        if(deveLimpar(k)) remover.push(k);
+      }
+      remover.forEach(k => store.removeItem(k));
+    });
+  }catch(e){ console.warn('Não foi possível limpar storage do módulo.', e); }
+
+  try{
+    document.querySelectorAll('form').forEach(f => { try{ f.reset(); }catch(e){} });
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      if(['userNome','userEmail','userNome2','userEmail2','userNome3','userEmail3','userNome4','userEmail4','userNome5','userEmail5'].includes(el.id)) return;
+      if(el.type === 'file') return;
+      if(el.tagName === 'SELECT') el.selectedIndex = 0;
+      else if(el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+      else el.value = '';
+      el.classList.remove('input-error');
+    });
+  }catch(e){}
+
+  try{ window.projectCode = ''; }catch(e){}
+  try{ window.anexosContrato = []; window.anexosOS = []; }catch(e){}
+  try{ if(typeof showStep === 'function') showStep(1); }catch(e){}
+  try{ if(typeof applyLoggedUser === 'function') applyLoggedUser(); }catch(e){}
+}
+
+function voltarNovoCadastroDocumentos(){
+  limparMemoriaModuloDocumentos();
+  try{
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('novo', Date.now().toString());
+    window.location.replace(url.toString());
+  }catch(e){
+    window.location.reload();
+  }
+}
+
+window.limparMemoriaModuloDocumentos = limparMemoriaModuloDocumentos;
+window.voltarNovoCadastroDocumentos = voltarNovoCadastroDocumentos;
 
 async function imparAskDocToGenerate(origin="manual"){
   // exige código
@@ -3275,6 +3341,7 @@ const res = await Swal.fire({
   
   if (res.isConfirmed) return "contrato";
   if (res.isDenied) return "os";
+  if(typeof voltarNovoCadastroDocumentos === "function") voltarNovoCadastroDocumentos();
   return null;
 }
 
@@ -4674,7 +4741,8 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
         try{
           if(typeof buildPayload === 'function') await postJson(API_SAVE_JSON, buildPayload());
         }catch(err){ console.warn('Fechar: não foi possível salvar antes de voltar etapa 1', err); }
-        if(typeof showStep === 'function') showStep(1);
+        if(typeof voltarNovoCadastroDocumentos === 'function') voltarNovoCadastroDocumentos();
+        else if(typeof showStep === 'function') showStep(1);
       }, true);
     });
   }
