@@ -4434,7 +4434,11 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
   function set(id, value){
     const input = el(id);
     if(!input) return;
-    input.value = value || '';
+    const novo = value || '';
+    // Evita loop infinito: ao preencher a parte selecionada, o campo NOME
+    // também é atualizado e poderia disparar novamente o mesmo input/change.
+    if((input.value || '') === novo) return;
+    input.value = novo;
     input.dispatchEvent(new Event('input', {bubbles:true}));
     input.dispatchEvent(new Event('change', {bubbles:true}));
   }
@@ -4611,9 +4615,15 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
       input.dataset.partesBound = '1';
       input.addEventListener('change', () => preencherParte(tipo, escolherItem(tipo)));
       input.addEventListener('input', () => {
-        // se digitou exatamente um cadastro existente, preenche; se não existir, segue livre para cadastro novo
+        // Se digitou exatamente um cadastro existente, preenche uma vez.
+        // Se não existir, segue livre para cadastro novo.
         const item = escolherItem(tipo);
-        if(item) preencherParte(tipo, item);
+        const chaveAtual = item ? norm(item[IDS[tipo].nomeKey] || item.nome || '') : '';
+        if(item && input.dataset.ultimaParteAuto !== chaveAtual){
+          input.dataset.ultimaParteAuto = chaveAtual;
+          preencherParte(tipo, item);
+        }
+        if(!item) input.dataset.ultimaParteAuto = '';
       });
     });
 
