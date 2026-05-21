@@ -1877,11 +1877,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
             <div class="grid24">
               <!-- Linha 1 -->
               <div class="c12">
-                <label for="clausulas">CLÁUSULA SEGUNDA<br>DO OBJETO:</label>
+                <label for="clausulas">CLÁUSULA SEGUNDA — DO OBJETO:</label>
                 <textarea id="clausulas" rows="7" placeholder="Conteúdo do item 2.1 do contrato"></textarea>
               </div>
               <div class="c12">
-                <label for="condPagamento">CLÁUSULA SEXTA<br>VALOR DO CONTRATO:</label>
+                <label for="condPagamento">CLÁUSULA SEXTA — VALOR DO CONTRATO:</label>
                 <textarea id="condPagamento" rows="7" placeholder="Informe o valor do contrato para carregar o item 6.1" disabled></textarea>
               </div>
 
@@ -4188,6 +4188,11 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
         if(item?.key) mergedPayload[item.key] = currentPayload[item.key];
       });
 
+      // HOTFIX ÍMPAR: os campos da Etapa 5 sempre comandam os itens 2.1 e 6.1 do contrato.
+      // Mesmo que o usuário apague todo o texto, o DOCX deve receber o valor atual do campo.
+      mergedPayload.clausulas = currentPayload.clausulas ?? '';
+      mergedPayload.condicoesPagamento = currentPayload.condicoesPagamento ?? '';
+
       if(tipo === 'contrato'){
         mergedPayload.anexosContrato = buildMergedAttachments(tipo, uploadedNow, originalPayload);
         mergedPayload.anexosOS = Array.isArray(originalPayload.anexosOS) ? deepClone(originalPayload.anexosOS) : [];
@@ -4263,7 +4268,7 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
       telefoneContratada:'Telefone da contratada', cepContratada:'CEP da contratada', cpfCnpjContratada:'CPF/CNPJ da contratada',
       logradouroContratada:'Logradouro da contratada', numeroContratada:'Número da contratada', bairroContratada:'Bairro da contratada',
       cidadeContratada:'Cidade da contratada', ufContratada:'UF da contratada', complementoContratada:'Complemento da contratada', emailContratada:'E-mail da contratada',
-      clausulas:'Cláusulas', condicoesPagamento:'Condições de pagamento', valor:'Valor', valorExtenso:'Valor por extenso', prazoDias:'Prazo', dataContrato:'Data do contrato', dataExtenso:'Data por extenso'
+      clausulas:'CLÁUSULA SEGUNDA — DO OBJETO', condicoesPagamento:'CLÁUSULA SEXTA — VALOR DO CONTRATO', valor:'Valor', valorExtenso:'Valor por extenso', prazoDias:'Prazo', dataContrato:'Data do contrato', dataExtenso:'Data por extenso'
     };
     const keys = Array.from(new Set([...Object.keys(base), ...Object.keys(now)]));
     return keys.reduce((acc,key)=>{
@@ -4405,6 +4410,11 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
         const mergedPayload = deepClone(originalPayload);
         Object.keys(currentPayload).forEach((key)=>{ if(!(key in mergedPayload)) mergedPayload[key] = currentPayload[key]; });
         selectedFieldIndexes.forEach((idx)=>{ const item = changes[idx]; if(item?.key) mergedPayload[item.key] = currentPayload[item.key]; });
+
+        // HOTFIX ÍMPAR: força a atualização dos itens 2.1 e 6.1 pelo conteúdo atual da tela.
+        // Se o campo estiver vazio, o contrato também deve ficar vazio naquele item.
+        mergedPayload.clausulas = currentPayload.clausulas ?? '';
+        mergedPayload.condicoesPagamento = currentPayload.condicoesPagamento ?? '';
 
         if(tipo === 'contrato'){
           mergedPayload.anexosContrato = buildMergedAttachments(tipo, uploadedNow, originalPayload);
@@ -4760,6 +4770,100 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
   else initAjusteContrato();
 
   window.erpImparContratoPartes = { carregarPartes, salvarParte, atualizarClausulaObjeto, atualizarClausulaValor };
+})();
+</script>
+
+
+
+<script>
+/* =========================================================
+   HOTFIX ÍMPAR — Tela final Word 365 + Etapa 5
+   - Troca Cancelar por Fechar na tela "Versão final do documento"
+   - Ao fechar, limpa a memória do módulo e volta como novo cadastro
+   - Garante labels finais da Etapa 5
+   ========================================================= */
+(function(){
+  "use strict";
+
+  function resetNovoCadastro(){
+    try{
+      if(typeof window.voltarNovoCadastroDocumentos === "function"){
+        window.voltarNovoCadastroDocumentos();
+        return;
+      }
+    }catch(e){}
+
+    try{
+      const preservar = new Set([
+        'ERPIMPAR_USER','usuarioLogado','impar_user','imparUser','user',
+        'ERP_IMPAR_USER','ERPIMPAR_LOGIN','ERPIMPARUSER','USER'
+      ]);
+      [localStorage, sessionStorage].forEach(store => {
+        const remover = [];
+        for(let i=0; i<store.length; i++){
+          const k = store.key(i);
+          const u = String(k || '').toUpperCase();
+          if(preservar.has(k)) continue;
+          if(u.includes('DOC') || u.includes('DOCUMENT') || u.includes('CONTRATO') ||
+             u.includes('CONTRATANTE') || u.includes('CONTRATADA') || u.includes('WORD365') ||
+             u.includes('ANEXO') || u.includes('PROJETO') || u.includes('PROJECT') ||
+             u.includes('CODIGO') || u.includes('GERADOR')) remover.push(k);
+        }
+        remover.forEach(k => store.removeItem(k));
+      });
+    }catch(e){}
+
+    try{ document.querySelectorAll('form').forEach(f => f.reset()); }catch(e){}
+    try{ if(typeof window.showStep === 'function') window.showStep(1); }catch(e){}
+    try{ window.location.replace(window.location.pathname + '?novo=' + Date.now()); }catch(e){ window.location.reload(); }
+  }
+
+  function ajustarLabelsEtapa5(){
+    const l1 = document.querySelector('label[for="clausulas"]');
+    if(l1) l1.textContent = 'CLÁUSULA SEGUNDA — DO OBJETO:';
+
+    const l2 = document.querySelector('label[for="condPagamento"], label[for="condicoesPagamento"]');
+    if(l2) l2.textContent = 'CLÁUSULA SEXTA — VALOR DO CONTRATO:';
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ajustarLabelsEtapa5);
+  else ajustarLabelsEtapa5();
+
+  if(window.Swal && typeof window.Swal.fire === 'function' && !window.Swal.__imparFinalWordPatch){
+    const originalFire = window.Swal.fire.bind(window.Swal);
+    window.Swal.fire = async function(options, ...rest){
+      let opts = options;
+
+      const title = typeof opts === 'object' ? String(opts.title || '') : String(opts || '');
+      const confirmText = typeof opts === 'object' ? String(opts.confirmButtonText || '') : '';
+      const denyText = typeof opts === 'object' ? String(opts.denyButtonText || '') : '';
+      const isTelaFinalWord =
+        title.toUpperCase().includes('VERSÃO FINAL DO DOCUMENTO') ||
+        (confirmText.toUpperCase().includes('COMPARTILHAR') && denyText.toUpperCase().includes('BAIXAR'));
+
+      if(isTelaFinalWord && typeof opts === 'object'){
+        opts = Object.assign({}, opts, {
+          cancelButtonText: 'Fechar',
+          customClass: Object.assign({
+            popup: 'impar-swal',
+            confirmButton: 'impar-swal-confirm',
+            denyButton: 'impar-swal-deny',
+            cancelButton: 'impar-swal-cancel',
+            actions: 'impar-swal-actions'
+          }, opts.customClass || {})
+        });
+      }
+
+      const result = await originalFire(opts, ...rest);
+
+      if(isTelaFinalWord && result && result.isDismissed && String(result.dismiss || '').toLowerCase() === 'cancel'){
+        setTimeout(resetNovoCadastro, 80);
+      }
+
+      return result;
+    };
+    window.Swal.__imparFinalWordPatch = true;
+  }
 })();
 </script>
 
