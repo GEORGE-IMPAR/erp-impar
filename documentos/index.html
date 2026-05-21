@@ -4867,5 +4867,191 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
 })();
 </script>
 
+
+<script>
+/* =========================================================
+   HOTFIX ERP ÍMPAR — Atualizar documento como novo fluxo
+   - Carrega /storage/docs/data/CODIGO.json e reinicia o fluxo normal
+   - Etapa 5 fica em modo automático para recalcular 2.1 e 6.1
+   - Finalizar salva JSON e gera NOVO DOCX a partir do template
+   - Em atualização, usa filename com revisão para evitar lock do Word/OneDrive
+   ========================================================= */
+(function(){
+  const DATA_URL = (codigo) => `https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
+
+  function byId(id){ return document.getElementById(id); }
+  function val(id){ return (byId(id)?.value || '').trim(); }
+  function setField(id, value){
+    const el = byId(id);
+    if(!el) return;
+    el.value = value ?? '';
+    el.dispatchEvent(new Event('input', {bubbles:true}));
+    el.dispatchEvent(new Event('change', {bubbles:true}));
+  }
+  async function fetchPayload(codigo){
+    const r = await fetch(DATA_URL(codigo), {cache:'no-store'});
+    if(!r.ok) throw new Error(`Falha ao carregar JSON do projeto (${r.status}).`);
+    const j = await r.json();
+    return (j && typeof j === 'object' && ('data' in j) && j.data) ? j.data : j;
+  }
+  function applyPayloadAsNewFlow(payload){
+    if(!payload || typeof payload !== 'object') return;
+
+    const map = {
+      codigo:'codigoProjeto',
+      enderecoObra:'endereco',
+      valor:'valorContrato',
+      condicoesPagamento:'condPagamento',
+      dataContrato:'dataContrato'
+    };
+
+    Object.entries(payload).forEach(([key,value]) => {
+      const id = map[key] || key;
+      const el = byId(id);
+      if(el) setField(id, value ?? '');
+    });
+
+    // Mantém anexos já salvos como registros do servidor, sem tentar reanexar como File.
+    try{
+      window.anexosContrato = Array.isArray(payload.anexosContrato) ? JSON.parse(JSON.stringify(payload.anexosContrato)) : [];
+      window.anexosOS = Array.isArray(payload.anexosOS) ? JSON.parse(JSON.stringify(payload.anexosOS)) : [];
+      window.renderListaAnexos?.('contrato');
+      window.renderListaAnexos?.('os');
+    }catch(e){}
+
+    // Modo atualização: o documento será tratado como novo fluxo de geração.
+    window.__DOC_UPDATE_AS_NEW__ = true;
+    window.__DOC_ORIGINAL__ = JSON.parse(JSON.stringify(payload || {}));
+    window.__DOC_ORIGINAL_RAW__ = JSON.parse(JSON.stringify(payload || {}));
+
+    // Importante: etapa 5 volta para modo automático. Assim, se mudar valor/serviço/código,
+    // os textos 2.1 e 6.1 recalculam pela mesma regra do cadastro novo.
+    const claus = byId('clausulas');
+    const cond = byId('condPagamento');
+    if(claus) claus.dataset.templateAuto = '1';
+    if(cond) cond.dataset.templateAuto = '1';
+
+    // Recalcula derivados e cláusulas disparando eventos nos campos-base.
+    ['codigoProjeto','servico','endereco','nomeContratante','nomeContratada','valorContrato','valorExtenso'].forEach(id => {
+      const el = byId(id);
+      if(el){
+        el.dispatchEvent(new Event('input', {bubbles:true}));
+        el.dispatchEvent(new Event('change', {bubbles:true}));
+      }
+    });
+
+    // Volta para o começo do fluxo de preenchimento, como um cadastro novo já carregado.
+    try{ window.showStep?.(2); }catch(e){}
+  }
+
+  async function carregarProjetoComoNovoFluxo(codigo){
+    if(!codigo) return;
+    try{
+      window.showImparLoading?.('Carregando projeto…', 'Buscando dados salvos e reiniciando o fluxo.');
+      const payload = await fetchPayload(codigo);
+      applyPayloadAsNewFlow(payload);
+      const picker = byId('imparProjectPicker');
+      if(picker) picker.style.display = 'none';
+    }catch(err){
+      console.error(err);
+      Swal.fire({icon:'error', title:'Erro ao carregar projeto', html: err?.message || String(err)});
+    }finally{
+      window.hideImparLoading?.();
+    }
+  }
+
+  // Intercepta clique nos cards do Atualizar Documentos antes do handler antigo.
+  document.addEventListener('click', function(ev){
+    const item = ev.target.closest('.imparPickItem');
+    if(!item) return;
+    const codigo = item.getAttribute('data-codigo') || '';
+    if(!codigo) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    carregarProjetoComoNovoFluxo(codigo);
+  }, true);
+
+  function uniqueRevisionFilename(filename, tipo){
+    const base = String(filename || '').replace(/\.docx$/i, '');
+    const stamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0,14);
+    const sufixo = tipo === 'contrato' ? 'CONTRATO' : 'OS';
+    return `${base}_REV_${stamp}_${sufixo}.docx`;
+  }
+
+  async function abrirGeradoNoWord(codigo, tipo, forceUnique){
+    const gerado = await gerarBlobDocumentoPorTipo(codigo, tipo);
+    const filename = forceUnique ? uniqueRevisionFilename(gerado.filename, tipo) : gerado.filename;
+    const uploadDoc = await subirDocParaWord365(gerado.blob, filename, codigo, tipo);
+    const finalUrl = uploadDoc?.webUrl || uploadDoc?.url || '';
+    if(!finalUrl) throw new Error('Documento gerado, mas a URL do Word não foi retornada.');
+    window.open(finalUrl, '_blank', 'noopener');
+    window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
+    return true;
+  }
+
+  async function finalizarComoNovoFluxo(){
+    try{
+      window.applyLoggedUser?.();
+      const payload = buildPayload();
+      const codigo = payload?.codigo || val('codigoProjeto');
+      if(!codigo){
+        Swal.fire({icon:'warning', title:'Campo obrigatório', text:'Informe o código do projeto para finalizar.'});
+        return false;
+      }
+      payload.codigo = codigo;
+
+      // Força sempre os textos atuais da tela, inclusive vazios.
+      payload.clausulas = byId('clausulas')?.value ?? '';
+      payload.condicoesPagamento = byId('condPagamento')?.value ?? '';
+      payload.anexosContrato = Array.isArray(window.anexosContrato) ? window.anexosContrato : [];
+      payload.anexosOS = Array.isArray(window.anexosOS) ? window.anexosOS : [];
+
+      window.showImparLoading?.('Salvando…', 'Gravando o JSON atualizado.');
+      await postJson(API_SAVE_JSON, payload);
+      window.hideImparLoading?.();
+
+      const tipo = await imparAskDocToGenerate('afterSave');
+      if(!tipo) return false;
+
+      window.showImparLoading?.('Gerando documento…', 'Criando um novo arquivo no Word 365 a partir do template.');
+      const forceUnique = !!window.__DOC_UPDATE_AS_NEW__;
+      await abrirGeradoNoWord(codigo, tipo, forceUnique);
+      window.__DOC_UPDATE_AS_NEW__ = false;
+      return true;
+    }catch(err){
+      window.hideImparLoading?.();
+      Swal.fire({icon:'error', title:'Erro ao gerar documento', html: err?.message || String(err)});
+      console.error('finalizarComoNovoFluxo erro:', err);
+      return false;
+    }finally{
+      window.hideImparLoading?.();
+    }
+  }
+
+  window.onFinalizarSalvarJson = finalizarComoNovoFluxo;
+  window.finalizeFlow = finalizarComoNovoFluxo;
+  window.gerarDocumento = async function(){ return await finalizarComoNovoFluxo(); };
+
+  function rebindFinalizarNovoFluxo(){
+    document.querySelectorAll('#btnFinalizar, #btnFinal, button, a').forEach(el => {
+      const t = (el.textContent || '').toUpperCase();
+      if(!(el.id === 'btnFinalizar' || el.id === 'btnFinal' || t.includes('FINALIZAR'))) return;
+      if(el.dataset.imparNovoFluxoFinal === '1') return;
+      const clone = el.cloneNode(true);
+      el.parentNode.replaceChild(clone, el);
+      clone.dataset.imparNovoFluxoFinal = '1';
+      clone.addEventListener('click', function(ev){
+        ev.preventDefault();
+        ev.stopPropagation();
+        finalizarComoNovoFluxo();
+      });
+    });
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', rebindFinalizarNovoFluxo);
+  else rebindFinalizarNovoFluxo();
+})();
+</script>
+
 </body>
 </html>
