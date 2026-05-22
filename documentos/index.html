@@ -4889,7 +4889,7 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
    - Carrega /storage/docs/data/CODIGO.json e reinicia o fluxo normal
    - Etapa 5 fica em modo automático para recalcular 2.1 e 6.1
    - Finalizar salva JSON e gera NOVO DOCX a partir do template
-   - Em atualização, usa filename com revisão para evitar lock do Word/OneDrive
+   - Em atualização, usa filename com revisão (_REV_) sem mexer no PHP/Graph/365
    ========================================================= */
 (function(){
   const DATA_URL = (codigo) => `https://api.erpimpar.com.br/storage/docs/data/${encodeURIComponent(codigo)}.json?ts=${Date.now()}`;
@@ -4991,17 +4991,33 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
     carregarProjetoComoNovoFluxo(codigo);
   }, true);
 
+  function imparTimestampRev(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  }
+
+  function filenameRevisaoSeguro(filename, codigo, tipo){
+    const original = String(filename || '').trim();
+    const fallback = `${codigo}_${tipo === 'os' ? 'OS' : 'CONTRATO'}.docx`;
+    const nome = original || fallback;
+    const base = nome.replace(/\.docx$/i, '');
+    return `${base}_REV_${imparTimestampRev()}.docx`;
+  }
+
   async function abrirGeradoNoWord(codigo, tipo, isAtualizacao){
     const gerado = await gerarBlobDocumentoPorTipo(codigo, tipo);
 
-    // Atualização segura:
-    // 1) mantém o JSON principal no código original;
-    // 2) pede ao backend para renomear o DOCX atual para OLD;
-    // 3) sobe o novo DOCX com o nome oficial original;
-    // 4) atualiza o metadata para apontar para o novo arquivo oficial.
-    const uploadDoc = await subirDocParaWord365(gerado.blob, gerado.filename, codigo, tipo, {
-      backupOld: !!isAtualizacao
-    });
+    // Atualização ultra-segura:
+    // NÃO mexe no PHP do Word365, NÃO renomeia arquivo antigo no OneDrive
+    // e NÃO tenta sobrescrever documento aberto/bloqueado.
+    // Em atualização, só envia um filename novo (_REV_yyyyMMdd_HHmmss.docx)
+    // usando o endpoint antigo de produção exatamente como já funcionava.
+    const filenameFinal = isAtualizacao
+      ? filenameRevisaoSeguro(gerado.filename, codigo, tipo)
+      : gerado.filename;
+
+    const uploadDoc = await subirDocParaWord365(gerado.blob, filenameFinal, codigo, tipo);
 
     const finalUrl = uploadDoc?.webUrl || uploadDoc?.url || '';
     if(!finalUrl) throw new Error('Documento gerado, mas a URL do Word não foi retornada.');
