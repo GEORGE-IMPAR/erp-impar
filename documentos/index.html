@@ -1957,7 +1957,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
 <footer>
   <div class="rodape-inner">
-    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V2</div>
+    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V3</div>
     <div>v1.0 • validação limpa por etapa</div>
   </div>
 </footer>
@@ -4644,20 +4644,20 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
     }
   }
 
-  const TEMPLATE_2_1 = `2.1	Pelo presente e pela melhor forma de direito, o CONTRATANTE, neste ato, contrata os serviços profissionais e especializados da CONTRATADA, para a execução dos serviços, respeitando as indicações detalhadas e de faturamentos descritos na proposta {{codigo}} anexa ao presente e parte integrante deste Contrato.
+  const TEMPLATE_2_1 = `Pelo presente e pela melhor forma de direito, o CONTRATANTE, neste ato, contrata os serviços profissionais e especializados da CONTRATADA, para a execução dos serviços, respeitando as indicações detalhadas e de faturamentos descritos na proposta {{codigo}} anexa ao presente e parte integrante deste Contrato.
 
-2.2	A execução dos serviços contratados será realizada conforme projeto executivo apresentada a CONTRATANTE e proposta {{codigo}} no qual faz parte integral do presente contrato. A CONTRATADA será responsável pelo fornecimento de toda a mão de obra e dos materiais necessários para a execução dos serviços, exceto os equipamentos que  serão faturados diretamente do fornecedor para a CONTRATANTE, sendo os respectivos valores descontados das parcelas de pagamento devidas à CONTRATADA.`;
+A execução dos serviços contratados será realizada conforme projeto executivo apresentada a CONTRATANTE e proposta {{codigo}} no qual faz parte integral do presente contrato. A CONTRATADA será responsável pelo fornecimento de toda a mão de obra e dos materiais necessários para a execução dos serviços, exceto os equipamentos que  serão faturados diretamente do fornecedor para a CONTRATANTE, sendo os respectivos valores descontados das parcelas de pagamento devidas à CONTRATADA.`;
 
-  const TEMPLATE_6_1 = `6.1	Ajustam as partes que o valor total do presente contrato é de {{valor}} ({{valorExtenso}}) sendo o valor global irreajustavel, montante que compreende:
+  const TEMPLATE_6_1 = `Ajustam as partes que o valor total do presente contrato é de {{valor}} ({{valorExtenso}}) sendo o valor global irreajustavel, montante que compreende:
 
-(i)	os valores devidos à CONTRATADA a título de prestação de serviços de mão de obra e fornecimento de materiais; e
-(ii)	os valores estimados a serem faturados diretamente para a CONTRATANTE por fornecedores terceiros, relativos a equipamentos e materiais necessários à execução da obra, os quais serão pagos pela CONTRATANTE diretamente a tais terceiros.
+(i) os valores devidos à CONTRATADA a título de prestação de serviços de mão de obra e fornecimento de materiais; e
+(ii) os valores estimados a serem faturados diretamente para a CONTRATANTE por fornecedores terceiros, relativos a equipamentos e materiais necessários à execução da obra, os quais serão pagos pela CONTRATANTE diretamente a tais terceiros.
 
 Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cálculo do saldo remanescente, entendido como a diferença entre o valor global da obra e a soma:
-(i)	dos valores faturados diretamente pelos fornecedores à CONTRATANTE e pagos por esta; e
-(ii)	dos valores pagos à CONTRATADA a título de sinal e parcela final.
+(i) dos valores faturados diretamente pelos fornecedores à CONTRATANTE e pagos por esta; e
+(ii) dos valores pagos à CONTRATADA a título de sinal e parcela final.
 
-6.2	O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive quanto a eventuais economias obtidas pela CONTRATADA em relação aos valores inicialmente estimados para faturamento direto, uma vez que tais valores integram a composição do preço global da obra.`;
+O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive quanto a eventuais economias obtidas pela CONTRATADA em relação aos valores inicialmente estimados para faturamento direto, uma vez que tais valores integram a composição do preço global da obra.`;
 
   function dadosAtuais(){
     return {
@@ -5099,23 +5099,76 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
 <script>
 /* =========================================================
    ERP ÍMPAR — Cláusulas dinâmicas por TABELA NOMEADA no DOCX
-   VERSÃO FINAL — preserva numeração 2.1/2.2 e 6.1/6.2
    ---------------------------------------------------------
    Template esperado:
-   - Tabela do item 2.1/2.2 com título/caption: clausula-2
-   - Tabela do item 6.1/6.2 com título/caption: clausula-6
+   - Tabela do item 2.1 com título/caption: clausula-2
+   - Tabela do item 6.1 com título/caption: clausula-6
 
    Regra:
    - Não mexe no Office 365 / Graph / subir_documento_word365.php.
    - O DOCX é gerado normalmente pelo template.
-   - Antes de subir para o Word 365, este patch abre o DOCX em memória.
-   - Se a tabela tiver coluna de numeração, troca só a célula de conteúdo.
-   - Se a tabela tiver uma célula só, insere o texto completo numerado.
+   - Antes de subir para o Word 365, este patch abre o DOCX em memória,
+     localiza as tabelas pelo w:tblCaption e troca o conteúdo da célula
+     pelo texto atual da tela.
    ========================================================= */
 (function(){
   function byId(id){ return document.getElementById(id); }
   function textAtual(id){ return (byId(id)?.value ?? '').toString(); }
   function canon(s){ return String(s || '').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim(); }
+
+
+  // ===== ÍMPAR: garante que o item 6.1 sempre reflita o valor atual da tela =====
+  // Preserva a numeração/layout da tabela, mas atualiza o trecho:
+  // "o valor total do presente contrato é de R$ X (valor por extenso) sendo..."
+  function imparValorAtualClausula6(){
+    const inputValor = byId('valorContrato') || byId('valor');
+    const inputExtenso = byId('valorExtenso') || byId('Extenso_Valor');
+
+    let valor = (inputValor?.value || '').toString().trim();
+
+    // Se existir a função global/local de máscara/extenso, usa ela para garantir valor atualizado.
+    try{
+      if(inputValor && typeof maskMoneyBRL === 'function'){
+        maskMoneyBRL(inputValor);
+        valor = (inputValor.value || '').toString().trim();
+      }
+    }catch(e){}
+
+    let valorExtenso = (inputExtenso?.value || '').toString().trim();
+    try{
+      if(inputValor && inputExtenso && typeof parseBRLToCents === 'function' && typeof moneyToExtensoBRL === 'function'){
+        valorExtenso = moneyToExtensoBRL(parseBRLToCents(inputValor.value));
+        inputExtenso.value = valorExtenso;
+      }
+    }catch(e){}
+
+    return { valor, valorExtenso };
+  }
+
+  function imparAtualizarTextoClausula6ComValorAtual(texto){
+    let out = String(texto || '');
+    const { valor, valorExtenso } = imparValorAtualClausula6();
+
+    if(!valor && !valorExtenso) return out;
+
+    // Caso ainda existam placeholders no texto da tela.
+    out = out
+      .replace(/{{\s*valor\s*}}/gi, valor)
+      .replace(/{{\s*valorExtenso\s*}}/gi, valorExtenso);
+
+    // Caso o texto já tenha sido renderizado com valor antigo.
+    // Troca somente o trecho do valor, sem mexer no restante da cláusula.
+    const novoTrecho = `${valor} (${valorExtenso})`;
+    const re = /(valor\s+total\s+do\s+presente\s+contrato\s+é\s+de\s+)(.*?)(\s+sendo\s+o\s+valor\s+global)/is;
+    if(re.test(out)){
+      out = out.replace(re, `$1${novoTrecho}$3`);
+    }
+
+    const campo = byId('condPagamento');
+    if(campo && campo.value !== out) campo.value = out;
+
+    return out;
+  }
 
   function escapeXml(s){
     return String(s ?? '')
@@ -5127,8 +5180,15 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
   }
 
   function nsResolver(prefix){
-    const ns = { w: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' };
+    const ns = {
+      w: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    };
     return ns[prefix] || null;
+  }
+
+  function getXPath(doc, expr, ctx){
+    const res = doc.evaluate(expr, ctx || doc, nsResolver, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+    return res.singleNodeValue;
   }
 
   function getXPathAll(doc, expr, ctx){
@@ -5141,7 +5201,7 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
   function getTblCaption(tbl){
     const pr = Array.from(tbl.childNodes).find(n => n.localName === 'tblPr');
     if(!pr) return '';
-    const cap = Array.from(pr.childNodes).find(n => n.localName === 'tblCaption' || n.localName === 'tblDescription');
+    const cap = Array.from(pr.childNodes).find(n => n.localName === 'tblCaption');
     if(!cap) return '';
     return cap.getAttribute('w:val') || cap.getAttribute('val') || '';
   }
@@ -5152,20 +5212,9 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
     return tables.find(tbl => String(getTblCaption(tbl)).trim().toLowerCase() === wanted) || null;
   }
 
-  function directRows(tbl){
-    return Array.from(tbl.childNodes).filter(n => n.localName === 'tr');
-  }
-
-  function directCells(rowOrTable){
-    return Array.from(rowOrTable.childNodes).filter(n => n.localName === 'tc');
-  }
-
-  function allDirectCells(tbl){
-    const rows = directRows(tbl);
-    if(rows.length){
-      return rows.flatMap(r => directCells(r));
-    }
-    return Array.from(tbl.getElementsByTagNameNS('*', 'tc'));
+  function firstCell(tbl){
+    const cells = Array.from(tbl.getElementsByTagNameNS('*', 'tc'));
+    return cells[0] || null;
   }
 
   function cellPlainText(tc){
@@ -5173,41 +5222,7 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
     return nodes.map(n => n.textContent || '').join('');
   }
 
-  function firstNumberInText(text){
-    const m = String(text || '').match(/\b(\d+\.\d+)\b/);
-    return m ? m[1] : '';
-  }
-
-  function stripNumber(text, numero){
-    const s = String(text ?? '').replace(/^\s+/, '');
-    if(numero){
-      const re = new RegExp('^' + numero.replace('.', '\\.') + '\\s*');
-      return s.replace(re, '').replace(/^\t+/, '').replace(/^\s+/, '');
-    }
-    return s.replace(/^\d+\.\d+\s*/, '').replace(/^\t+/, '').replace(/^\s+/, '');
-  }
-
-  function splitItensNumerados(text){
-    const src = String(text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const re = /(^|\n)\s*(\d+\.\d+)\s*\t?\s*/g;
-    const found = [];
-    let m;
-    while((m = re.exec(src)) !== null){
-      found.push({ numero:m[2], start:m.index + m[1].length, contentStart:re.lastIndex });
-    }
-    const map = {};
-    for(let i=0; i<found.length; i++){
-      const cur = found[i];
-      const next = found[i+1];
-      const end = next ? next.start : src.length;
-      map[cur.numero] = src.slice(cur.contentStart, end).replace(/^\n+/, '').replace(/\n+$/,'');
-    }
-    return map;
-  }
-
-  function paragraphXml(line, referenceP){
-    // Mantém um parágrafo simples, justificado e compatível com Word.
-    // A numeração da tabela fica preservada na célula própria quando existir.
+  function paragraphXml(line){
     const preserve = /^\s|\s$/.test(line) ? ' xml:space="preserve"' : '';
     return '<w:p>' +
       '<w:pPr><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi" w:cstheme="majorHAnsi"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr>' +
@@ -5218,11 +5233,14 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
   function textToCellContentXml(text){
     const normalized = String(text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const lines = normalized.split('\n');
+    // Mantém linha vazia como parágrafo vazio, para preservar quebras visuais.
     return lines.map(line => paragraphXml(line)).join('');
   }
 
-  function replaceCellContent(doc, tc, novoTexto){
-    if(!tc) return { changed:false, reason:'célula não encontrada' };
+  function replaceCellContent(doc, tbl, novoTexto){
+    const tc = firstCell(tbl);
+    if(!tc) return { changed:false, reason:'tabela sem célula' };
+
     const atual = cellPlainText(tc);
     if(canon(atual) === canon(novoTexto)) return { changed:false, reason:'sem alteração' };
 
@@ -5232,53 +5250,6 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
     const newTc = new DOMParser().parseFromString(cellXml, 'application/xml').documentElement;
     tc.parentNode.replaceChild(doc.importNode(newTc, true), tc);
     return { changed:true, reason:'ok' };
-  }
-
-  function replaceTabelaPreservandoNumeracao(doc, tbl, textoCampo, numerosEsperados){
-    if(!tbl) return { changed:false, reason:'tabela não encontrada' };
-
-    const rows = directRows(tbl);
-    const mapa = splitItensNumerados(textoCampo);
-    const temMapa = Object.keys(mapa).length > 0;
-    const logs = [];
-
-    // Caso ideal: tabela com linhas e pelo menos duas células por linha:
-    // célula 1 = número; célula 2 = conteúdo.
-    if(rows.length){
-      let alterouAlguma = false;
-      for(const row of rows){
-        const cells = directCells(row);
-        if(cells.length < 2) continue;
-        const numero = firstNumberInText(cellPlainText(cells[0]));
-        if(!numero) continue;
-        if(numerosEsperados && numerosEsperados.length && !numerosEsperados.includes(numero)) continue;
-        if(!temMapa || !(numero in mapa)) continue;
-        const r = replaceCellContent(doc, cells[1], mapa[numero]);
-        logs.push({numero, ...r});
-        if(r.changed) alterouAlguma = true;
-      }
-      if(logs.length){
-        return { changed:alterouAlguma, reason:alterouAlguma ? 'ok' : 'sem alteração', logs };
-      }
-    }
-
-    // Fallback 1: tabela com uma linha e duas células.
-    // Mantém a primeira célula como número e coloca o texto inteiro na segunda célula,
-    // removendo só o primeiro número esperado para não duplicar.
-    const cells = allDirectCells(tbl);
-    if(cells.length >= 2){
-      const numero = firstNumberInText(cellPlainText(cells[0])) || (numerosEsperados && numerosEsperados[0]) || '';
-      const texto = stripNumber(textoCampo, numero);
-      return replaceCellContent(doc, cells[1], texto);
-    }
-
-    // Fallback 2: tabela de uma célula só.
-    // Insere o bloco completo, com 2.1/2.2 ou 6.1/6.2 visíveis como texto.
-    if(cells.length === 1){
-      return replaceCellContent(doc, cells[0], textoCampo);
-    }
-
-    return { changed:false, reason:'tabela sem célula' };
   }
 
   async function ensureJSZip(){
@@ -5296,7 +5267,7 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
   async function aplicarClausulasPorTabela(blob){
     try{
       const texto2 = textAtual('clausulas');
-      const texto6 = textAtual('condPagamento');
+      const texto6 = imparAtualizarTextoClausula6ComValorAtual(textAtual('condPagamento'));
 
       const JSZip = await ensureJSZip();
       const zip = await JSZip.loadAsync(blob);
@@ -5311,15 +5282,18 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
       const parseErr = doc.getElementsByTagName('parsererror')[0];
       if(parseErr) throw new Error('Falha ao ler XML do DOCX.');
 
+      const log = [];
       const tbl2 = findTableByCaption(doc, 'clausula-2');
       const tbl6 = findTableByCaption(doc, 'clausula-6');
 
-      const log = [];
-      log.push({ tabela:'clausula-2', ...replaceTabelaPreservandoNumeracao(doc, tbl2, texto2, ['2.1','2.2']) });
-      log.push({ tabela:'clausula-6', ...replaceTabelaPreservandoNumeracao(doc, tbl6, texto6, ['6.1','6.2']) });
+      if(tbl2) log.push({ tabela:'clausula-2', ...replaceCellContent(doc, tbl2, texto2) });
+      else log.push({ tabela:'clausula-2', changed:false, reason:'tabela não encontrada' });
+
+      if(tbl6) log.push({ tabela:'clausula-6', ...replaceCellContent(doc, tbl6, texto6) });
+      else log.push({ tabela:'clausula-6', changed:false, reason:'tabela não encontrada' });
 
       const alterou = log.some(x => x.changed);
-      console.info('[TABELA-CLAUSULAS] Resultado preservando numeração:', log);
+      console.info('[TABELA-CLAUSULAS] Resultado:', log);
       if(!alterou) return blob;
 
       const newXml = new XMLSerializer().serializeToString(doc);
@@ -5336,7 +5310,7 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
 
   function instalarWrapper(){
     if(typeof window.gerarBlobDocumentoPorTipo !== 'function') return false;
-    if(window.gerarBlobDocumentoPorTipo.__tabelasClausulasNumeracao === true) return true;
+    if(window.gerarBlobDocumentoPorTipo.__tabelasClausulas === true) return true;
 
     const original = window.gerarBlobDocumentoPorTipo;
     window.gerarBlobDocumentoPorTipo = async function(codigo, tipo){
@@ -5346,7 +5320,7 @@ Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cá
       }
       return gerado;
     };
-    window.gerarBlobDocumentoPorTipo.__tabelasClausulasNumeracao = true;
+    window.gerarBlobDocumentoPorTipo.__tabelasClausulas = true;
     return true;
   }
 
