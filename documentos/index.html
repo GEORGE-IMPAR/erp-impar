@@ -1455,7 +1455,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
   box-shadow:none !important;
 }
 </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <header>
@@ -5097,146 +5096,106 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
 </script>
 
 
-
 <script>
 /* =========================================================
-   ERP ÍMPAR — DE/PARA das cláusulas 2.1 e 6.1 no DOCX
+   ERP ÍMPAR — Cláusulas dinâmicas por TABELA NOMEADA no DOCX
    ---------------------------------------------------------
-   Ideia da Juliana:
-   - O template jurídico continua intacto.
-   - O sistema monta o texto padrão (DE) com código/valor atuais.
-   - Se o texto da tela foi alterado, troca o DE pelo PARA dentro do DOCX gerado.
-   - Não mexe no Office 365, Graph, subir_documento_word365.php ou template.
+   Template esperado:
+   - Tabela do item 2.1 com título/caption: clausula-2
+   - Tabela do item 6.1 com título/caption: clausula-6
+
+   Regra:
+   - Não mexe no Office 365 / Graph / subir_documento_word365.php.
+   - O DOCX é gerado normalmente pelo template.
+   - Antes de subir para o Word 365, este patch abre o DOCX em memória,
+     localiza as tabelas pelo w:tblCaption e troca o conteúdo da célula
+     pelo texto atual da tela.
    ========================================================= */
 (function(){
-  const TEMPLATE_DE_2_1 = `Pelo presente e pela melhor forma de direito, o CONTRATANTE, neste ato, contrata os serviços profissionais e especializados da CONTRATADA, para a execução dos serviços, respeitando as indicações detalhadas e de faturamentos descritos na proposta {{codigo}} anexa ao presente e parte integrante deste Contrato.
-
-A execução dos serviços contratados será realizada conforme projeto executivo apresentada a CONTRATANTE e proposta {{codigo}} no qual faz parte integral do presente contrato. A CONTRATADA será responsável pelo fornecimento de toda a mão de obra e dos materiais necessários para a execução dos serviços, exceto os equipamentos que  serão faturados diretamente do fornecedor para a CONTRATANTE, sendo os respectivos valores descontados das parcelas de pagamento devidas à CONTRATADA.`;
-
-  const TEMPLATE_DE_6_1 = `Ajustam as partes que o valor total do presente contrato é de {{valor}} ({{valorExtenso}}) sendo o valor global irreajustavel, montante que compreende:
-
-(i) os valores devidos à CONTRATADA a título de prestação de serviços de mão de obra e fornecimento de materiais; e
-(ii) os valores estimados a serem faturados diretamente para a CONTRATANTE por fornecedores terceiros, relativos a equipamentos e materiais necessários à execução da obra, os quais serão pagos pela CONTRATANTE diretamente a tais terceiros.
-
-Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cálculo do saldo remanescente, entendido como a diferença entre o valor global da obra e a soma:
-(i) dos valores faturados diretamente pelos fornecedores à CONTRATANTE e pagos por esta; e
-(ii) dos valores pagos à CONTRATADA a título de sinal e parcela final.
-
-O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive quanto a eventuais economias obtidas pela CONTRATADA em relação aos valores inicialmente estimados para faturamento direto, uma vez que tais valores integram a composição do preço global da obra.`;
-
   function byId(id){ return document.getElementById(id); }
-  function val(id){ return (byId(id)?.value || '').trim(); }
+  function textAtual(id){ return (byId(id)?.value ?? '').toString(); }
+  function canon(s){ return String(s || '').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim(); }
 
-  function dadosDePara(){
-    return {
-      codigo: window.projectCode || val('codigoProjeto') || val('codigo'),
-      valor: val('valorContrato') || val('valor'),
-      valorExtenso: val('valorExtenso')
+  function escapeXml(s){
+    return String(s ?? '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&apos;');
+  }
+
+  function nsResolver(prefix){
+    const ns = {
+      w: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
     };
+    return ns[prefix] || null;
   }
 
-  function aplicarVarsDePara(txt){
-    const dados = dadosDePara();
-    return String(txt || '').replace(/{{\s*([\w]+)\s*}}/g, function(_, key){
-      return dados[key] ?? '';
-    });
+  function getXPath(doc, expr, ctx){
+    const res = doc.evaluate(expr, ctx || doc, nsResolver, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+    return res.singleNodeValue;
   }
 
-  function canon(s){
-    return String(s || '')
-      .replace(/\u00a0/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  function getXPathAll(doc, expr, ctx){
+    const result = doc.evaluate(expr, ctx || doc, nsResolver, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    const arr = [];
+    for(let i=0; i<result.snapshotLength; i++) arr.push(result.snapshotItem(i));
+    return arr;
   }
 
-  function xmlTextNodes(doc){
-    let nodes = Array.from(doc.getElementsByTagName('w:t'));
-    if(!nodes.length) nodes = Array.from(doc.getElementsByTagNameNS('*', 't'));
-    return nodes;
+  function getTblCaption(tbl){
+    const pr = Array.from(tbl.childNodes).find(n => n.localName === 'tblPr');
+    if(!pr) return '';
+    const cap = Array.from(pr.childNodes).find(n => n.localName === 'tblCaption');
+    if(!cap) return '';
+    return cap.getAttribute('w:val') || cap.getAttribute('val') || '';
   }
 
-  function buildCanonicalMap(full){
-    let c = '';
-    const start = [];
-    const end = [];
-    let inWs = false;
-    let wsCanonIndex = -1;
-
-    for(let i=0; i<full.length; i++){
-      const ch = full[i] === '\u00a0' ? ' ' : full[i];
-      if(/\s/.test(ch)){
-        if(!inWs){
-          inWs = true;
-          wsCanonIndex = c.length;
-          c += ' ';
-          start[wsCanonIndex] = i;
-          end[wsCanonIndex] = i + 1;
-        }else{
-          end[wsCanonIndex] = i + 1;
-        }
-      }else{
-        inWs = false;
-        c += ch;
-        start[c.length - 1] = i;
-        end[c.length - 1] = i + 1;
-      }
-    }
-    return { text: c.trim(), start, end, rawText: c };
+  function findTableByCaption(doc, caption){
+    const wanted = String(caption || '').trim().toLowerCase();
+    const tables = getXPathAll(doc, '//w:tbl');
+    return tables.find(tbl => String(getTblCaption(tbl)).trim().toLowerCase() === wanted) || null;
   }
 
-  function nodeOffsetFromFullIndex(nodes, idx){
-    let acc = 0;
-    for(let i=0; i<nodes.length; i++){
-      const t = nodes[i].textContent || '';
-      const next = acc + t.length;
-      if(idx <= next) return { nodeIndex:i, offset: Math.max(0, idx - acc) };
-      acc = next;
-    }
-    const last = Math.max(0, nodes.length - 1);
-    return { nodeIndex:last, offset:(nodes[last]?.textContent || '').length };
+  function firstCell(tbl){
+    const cells = Array.from(tbl.getElementsByTagNameNS('*', 'tc'));
+    return cells[0] || null;
   }
 
-  function replaceTextAcrossWordTextNodes(xml, de, para){
-    de = String(de || '');
-    para = String(para ?? '');
-    if(!canon(de) || canon(de) === canon(para)) return { xml, changed:false, reason:'sem alteração' };
+  function cellPlainText(tc){
+    const nodes = Array.from(tc.getElementsByTagNameNS('*', 't'));
+    return nodes.map(n => n.textContent || '').join('');
+  }
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'application/xml');
-    const nodes = xmlTextNodes(doc);
-    if(!nodes.length) return { xml, changed:false, reason:'sem w:t' };
+  function paragraphXml(line){
+    const preserve = /^\s|\s$/.test(line) ? ' xml:space="preserve"' : '';
+    return '<w:p>' +
+      '<w:pPr><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi" w:cstheme="majorHAnsi"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr>' +
+      '<w:r><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi" w:cstheme="majorHAnsi"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t' + preserve + '>' + escapeXml(line) + '</w:t></w:r>' +
+      '</w:p>';
+  }
 
-    const full = nodes.map(n => n.textContent || '').join('');
-    const mapFull = buildCanonicalMap(full);
-    const mapDe = buildCanonicalMap(de);
-    const pos = mapFull.text.indexOf(mapDe.text);
+  function textToCellContentXml(text){
+    const normalized = String(text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    // Mantém linha vazia como parágrafo vazio, para preservar quebras visuais.
+    return lines.map(line => paragraphXml(line)).join('');
+  }
 
-    if(pos < 0){
-      console.warn('[DE/PARA] Texto DE não encontrado no DOCX. Mantendo documento sem troca.', { de: mapDe.text.slice(0,120) });
-      return { xml, changed:false, reason:'DE não encontrado' };
-    }
+  function replaceCellContent(doc, tbl, novoTexto){
+    const tc = firstCell(tbl);
+    if(!tc) return { changed:false, reason:'tabela sem célula' };
 
-    const rawStart = mapFull.start[pos];
-    const rawEnd = mapFull.end[pos + mapDe.text.length - 1];
-    const s = nodeOffsetFromFullIndex(nodes, rawStart);
-    const e = nodeOffsetFromFullIndex(nodes, rawEnd);
+    const atual = cellPlainText(tc);
+    if(canon(atual) === canon(novoTexto)) return { changed:false, reason:'sem alteração' };
 
-    if(s.nodeIndex === e.nodeIndex){
-      const n = nodes[s.nodeIndex];
-      const t = n.textContent || '';
-      n.textContent = t.slice(0, s.offset) + para + t.slice(e.offset);
-    }else{
-      const first = nodes[s.nodeIndex];
-      const last = nodes[e.nodeIndex];
-      const firstText = first.textContent || '';
-      const lastText = last.textContent || '';
-      first.textContent = firstText.slice(0, s.offset) + para;
-      for(let i=s.nodeIndex + 1; i<e.nodeIndex; i++) nodes[i].textContent = '';
-      last.textContent = lastText.slice(e.offset);
-    }
-
-    const newXml = new XMLSerializer().serializeToString(doc);
-    return { xml:newXml, changed:true, reason:'ok' };
+    const tcPr = Array.from(tc.childNodes).find(n => n.localName === 'tcPr');
+    const tcPrXml = tcPr ? new XMLSerializer().serializeToString(tcPr) : '<w:tcPr/>';
+    const cellXml = '<w:tc xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' + tcPrXml + textToCellContentXml(novoTexto) + '</w:tc>';
+    const newTc = new DOMParser().parseFromString(cellXml, 'application/xml').documentElement;
+    tc.parentNode.replaceChild(doc.importNode(newTc, true), tc);
+    return { changed:true, reason:'ok' };
   }
 
   async function ensureJSZip(){
@@ -5245,95 +5204,83 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
       const s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
       s.onload = resolve;
-      s.onerror = () => reject(new Error('Não foi possível carregar JSZip para aplicar DE/PARA no DOCX.'));
+      s.onerror = () => reject(new Error('Não foi possível carregar JSZip para ajustar as cláusulas no DOCX.'));
       document.head.appendChild(s);
     });
     return window.JSZip;
   }
 
-  async function aplicarDeParaClausulasNoBlob(blob){
+  async function aplicarClausulasPorTabela(blob){
     try{
-      const clausulaAtual = byId('clausulas')?.value ?? '';
-      const valorAtual = byId('condPagamento')?.value ?? '';
-
-      const deObjeto = aplicarVarsDePara(TEMPLATE_DE_2_1);
-      const deValor = aplicarVarsDePara(TEMPLATE_DE_6_1);
-
-      const precisaObjeto = canon(clausulaAtual) !== canon(deObjeto);
-      const precisaValor = canon(valorAtual) !== canon(deValor);
-
-      if(!precisaObjeto && !precisaValor) return blob;
+      const texto2 = textAtual('clausulas');
+      const texto6 = textAtual('condPagamento');
 
       const JSZip = await ensureJSZip();
       const zip = await JSZip.loadAsync(blob);
       const docFile = zip.file('word/document.xml');
       if(!docFile){
-        console.warn('[DE/PARA] word/document.xml não encontrado.');
+        console.warn('[TABELA-CLAUSULAS] word/document.xml não encontrado.');
         return blob;
       }
 
-      let xml = await docFile.async('string');
+      const xml = await docFile.async('string');
+      const doc = new DOMParser().parseFromString(xml, 'application/xml');
+      const parseErr = doc.getElementsByTagName('parsererror')[0];
+      if(parseErr) throw new Error('Falha ao ler XML do DOCX.');
+
       const log = [];
+      const tbl2 = findTableByCaption(doc, 'clausula-2');
+      const tbl6 = findTableByCaption(doc, 'clausula-6');
 
-      if(precisaObjeto){
-        const r = replaceTextAcrossWordTextNodes(xml, deObjeto, clausulaAtual);
-        xml = r.xml;
-        log.push({ bloco:'2.1', changed:r.changed, reason:r.reason });
-      }
+      if(tbl2) log.push({ tabela:'clausula-2', ...replaceCellContent(doc, tbl2, texto2) });
+      else log.push({ tabela:'clausula-2', changed:false, reason:'tabela não encontrada' });
 
-      if(precisaValor){
-        const r = replaceTextAcrossWordTextNodes(xml, deValor, valorAtual);
-        xml = r.xml;
-        log.push({ bloco:'6.1', changed:r.changed, reason:r.reason });
-      }
+      if(tbl6) log.push({ tabela:'clausula-6', ...replaceCellContent(doc, tbl6, texto6) });
+      else log.push({ tabela:'clausula-6', changed:false, reason:'tabela não encontrada' });
 
-      zip.file('word/document.xml', xml);
-      const novoBlob = await zip.generateAsync({
+      const alterou = log.some(x => x.changed);
+      console.info('[TABELA-CLAUSULAS] Resultado:', log);
+      if(!alterou) return blob;
+
+      const newXml = new XMLSerializer().serializeToString(doc);
+      zip.file('word/document.xml', newXml);
+      return await zip.generateAsync({
         type:'blob',
         mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       });
-
-      console.info('[DE/PARA] Cláusulas processadas no DOCX:', log);
-      return novoBlob;
     }catch(err){
-      console.error('[DE/PARA] Falha ao aplicar troca no DOCX. Documento será gerado sem troca de cláusulas.', err);
+      console.error('[TABELA-CLAUSULAS] Falha ao ajustar cláusulas. Documento será gerado sem alteração das tabelas.', err);
       return blob;
     }
   }
 
-  function instalarWrapperGeracao(){
+  function instalarWrapper(){
     if(typeof window.gerarBlobDocumentoPorTipo !== 'function') return false;
-    if(window.gerarBlobDocumentoPorTipo.__deParaClausulas === true) return true;
+    if(window.gerarBlobDocumentoPorTipo.__tabelasClausulas === true) return true;
 
     const original = window.gerarBlobDocumentoPorTipo;
     window.gerarBlobDocumentoPorTipo = async function(codigo, tipo){
       const gerado = await original.apply(this, arguments);
       if(tipo === 'contrato' && gerado?.blob){
-        gerado.blob = await aplicarDeParaClausulasNoBlob(gerado.blob);
+        gerado.blob = await aplicarClausulasPorTabela(gerado.blob);
       }
       return gerado;
     };
-    window.gerarBlobDocumentoPorTipo.__deParaClausulas = true;
+    window.gerarBlobDocumentoPorTipo.__tabelasClausulas = true;
     return true;
   }
 
-  function tentarInstalar(){
-    if(instalarWrapperGeracao()) return;
+  function iniciar(){
+    if(instalarWrapper()) return;
     let tentativas = 0;
     const timer = setInterval(() => {
       tentativas++;
-      if(instalarWrapperGeracao() || tentativas > 30) clearInterval(timer);
-    }, 300);
+      if(instalarWrapper() || tentativas > 40) clearInterval(timer);
+    }, 250);
   }
 
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tentarInstalar);
-  else tentarInstalar();
-
-  window.erpImparDeParaClausulas = {
-    aplicarDeParaClausulasNoBlob,
-    aplicarVarsDePara,
-    canon
-  };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+  else iniciar();
 })();
 </script>
 
