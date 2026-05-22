@@ -1957,7 +1957,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible{
 
 <footer>
   <div class="rodape-inner">
-    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V3</div>
+    <div>ERP ÍMPAR • Gerador de Documentos • Rebuild V2</div>
     <div>v1.0 • validação limpa por etapa</div>
   </div>
 </footer>
@@ -4644,20 +4644,20 @@ async function uploadAnexosWord365({ codigo, tipo, arquivos }) {
     }
   }
 
-  const TEMPLATE_2_1 = `Pelo presente e pela melhor forma de direito, o CONTRATANTE, neste ato, contrata os serviços profissionais e especializados da CONTRATADA, para a execução dos serviços, respeitando as indicações detalhadas e de faturamentos descritos na proposta {{codigo}} anexa ao presente e parte integrante deste Contrato.
+  const TEMPLATE_2_1 = `2.1	Pelo presente e pela melhor forma de direito, o CONTRATANTE, neste ato, contrata os serviços profissionais e especializados da CONTRATADA, para a execução dos serviços, respeitando as indicações detalhadas e de faturamentos descritos na proposta {{codigo}} anexa ao presente e parte integrante deste Contrato.
 
-A execução dos serviços contratados será realizada conforme projeto executivo apresentada a CONTRATANTE e proposta {{codigo}} no qual faz parte integral do presente contrato. A CONTRATADA será responsável pelo fornecimento de toda a mão de obra e dos materiais necessários para a execução dos serviços, exceto os equipamentos que  serão faturados diretamente do fornecedor para a CONTRATANTE, sendo os respectivos valores descontados das parcelas de pagamento devidas à CONTRATADA.`;
+2.2	A execução dos serviços contratados será realizada conforme projeto executivo apresentada a CONTRATANTE e proposta {{codigo}} no qual faz parte integral do presente contrato. A CONTRATADA será responsável pelo fornecimento de toda a mão de obra e dos materiais necessários para a execução dos serviços, exceto os equipamentos que serão faturados diretamente do fornecedor para a CONTRATANTE, sendo os respectivos valores descontados das parcelas de pagamento devidas à CONTRATADA.`;
 
-  const TEMPLATE_6_1 = `Ajustam as partes que o valor total do presente contrato é de {{valor}} ({{valorExtenso}}) sendo o valor global irreajustavel, montante que compreende:
+  const TEMPLATE_6_1 = `6.1	Ajustam as partes que o valor total do presente contrato é de {{valor}} ({{valorExtenso}}) sendo o valor global irreajustavel, montante que compreende:
 
-(i) os valores devidos à CONTRATADA a título de prestação de serviços de mão de obra e fornecimento de materiais; e
-(ii) os valores estimados a serem faturados diretamente para a CONTRATANTE por fornecedores terceiros, relativos a equipamentos e materiais necessários à execução da obra, os quais serão pagos pela CONTRATANTE diretamente a tais terceiros.
+(i)	os valores devidos à CONTRATADA a título de prestação de serviços de mão de obra e fornecimento de materiais; e
+(ii)	os valores estimados a serem faturados diretamente para a CONTRATANTE por fornecedores terceiros, relativos a equipamentos e materiais necessários à execução da obra, os quais serão pagos pela CONTRATANTE diretamente a tais terceiros.
 
 Ao término da obra, após a entrega, conclusão e aceite, proceder-se-á ao cálculo do saldo remanescente, entendido como a diferença entre o valor global da obra e a soma:
-(i) dos valores faturados diretamente pelos fornecedores à CONTRATANTE e pagos por esta; e
-(ii) dos valores pagos à CONTRATADA a título de sinal e parcela final.
+(i)	dos valores faturados diretamente pelos fornecedores à CONTRATANTE e pagos por esta; e
+(ii)	dos valores pagos à CONTRATADA a título de sinal e parcela final.
 
-O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive quanto a eventuais economias obtidas pela CONTRATADA em relação aos valores inicialmente estimados para faturamento direto, uma vez que tais valores integram a composição do preço global da obra.`;
+6.2	O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive quanto a eventuais economias obtidas pela CONTRATADA em relação aos valores inicialmente estimados para faturamento direto, uma vez que tais valores integram a composição do preço global da obra.`;
 
   function dadosAtuais(){
     return {
@@ -4673,6 +4673,29 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
   function aplicarVars(txt){
     const dados = dadosAtuais();
     return (txt || '').replace(/{{\s*([\w]+)\s*}}/g, (_, key) => dados[key] ?? '');
+  }
+
+  function atualizarValorNoTextoClausula6(texto){
+    let out = String(texto || '');
+    const dados = dadosAtuais();
+    const valor = dados.valor || '';
+    const valorExtenso = dados.valorExtenso || '';
+
+    // 1) Se ainda houver placeholders, substitui direto.
+    out = out
+      .replace(/{{\s*valor\s*}}/gi, valor)
+      .replace(/{{\s*valorExtenso\s*}}/gi, valorExtenso);
+
+    // 2) Se já estiver com valor antigo renderizado, troca somente o miolo do trecho legal.
+    // Mantém 6.1, 6.2, quebras e demais alterações manuais do usuário.
+    if(valor || valorExtenso){
+      const novoTrecho = `${valor} (${valorExtenso})`;
+      const re = /(valor\s+total\s+do\s+presente\s+contrato\s+é\s+de\s+)(.*?)(\s+sendo\s+o\s+valor\s+global)/is;
+      if(re.test(out)){
+        out = out.replace(re, `$1${novoTrecho}$3`);
+      }
+    }
+    return out;
   }
 
   function atualizarClausulaObjeto(force=false){
@@ -4693,10 +4716,17 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
       c.placeholder = 'Informe o valor do contrato para carregar o item 6.1';
       return;
     }
+
     if(force || !c.value.trim() || c.dataset.templateAuto === '1'){
       c.value = aplicarVars(TEMPLATE_6_1);
       c.dataset.templateAuto = '1';
+      return;
     }
+
+    // Mesmo que o usuário tenha editado manualmente a cláusula,
+    // valor e valor por extenso precisam refletir a tela atual.
+    const atualizado = atualizarValorNoTextoClausula6(c.value);
+    if(c.value !== atualizado) c.value = atualizado;
   }
 
   function ligarCampos(){
@@ -5116,60 +5146,6 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
   function textAtual(id){ return (byId(id)?.value ?? '').toString(); }
   function canon(s){ return String(s || '').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim(); }
 
-
-  // ===== ÍMPAR: garante que o item 6.1 sempre reflita o valor atual da tela =====
-  // Preserva a numeração/layout da tabela, mas atualiza o trecho:
-  // "o valor total do presente contrato é de R$ X (valor por extenso) sendo..."
-  function imparValorAtualClausula6(){
-    const inputValor = byId('valorContrato') || byId('valor');
-    const inputExtenso = byId('valorExtenso') || byId('Extenso_Valor');
-
-    let valor = (inputValor?.value || '').toString().trim();
-
-    // Se existir a função global/local de máscara/extenso, usa ela para garantir valor atualizado.
-    try{
-      if(inputValor && typeof maskMoneyBRL === 'function'){
-        maskMoneyBRL(inputValor);
-        valor = (inputValor.value || '').toString().trim();
-      }
-    }catch(e){}
-
-    let valorExtenso = (inputExtenso?.value || '').toString().trim();
-    try{
-      if(inputValor && inputExtenso && typeof parseBRLToCents === 'function' && typeof moneyToExtensoBRL === 'function'){
-        valorExtenso = moneyToExtensoBRL(parseBRLToCents(inputValor.value));
-        inputExtenso.value = valorExtenso;
-      }
-    }catch(e){}
-
-    return { valor, valorExtenso };
-  }
-
-  function imparAtualizarTextoClausula6ComValorAtual(texto){
-    let out = String(texto || '');
-    const { valor, valorExtenso } = imparValorAtualClausula6();
-
-    if(!valor && !valorExtenso) return out;
-
-    // Caso ainda existam placeholders no texto da tela.
-    out = out
-      .replace(/{{\s*valor\s*}}/gi, valor)
-      .replace(/{{\s*valorExtenso\s*}}/gi, valorExtenso);
-
-    // Caso o texto já tenha sido renderizado com valor antigo.
-    // Troca somente o trecho do valor, sem mexer no restante da cláusula.
-    const novoTrecho = `${valor} (${valorExtenso})`;
-    const re = /(valor\s+total\s+do\s+presente\s+contrato\s+é\s+de\s+)(.*?)(\s+sendo\s+o\s+valor\s+global)/is;
-    if(re.test(out)){
-      out = out.replace(re, `$1${novoTrecho}$3`);
-    }
-
-    const campo = byId('condPagamento');
-    if(campo && campo.value !== out) campo.value = out;
-
-    return out;
-  }
-
   function escapeXml(s){
     return String(s ?? '')
       .replace(/&/g,'&amp;')
@@ -5267,7 +5243,7 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
   async function aplicarClausulasPorTabela(blob){
     try{
       const texto2 = textAtual('clausulas');
-      const texto6 = imparAtualizarTextoClausula6ComValorAtual(textAtual('condPagamento'));
+      const texto6 = textAtual('condPagamento');
 
       const JSZip = await ensureJSZip();
       const zip = await JSZip.loadAsync(blob);
