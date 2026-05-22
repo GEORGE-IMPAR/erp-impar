@@ -3121,11 +3121,26 @@ async function consultarDocumentoWord365(codigo, tipo) {
   return data;
 }
 
-async function subirDocParaWord365(blob, filename, codigo, tipo) {
+async function subirDocParaWord365(blob, filename, codigo, tipo, opts = {}) {
   const fd = new FormData();
   fd.append("codigo", codigo);
   fd.append("tipo", tipo);
   fd.append("filename", filename);
+
+  // Fluxo seguro de atualização:
+  // - quando for atualização, o backend deve renomear o arquivo atual para *_OLD_yyyyMMdd_HHmmss.docx
+  // - depois subir o novo arquivo com o nome oficial original.
+  // Isso evita tentar sobrescrever um DOCX bloqueado pelo Word Online/OneDrive.
+  if (opts.backupOld) {
+    fd.append("backupOld", "1");
+    fd.append("renomearAntigoParaOld", "1");
+    fd.append("manterNomeOficial", "1");
+    fd.append("naoSobrescrever", "0");
+  } else {
+    fd.append("forceNew", "1");
+    fd.append("naoSobrescrever", "1");
+  }
+
   fd.append("docx", blob, filename);
 
   const resp = await fetch("https://api.erpimpar.com.br/word365/subir_documento_word365.php", {
@@ -3137,7 +3152,7 @@ async function subirDocParaWord365(blob, filename, codigo, tipo) {
   const data = await resp.json();
 
   if (!resp.ok || !data?.ok) {
-    throw new Error(data?.message || `Falha ao subir documento (HTTP ${resp.status}).`);
+    throw new Error(data?.message || data?.error || `Falha ao subir documento (HTTP ${resp.status}).`);
   }
 
   return data;
@@ -4932,13 +4947,18 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
     if(cond) cond.dataset.templateAuto = '1';
 
     // Recalcula derivados e cláusulas disparando eventos nos campos-base.
-    ['codigoProjeto','servico','endereco','nomeContratante','nomeContratada','valorContrato','valorExtenso'].forEach(id => {
+    ['codigoProjeto','servico','endereco','nomeContratante','nomeContratada','valorContrato','valor','valorExtenso'].forEach(id => {
       const el = byId(id);
       if(el){
         el.dispatchEvent(new Event('input', {bubbles:true}));
         el.dispatchEvent(new Event('change', {bubbles:true}));
       }
     });
+
+    // Força a mesma regra do cadastro novo: 2.1 e 6.1 nascem do template e dos dados carregados.
+    // Depois disso, se o usuário alterar valor/serviço/código, os campos recalculam normalmente.
+    try{ window.erpImparContratoPartes?.atualizarClausulaObjeto?.(true); }catch(e){}
+    try{ window.erpImparContratoPartes?.atualizarClausulaValor?.(true); }catch(e){}
 
     // Volta para o começo do fluxo de preenchimento, como um cadastro novo já carregado.
     try{ window.showStep?.(2); }catch(e){}
@@ -4971,19 +4991,25 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
     carregarProjetoComoNovoFluxo(codigo);
   }, true);
 
-  function uniqueRevisionFilename(filename, tipo){
-    const base = String(filename || '').replace(/\.docx$/i, '');
-    const stamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0,14);
-    const sufixo = tipo === 'contrato' ? 'CONTRATO' : 'OS';
-    return `${base}_REV_${stamp}_${sufixo}.docx`;
-  }
-
-  async function abrirGeradoNoWord(codigo, tipo, forceUnique){
+  async function abrirGeradoNoWord(codigo, tipo, isAtualizacao){
     const gerado = await gerarBlobDocumentoPorTipo(codigo, tipo);
-    const filename = forceUnique ? uniqueRevisionFilename(gerado.filename, tipo) : gerado.filename;
-    const uploadDoc = await subirDocParaWord365(gerado.blob, filename, codigo, tipo);
+
+    // Atualização segura:
+    // 1) mantém o JSON principal no código original;
+    // 2) pede ao backend para renomear o DOCX atual para OLD;
+    // 3) sobe o novo DOCX com o nome oficial original;
+    // 4) atualiza o metadata para apontar para o novo arquivo oficial.
+    const uploadDoc = await subirDocParaWord365(gerado.blob, gerado.filename, codigo, tipo, {
+      backupOld: !!isAtualizacao
+    });
+
     const finalUrl = uploadDoc?.webUrl || uploadDoc?.url || '';
     if(!finalUrl) throw new Error('Documento gerado, mas a URL do Word não foi retornada.');
+
+    window.__WORD365_FINAL_CODIGO__ = codigo;
+    window.__WORD365_FINAL_TIPO__ = tipo;
+    window.__WORD365_FINAL_URL__ = finalUrl;
+
     window.open(finalUrl, '_blank', 'noopener');
     window.DOC_FINAL_ACTIONS?.abrirModalDocumentoFinal?.(tipo);
     return true;
@@ -5014,8 +5040,8 @@ O saldo remanescente apurado será devido integralmente à CONTRATADA, inclusive
       if(!tipo) return false;
 
       window.showImparLoading?.('Gerando documento…', 'Criando um novo arquivo no Word 365 a partir do template.');
-      const forceUnique = !!window.__DOC_UPDATE_AS_NEW__;
-      await abrirGeradoNoWord(codigo, tipo, forceUnique);
+      const isAtualizacao = !!window.__DOC_UPDATE_AS_NEW__;
+      await abrirGeradoNoWord(codigo, tipo, isAtualizacao);
       window.__DOC_UPDATE_AS_NEW__ = false;
       return true;
     }catch(err){
