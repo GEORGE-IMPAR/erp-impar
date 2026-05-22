@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP ÍMPAR • TV Master</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e);
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:#e5e7eb;
+    }
+    body{display:flex;flex-direction:column}
+    header{
+      padding:12px 16px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      background:rgba(2,6,23,.85);
+      border-bottom:2px solid rgba(34,197,94,.3);
+      flex-shrink:0;
+      position:relative;
+      height:78px;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width:0;
+    }
+    .logo-orb{
+      width:42px;height:42px;border-radius:999px;
+      position:relative;
+      background: conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);
+      box-shadow:0 10px 22px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.18) inset;
+      overflow:hidden;
+      flex:0 0 auto;
+    }
+    .logo-orb:before{
+      content:""; position:absolute; inset:-6px;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 55%);
+    }
+    .brand-text{display:flex; flex-direction:column; gap:1px;}
+    .brand-kicker{font-size:14px; letter-spacing:.22em; text-transform:uppercase; font-weight:800; opacity:.9;}
+    .brand-title{font-size:30px; font-weight:900; line-height:1;}
+    .brand-sub{font-size:19px; font-weight:800; opacity:.92;}
+
+    .header-info{
+      text-align:right;
+      font-size:13px;
+      min-width:0;
+    }
+    .header-info strong{
+      display:block;
+      font-size:20px;
+      color:#22c55e;
+      margin-bottom:4px;
+    }
+    .relogio{
+      font-size:38px;
+      font-weight:900;
+      font-variant-numeric:tabular-nums;
+    }
+
+    .ultima-sync{
+      position:absolute;
+      top:10px;
+      left:50%;
+      transform:translateX(-50%);
+      background:rgba(34,197,94,.15);
+      border:1px solid rgba(34,197,94,.4);
+      padding:8px 16px;
+      border-radius:999px;
+      font-size:16px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      animation:pulseSync 2s ease-in-out infinite;
+      z-index:2;
+      white-space:nowrap;
+      max-width:50vw;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    @keyframes pulseSync{
+      0%,100%{opacity:.9; transform:translateX(-50%) scale(1);}
+      50%{opacity:1; transform:translateX(-50%) scale(1.02);}
+    }
+
+    .tv-wrap{
+      width:100%;
+      height:calc(100dvh - 78px);
+      position:relative;
+      background:#020617;
+      overflow:hidden;
+      --tv-scale:1;
+      --tv-font-boost:1.16;
+      --tv-effective-scale:calc(var(--tv-scale) * var(--tv-font-boost));
+    }
+    iframe{
+      width:calc(100% / var(--tv-effective-scale));
+      height:calc(100% / var(--tv-effective-scale));
+      border:none;
+      display:block;
+      background:transparent;
+      opacity:1;
+      transform:scale(var(--tv-effective-scale));
+      transform-origin:top left;
+    }
+    .fade-out{ animation:fadeOut .35s ease forwards; }
+    .fade-in{ animation:fadeIn .35s ease forwards; }
+    @keyframes fadeOut{ from{opacity:1} to{opacity:0} }
+    @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+  
+.btn-fullscreen{
+  position:fixed;
+  bottom:20px;
+  right:20px;
+  background:#22c55e;
+  color:#000;
+  border:none;
+  padding:14px 22px;
+  border-radius:12px;
+  font-weight:800;
+  cursor:pointer;
+  z-index:99999;
+  box-shadow:0 8px 20px rgba(34,197,94,.4);
+}
+
+.btn-fullscreen.hide{
+  display:none;
+}
+    
+  </style>
+</head>
+<body>
+<button class="btn-fullscreen" id="btnFullscreen" onclick="ativarFullscreen()">
+  🖥️ Tela Cheia
+</button>  
+<header>
+  <div class="brand">
+    <div class="logo-orb"></div>
+    <div class="brand-text">
+      <div class="brand-kicker">ERP</div>
+      <div class="brand-title">ÍMPAR</div>
+      <div class="brand-sub">Gestão à Vista</div>
+    </div>
+  </div>
+
+  <div class="ultima-sync" id="ultimaSync">🔄 Sincronizando...</div>
+
+  <div class="header-info">
+    <strong id="dataAtual">—</strong>
+    <div class="relogio" id="relogio">00:00:00</div>
+  </div>
+</header>
+
+<div class="tv-wrap">
+  <iframe id="tvFrame" src=""></iframe>
+</div>
+
+<script>
+  const paginas = [
+    { nome: 'Gestão à Vista', url: './gestao_projetos_tv_adaptado.html?tv=1&fontBoost=1.28&cardsPorTela=3&cards=3', fallback: 100000 },
+    { nome: 'Farol de Obras', url: '../cronograma/farol_tv_adaptado.html?tv=1&fontBoost=1.30&obrasPorTela=3&cardsPorTela=3&itensPorPagina=3&topRiscos=8', fallback: 40000 },
+    { nome: 'KPIs', url: '../KPI_Coordenadores/index_tv_resumo_adaptado.html?tv=1&espelho=kpi&mesAtual=1&fontBoost=1.30', fallback: 35000, forcarMesAtual: true },
+    { nome: 'Alocação do Time',  url: '../atividades/alocacao_diaria_time_tv_diretoria.html?tv=1', fallback:30000},
+    { nome: 'Institucional ÍMPAR', url: './tv_marketing.html?tv=1', fallback: 14000}
+  ];
+
+  let indiceAtual = 0;
+  let timer = null;
+  let tempoAtual = paginas[0].fallback;
+  let cicloRecebidoDaPaginaAtual = false;
+
+  const frame = document.getElementById('tvFrame');
+  const badge = document.getElementById('ultimaSync');
+
+  const tvWrap = document.querySelector('.tv-wrap');
+  const header = document.querySelector('header');
+
+  function lerConfigEscala(){
+    const params = new URLSearchParams(window.location.search);
+    const baseW = Number(params.get('baseW')) || 1366;
+    const baseH = Number(params.get('baseH')) || 768;
+    const overscan = Number(params.get('overscan')) || 0;
+    const escalaMax = Number(params.get('scaleMax')) || 1.08;
+    const fontBoost = Number(params.get('fontBoost')) || 1.22;
+    return { baseW, baseH, overscan, escalaMax, fontBoost };
+  }
+
+  function ajustarEscalaTV(){
+    const { baseW, baseH, overscan, escalaMax, fontBoost } = lerConfigEscala();
+    const viewportW = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+    const viewportH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+    const alturaHeader = header ? header.getBoundingClientRect().height : 78;
+    const larguraUtil = Math.max(viewportW - (overscan * 2), 1);
+    const alturaUtil = Math.max(viewportH - alturaHeader - (overscan * 2), 1);
+
+    const escalaLargura = larguraUtil / baseW;
+    const escalaAltura = alturaUtil / baseH;
+    const escala = Math.min(escalaLargura, escalaAltura, escalaMax);
+
+    tvWrap.style.setProperty('--tv-scale', Math.max(escala, 0.45).toFixed(4));
+    tvWrap.style.setProperty('--tv-font-boost', Math.max(fontBoost, 1).toFixed(3));
+  }
+
+  function atualizarRelogio(){
+    const agora = new Date();
+    const data = agora.toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    const hora = agora.toLocaleTimeString('pt-BR');
+    document.getElementById('dataAtual').textContent = data.charAt(0).toUpperCase() + data.slice(1);
+    document.getElementById('relogio').textContent = hora;
+  }
+
+  function atualizarBadge(txt){
+    badge.textContent = txt || '🔄 Sincronizando...';
+  }
+
+  function getMesAtualKpi(){
+    const hoje = new Date();
+    return `${hoje.getFullYear()}_${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  function prepararKpiMesAtual(pagina){
+    if(!pagina || !pagina.forcarMesAtual) return '';
+
+    const mesAtual = getMesAtualKpi();
+
+    // O resumo de TV do KPI usa a mesma chave do painel completo.
+    // Antes de abrir o iframe, o master força o mês corrente para evitar
+    // que a TV herde um mês antigo salvo no navegador.
+    try{ localStorage.setItem('ERPIMPAR_KPI_MONTH', mesAtual); }catch(e){}
+    try{ sessionStorage.setItem('ERPIMPAR_KPI_MONTH', mesAtual); }catch(e){}
+
+    return `&kpiMonth=${encodeURIComponent(mesAtual)}&mesRef=${encodeURIComponent(mesAtual)}&mes=${encodeURIComponent(mesAtual)}`;
+  }
+
+
+  function dinheiroBR(valor){
+    const n = Number(valor) || 0;
+    return n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  }
+
+  function normalizarValorMoeda(v){
+    if(typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    let s = String(v ?? '').trim();
+    if(!s) return 0;
+    s = s.replace(/R\$|\s/g, '');
+    if(s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else if(s.includes(',')) s = s.replace(',', '.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function extrairLancamentosCombustivel(json, mesAtual){
+    const candidatos = [];
+    const pushArr = arr => { if(Array.isArray(arr)) candidatos.push(...arr); };
+    pushArr(json?.lancamentos);
+    pushArr(json?.entries);
+    pushArr(json?.data);
+    pushArr(json?.combustivel);
+    pushArr(json?.meses?.[mesAtual]?.lancamentos);
+    pushArr(json?.[mesAtual]?.lancamentos);
+    pushArr(json?.[mesAtual]);
+
+    if(!candidatos.length && json && typeof json === 'object'){
+      Object.entries(json).forEach(([k,v]) => {
+        if(k === mesAtual && Array.isArray(v)) pushArr(v);
+        if(k === mesAtual && Array.isArray(v?.lancamentos)) pushArr(v.lancamentos);
+      });
+    }
+
+    return candidatos
+      .map((x, idx) => {
+        const data = String(x?.data || x?.date || x?.dia || x?.dt || '').slice(0,10);
+        const valor = normalizarValorMoeda(x?.valor ?? x?.value ?? x?.realizado ?? x?.total ?? x?.amount ?? 0);
+        return { data, valor, idx };
+      })
+      .filter(x => x.valor > 0 && (!x.data || x.data.startsWith(mesAtual.replace('_','-'))))
+      .sort((a,b) => String(a.data).localeCompare(String(b.data)) || a.idx - b.idx);
+  }
+
+  function extrairRealizadoCombustivel(json, mesAtual, lancamentos){
+    const bloco = json?.meses?.[mesAtual] || json?.[mesAtual] || json?.data?.[mesAtual] || {};
+    const direto = bloco?.realizado ?? bloco?.acumulado ?? bloco?.total ?? bloco?.valor ??
+                   json?.realizado ?? json?.acumulado ?? json?.total ?? json?.valor ?? json?.valorRealizado;
+    const nDireto = normalizarValorMoeda(direto);
+    if(nDireto > 0) return nDireto;
+    return lancamentos.reduce((acc, it) => acc + (Number(it.valor) || 0), 0);
+  }
+
+  function aplicarCSSLegibilidade(doc, pagina){
+    if(!doc || doc.getElementById('tv-master-legibilidade')) return;
+    const style = doc.createElement('style');
+    style.id = 'tv-master-legibilidade';
+    style.textContent = `
+      html, body{ font-size:18px !important; }
+      body{ text-rendering:geometricPrecision !important; }
+      h1,h2,h3,h4,.title,.titulo,.obra-title,.card-title,.project-title{font-size:clamp(22px,1.9vw,36px)!important;line-height:1.08!important;}
+      p,li,td,th,label,small,.meta,.sub,.subtitle,.descricao,.status,.status-atual,.small-note,.row p{font-size:clamp(13px,1.05vw,20px)!important;line-height:1.35!important;}
+      .score,.score-big,.percent,.percentual,.coord-total,.v,[id*='Score'],[class*='score']{font-size:clamp(26px,2.4vw,48px)!important;line-height:1.05!important;}
+      .badge,.pill,.chip,.tag,[class*='badge'],[class*='chip']{font-size:clamp(11px,.9vw,17px)!important;font-weight:900!important;}
+      .card,.obra-card,.coord-card,.summary-card,.panel,.risk-card,[class*='card']{min-height:unset;}
+      .coord-card .mini strong,.mini strong,.fuel-kpi strong{font-size:clamp(20px,1.7vw,34px)!important;}
+      .coord-card .mini b,.mini b,.fuel-kpi b{font-size:clamp(10px,.78vw,16px)!important;}
+      #rankingList .row:nth-child(n+9), .ranking-list .row:nth-child(n+9), .risk-list .row:nth-child(n+9), .top-riscos .row:nth-child(n+9){display:none!important;}
+      canvas{max-height:100%!important;}
+      #fuelChartWrap{height:clamp(260px,28vh,430px)!important;}
+    `;
+    if(pagina?.nome === 'Farol de Obras'){
+      style.textContent += `
+        .obra-row:nth-child(n+4), tbody tr:nth-child(n+4), .detail-row:nth-child(n+4){display:none!important;}
+        .risk-list .row:nth-child(n+9), .top-riscos .row:nth-child(n+9), #topRiscos .row:nth-child(n+9){display:none!important;}
+      `;
+    }
+    doc.head.appendChild(style);
+  }
+
+  async function corrigirCombustivelKpiTV(doc){
+    if(!doc || !String(frame.src).includes('KPI_Coordenadores')) return;
+    const mesAtual = getMesAtualKpi();
+    try{
+      const url = 'https://api.erpimpar.com.br/data/kpi_combustivel.json?t=' + Date.now();
+      const resp = await fetch(url, { cache:'no-store' });
+      if(!resp.ok) return;
+      const json = await resp.json();
+      const lanc = extrairLancamentosCombustivel(json, mesAtual);
+      const realizado = extrairRealizadoCombustivel(json, mesAtual, lanc);
+      const score = realizado <= 5000 ? 100 : (realizado <= 7000 ? 50 : 0);
+      const faixa = realizado <= 5000 ? 'Dentro da meta' : (realizado <= 7000 ? 'Atenção' : 'Acima da meta');
+
+      ['fuelAccumTop','fuelAccum','fuelRealizado','combustivelRealizado','qpi5Realizado'].forEach(id => {
+        const el = doc.getElementById(id);
+        if(el) el.textContent = dinheiroBR(realizado);
+      });
+      ['qpi5Score','fuelScore'].forEach(id => {
+        const el = doc.getElementById(id);
+        if(el) el.textContent = score + '%';
+      });
+      const range = doc.getElementById('fuelRange');
+      if(range) range.textContent = faixa;
+      const note = doc.getElementById('qpi5Note');
+      if(note) note.textContent = `Realizado no mês atual: ${dinheiroBR(realizado)} • Score: ${score}%.`;
+
+      const canvas = doc.getElementById('fuelChart') || doc.querySelector('canvas[id*="fuel"], canvas');
+      const ChartCtor = frame.contentWindow?.Chart;
+      if(canvas && ChartCtor){
+        const labels = lanc.length ? lanc.map((x,i)=> x.data ? String(Number(x.data.slice(8,10))) : String(i+1)) : ['1'];
+        let acumulado = 0;
+        const dataReal = lanc.length ? lanc.map(x => (acumulado += Number(x.valor)||0)) : [realizado];
+        const maxY = Math.max(7000, 5000, ...dataReal) * 1.18;
+        if(frame.contentWindow.__fuelChartMasterFix){
+          try{ frame.contentWindow.__fuelChartMasterFix.destroy(); }catch(e){}
+        }
+        frame.contentWindow.__fuelChartMasterFix = new ChartCtor(canvas.getContext('2d'), {
+          type:'line',
+          data:{
+            labels,
+            datasets:[
+              { label:'Meta', data:labels.map(()=>5000), borderWidth:3, pointRadius:3, tension:.25 },
+              { label:'Realizado', data:dataReal, borderWidth:4, pointRadius:5, tension:.28 }
+            ]
+          },
+          options:{
+            responsive:true,
+            maintainAspectRatio:false,
+            plugins:{ legend:{ labels:{ color:'#fff', font:{ size:16, weight:'bold' } } } },
+            scales:{
+              x:{ ticks:{ color:'#fff', font:{ size:14, weight:'bold' } }, grid:{ color:'rgba(255,255,255,.08)' } },
+              y:{ beginAtZero:true, suggestedMax:maxY, ticks:{ color:'#fff', font:{ size:14, weight:'bold' }, callback:v=> dinheiroBR(v) }, grid:{ color:'rgba(255,255,255,.08)' } }
+            }
+          }
+        });
+      }
+    }catch(e){ console.warn('TV Master: não foi possível corrigir combustível do KPI TV', e); }
+  }
+
+  function aplicarAjustesIframe(){
+    const pagina = paginas[indiceAtual];
+    let doc = null;
+    try{ doc = frame.contentDocument || frame.contentWindow?.document; }catch(e){ return; }
+    if(!doc) return;
+    aplicarCSSLegibilidade(doc, pagina);
+    corrigirCombustivelKpiTV(doc);
+  }
+
+  function carregarPagina(indice){
+    const pagina = paginas[indice];
+    tempoAtual = pagina.fallback;
+    cicloRecebidoDaPaginaAtual = false;
+    atualizarBadge(`📺 ${pagina.nome}`);
+
+    frame.classList.remove('fade-in');
+    frame.classList.add('fade-out');
+
+    setTimeout(() => {
+      const extraMesAtual = prepararKpiMesAtual(pagina);
+      const separador = pagina.url.includes('?') ? '&' : '?';
+      frame.src = pagina.url + extraMesAtual + separador + 'tvts=' + Date.now();
+      frame.classList.remove('fade-out');
+      frame.classList.add('fade-in');
+    }, 350);
+  }
+
+  function agendarProxima(){
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      indiceAtual = (indiceAtual + 1) % paginas.length;
+      carregarPagina(indiceAtual);
+      agendarProxima();
+    }, tempoAtual);
+  }
+
+  window.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (data.type === 'ERP_IMPAR_TV_CYCLE_MS' && Number(data.value) > 0) {
+      if (!cicloRecebidoDaPaginaAtual) {
+        cicloRecebidoDaPaginaAtual = true;
+        tempoAtual = Number(data.value);
+        agendarProxima();
+      }
+    }
+    if (data.type === 'ERP_IMPAR_TV_BADGE' && data.text) {
+      atualizarBadge(String(data.text));
+    }
+  });
+
+  frame.addEventListener('load', () => {
+    setTimeout(aplicarAjustesIframe, 250);
+    setTimeout(aplicarAjustesIframe, 1200);
+    setTimeout(aplicarAjustesIframe, 3000);
+  });
+
+  ajustarEscalaTV();
+  window.addEventListener('resize', ajustarEscalaTV);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', ajustarEscalaTV);
+  }
+
+  atualizarRelogio();
+  setInterval(atualizarRelogio, 1000);
+  carregarPagina(indiceAtual);
+  agendarProxima();
+
+
+function ativarFullscreen(){
+  const el = document.documentElement;
+
+  if(el.requestFullscreen){
+    el.requestFullscreen();
+  }else if(el.webkitRequestFullscreen){
+    el.webkitRequestFullscreen();
+  }else if(el.msRequestFullscreen){
+    el.msRequestFullscreen();
+  }
+
+  document.getElementById('btnFullscreen').classList.add('hide');
+}
+
+document.addEventListener('fullscreenchange', () => {
+  if(!document.fullscreenElement){
+    document.getElementById('btnFullscreen').classList.remove('hide');
+  }
+});
+  
+</script>
+</body>
+</html>
