@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Debug Push iOS - AGAPE</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0b3554" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="AGAPE" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(180deg, #04192c 0%, #0a4467 55%, #0f6a92 100%);
+      color: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+      padding: calc(18px + env(safe-area-inset-top)) 16px 24px;
+    }
+    .card {
+      max-width: 520px;
+      margin: 0 auto;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(103,154,95,.42) 0%, transparent 35%),
+        linear-gradient(145deg, #263f2f 0%, #13281d 46%, #07110d 100%);
+      border: 3px solid rgba(245,245,245,.94);
+      border-radius: 22px;
+      box-shadow: 0 25px 76px rgba(0,0,0,.65);
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1.1;
+      text-align: center;
+    }
+    p {
+      font-weight: 800;
+      line-height: 1.35;
+      opacity: .92;
+      text-align: center;
+    }
+    button {
+      width: 100%;
+      min-height: 48px;
+      border: 0;
+      border-radius: 10px;
+      margin: 8px 0;
+      color: #fff;
+      font-weight: 900;
+      font-size: 15px;
+      background: linear-gradient(180deg, #37ce60 0%, #15983d 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 7px 18px rgba(0,0,0,.34);
+    }
+    button.red { background: linear-gradient(180deg, #ff4d4d 0%, #d92121 100%); }
+    button.blue { background: linear-gradient(180deg, #4097eb 0%, #256fc4 100%); }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #fff;
+      color: #111;
+      border-radius: 12px;
+      padding: 12px;
+      min-height: 220px;
+      font-size: 12px;
+      line-height: 1.35;
+      box-shadow: inset 0 3px 11px rgba(0,0,0,.22);
+    }
+    .hint {
+      font-size: 12px;
+      text-align: left;
+      background: rgba(255,255,255,.08);
+      padding: 10px;
+      border-radius: 12px;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Debug Push iOS</h1>
+    <p>Abra esta tela pelo ícone AGAPE da Tela de Início no iPad.</p>
+
+    <button id="btnCheck" class="blue">1. VERIFICAR STATUS</button>
+    <button id="btnAtivar">2. ATIVAR / REGISTRAR PUSH DO IPAD</button>
+    <button id="btnTestar" class="blue">3. VER SUBSCRIPTION ATUAL</button>
+    <button id="btnLimpar" class="red">LIMPAR INSCRIÇÃO LOCAL</button>
+
+    <div class="hint">
+      Se funcionar, o endpoint abaixo precisa começar com:<br>
+      <strong>https://web.push.apple.com/</strong>
+    </div>
+
+    <pre id="log">Aguardando teste...</pre>
+  </div>
+
+  <script>
+    const AGAPE_API_BASE = 'https://api.erpimpar.com.br/agape';
+    const AGAPE_VAPID_PUBLIC_KEY = 'BDnm3ar4jG4l5_Mn1tu0MYvH3VI1s2nvPL6dMlxbquc0VyInd--uB8ejlNn4JM8grkb3G1mzqwnqDWa1aFbFYwI';
+    const logEl = document.getElementById('log');
+
+    function log(msg, obj) {
+      const linha = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.textContent += '\n\n' + linha;
+      if (obj !== undefined) {
+        try {
+          logEl.textContent += '\n' + JSON.stringify(obj, null, 2);
+        } catch (e) {
+          logEl.textContent += '\n' + String(obj);
+        }
+      }
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function resetLog() {
+      logEl.textContent = '';
+    }
+
+    function isStandalone() {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+
+      return outputArray;
+    }
+
+    async function verificarStatus() {
+      resetLog();
+
+      log('Standalone / Tela de Início', isStandalone());
+      log('User Agent', navigator.userAgent);
+      log('Notification existe?', 'Notification' in window);
+      log('ServiceWorker existe?', 'serviceWorker' in navigator);
+      log('PushManager existe?', 'PushManager' in window);
+
+      if ('Notification' in window) {
+        log('Permissão atual', Notification.permission);
+      }
+
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        log('Service Workers encontrados', regs.map(r => r.scope));
+
+        const reg = await navigator.serviceWorker.ready.catch(e => null);
+        log('Service Worker ready?', !!reg);
+
+        if (reg && reg.pushManager) {
+          const sub = await reg.pushManager.getSubscription();
+          log('Subscription atual', sub ? sub.toJSON() : null);
+        }
+      }
+    }
+
+    async function ativarPush() {
+      resetLog();
+
+      try {
+        if (!isStandalone()) {
+          log('ERRO', 'No iPad, precisa abrir pelo ícone AGAPE da Tela de Início, não pelo Safari.');
+          return;
+        }
+
+        if (!('Notification' in window)) {
+          log('ERRO', 'Notification API não disponível.');
+          return;
+        }
+
+        if (!('serviceWorker' in navigator)) {
+          log('ERRO', 'Service Worker não disponível.');
+          return;
+        }
+
+        if (!('PushManager' in window)) {
+          log('ERRO', 'PushManager não disponível. Verifique iPadOS 16.4+.');
+          return;
+        }
+
+        log('Solicitando permissão...');
+        const permission = await Notification.requestPermission();
+        log('Permissão retornada', permission);
+
+        if (permission !== 'granted') {
+          log('ERRO', 'Permissão não concedida.');
+          return;
+        }
+
+        log('Registrando Service Worker...');
+        const reg = await navigator.serviceWorker.register('./sw.js?t=' + Date.now());
+        await navigator.serviceWorker.ready;
+        log('Service Worker registrado', reg.scope);
+
+        let oldSub = await reg.pushManager.getSubscription();
+
+        if (oldSub) {
+          log('Removendo inscrição local antiga...');
+          await oldSub.unsubscribe();
+        }
+
+        log('Criando nova inscrição Push...');
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(AGAPE_VAPID_PUBLIC_KEY)
+        });
+
+        const subJson = sub.toJSON();
+        log('SUBSCRIPTION GERADA', subJson);
+
+        if (!String(subJson.endpoint || '').includes('web.push.apple.com')) {
+          log('ATENÇÃO', 'Endpoint não é da Apple. No iPad deveria começar com https://web.push.apple.com/');
+        }
+
+        log('Enviando subscription para KingHost...');
+        const resp = await fetch(`${AGAPE_API_BASE}/push_subscribe.php?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(subJson)
+        });
+
+        const text = await resp.text();
+        log('Resposta push_subscribe.php', text);
+
+      } catch (error) {
+        log('ERRO GERAL', String(error && error.stack ? error.stack : error));
+      }
+    }
+
+    async function verSubscription() {
+      resetLog();
+
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        log('Subscription atual', sub ? sub.toJSON() : null);
+      } catch (e) {
+        log('Erro ao consultar subscription', String(e));
+      }
+    }
+
+    async function limparLocal() {
+      resetLog();
+
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            await sub.unsubscribe();
+            log('Subscription local removida', reg.scope);
+          }
+        }
+
+        log('Limpeza local concluída. Agora clique em ATIVAR novamente.');
+      } catch (e) {
+        log('Erro ao limpar', String(e));
+      }
+    }
+
+    document.getElementById('btnCheck').addEventListener('click', verificarStatus);
+    document.getElementById('btnAtivar').addEventListener('click', ativarPush);
+    document.getElementById('btnTestar').addEventListener('click', verSubscription);
+    document.getElementById('btnLimpar').addEventListener('click', limparLocal);
+  </script>
+</body>
+</html>
