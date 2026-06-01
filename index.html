@@ -4,10 +4,8 @@
 <meta charset="UTF-8" />
 <title>ERP ÍMPAR — Login</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<!-- PWA ERP ÍMPAR -->
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0f766e">
-<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ERP ÍMPAR">
@@ -189,6 +187,28 @@ button.login.is-loading{
   filter:saturate(1.02);
 }
 
+
+button.exit-app{
+  width:100%;
+  margin-top:10px;
+  padding:13px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(2,6,23,.72);
+  color:#e5e7eb;
+  font-size:13px;
+  font-weight:800;
+  letter-spacing:.10em;
+  cursor:pointer;
+  transition:transform .12s ease, border-color .14s ease, background .14s ease;
+}
+button.exit-app:hover{
+  background:rgba(15,23,42,.92);
+  border-color:rgba(34,197,94,.55);
+  transform:translateY(-1px);
+}
+button.exit-app:active{transform:translateY(1px) scale(.992)}
+
 #loginStatus{
   margin-top:12px;
   font-size:12px;
@@ -249,6 +269,7 @@ footer{
 
     <button class="login" id="btnEntrar" type="button">ENTRAR</button>
     <div id="loginStatus"></div>
+    <button class="exit-app" id="btnSairApp" type="button">SAIR DO APLICATIVO</button>
   </div>
 </main>
 
@@ -258,6 +279,65 @@ footer{
 </footer>
 
 <script>
+
+  // ====== PWA ERP ÍMPAR: instalação, limpeza e saída segura ======
+  const ERP_PWA_VERSION = "2026-06-01-logout-fix-v3";
+
+  function isStandalonePWA(){
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+
+  async function limparMemoriaERP(){
+    try { localStorage.removeItem("ERPIMPAR_USER"); } catch(e) {}
+    try { sessionStorage.removeItem("ERPIMPAR_USER"); } catch(e) {}
+    try { localStorage.setItem("ERPIMPAR_LOGOUT_TS", String(Date.now())); } catch(e) {}
+
+    // Limpa cache antigo do ERP sem mexer em dados do navegador fora do domínio.
+    if ("caches" in window) {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys
+          .filter(k => String(k).toLowerCase().includes("erp-impar"))
+          .map(k => caches.delete(k))
+        );
+      } catch(e) {}
+    }
+  }
+
+  async function sairDoAplicativoERP(){
+    const btn = document.getElementById("btnSairApp");
+    if(btn) btn.textContent = "SAINDO...";
+
+    await limparMemoriaERP();
+
+    // Remove a tela atual da pilha. Isso evita que a seta nativa volte para dentro do app.
+    try {
+      history.replaceState(null, "", "/index.html?logout=1&t=" + Date.now());
+    } catch(e) {}
+
+    // Em PWA Android/Samsung, window.close pode funcionar quando a página foi aberta como app.
+    try { window.close(); } catch(e) {}
+
+    // Fallback: deixa uma página neutra, sem histórico útil para voltar ao ERP.
+    setTimeout(() => {
+      try { window.location.replace("about:blank"); }
+      catch(e) { window.location.replace("/index.html?logout=1&t=" + Date.now()); }
+    }, 180);
+  }
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
+        .then(() => console.log("PWA ERP ÍMPAR ativo", ERP_PWA_VERSION))
+        .catch(err => console.error("Erro no Service Worker:", err));
+    });
+  }
+
+  window.addEventListener("pageshow", async () => {
+    const params = new URLSearchParams(location.search);
+    if(params.has("logout")) await limparMemoriaERP();
+  });
+
   // ====== Olho funcionando ======
   const senhaEl = document.getElementById("senha");
   const btnOlho = document.getElementById("btnOlho");
@@ -273,6 +353,8 @@ footer{
   const chkLembrar = document.getElementById("lembrar");
   const btnEntrar = document.getElementById("btnEntrar");
   const statusEl = document.getElementById("loginStatus");
+  const btnSairApp = document.getElementById("btnSairApp");
+  if(btnSairApp) btnSairApp.addEventListener("click", sairDoAplicativoERP);
 
   function setStatus(msg, ok=false){
     statusEl.textContent = msg || "";
@@ -320,8 +402,9 @@ footer{
   (async () => {
     // se já tiver sessão, vai direto pro menu
     const s = getSessao();
-    if(s){
-      window.location.href = "menu.html";
+    const paramsLogin = new URLSearchParams(location.search);
+    if(s && !paramsLogin.has("logout")){
+      window.location.replace("menu.html");
       return;
     }
 
@@ -374,17 +457,6 @@ footer{
       }, 450);
     });
   })();
-</script>
-
-<script>
-// ====== PWA ERP ÍMPAR ======
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
-      .then(() => console.log("PWA ERP ÍMPAR ativo"))
-      .catch(err => console.error("Erro ao registrar Service Worker do ERP ÍMPAR:", err));
-  });
-}
 </script>
 </body>
 </html>
