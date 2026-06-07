@@ -97,7 +97,7 @@ button.secondary{border:1px solid #c9a84e;border-radius:16px;padding:14px 20px;b
   <div class="icon">✍️</div>
   <div>
     <h2>Boa tarde, meus Irmãos!</h2>
-    <p>Por ordem do Venerável Mestre, iniciamos a lista de confirmação para nossa Confraternização de Final de Ano. Selecione as diárias, o apartamento, informe convidados e crianças, e marque OK.</p>
+    <p>Por ordem do Venerável Mestre, iniciamos a lista de confirmação para nossa Confraternização de Final de Ano. Selecione as diárias, escolha apartamento somente se for se hospedar, informe convidados e crianças, e marque OK.</p>
   </div>
   <div class="months"><small>PERÍODO DO EVENTO</small>OUTUBRO,<br>NOVEMBRO<br>E DEZEMBRO</div>
 </section>
@@ -118,7 +118,7 @@ button.secondary{border:1px solid #c9a84e;border-radius:16px;padding:14px 20px;b
 </section>
 
 <section class="tableWrap">
-  <div class="tableHead"><h3>Lista de confirmação</h3><div class="hint">Cada irmão escolhe uma diária e um apartamento</div></div>
+  <div class="tableHead"><h3>Lista de confirmação</h3><div class="hint">Apartamento é opcional: sem apartamento calcula somente a diária</div></div>
   <div class="tableScroll">
   <table>
     <thead><tr><th>IRMÃO</th><th>DIÁRIAS</th><th>APARTAMENTO</th><th>CONVIDADOS</th><th>CRIANÇAS</th><th>VALOR</th><th>CONFIRMADO</th></tr></thead>
@@ -1222,7 +1222,7 @@ button.secondary{border:1px solid #c9a84e;border-radius:16px;padding:14px 20px;b
   </div>
 </section>
 
-<div class="summaryNote">✅ <b>Regra:</b> caso existam <b>2 adultos pagantes no mesmo apartamento</b>, entra <b>01 criança free</b>. A quantidade em "crianças" calcula as crianças pagantes após essa regra.</div>
+<div class="summaryNote">✅ <b>Regra:</b> apartamento é opcional. Se selecionar apenas a diária, calcula o valor por pessoa. Caso existam <b>2 adultos pagantes no mesmo apartamento</b>, entra <b>01 criança free</b>.</div>
 
 <section class="totals">
   <div class="stat"><b id="tConfirmados">0</b><span>Confirmados</span></div>
@@ -1276,11 +1276,36 @@ function adultosDoApto(apto){
 
 function valorLinha(r){
   const dias = diasSelecionados(r.diarias);
-  if(!dias.length || !r.apartamento) return 0;
+  if(!dias.length) return 0;
 
-  const apto = PRECOS.apartamentos[r.apartamento];
   let total = 0;
+  const apto = r.apartamento ? PRECOS.apartamentos[r.apartamento] : null;
 
+  // Se não escolher apartamento, considera apenas Day Use/diária por pessoa.
+  // Ex.: selecionou Sábado, sem apartamento, sem convidados/crianças = R$ 326,00.
+  if(!r.apartamento){
+    dias.forEach(d => {
+      total += Number(PRECOS.diarias[d]?.adulto) || 0;
+    });
+
+    const convidados = contarConvidados(r.convidados);
+    if(convidados > 0){
+      dias.forEach(d => {
+        total += convidados * (Number(PRECOS.diarias[d]?.adulto) || 0);
+      });
+    }
+
+    const criancas = Math.max(0, parseInt(r.criancas || 0, 10) || 0);
+    if(criancas > 0){
+      dias.forEach(d => {
+        total += criancas * (Number(PRECOS.diarias[d]?.crianca) || 0);
+      });
+    }
+
+    return total;
+  }
+
+  // Com apartamento selecionado, usa diária do apartamento ou pacote sexta-domingo.
   if(r.diarias === 'sexta_sabado_domingo' && apto?.pacote_sexta_domingo){
     total += Number(apto.pacote_sexta_domingo) || 0;
   } else {
