@@ -81,6 +81,18 @@ button.secondary{border:1px solid #c9a84e;border-radius:16px;padding:14px 20px;b
   td.name{min-width:210px}
   .guests{min-width:145px}
 }
+
+@media print{
+  body{background:#fff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .wrap{max-width:none!important;padding:0!important}
+  .card{box-shadow:none!important;border-radius:0!important}
+  .actions{display:none!important}
+  .tableScroll{overflow:visible!important}
+  table{min-width:0!important;width:100%!important;font-size:9px!important}
+  th,td{padding:4px!important}
+  .gallery img{height:90px!important}
+}
+
 </style>
 </head>
 <body>
@@ -1243,7 +1255,33 @@ button.secondary{border:1px solid #c9a84e;border-radius:16px;padding:14px 20px;b
   <td class="valor"><strong>R$ 0,00</strong></td>
   <td class="confirmCell"><label class="confirmLabel"><input class="confirmed" type="checkbox"><span>OK</span></label></td>
 </tr>
-    </tbody>
+<tr data-nome="VAGNER MARÇAL DE OLIVEIRA">
+  <td class="name"><span>VAGNER MARÇAL DE OLIVEIRA</span><em class="status">Pendente</em></td>
+  <td class="selectCell">
+    <select class="diarias" aria-label="Selecionar diárias">
+      <option value="">Escolher</option>
+      <option value="sexta">Sexta</option>
+      <option value="sabado">Sábado</option>
+      <option value="domingo">Domingo</option>
+      <option value="sexta_sabado">Sexta e Sábado</option>
+      <option value="sabado_domingo">Sábado e Domingo</option>
+      <option value="sexta_sabado_domingo">Sexta, Sábado e Domingo</option>
+    </select>
+  </td>
+  <td class="selectCell">
+    <select class="apartamento" aria-label="Selecionar apartamento">
+      <option value="">Escolher</option>
+      <option value="Single">👤 Single</option>
+      <option value="Duplo">👥 Duplo</option>
+      <option value="Triplo">👨‍👩‍👧 Triplo</option>
+    </select>
+  </td>
+  <td><input class="guests" type="text" placeholder="Ex.: Maria, João"></td>
+  <td><input class="kids" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></td>
+  <td class="valor"><strong>R$ 0,00</strong></td>
+  <td class="confirmCell"><label class="confirmLabel"><input class="confirmed" type="checkbox"><span>OK</span></label></td>
+</tr>
+  </tbody>
   </table>
   </div>
 </section>
@@ -1259,7 +1297,7 @@ button.secondary{border:1px solid #c9a84e;border-radius:16px;padding:14px 20px;b
   <div class="stat"><b id="tValor">R$ 0</b><span>Valor total</span></div>
 </section>
 
-<div class="actions"><button class="secondary" onclick="exportarCSV()">⬇️ Exportar Excel</button></div>
+<div class="actions"><button class="secondary" onclick="exportarCSV()">⬇️ Exportar Excel</button><button class="secondary" onclick="gerarPDF()">📄 Gerar PDF</button></div>
 <footer class="foot">Contamos com vocês para celebrarmos juntos mais um ano de fraternidade, amizade e conquistas.</footer>
 </main></div>
 
@@ -1268,7 +1306,7 @@ const API_LISTAR = 'https://api.erpimpar.com.br/evento/listar.php';
 const API_SALVAR = 'https://api.erpimpar.com.br/evento/salvar.php';
 const API_EXPORTAR = 'https://api.erpimpar.com.br/evento/exportar_excel.php';
 const API_PRECOS = 'https://api.erpimpar.com.br/evento/precos.php';
-const KEY = 'confraternizacao_evento_v6';
+const KEY = 'confraternizacao_evento_v11';
 let PRECOS = {"diarias": {"sexta": {"adulto": 302.0, "crianca": 255.0}, "sabado": {"adulto": 326.0, "crianca": 273.0}, "domingo": {"adulto": 326.0, "crianca": 273.0}}, "apartamentos": {"Single": {"diaria": 1014.0, "pacote_sexta_domingo": 1825.0, "capacidade_adultos": 1}, "Duplo": {"diaria": 1392.0, "pacote_sexta_domingo": 2505.0, "capacidade_adultos": 2}, "Triplo": {"diaria": 1790.0, "pacote_sexta_domingo": 3222.0, "capacidade_adultos": 3}}};
 
 const tbody = document.querySelector('tbody');
@@ -1307,19 +1345,13 @@ function valorLinha(r){
   let total = 0;
   const apto = r.apartamento ? PRECOS.apartamentos[r.apartamento] : null;
 
-  // Se não escolher apartamento, considera apenas Day Use/diária por pessoa.
-  // Ex.: selecionou Sábado, sem apartamento, sem convidados/crianças = R$ 326,00.
+  // SEM apartamento: calcula por pessoa/dia.
+  // Ex.: Sábado sem apartamento = R$ 326,00.
   if(!r.apartamento){
+    const adultos = 1 + contarConvidados(r.convidados);
     dias.forEach(d => {
-      total += Number(PRECOS.diarias[d]?.adulto) || 0;
+      total += adultos * (Number(PRECOS.diarias[d]?.adulto) || 0);
     });
-
-    const convidados = contarConvidados(r.convidados);
-    if(convidados > 0){
-      dias.forEach(d => {
-        total += convidados * (Number(PRECOS.diarias[d]?.adulto) || 0);
-      });
-    }
 
     const criancas = Math.max(0, parseInt(r.criancas || 0, 10) || 0);
     if(criancas > 0){
@@ -1331,12 +1363,15 @@ function valorLinha(r){
     return total;
   }
 
-  // Com apartamento selecionado, usa diária do apartamento ou pacote sexta-domingo.
+  // COM apartamento:
+  // Sexta e Sábado = 1 diária
+  // Sábado e Domingo = 1 diária
+  // Sexta, Sábado e Domingo = pacote de 2 diárias
   if(r.diarias === 'sexta_sabado_domingo' && apto?.pacote_sexta_domingo){
     total += Number(apto.pacote_sexta_domingo) || 0;
   } else {
     const diariaApto = Number(apto?.diaria) || 0;
-    total += diariaApto * dias.length;
+    total += diariaApto;
   }
 
   const criancas = Math.max(0, parseInt(r.criancas || 0, 10) || 0);
@@ -1355,7 +1390,7 @@ function valorLinha(r){
 
 function lerLinha(tr){
   return {
-    nome: tr.dataset.nome,
+    nome: tr.dataset.nome || tr.querySelector('.name span')?.textContent?.trim() || '',
     diarias: tr.querySelector('.diarias')?.value || '',
     apartamento: tr.querySelector('.apartamento')?.value || '',
     convidados: tr.querySelector('.guests')?.value || '',
@@ -1390,13 +1425,15 @@ function aplicarDados(data){
   [...tbody.rows].forEach((tr, i) => {
     const r = porNome[String(tr.dataset.nome).trim().toUpperCase()] || data[i];
     if(!r) return;
+
     tr.querySelector('.diarias').value = r.diarias || '';
     tr.querySelector('.apartamento').value = r.apartamento || r.opcao || '';
     tr.querySelector('.guests').value = r.convidados || '';
-    tr.querySelector('.kids').value = r.criancas || '';
+    tr.querySelector('.kids').value = Number(r.criancas || 0) || '';
     tr.querySelector('.confirmed').checked = !!r.confirmado;
     aplicarStatus(tr);
   });
+
   totais();
 }
 
@@ -1473,6 +1510,12 @@ function totais(){
 
 tbody.addEventListener('change', salvar);
 tbody.addEventListener('input', salvar);
+
+function gerarPDF(){
+  // Gera um PDF colorido usando o recurso nativo do navegador.
+  // Na janela de impressão, escolha "Salvar como PDF".
+  setTimeout(() => window.print(), 150);
+}
 
 function exportarCSV(){
   window.location.href = API_EXPORTAR;
