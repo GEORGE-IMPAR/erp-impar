@@ -1398,7 +1398,8 @@ function valorLinha(r){
   const criancas6Mais = Math.max(0, parseInt(r.criancasPagas || r.criancas || 0, 10) || 0);
 
   // O campo convidados já inclui adultos e crianças.
-  // Então adultos convidados = convidados - crianças <6 - crianças 6+.
+  // Para o CÁLCULO FINANCEIRO, adultos convidados = convidados - crianças <6 - crianças 6+.
+  // Para o CARD CONVIDADOS, todos os nomes digitados continuam contando como convidados.
   const adultosConvidados = Math.max(0, convidadosTotal - criancasMenos6 - criancas6Mais);
 
   // SEM apartamento: calcula por pessoa/dia. Crianças <6 não pagam.
@@ -1469,7 +1470,7 @@ function memoriaLinha(r){
     const valorCriancas = dias.reduce((s,d)=>s + criancas6Mais * (Number(PRECOS.diarias[d]?.crianca)||0), 0);
 
     partes.push(`Sem apartamento: ${adultosPagantes} adulto(s) pagante(s) × diária(s) selecionada(s) = ${dinheiro(valorAdultos)}.`);
-    partes.push(`Convidados informados: ${convidadosTotal}; crianças informadas: ${criancasMenos6 + criancas6Mais}; adultos convidados considerados: ${adultosConvidados}.`);
+    partes.push(`Convidados informados: ${convidadosTotal}; crianças informadas: ${criancasMenos6 + criancas6Mais}; adultos convidados considerados apenas no cálculo financeiro: ${adultosConvidados}.`);
     partes.push(`Crianças <6: ${criancasMenos6} não pagam.`);
     partes.push(`Crianças 6+: ${criancas6Mais} × tabela infantil = ${dinheiro(valorCriancas)}.`);
     partes.push(`Total: ${dinheiro(valorAdultos + valorCriancas)}.`);
@@ -1492,7 +1493,7 @@ function memoriaLinha(r){
   const criancasPagantes = Math.max(0, criancas6Mais - criancasFreePorApto);
   const valorCriancas = dias.reduce((s,d)=>s + criancasPagantes * (Number(PRECOS.diarias[d]?.crianca)||0), 0);
 
-  partes.push(`Convidados informados: ${convidadosTotal}; crianças informadas: ${criancasMenos6 + criancas6Mais}; adultos convidados considerados: ${adultosConvidados}.`);
+  partes.push(`Convidados informados: ${convidadosTotal}; crianças informadas: ${criancasMenos6 + criancas6Mais}; adultos convidados considerados apenas no cálculo financeiro: ${adultosConvidados}.`);
   partes.push(`Crianças <6: ${criancasMenos6} não pagam.`);
   partes.push(`Crianças 6+: ${criancas6Mais}; free pelo apto: ${Math.min(criancas6Mais, criancasFreePorApto)}; pagantes: ${criancasPagantes}; valor crianças = ${dinheiro(valorCriancas)}.`);
   partes.push(`Total: ${dinheiro(valorApto + valorCriancas)}.`);
@@ -1610,11 +1611,15 @@ function totais(){
     if(r.confirmado){
       confirmados++;
       if(r.apartamento) aptos++;
+
+      // REGRA FINAL:
+      // O campo "convidados" contém todas as pessoas convidadas, inclusive crianças.
+      // Portanto o card Convidados soma TODOS os nomes digitados.
+      // As crianças impactam somente a memória/cálculo financeiro.
       const convidadosTotal = contarConvidados(r.convidados);
-      const criancasInformadas = (parseInt(r.criancasMenos6 || 0, 10) || 0) + (parseInt(r.criancasPagas || r.criancas || 0, 10) || 0);
-      const convidadosAdultos = Math.max(0, convidadosTotal - criancasInformadas);
-      conv += convidadosAdultos;
-      participantes += 1 + convidadosTotal;
+
+      conv += convidadosTotal;
+      participantes += 1 + convidadosTotal; // irmão + todos os convidados
       valor += r.valor;
     }
   });
@@ -1687,32 +1692,28 @@ function listaDetalhesPorTipo(tipo){
 
   if(tipo === 'convidados'){
     let linhas = [];
-    let totalAdultos = 0;
+    let totalConvidados = 0;
 
     confirmados.forEach(r => {
       const todos = nomesConvidados(r.convidados);
       const criancas = (parseInt(r.criancasMenos6 || 0, 10) || 0) + (parseInt(r.criancasPagas || r.criancas || 0, 10) || 0);
-      const adultos = Math.max(0, todos.length - criancas);
-      totalAdultos += adultos;
+      totalConvidados += todos.length;
 
       if(todos.length){
-        const adultosLista = todos.slice(0, adultos);
-        const criancasLista = todos.slice(adultos);
         linhas.push(`
           <div class="detItem">
             <b>Convidados do irmão ${r.nome}</b>
-            <small>Adultos considerados: ${adultos} • Crianças informadas: ${criancas}</small>
-            ${adultosLista.length ? `<div>Adultos: ${adultosLista.join(', ')}</div>` : '<div>Adultos: —</div>'}
-            ${criancasLista.length ? `<div>Crianças: ${criancasLista.join(', ')}</div>` : ''}
+            <small>Total informado: ${todos.length} • Crianças indicadas nos campos: ${criancas}</small>
+            <div>${todos.join(', ')}</div>
           </div>
         `);
       }
     });
 
     return {
-      titulo: '👥 Composição dos convidados adultos',
-      total: totalAdultos,
-      html: linhas.length ? linhas.join('') : '<div class="detEmpty">Nenhum convidado adulto informado ainda.</div>'
+      titulo: '👥 Composição dos convidados',
+      total: totalConvidados,
+      html: linhas.length ? linhas.join('') : '<div class="detEmpty">Nenhum convidado informado ainda.</div>'
     };
   }
 
