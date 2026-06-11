@@ -252,5 +252,60 @@
   </div>
 
   <script src="./app.js"></script>
+
+  <script>
+(function(){
+  const API_ORCAMENTO_SAVE = "https://api.erpimpar.com.br/materiais/orcamento_save.php";
+  function getSessaoERP(){ try { return JSON.parse(localStorage.getItem("ERPIMPAR_USER") || "null") || {}; } catch(e){ return {}; } }
+  function val(id){ return (document.getElementById(id)?.value || "").trim(); }
+  function txt(el){ return (el?.innerText || el?.textContent || el?.value || "").trim(); }
+  function extrairItensOrcamento(){
+    const lista = document.getElementById("listaOrcamento");
+    if(!lista) return [];
+    const nodes = Array.from(lista.querySelectorAll("[data-material], .budget-item, .orc-item, article, .card, .item, tr"));
+    const itens = [];
+    nodes.forEach((el, idx) => {
+      const material = el.dataset?.material || txt(el.querySelector("[data-campo='material'], .material, .nome, .title, h3, h4"));
+      const quantidade = el.dataset?.quantidade || txt(el.querySelector("[data-campo='quantidade'], .quantidade, .qtd, input[type='number']")) || "1";
+      const unidade = el.dataset?.unidade || txt(el.querySelector("[data-campo='unidade'], .unidade, .un, .und"));
+      const fallback = txt(el).split("\n").find(Boolean) || "";
+      const nome = material || fallback;
+      if(nome && !/nenhum material/i.test(nome)){
+        itens.push({codigo_material: el.dataset?.codigo || el.dataset?.id || "", material: nome, quantidade_orcada: quantidade, unidade_medida: unidade, indice: idx + 1});
+      }
+    });
+    const seen = new Set();
+    return itens.filter(i => { const k=(i.material+"|"+i.quantidade_orcada+"|"+i.unidade_medida).toUpperCase(); if(seen.has(k)) return false; seen.add(k); return true; });
+  }
+  function gravarOrcamento(){
+    try{
+      const user = getSessaoERP();
+      const payload = {
+        protocolo: "ORC-" + Date.now(),
+        dataHora: new Date().toISOString(),
+        obra: val("orc-cliente"),
+        responsavel: val("orc-responsavel") || user.nome || user.Nome || "",
+        validade: val("orc-validade"),
+        observacao: val("orc-obs"),
+        usuario: { nome: user.nome || user.Nome || user.name || "", email: user.email || user.Email || "" },
+        materiais: extrairItensOrcamento()
+      };
+      if(!payload.obra || !payload.materiais.length){ console.warn("Orçamento não gravado: obra ou materiais vazios.", payload); return; }
+      fetch(API_ORCAMENTO_SAVE, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)})
+        .then(r => r.json().catch(() => ({})))
+        .then(j => console.log("✅ orçamento.json / tabela mãe atualizados:", j))
+        .catch(e => console.warn("⚠️ Falha ao gravar orçamento:", e));
+    }catch(e){ console.warn("⚠️ Integração orçamento não crítica:", e); }
+  }
+  window.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("btnGerarPropostaWord")?.addEventListener("click", gravarOrcamento);
+  });
+})();
+</script>
+
+</body>
+</html>
+
+
 </body>
 </html>
