@@ -1,4 +1,4 @@
-const CACHE_NAME = "erp-impar-pwa-v4-footer-safearea";
+const CACHE_NAME = "erp-impar-pwa-v5-fix-response";
 
 const CORE_FILES = [
   "/",
@@ -44,14 +44,20 @@ self.addEventListener("fetch", event => {
   }
 
   // HTML sempre tenta rede primeiro para evitar tela velha em cache.
-  if (req.mode === "navigate" || req.headers.get("accept")?.includes("text/html")) {
-    event.respondWith(
-      fetch(req, { cache: "no-store" })
-        .catch(() => caches.match("/index.html"))
-    );
-    return;
-  }
-
+if (req.mode === "navigate" || req.headers.get("accept")?.includes("text/html")) {
+  event.respondWith(
+    fetch(req, { cache: "no-store" })
+      .catch(async () => {
+        const cached = await caches.match("/index.html");
+        return cached || new Response("Offline", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" }
+        });
+      })
+  );
+  return;
+}
+  
   // Assets: cache-first com atualização leve.
   event.respondWith(
     caches.match(req).then(cached => {
