@@ -10,4 +10,80 @@
 <div class="modal" id="modalJson"><div class="modal-card"><div class="panel-title"><h2 id="modalTitle">Resumo</h2><button class="btn dark" onclick="closeModal()">Fechar</button></div><div class="table-wrap"><table><thead id="modalHead"></thead><tbody id="modalBody"></tbody></table></div></div></div><footer class="footer"><div>ERP ÍMPAR • Gestão Master de Materiais</div><div>Orçamento → Solicitação → Entrega → Confirmação PWA → Inventário</div></footer></main>
 <script>
 const API="https://api.erpimpar.com.br/materiais/";let DB={orcamentos:[],solicitacoes:[],movimentacoes:[],inventario:[],usuarios:[],master:[]};const qs=s=>document.querySelector(s);function norm(s){return(s||"").toString().trim().toUpperCase()}function getUser(){try{return JSON.parse(localStorage.getItem("ERPIMPAR_USER")||"null")||{}}catch(e){return {}}}function setUser(){const u=getUser(),nome=u.nome||u.Nome||u.name||"Usuário";qs("#userNome").textContent=nome;qs("#userEmail").textContent=u.email||u.Email||"—";qs("#userIniciais").textContent=(nome[0]||"U").toUpperCase();if(u.foto||u.Foto){qs("#userFoto").src=u.foto||u.Foto;qs("#userFoto").style.display="block";qs("#userIniciais").style.display="none"}}async function getJson(n){try{const r=await fetch(API+"data/"+n+"?v="+Date.now());return await r.json()}catch(e){return []}}function addAgg(map,obra,mat,campo,qtd,un){const k=norm(obra)+"||"+norm(mat);if(!map[k])map[k]={obra:obra,material:mat,unidade:un,orcado:0,solicitado:0,entregue:0,inventario:0};map[k][campo]+=Number((qtd||"0").toString().replace(",","."))||0;if(un&&!map[k].unidade)map[k].unidade=un}function rebuild(){const map={};DB.orcamentos.forEach(o=>(o.materiais||[]).forEach(m=>addAgg(map,o.obra||o.cliente,m.material,"orcado",m.quantidade_orcada||m.quantidade,m.unidade_medida||m.unidade)));DB.solicitacoes.forEach(s=>(s.materiais||[]).forEach(m=>addAgg(map,s.obra,m.material,"solicitado",m.quantidade,m.und||m.unidade)));DB.movimentacoes.filter(m=>/confirmado/i.test(m.status||"")).forEach(ev=>(ev.materiais||[]).forEach(m=>addAgg(map,ev.obra,m.material,"entregue",m.quantidade,m.unidade)));DB.inventario.forEach(i=>addAgg(map,i.obra,i.material,"inventario",i.quantidade,i.unidade));DB.master=Object.values(map).map(r=>{r.saldo=r.orcado-r.solicitado;r.divergencia=r.entregue-r.inventario;r.status=r.divergencia!==0?"Divergência":(r.saldo<0?"Atenção":"OK");return r})}function unique(a){return[...new Set(a.filter(Boolean))].sort()}function fill(){const obras=unique(DB.master.map(x=>x.obra));["movObra","fObra"].forEach(id=>{const s=qs("#"+id);s.innerHTML=(id==="fObra"?"<option value=''>Todas</option>":"<option value=''>Selecione</option>")+obras.map(o=>`<option>${o}</option>`).join("")});qs("#movResponsavel").innerHTML="<option value=''>Selecione</option>"+DB.usuarios.map(u=>`<option value="${u.id}">${u.nome} • ${u.tipo}</option>`).join("");qs("#fResp").innerHTML="<option value=''>Todos</option>"+DB.usuarios.map(u=>`<option>${u.nome}</option>`).join("");addItemRow()}function addItemRow(){const mats=unique(DB.master.map(x=>x.material));const d=document.createElement("div");d.className="item-row";d.innerHTML=`<div><label>Material</label><select class="itemMaterial"><option value="">Selecione</option>${mats.map(m=>`<option>${m}</option>`).join("")}</select></div><div><label>Quantidade</label><input class="itemQtd" type="number"></div><div><label>UN</label><input class="itemUn"></div><button class="btn red" type="button">×</button>`;d.querySelector("button").onclick=()=>d.remove();qs("#itensMov").appendChild(d)}function renderCards(){const c=[["Orçamentos",DB.orcamentos.length,"Clique para ver","orcamento"],["Solicitações",DB.solicitacoes.length,"E-mails enviados","solicitacoes"],["Entregas",DB.movimentacoes.filter(x=>/confirmado/i.test(x.status||"")).length,"OK via PWA","movimentacoes"],["Inventários",DB.inventario.length,"Leitura de obra","inventario"],["Divergências",DB.master.filter(x=>x.status==="Divergência").length,"Inventário x entregue","div"],["Saldo negativo",DB.master.filter(x=>x.saldo<0).length,"Acima do orçado","saldo"]];qs("#cardsResumo").innerHTML=c.map(x=>`<article class="card" onclick="openResumo('${x[3]}')"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></article>`).join("");qs("#kStatusGeral").textContent=DB.master.filter(x=>x.status!=="OK").length?"Atenção":"OK";qs("#txtResumo").textContent=DB.master.length+" combinações obra/material carregadas."}function renderTable(){const fo=qs("#fObra").value,fm=norm(qs("#fMaterial").value),fs=qs("#fStatus").value;const rows=DB.master.filter(r=>(!fo||r.obra===fo)&&(!fm||norm(r.material).includes(fm))&&(!fs||r.status===fs));qs("#tbodyMaster").innerHTML=rows.map(r=>`<tr><td>${r.obra}</td><td>${r.material}</td><td>${r.orcado} ${r.unidade||""}</td><td>${r.solicitado} ${r.unidade||""}</td><td>${r.entregue} ${r.unidade||""}</td><td class="${r.saldo<0?"bad":"ok"}">${r.saldo}</td><td>${r.inventario}</td><td class="${r.divergencia?"bad":"ok"}">${r.divergencia}</td><td class="${r.status==="OK"?"ok":r.status==="Atenção"?"warn":"bad"}">${r.status}</td></tr>`).join("")||"<tr><td colspan='9'>Nenhum registro.</td></tr>"}function renderTimeline(){const ev=[...DB.solicitacoes.map(x=>({t:"Solicitação",d:x.dataHora||x.data,obra:x.obra,desc:(x.materiais||[]).length+" material(is)"})),...DB.movimentacoes.map(x=>({t:x.tipo||"Movimentação",d:x.dataHora||x.data,obra:x.obra,desc:x.status||"aguardando"}))].slice(-8).reverse();qs("#timeline").innerHTML=ev.map((e,i)=>`<div class="step"><div class="dot">${i+1}</div><div><b>${e.t}</b><div class="small">${e.obra||""} • ${e.desc||""}</div><div class="small">${e.d||""}</div></div></div>`).join("")||"<div class='small'>Sem eventos ainda.</div>"}function openResumo(tipo){const map={orcamento:DB.orcamentos,solicitacoes:DB.solicitacoes,movimentacoes:DB.movimentacoes,inventario:DB.inventario,div:DB.master.filter(x=>x.status==="Divergência"),saldo:DB.master.filter(x=>x.saldo<0)};const data=map[tipo]||[];qs("#modalTitle").textContent="Resumo • "+tipo;qs("#modalHead").innerHTML="<tr><th>Registro</th><th>Obra</th><th>Data</th><th>Status</th></tr>";qs("#modalBody").innerHTML=data.map((x,i)=>`<tr><td>${x.protocolo||x.id||i+1}</td><td>${x.obra||x.cliente||""}</td><td>${x.dataHora||x.data||""}</td><td>${x.status||x.tipo||""}</td></tr>`).join("")||"<tr><td colspan='4'>Nenhum registro.</td></tr>";qs("#modalJson").classList.add("open")}function closeModal(){qs("#modalJson").classList.remove("open")}function usuarioById(id){return DB.usuarios.find(u=>u.id===id)||{}}qs("#movResponsavel").addEventListener("change",()=>{qs("#movTelefone").value=usuarioById(qs("#movResponsavel").value).telefone||""});qs("#btnAddItem").onclick=addItemRow;qs("#btnLimparMov").onclick=()=>{qs("#itensMov").innerHTML="";addItemRow();qs("#postBox").textContent="Nenhum link gerado ainda."};qs("#btnGerarLink").onclick=()=>{const u=usuarioById(qs("#movResponsavel").value),protocolo="MAT-"+Date.now();const materiais=[...document.querySelectorAll(".item-row")].map(r=>({material:r.querySelector(".itemMaterial").value,quantidade:r.querySelector(".itemQtd").value,unidade:r.querySelector(".itemUn").value})).filter(x=>x.material&&x.quantidade);const payload={protocolo,tipo:qs("#movTipo").value,obra:qs("#movObra").value,responsavel:u.nome,telefone:u.telefone,status:"aguardando_confirmacao",token:Math.random().toString(36).slice(2,10).toUpperCase(),dataHora:new Date().toISOString(),materiais};if(!payload.obra||!payload.responsavel||!materiais.length)return alert("Preencha obra, responsável e materiais.");fetch(API+"movimentacao_save.php",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).catch(console.warn);const link=`https://www.erpimpar.com.br/material_confirmar.html?p=${payload.protocolo}&t=${payload.token}`;qs("#postBox").textContent=`ERP ÍMPAR • Confirmação de Material\n\n${payload.responsavel}, confira e confirme pelo link abaixo.\n\nObra: ${payload.obra}\nTipo: ${payload.tipo}\nProtocolo: ${payload.protocolo}\n\nMateriais:\n${materiais.map(m=>"- "+m.material+" • "+m.quantidade+" "+(m.unidade||"")).join("\n")}\n\nLink: ${link}`};qs("#btnCopiarPost").onclick=()=>navigator.clipboard?.writeText(qs("#postBox").textContent);["fObra","fMaterial","fStatus","fResp"].forEach(id=>qs("#"+id).addEventListener("input",renderTable));qs("#btnProcessar").onclick=async()=>{const steps=["Lendo orçamento","Lendo solicitação","Lendo entregas","Lendo inventário","Calculando saldo","Validando divergência"];qs("#processSteps").innerHTML="";for(const s of steps){const el=document.createElement("span");el.className="chip";el.innerHTML=`<span class="spin"></span> ${s}`;qs("#processSteps").appendChild(el);await new Promise(r=>setTimeout(r,450));el.innerHTML="✅ "+s}renderCards();renderTable()};async function loadAll(){setUser();DB.usuarios=await getJson("usuarios_materiais.json");DB.orcamentos=await getJson("orcamento.json");DB.solicitacoes=await getJson("solicitacoes_material.json");DB.movimentacoes=await getJson("movimentacoes_material.json");DB.inventario=await getJson("inventario_obra_material.json");rebuild();fill();renderCards();renderTable();renderTimeline()}loadAll();
-</script></body></html>
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("btnGerarLink");
+  if (!btn) return;
+
+  btn.onclick = async () => {
+    const u = usuarioById(document.getElementById("movResponsavel").value);
+    const protocolo = "MAT-" + Date.now();
+    const token = Math.random().toString(36).slice(2, 10).toUpperCase();
+
+    const materiais = [...document.querySelectorAll(".item-row")]
+      .map(r => ({
+        material: r.querySelector(".itemMaterial").value,
+        quantidade: r.querySelector(".itemQtd").value,
+        unidade: r.querySelector(".itemUn").value
+      }))
+      .filter(x => x.material && x.quantidade);
+
+    const payload = {
+      protocolo,
+      token,
+      tipo: document.getElementById("movTipo").value,
+      obra: document.getElementById("movObra").value,
+      responsavel: u.nome,
+      telefone: u.telefone,
+      status: "aguardando_confirmacao",
+      dataHora: new Date().toISOString(),
+      materiais
+    };
+
+    if (!payload.obra || !payload.responsavel || !materiais.length) {
+      alert("Preencha obra, responsável e materiais.");
+      return;
+    }
+
+    await fetch("https://api.erpimpar.com.br/materiais/movimentacao_save.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).catch(err => console.warn("Falha ao gravar movimentação:", err));
+
+    const link =
+      "https://www.erpimpar.com.br/material_confirmar.html?p=" +
+      encodeURIComponent(protocolo) +
+      "&t=" +
+      encodeURIComponent(token);
+
+    const mensagem =
+`ERP ÍMPAR • Confirmação de Material
+
+${payload.responsavel}, confira e confirme pelo link abaixo.
+
+Obra: ${payload.obra}
+Tipo: ${payload.tipo}
+Protocolo: ${payload.protocolo}
+
+Materiais:
+${materiais.map(m => "- " + m.material + " • " + m.quantidade + " " + (m.unidade || "")).join("\n")}
+
+Link: ${link}`;
+
+    document.getElementById("postBox").textContent = mensagem;
+
+    if (navigator.share) {
+      navigator.share({
+        title: "ERP ÍMPAR - Confirmação de Material",
+        text: mensagem,
+        url: link
+      }).catch(() => {});
+    } else {
+      window.open("https://wa.me/?text=" + encodeURIComponent(mensagem), "_blank");
+    }
+  };
+});
+</script>
+</body></html>
