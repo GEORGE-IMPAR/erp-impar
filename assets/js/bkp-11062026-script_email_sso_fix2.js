@@ -137,25 +137,100 @@ Swal.fire({
 
     console.log("📧 Enviando com parâmetros:", templateParams);
 
-    try {
-      const resp = await emailjs.send("service_fzht86y", "template_wz0ywdo", templateParams);
-      console.log("✅ Email enviado:", resp);
-      
-      Swal.fire({
-        icon: "success",
-        title: "Solicitação enviada com sucesso!",
-        showConfirmButton: false,
-        timer: 2500
-      }).then(() => {
-        // Limpa tudo
-        solicitacaoForm.reset();
-        document.querySelector("#tabelaMateriais tbody").innerHTML = "";
-        localStorage.removeItem("usuarioLogado"); // Desloga o usuário
-        window.location.href = "menu.html"; // Redireciona para o login
+  try {
+  const resp = await emailjs.send(
+    "service_fzht86y",
+    "template_wz0ywdo",
+    templateParams
+  );
+
+  console.log("✅ Email enviado:", resp);
+
+  // ==========================
+  // GRAVA SOLICITAÇÃO NO JSON
+  // ==========================
+  try {
+
+    const materiais = [];
+
+    document
+      .querySelectorAll("#tabelaMateriais tbody tr")
+      .forEach(tr => {
+
+        const tds = tr.querySelectorAll("td");
+
+        materiais.push({
+          material: tds[0]?.innerText || "",
+          quantidade: tds[1]?.innerText || "",
+          unidade: tds[2]?.innerText || ""
+        });
+
       });
-    } catch (err) {
-      console.error("❌ Erro EmailJS:", err);
-      Swal.fire("Erro", "Falha ao enviar a solicitação!", "error");
-    }
+
+    await fetch(
+      "https://api.erpimpar.com.br/materiais/salvar_solicitacao.php",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          dataHora: new Date().toISOString(),
+
+          solicitante:
+            JSON.parse(localStorage.getItem("usuarioLogado") || "{}")
+              ?.nome || "",
+
+          obra:
+            document.getElementById("obra")?.value || "",
+
+          materiais: materiais
+        })
+      }
+    );
+
+    console.log("✅ Solicitação gravada");
+
+  } catch (erroJson) {
+
+    console.warn(
+      "⚠️ Não conseguiu gravar solicitação:",
+      erroJson
+    );
+
+  }
+
+  // ==========================
+  // SUCESSO
+  // ==========================
+
+  Swal.fire({
+    icon: "success",
+    title: "Solicitação enviada com sucesso!",
+    showConfirmButton: false,
+    timer: 2500
+  }).then(() => {
+
+    solicitacaoForm.reset();
+
+    document.querySelector(
+      "#tabelaMateriais tbody"
+    ).innerHTML = "";
+
+    localStorage.removeItem("usuarioLogado");
+
+    window.location.href = "menu.html";
+
   });
-});
+
+} catch (err) {
+
+  console.error("❌ Erro EmailJS:", err);
+
+  Swal.fire(
+    "Erro",
+    "Falha ao enviar a solicitação!",
+    "error"
+  );
+
+}
