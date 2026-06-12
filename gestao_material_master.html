@@ -16,7 +16,7 @@
   <div class="user"><span id="avatarBox" class="avatar-fallback">U</span><div><b id="userNome">Usuário RP</b><br><span id="userEmail" class="mini">sessão local</span></div><button onclick="location.href='menu.html'">🏠 Menu</button></div>
 </header>
 <section class="card sync-card span12">
-  <div class="sync-head"><div><h2 style="margin:0">Sincronizando Gestão Master</h2><div class="mini">Leitura automática da base mãe e validações de divergência.</div></div><strong id="syncStatus" class="okDot">processando...</strong></div>
+  <div class="sync-head"><div><h2 style="margin:0">Sincronizando Gestão Master</h2><div class="mini">Leitura automática da base mãe, obras ativas, materiais e validações de divergência.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" onclick="document.getElementById('fileMateriais').click()">📥 Importar materiais</button><input id="fileMateriais" type="file" accept=".json,.csv,.txt" style="display:none" onchange="importarMateriaisArquivo(this.files[0])"><strong id="syncStatus" class="okDot">processando...</strong></div></div>
   <div class="bar"><span id="syncBar"></span></div>
   <div class="steps" id="syncSteps"></div>
 </section>
@@ -65,7 +65,75 @@ const $=id=>document.getElementById(id);function n(v){return Number(String(v||0)
 function getUser(){try{return JSON.parse(localStorage.getItem('ERPIMPAR_USER')||localStorage.getItem('usuarioLogado')||'{}')}catch(e){return{}}}
 function setUser(){const u=getUser(),nome=u.nome||u.Nome||u.name||'Usuário RP',email=u.email||u.Email||'sessão local',foto=u.foto||u.Foto||u.avatar||'';$('userNome').textContent=nome;$('userEmail').textContent=email;if(foto){$('avatarBox').outerHTML='<img id="avatarBox" class="avatar" src="'+foto+'">'}else{$('avatarBox').textContent=(nome[0]||'U').toUpperCase()}}
 async function getJson(file){const r=await fetch(API+'data/'+file,{cache:'no-store'});if(!r.ok)throw new Error(file+' HTTP '+r.status);const j=await r.json();return Array.isArray(j)?j:[]}
-async function load(){setUser();const steps=[['orcamento.json','Orçamentos'],['solicitacoes_material.json','Solicitações'],['movimentacoes_material.json','Entregas/retiradas'],['inventario_obra_material.json','Inventários'],['materiais_base.json','Materiais']];$('syncSteps').innerHTML='';let ok=0;for(let i=0;i<steps.length;i++){const [file,label]=steps[i];const el=document.createElement('span');el.className='step';el.innerHTML='<span class="spin"></span>'+label;$('syncSteps').appendChild(el);try{const data=await getJson(file);if(file.includes('orcamento'))db.orcamento=data;if(file.includes('solicitacoes'))db.solicitacoes=data;if(file.includes('movimentacoes'))db.movimentacoes=data;if(file.includes('inventario'))db.inventario=data;if(file.includes('materiais_base'))db.materiais=data;el.innerHTML='<span class="okDot">✓</span>'+label+' ('+data.length+')';ok++}catch(e){el.innerHTML='<span class="errDot">×</span>'+label+' • '+e.message} $('syncBar').style.width=Math.round(((i+1)/steps.length)*100)+'%'; await new Promise(r=>setTimeout(r,220))}$('syncStatus').textContent=ok===steps.length?'base OK':'atenção';popular();renderAll();}
+async function load(){
+  setUser();
+  const steps=[
+    ['orcamento.json','Orçamentos'],
+    ['solicitacoes_material.json','Solicitações'],
+    ['movimentacoes_material.json','Entregas/retiradas'],
+    ['inventario_obra_material.json','Inventários'],
+    ['materiais_base.json','Materiais'],
+    ['obras_ativas.json','Obras ativas']
+  ];
+  $('syncSteps').innerHTML='';
+  let ok=0;
+  for(let i=0;i<steps.length;i++){
+    const [file,label]=steps[i];
+    const el=document.createElement('span');
+    el.className='step';
+    el.innerHTML='<span class="spin"></span>'+label;
+    $('syncSteps').appendChild(el);
+    try{
+      let data=await getJson(file);
+      if(file.includes('obras_ativas') && (!Array.isArray(data)||!data.length)) data=await carregarObrasExternas();
+      if(file.includes('orcamento'))db.orcamento=data;
+      if(file.includes('solicitacoes'))db.solicitacoes=data;
+      if(file.includes('movimentacoes'))db.movimentacoes=data;
+      if(file.includes('inventario'))db.inventario=data;
+      if(file.includes('materiais_base'))db.materiais=data;
+      if(file.includes('obras_ativas'))db.obras=normalizarObras(data);
+      el.innerHTML='<span class="okDot">✓</span>'+label+' ('+(Array.isArray(data)?data.length:0)+')';
+      ok++;
+    }catch(e){
+      el.innerHTML='<span class="errDot">×</span>'+label+' • '+e.message;
+    }
+    $('syncBar').style.width=Math.round(((i+1)/steps.length)*100)+'%';
+    await new Promise(r=>setTimeout(r,220));
+  }
+  if(!db.obras.length) db.obras=normalizarObras([...flatOrc().map(x=>x.obra),...flatSolic().map(x=>x.obra),...flatMov().map(x=>x.obra),...flatInv().map(x=>x.obra)]);
+  $('syncStatus').textContent=ok===steps.length?'base OK':'atenção';
+  popular();
+  renderAll();
+}
+async function carregarObrasExternas(){
+  const urls=[
+    'https://api.erpimpar.com.br/tv/data/projetos.json',
+    'https://api.erpimpar.com.br/storage/data/obras.json',
+    'https://api.erpimpar.com.br/data/obras.json',
+    'https://api.erpimpar.com.br/cronograma/data/obras.json'
+  ];
+  for(const url of urls){
+    try{
+      const r=await fetch(url,{cache:'no-store'});
+      if(!r.ok) continue;
+      const j=await r.json();
+      const obras=normalizarObras(j);
+      if(obras.length) return obras;
+    }catch(e){}
+  }
+  return [];
+}
+function normalizarObras(data){
+  let arr=[];
+  if(Array.isArray(data)) arr=data;
+  else if(data && Array.isArray(data.obras)) arr=data.obras;
+  else if(data && Array.isArray(data.projetos)) arr=data.projetos;
+  else if(data && typeof data==='object') arr=Object.values(data);
+  return unique(arr.map(o=>{
+    if(typeof o==='string') return o;
+    return o.obra||o.nome||o.nomeObra||o.projeto||o.titulo||o.cliente||'';
+  }).filter(Boolean));
+}
 function flatOrc(){let a=[];(db.orcamento||[]).forEach(o=>{if(Array.isArray(o.materiais))o.materiais.forEach(m=>a.push({obra:o.obra||o.cliente,material:m.material||m.descricao,und:m.und||m.unidade||m.unidade_medida,quantidade:n(m.quantidade||m.quantidade_orcada)}));else a.push({obra:o.obra||o.cliente,material:o.material,und:o.und||o.unidade,quantidade:n(o.quantidade)})});return a.filter(x=>x.obra&&x.material)}
 function flatSolic(){let a=[];(db.solicitacoes||[]).forEach(s=>(s.materiais||[]).forEach(m=>a.push({obra:s.obra,material:m.material,und:m.und||m.unidade,quantidade:n(m.quantidade),responsavel:s.solicitante||s.coordenador||''})));return a}
 function flatMov(){let a=[];(db.movimentacoes||[]).forEach(ev=>{if(Array.isArray(ev.materiais))ev.materiais.forEach(m=>a.push({...ev,material:m.material,quantidade:n(m.quantidade),und:m.unidade||m.und||ev.und}));else a.push({...ev,quantidade:n(ev.quantidade)})});return a}
@@ -73,7 +141,64 @@ function flatInv(){return (db.inventario||[]).map(i=>({obra:i.obra,material:i.ma
 function materialUn(mat){const m=(db.materiais||[]).find(x=>up(x.material||x.nome||x.descricao)===up(mat));return m?(m.und||m.unidade||m.unidade_medida||''):''}
 function resumo(){const map={};function get(o,m,un){const k=up(o)+'|||'+up(m);return map[k]||(map[k]={obra:o,material:m,und:un||materialUn(m),orcado:0,solicitado:0,entregue:0,inv:0,resps:new Set(),criticas:[]})}flatOrc().forEach(x=>get(x.obra,x.material,x.und).orcado+=x.quantidade);flatSolic().forEach(x=>{let r=get(x.obra,x.material,x.und);r.solicitado+=x.quantidade;if(x.responsavel)r.resps.add(x.responsavel)});flatMov().filter(x=>x.status==='confirmado'||x.status==='aguardando_confirmacao').forEach(x=>{let r=get(x.obra,x.material,x.und);r.entregue+=x.status==='confirmado'?x.quantidade:0;if(x.responsavel)r.resps.add(x.responsavel);if(x.status!=='confirmado')r.criticas.push('aguardando confirmação')});flatInv().forEach(x=>get(x.obra,x.material,x.und).inv+=x.quantidade);return Object.values(map).map(r=>{r.saldo=r.orcado-r.solicitado;r.div=r.entregue-r.inv;if(r.entregue>0&&r.solicitado===0)r.criticas.push('entregue sem solicitação');if(r.entregue>0&&r.orcado===0)r.criticas.push('entregue sem orçamento');if(r.inv>0&&r.entregue===0)r.criticas.push('inventário sem entrega');if(r.saldo<0)r.criticas.push('saldo estourado');if(r.div!==0)r.criticas.push('entregue x inventário divergente');r.status=r.criticas.length?'critico':(r.saldo===0?'atencao':'ok');r.responsaveis=[...r.resps].join(', ');return r})}
 function unique(a){return [...new Set(a.filter(Boolean))].sort()}
-function popular(){const obras=unique([...flatOrc().map(x=>x.obra),...flatSolic().map(x=>x.obra),...flatMov().map(x=>x.obra),...flatInv().map(x=>x.obra)]);['mObra','fObra'].forEach(id=>$(id).innerHTML=(id==='fObra'?'<option value="">Todas</option>':'<option value="">Selecione</option>')+obras.map(o=>'<option>'+o+'</option>').join(''));const mats=unique([...(db.materiais||[]).map(x=>x.material||x.nome||x.descricao),...flatOrc().map(x=>x.material),...flatSolic().map(x=>x.material),...flatMov().map(x=>x.material),...flatInv().map(x=>x.material)]);$('fMat').innerHTML='<option value="">Todos</option>'+mats.map(m=>'<option>'+m+'</option>').join('');$('listaResponsaveis').innerHTML=unique([...flatMov().map(x=>x.responsavel),...(db.usuarios||[]).map(x=>x.nome)]).map(r=>'<option value="'+r+'">').join('');if(!$('itensMov').children.length)addItemRow()}
+function popular(){
+  const obras=unique([
+    ...(db.obras||[]),
+    ...flatOrc().map(x=>x.obra),
+    ...flatSolic().map(x=>x.obra),
+    ...flatMov().map(x=>x.obra),
+    ...flatInv().map(x=>x.obra)
+  ]);
+  ['mObra','fObra'].forEach(id=>{
+    $(id).innerHTML=(id==='fObra'?'<option value="">Todas</option>':'<option value="">Selecione</option>')+obras.map(o=>'<option>'+o+'</option>').join('');
+  });
+  const mats=unique([
+    ...(db.materiais||[]).map(x=>x.material||x.nome||x.descricao),
+    ...flatOrc().map(x=>x.material),
+    ...flatSolic().map(x=>x.material),
+    ...flatMov().map(x=>x.material),
+    ...flatInv().map(x=>x.material)
+  ]);
+  $('fMat').innerHTML='<option value="">Todos</option>'+mats.map(m=>'<option>'+m+'</option>').join('');
+  $('listaResponsaveis').innerHTML=unique([...flatMov().map(x=>x.responsavel),...(db.usuarios||[]).map(x=>x.nome)]).map(r=>'<option value="'+r+'">').join('');
+  if(!$('itensMov').children.length)addItemRow();
+}
+async function importarMateriaisArquivo(file){
+  if(!file) return;
+  try{
+    const texto=await file.text();
+    let materiais=[];
+    if(file.name.toLowerCase().endsWith('.json')){
+      const j=JSON.parse(texto);
+      materiais=Array.isArray(j)?j:(j.materiais||j.data||[]);
+    }else{
+      materiais=parseCSVSimples(texto);
+    }
+    materiais=materiais.map((m,i)=>({
+      codigo:m.codigo||m.cod||m.Codigo||m.CODIGO||('MAT'+String(i+1).padStart(4,'0')),
+      material:m.material||m.nome||m.descricao||m.Material||m.MATERIAL||m.Descrição||m.DESCRICAO||'',
+      unidade:m.unidade||m.und||m.un||m.UN||m.Unidade||m.UNIDADE||'',
+      valor_unitario:n(m.valor_unitario||m.ultimo_preco||m.valor||m.preco||m.ValorUnitario||m['Valor Unitário']||0),
+      data_ultima_compra:m.data_ultima_compra||m.data||m.DataUltimaCompra||m['Data Última Compra']||''
+    })).filter(m=>m.material);
+    if(!materiais.length){Swal.fire('Atenção','Nenhum material válido encontrado no arquivo.','warning');return;}
+    const r=await fetch(API+'materiais_import.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({materiais})});
+    const resp=await r.json();
+    if(!resp.success) throw new Error(resp.message||'Falha ao importar');
+    db.materiais=materiais;
+    popular();
+    renderAll();
+    Swal.fire('Materiais importados',materiais.length+' materiais atualizados na base do RP.','success');
+  }catch(e){Swal.fire('Erro ao importar materiais',e.message,'error');}
+  file.value='';
+}
+function parseCSVSimples(texto){
+  const linhas=texto.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!linhas.length) return [];
+  const sep=linhas[0].includes(';')?';':',';
+  const cab=linhas.shift().split(sep).map(h=>h.trim());
+  return linhas.map(l=>{const cols=l.split(sep).map(c=>c.trim());const obj={};cab.forEach((h,i)=>obj[h]=cols[i]||'');return obj;});
+}
 function addItemRow(){const mats=unique([...(db.materiais||[]).map(x=>x.material||x.nome||x.descricao),...flatOrc().map(x=>x.material),...flatSolic().map(x=>x.material)]);const d=document.createElement('div');d.className='item-row';d.innerHTML='<div><label>Material</label><select class="itemMaterial" onchange="syncUn(this)"><option value="">Selecione</option>'+mats.map(m=>'<option>'+m+'</option>').join('')+'</select></div><div><label>Quantidade</label><input class="itemQtd" type="number" step="0.01"></div><div><label>UN</label><input class="itemUn" readonly></div><button type="button" class="remove danger" onclick="this.closest(\'.item-row\').remove()">×</button>';$('itensMov').appendChild(d)}
 function syncUn(sel){const row=sel.closest('.item-row');row.querySelector('.itemUn').value=materialUn(sel.value)||''}
 function limparMov(){$('mResp').value='';$('mObs').value='';$('itensMov').innerHTML='';addItemRow();$('postBox').textContent='Nenhum link gerado ainda.'}
