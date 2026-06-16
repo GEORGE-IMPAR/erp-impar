@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const submitBtn = solicitacaoForm.querySelector('button[type="submit"], input[type="submit"]');
     if (submitBtn) submitBtn.disabled = true;
 
-    // modal de envio (premium + spinner)
+    // modal de envio (premium + spinner) ----- CORREÇÃO DE FECHAMENTO PARA GRAVAR DADOS NO JSON
 
 Swal.fire({
   title: "Enviando e-mail…",
@@ -233,4 +233,11 @@ Swal.fire({
     "error"
   );
 
+} finally {
+
+  if (submitBtn) submitBtn.disabled = false;
+
 }
+
+  });
+});
