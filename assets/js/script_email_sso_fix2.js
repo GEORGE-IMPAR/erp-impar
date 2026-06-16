@@ -161,13 +161,14 @@ Swal.fire({
 
         materiais.push({
           material: tds[0]?.innerText || "",
-          quantidade: tds[1]?.innerText || "",
-          unidade: tds[2]?.innerText || ""
+          unidade: tds[1]?.innerText || "",
+          quantidade: tds[2]?.innerText || "",
+          observacao: tds[3]?.innerText || ""
         });
 
       });
 
-    await fetch(
+    const gravaResp = await fetch(
       "https://api.erpimpar.com.br/materiais/salvar_solicitacao.php",
       {
         method: "POST",
@@ -178,18 +179,40 @@ Swal.fire({
           dataHora: new Date().toISOString(),
 
           solicitante:
-            JSON.parse(localStorage.getItem("usuarioLogado") || "{}")
-              ?.nome || "",
+            usuarioLogado.Nome ||
+            usuarioLogado.nome ||
+            JSON.parse(localStorage.getItem("usuarioLogado") || "{}")?.Nome ||
+            JSON.parse(localStorage.getItem("usuarioLogado") || "{}")?.nome ||
+            "",
+
+          email:
+            usuarioLogado.Email ||
+            usuarioLogado.email ||
+            "",
 
           obra:
             document.getElementById("obra")?.value || "",
+
+          centroCusto:
+            document.getElementById("centroCusto")?.value || "",
+
+          prazo:
+            document.getElementById("prazo")?.value || "",
+
+          localEntrega:
+            document.getElementById("localEntrega")?.value || "",
 
           materiais: materiais
         })
       }
     );
 
-    console.log("✅ Solicitação gravada");
+    if (!gravaResp.ok) {
+      throw new Error("Erro HTTP ao gravar JSON: " + gravaResp.status);
+    }
+
+    const gravaJson = await gravaResp.json().catch(() => null);
+    console.log("✅ Solicitação gravada", gravaJson || "");
 
   } catch (erroJson) {
 

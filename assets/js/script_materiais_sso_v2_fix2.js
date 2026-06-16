@@ -389,4 +389,247 @@ function carregarUsuarios(selectElement) {
 }
 
 
+// ==========================
+// CONSULTA DE SOLICITAÇÕES POR COORDENADOR
+// ==========================
+(function configurarConsultaSolicitacoes() {
+  const URL_SOLICITACOES = "https://api.erpimpar.com.br/materiais/data/solicitacoes_material.json";
+  let solicitacoesMaterialCache = [];
+
+  function escapeHtml(valor) {
+    return String(valor ?? "").replace(/[&<>"']/g, (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    }[m]));
+  }
+
+  function normalizaFiltro(txt) {
+    return String(txt || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toUpperCase();
+  }
+
+  function formatarDataBR(dataHora) {
+    if (!dataHora) return "-";
+    const dt = new Date(dataHora);
+    if (Number.isNaN(dt.getTime())) return escapeHtml(dataHora);
+    return dt.toLocaleString("pt-BR");
+  }
+
+  function obterCoordenadoresUnicos(lista) {
+    return [...new Set(
+      (lista || [])
+        .map(s => String(s.coordenador || "").trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }
+
+  function renderListaSolicitacoesModal() {
+    const box = document.getElementById("swalListaSolicitacoes");
+    const select = document.getElementById("swalFiltroCoord");
+    const total = document.getElementById("swalTotalSolicitacoes");
+    if (!box) return;
+
+    const coordSelecionado = normalizaFiltro(select?.value || "");
+
+    const filtradas = coordSelecionado
+      ? solicitacoesMaterialCache.filter(s => normalizaFiltro(s.coordenador) === coordSelecionado)
+      : solicitacoesMaterialCache;
+
+    if (total) {
+      total.textContent = `${filtradas.length} solicitação(ões) encontrada(s)`;
+    }
+
+    if (!filtradas.length) {
+      box.innerHTML = `
+        <div style="
+          padding:14px;
+          border-radius:14px;
+          border:1px dashed rgba(148,163,184,.35);
+          color:#cbd5e1;
+          font-weight:800;
+          text-align:center;
+        ">
+          Nenhuma solicitação encontrada para este filtro.
+        </div>
+      `;
+      return;
+    }
+
+    box.innerHTML = filtradas.slice().reverse().map((s, idx) => {
+      const materiais = Array.isArray(s.materiais) ? s.materiais : [];
+      const materiaisHtml = materiais.length
+        ? `
+          <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px;border-radius:12px;border:1px solid rgba(148,163,184,.26);">
+            <table style="width:100%;min-width:620px;border-collapse:collapse;background:rgba(2,6,23,.78);font-size:12px;">
+              <thead>
+                <tr>
+                  <th style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.30);text-align:left;color:#e5e7eb;background:rgba(15,23,42,.88);">Material</th>
+                  <th style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.30);text-align:center;color:#e5e7eb;background:rgba(15,23,42,.88);width:80px;">UND</th>
+                  <th style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.30);text-align:center;color:#e5e7eb;background:rgba(15,23,42,.88);width:110px;">Quantidade</th>
+                  <th style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.30);text-align:left;color:#e5e7eb;background:rgba(15,23,42,.88);width:190px;">Observação</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${materiais.map(m => {
+                  const material = escapeHtml(m.material || "-");
+                  const unidade = escapeHtml(m.unidade || m.und || "-");
+                  const quantidade = escapeHtml(m.quantidade || "-");
+                  const observacao = escapeHtml(m.observacao || "-");
+                  return `
+                    <tr>
+                      <td style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.18);color:#dbeafe;vertical-align:top;">${material}</td>
+                      <td style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.18);color:#e5e7eb;text-align:center;vertical-align:top;">${unidade}</td>
+                      <td style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.18);color:#e5e7eb;text-align:center;vertical-align:top;font-weight:900;">${quantidade}</td>
+                      <td style="padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.18);color:#cbd5e1;vertical-align:top;">${observacao}</td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        : `<div style="margin-top:8px;padding:10px;border-radius:12px;border:1px dashed rgba(148,163,184,.32);color:#cbd5e1;">Nenhum material informado.</div>`;
+
+      return `
+        <div style="
+          border-radius:16px;
+          padding:13px 14px;
+          background:linear-gradient(135deg, rgba(2,6,23,.78), rgba(15,23,42,.62));
+          border:1px solid rgba(148,163,184,.22);
+          color:#e5e7eb;
+          font-size:13px;
+          line-height:1.5;
+          box-shadow:0 12px 26px rgba(0,0,0,.22);
+        ">
+          <div style="
+            display:flex;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-bottom:6px;
+          ">
+            <div style="font-weight:900;color:#fff;">${escapeHtml(s.obra || "-")}</div>
+            <div style="
+              font-size:11px;
+              font-weight:900;
+              color:#93c5fd;
+              text-transform:uppercase;
+              letter-spacing:.04em;
+            ">${escapeHtml(s.coordenador || "Não informado")}</div>
+          </div>
+
+          <div><strong>Solicitante:</strong> ${escapeHtml(s.solicitante || "-")}</div>
+          <div><strong>Data:</strong> ${formatarDataBR(s.dataHora)}</div>
+          ${s.localEntrega ? `<div><strong>Local de entrega:</strong> ${escapeHtml(s.localEntrega)}</div>` : ""}
+          ${s.prazo ? `<div><strong>Prazo:</strong> ${escapeHtml(s.prazo)}</div>` : ""}
+          ${s.centroCusto ? `<div><strong>Centro de custo:</strong> ${escapeHtml(s.centroCusto)}</div>` : ""}
+
+          <div style="margin-top:10px;font-weight:900;color:#bfdbfe;">Materiais solicitados</div>
+          ${materiaisHtml}
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function abrirConsultaSolicitacoes() {
+    try {
+      Swal.fire({
+        title: "Carregando solicitações…",
+        html: `<div style="font-size:13px;opacity:.85">Buscando histórico salvo no JSON.</div>`,
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      const resp = await fetch(URL_SOLICITACOES + "?ts=" + Date.now(), { cache: "no-store" });
+      if (!resp.ok) {
+        throw new Error("HTTP " + resp.status);
+      }
+
+      const lista = await resp.json();
+      solicitacoesMaterialCache = Array.isArray(lista) ? lista : [];
+
+      const coordenadores = obterCoordenadoresUnicos(solicitacoesMaterialCache);
+      const options = `<option value="">Todos</option>` +
+        coordenadores.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+
+      Swal.fire({
+        title: "Consultar solicitações",
+        width: 920,
+        html: `
+          <div style="text-align:left">
+            <label style="
+              display:block;
+              margin-bottom:6px;
+              font-size:11px;
+              text-transform:uppercase;
+              letter-spacing:.08em;
+              color:#9ca3af;
+              font-weight:800;
+            ">Coordenador</label>
+
+            <select id="swalFiltroCoord" style="
+              width:100%;
+              height:42px;
+              margin-bottom:10px;
+              border-radius:12px;
+              border:1px solid rgba(96,165,250,.28);
+              background:#071532;
+              color:#fff;
+              font-size:13px;
+              font-weight:800;
+              padding:0 12px;
+              outline:none;
+            ">
+              ${options}
+            </select>
+
+            <div id="swalTotalSolicitacoes" style="
+              font-size:12px;
+              color:#cbd5e1;
+              font-weight:800;
+              margin:0 0 10px;
+            "></div>
+
+            <div id="swalListaSolicitacoes" style="
+              max-height:430px;
+              overflow:auto;
+              display:flex;
+              flex-direction:column;
+              gap:10px;
+              padding-right:4px;
+            "></div>
+          </div>
+        `,
+        showConfirmButton: true,
+        confirmButtonText: "Fechar",
+        didOpen: () => {
+          const select = document.getElementById("swalFiltroCoord");
+          if (select) {
+            select.addEventListener("change", renderListaSolicitacoesModal);
+          }
+          renderListaSolicitacoesModal();
+        }
+      });
+
+    } catch (err) {
+      console.error("Erro ao consultar solicitações:", err);
+      Swal.fire("Erro", "Não foi possível carregar as solicitações.", "error");
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("btnConsultarSolicitacoes");
+    if (btn) {
+      btn.addEventListener("click", abrirConsultaSolicitacoes);
+    }
+  });
+})();
 
