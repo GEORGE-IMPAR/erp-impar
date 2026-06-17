@@ -80,6 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // NOVOS elementos para modo manual
     const chkModoManual      = document.getElementById("modoManual");
     const inputMaterialManual= document.getElementById("materialManual");
+    const inputUnidadeManual = document.getElementById("unidadeManual");
 
     let materiaisAdicionados = [];
 
@@ -250,6 +251,7 @@ const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
             materialSelect.tomselect.clear();
           }
           inputMaterialManual.style.display = "block";
+          if (inputUnidadeManual) inputUnidadeManual.style.display = "block";
           inputMaterialManual.focus();
         } else {
           // MODO LISTA
@@ -263,6 +265,7 @@ const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
           }
           inputMaterialManual.style.display = "none";
           inputMaterialManual.value = "";
+          if (inputUnidadeManual) { inputUnidadeManual.style.display = "none"; inputUnidadeManual.value = ""; }
         }
       });
     }
@@ -276,7 +279,7 @@ const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
 
       if (manual) {
         material = (inputMaterialManual.value || "").trim();
-        und = "-"; // unidade em branco / traço no modo manual
+        und = (inputUnidadeManual?.value || "").trim();
       } else {
         material = materialSelect.value;
         const selectedOption = materialSelect.selectedOptions[0];
@@ -294,6 +297,14 @@ const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
           return;
         } else {
           inputMaterialManual.setCustomValidity("");
+        }
+
+        if (!und) {
+          inputUnidadeManual?.setCustomValidity("Informe a unidade de medida.");
+          inputUnidadeManual?.reportValidity();
+          return;
+        } else {
+          inputUnidadeManual?.setCustomValidity("");
         }
       } else {
         if (!material) {
@@ -320,7 +331,18 @@ const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
       }
 
       // Adiciona na lista e atualiza tabela
-      materiaisAdicionados.push({ material, und, quantidade, observacao });
+      materiaisAdicionados.push({
+        itemId: "mat_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8),
+        material,
+        und,
+        unidade: und,
+        quantidade,
+        observacao,
+        manual: !!manual,
+        material_original: manual ? material : "",
+        unidade_original: manual ? und : "",
+        depara_status: manual ? "pendente" : ""
+      });
       atualizarTabela();
 
       // Limpa campos
@@ -329,6 +351,7 @@ const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
 
       if (manual) {
         inputMaterialManual.value = "";
+        if (inputUnidadeManual) inputUnidadeManual.value = "";
         inputMaterialManual.focus();
       } else if (materialSelect.tomselect) {
         materialSelect.tomselect.clear();
