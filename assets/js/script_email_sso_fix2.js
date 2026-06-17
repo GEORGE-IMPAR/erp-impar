@@ -151,32 +151,22 @@ Swal.fire({
   // ==========================
   try {
 
-    const materiais = Array.isArray(window.materiaisAdicionados) && window.materiaisAdicionados.length
-      ? window.materiaisAdicionados.map((m) => ({
-          itemId: m.itemId || ("mat_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8)),
-          material: m.material || "",
-          unidade: m.unidade || m.und || "",
-          quantidade: m.quantidade || "",
-          observacao: m.observacao || "",
-          manual: !!m.manual,
-          material_original: m.material_original || (m.manual ? (m.material || "") : ""),
-          unidade_original: m.unidade_original || (m.manual ? (m.unidade || m.und || "") : ""),
-          depara_status: m.depara_status || (m.manual ? "pendente" : "")
-        }))
-      : Array.from(document.querySelectorAll("#tabelaMateriais tbody tr")).map((tr) => {
-          const tds = tr.querySelectorAll("td");
-          return {
-            itemId: "mat_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8),
-            material: tds[0]?.innerText || "",
-            unidade: tds[1]?.innerText || "",
-            quantidade: tds[2]?.innerText || "",
-            observacao: tds[3]?.innerText || "",
-            manual: false,
-            material_original: "",
-            unidade_original: "",
-            depara_status: ""
-          };
+    const materiais = [];
+
+    document
+      .querySelectorAll("#tabelaMateriais tbody tr")
+      .forEach(tr => {
+
+        const tds = tr.querySelectorAll("td");
+
+        materiais.push({
+          material: tds[0]?.innerText || "",
+          unidade: tds[1]?.innerText || "",
+          quantidade: tds[2]?.innerText || "",
+          observacao: tds[3]?.innerText || ""
         });
+
+      });
 
     const gravaResp = await fetch(
       "https://api.erpimpar.com.br/materiais/salvar_solicitacao.php",
