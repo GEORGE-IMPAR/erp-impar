@@ -608,16 +608,21 @@ function moedaBR(valor) {
 }
 
 function numeroBR(valor) {
-  let n = String(valor ?? "0")
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+  let str = String(valor ?? "0").trim();
 
-  const num = Number(n);
+  // Formato brasileiro: 1.234,56
+  if (str.includes(",") && str.includes(".")) {
+    str = str.replace(/\./g, "").replace(",", ".");
+  }
+  // Formato brasileiro simples: 129,8967
+  else if (str.includes(",")) {
+    str = str.replace(",", ".");
+  }
+
+  const num = parseFloat(str);
 
   return Number.isNaN(num) ? 0 : num;
 }
-
 function atualizarQtdOrcamento(idx, value) {
   if (!itensOrcamento[idx]) return;
 
