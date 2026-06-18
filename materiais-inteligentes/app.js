@@ -592,12 +592,21 @@ buscarMateriais = async function() {
 };
 
 function moedaBR(valor) {
-  let n = String(valor ?? "0")
-    .replace(/[^\d,.-]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+  let num;
 
-  const num = Number(n);
+  if (typeof valor === "number") {
+    num = valor;
+  } else {
+    let str = String(valor ?? "0").trim();
+
+    if (str.includes(",") && str.includes(".")) {
+      str = str.replace(/\./g, "").replace(",", ".");
+    } else if (str.includes(",")) {
+      str = str.replace(",", ".");
+    }
+
+    num = parseFloat(str);
+  }
 
   if (Number.isNaN(num)) return "R$ 0,00";
 
