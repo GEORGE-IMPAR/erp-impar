@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP ÍMPAR — Workflow de Medição</title>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="stylesheet" href="style_teste.css">
+
+<style>
+/* AMBIENTE DE HOMOLOGAÇÃO */
+body::before{content:"AMBIENTE DE TESTE / HOMOLOGAÇÃO — NÃO USAR PARA PRODUÇÃO";position:sticky;top:0;z-index:999999;display:block;text-align:center;background:#facc15;color:#111827;font-weight:1000;letter-spacing:.08em;padding:8px 10px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <div class="logo-orb"></div>
+      <div>
+        <div class="brand-kicker">PLATAFORMA</div>
+        <div class="brand-title">ERP ÍMPAR</div>
+        <div class="brand-sub">Workflow de aprovação, pagamento e rastreabilidade da medição</div>
+      </div>
+    </div>
+    <div class="tag-top"><button class="pill-btn" onclick="location.href='index_teste.html'" type="button">← Contrato</button></div>
+  </div>
+</header>
+<main>
+  <div class="layout medicao-page">
+    <section class="medicao-hero">
+      <div class="workflow-head">
+        <div>
+          <h1 id="tituloMedicao">Medição</h1>
+          <div class="workflow-sub" id="subMedicao">Carregando dados...</div>
+        </div>
+        <span id="statusMedicao" class="workflow-badge">Carregando</span>
+      </div>
+      <div class="medicao-grid">
+        <div class="medicao-box"><small>Obra</small><b id="boxObra">—</b></div>
+        <div class="medicao-box"><small>Empreiteiro</small><b id="boxEmpreiteiro">—</b></div>
+        <div class="medicao-box"><small>Valor da medição</small><b id="boxValor">—</b></div>
+        <div class="medicao-box"><small>Responsável atual</small><b id="boxResponsavel">—</b></div>
+      </div>
+    </section>
+
+    <section class="summary-row">
+      <div class="kpi"><span>Valor contrato</span><strong id="kpiContratoView">R$ 0,00</strong></div>
+      <div class="kpi"><span>Total já medido aprovado</span><strong id="kpiMedidoView">R$ 0,00</strong></div>
+      <div class="kpi"><span>Total pago</span><strong id="kpiPagoView">R$ 0,00</strong></div>
+      <div class="kpi"><span>Saldo financeiro</span><strong id="kpiSaldoView">R$ 0,00</strong></div>
+    </section>
+
+    <section class="extrato-card">
+      <div class="extrato-title">Itens desta medição</div>
+      <div class="extrato-sub">O diretor e o financeiro visualizam exatamente o percentual solicitado, histórico e saldo.</div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>Descrição</th><th>% anterior</th><th>% desta medição</th><th>% após</th><th>Valor</th><th>Saldo após</th></tr></thead>
+          <tbody id="itensMedicaoView"><tr><td colspan="7">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="extrato-card">
+      <div class="extrato-title">Histórico / conta-corrente do contrato</div>
+      <div class="extrato-sub">Medições anteriores, status e valores para conferência antes da decisão.</div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Data</th><th>Medição</th><th>Status</th><th>Observação</th><th>Valor</th></tr></thead>
+          <tbody id="historicoContratoView"><tr><td colspan="5">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="workflow-card-wrap">
+      <div class="workflow-title">Linha do tempo do workflow</div>
+      <div class="workflow-sub">Cada ação fica registrada com data, usuário e comentário.</div>
+      <div id="timelineView" class="timeline"></div>
+    </section>
+
+    <section id="decisaoBox" class="decisao-box" style="display:none">
+      <label id="comentarioLabel">Comentário</label>
+      <textarea id="comentarioAcao" placeholder="Escreva uma observação para ficar registrada no histórico"></textarea>
+      <div class="actions" id="acoesView"></div>
+    </section>
+  </div>
+</main>
+<footer><div class="rodape-inner"><span>ERP ÍMPAR • Workflow de Medição</span><span>aprovação • financeiro • histórico</span></div></footer>
+<script>
+const API_BASE = "https://api.erpimpar.com.br/empreiteiros_teste";
+const params = new URLSearchParams(location.search);
+const contratoId = params.get('contrato_id') || '';
+const medicaoId = params.get('medicao_id') || '';
+const perfil = (params.get('perfil') || 'coordenador').toLowerCase();
+let contrato = null;
+let medicao = null;
+
+if (window.Swal && Swal.mixin) {
+  window.Swal = Swal.mixin({customClass:{popup:"impar-swal",confirmButton:"impar-swal-confirm",cancelButton:"impar-swal-cancel"},buttonsStyling:false});
+}
+function moeda(n){return Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
+function fmtPct(n){return Number(n||0).toFixed(2).replace('.',',')+'%';}
+function statusLabel(status){return ({RASCUNHO:'Rascunho',AGUARDANDO_DIRETOR:'Aguardando aprovação do diretor',REPROVADA_DIRETOR:'Reprovada pelo diretor',APROVADA_DIRETOR:'Aprovada pelo diretor',AGUARDANDO_FINANCEIRO:'Aguardando financeiro',PAGO:'Pago pelo financeiro'}[status] || status || 'Sem status');}
+function statusClass(status){if(status==='PAGO'||status==='APROVADA_DIRETOR'||status==='AGUARDANDO_FINANCEIRO')return 'ok'; if(status==='REPROVADA_DIRETOR')return 'bad'; if(status==='AGUARDANDO_DIRETOR')return 'wait'; return 'draft';}
+function responsavel(status){if(status==='AGUARDANDO_DIRETOR')return 'Diretor'; if(status==='AGUARDANDO_FINANCEIRO'||status==='APROVADA_DIRETOR')return 'Financeiro'; if(status==='REPROVADA_DIRETOR')return 'Coordenador'; if(status==='PAGO')return 'Concluído'; return 'Coordenador';}
+function abrirWhats(url){if(url) window.open(url,'_blank');}
+
+async function post(url,data){const r=await fetch(url,{method:'POST',body:JSON.stringify(data)}); const t=await r.text(); let j={}; try{j=JSON.parse(t)}catch(e){throw new Error(t||'Resposta inválida')}; if(!r.ok||j.ok===false) throw new Error(j.erro||j.error||'Erro no servidor'); return j;}
+
+async function carregar(){
+  document.body.classList.add('impar-enter');
+  if(!contratoId||!medicaoId){document.getElementById('subMedicao').textContent='Link inválido: contrato_id e medicao_id são obrigatórios.'; return;}
+  try{
+    const r = await fetch(`${API_BASE}/obter_medicao.php?contrato_id=${encodeURIComponent(contratoId)}&medicao_id=${encodeURIComponent(medicaoId)}&t=${Date.now()}`);
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.erro || 'Não encontrado');
+    contrato = j.contrato; medicao = j.medicao; render();
+  }catch(e){
+    document.getElementById('subMedicao').textContent = 'Erro ao carregar: ' + e.message;
+  }
+}
+
+function render(){
+  const st = medicao.status || 'AGUARDANDO_DIRETOR';
+  document.getElementById('tituloMedicao').textContent = `Medição ${medicao.id || ''}`;
+  document.getElementById('subMedicao').textContent = `Perfil de acesso: ${perfil.toUpperCase()} • Data: ${medicao.data || '—'} • Observação: ${medicao.obs || '—'}`;
+  const badge = document.getElementById('statusMedicao'); badge.textContent = statusLabel(st); badge.className = 'workflow-badge '+statusClass(st);
+  document.getElementById('boxObra').textContent = contrato.obra || contrato.obra_nome || '—';
+  document.getElementById('boxEmpreiteiro').textContent = contrato.empreiteiro || contrato.empreiteiro_nome || '—';
+  document.getElementById('boxValor').textContent = moeda(medicao.total || 0);
+  document.getElementById('boxResponsavel').textContent = responsavel(st);
+  const valorContrato = Number(contrato.valor_contrato || 0);
+  const medidoAprovado = (contrato.medicoes||[]).filter(m=>!['AGUARDANDO_DIRETOR','REPROVADA_DIRETOR'].includes(m.status)).reduce((s,m)=>s+Number(m.total||0),0);
+  const pago = Number(contrato.conta_corrente?.total_pago || 0);
+  document.getElementById('kpiContratoView').textContent = moeda(valorContrato);
+  document.getElementById('kpiMedidoView').textContent = moeda(medidoAprovado);
+  document.getElementById('kpiPagoView').textContent = moeda(pago);
+  document.getElementById('kpiSaldoView').textContent = moeda(valorContrato - pago);
+
+  document.getElementById('itensMedicaoView').innerHTML = (medicao.itens||[]).map(it=>`<tr><td>${it.item||'—'}</td><td>${it.descricao||'—'}</td><td>${fmtPct(it.percentual_base)}</td><td><b>${fmtPct(it.percentual)}</b></td><td>${fmtPct(it.percentual_acumulado)}</td><td>${moeda(it.valor)}</td><td>${moeda(it.saldo_valor)}</td></tr>`).join('') || '<tr><td colspan="7">Sem itens.</td></tr>';
+  document.getElementById('historicoContratoView').innerHTML = (contrato.medicoes||[]).slice().reverse().map(m=>`<tr><td>${m.data||'—'}</td><td>${m.id||'—'}</td><td><span class="workflow-badge ${statusClass(m.status)}">${statusLabel(m.status)}</span></td><td>${m.comentario_diretor||m.obs||m.pagamento?.observacao||'—'}</td><td>${moeda(m.total||0)}</td></tr>`).join('') || '<tr><td colspan="5">Sem histórico.</td></tr>';
+  document.getElementById('timelineView').innerHTML = (medicao.historico_fluxo||[]).map(h=>`<div class="timeline-item"><b>${statusLabel(h.status)} • ${h.usuario||'Sistema'}</b><span>${h.data||''}</span><span>${h.comentario||'—'}</span></div>`).join('') || '<div class="timeline-item"><b>Sem linha do tempo.</b></div>';
+  renderAcoes();
+}
+
+function renderAcoes(){
+  const box = document.getElementById('decisaoBox');
+  const acoes = document.getElementById('acoesView');
+  const st = medicao.status || '';
+  acoes.innerHTML = '';
+  let mostrar = false;
+  if(perfil==='diretor' && st==='AGUARDANDO_DIRETOR'){
+    mostrar = true;
+    document.getElementById('comentarioLabel').textContent = 'Comentário do diretor';
+    acoes.innerHTML = `<button class="btn-secondary" onclick="decidir('REPROVAR')" type="button">Reprovar e devolver</button><button class="btn-primary" onclick="decidir('APROVAR')" type="button">Aprovar e enviar ao financeiro</button>`;
+  } else if(perfil==='financeiro' && (st==='AGUARDANDO_FINANCEIRO'||st==='APROVADA_DIRETOR')){
+    mostrar = true;
+    document.getElementById('comentarioLabel').textContent = 'Observação do pagamento';
+    acoes.innerHTML = `<button class="btn-primary" onclick="decidir('PAGAR')" type="button">Marcar como pago</button>`;
+  } else if(perfil==='coordenador' && st==='REPROVADA_DIRETOR'){
+    mostrar = true;
+    document.getElementById('comentarioLabel').textContent = 'Comentário recebido';
+    document.getElementById('comentarioAcao').value = medicao.comentario_diretor || '';
+    document.getElementById('comentarioAcao').readOnly = true;
+    acoes.innerHTML = `<button class="btn-primary" onclick="location.href='index_teste.html'" type="button">Abrir contrato para corrigir</button>`;
+  }
+  box.style.display = mostrar ? 'block' : 'none';
+}
+
+async function decidir(acao){
+  const comentario = document.getElementById('comentarioAcao').value || '';
+  try{
+    const j = await post(`${API_BASE}/atualizar_fluxo_medicao.php`, {contrato_id:contratoId, medicao_id:medicaoId, acao, comentario, usuario:perfil.toUpperCase()});
+    contrato = j.contrato; medicao = j.medicao; render();
+    const links = j.notificacoes || {};
+    const botoes = Object.entries(links).filter(([k,v])=>v).map(([k,v])=>`<button class="impar-swal-confirm" onclick="abrirWhats('${v}')">WhatsApp ${k}</button>`).join('');
+    Swal.fire({icon:'success',title:'Workflow atualizado',html:`Status atual: <b>${statusLabel(medicao.status)}</b><br><br>${botoes}`,confirmButtonText:'OK'});
+  }catch(e){Swal.fire({icon:'error',title:'Erro ao atualizar',text:e.message});}
+}
+
+window.addEventListener('DOMContentLoaded', carregar);
+</script>
+</body>
+</html>
