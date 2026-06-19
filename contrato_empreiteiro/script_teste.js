@@ -59,14 +59,16 @@ function statusMedicaoLabel(status) {
     REPROVADA_DIRETOR: "Reprovada pelo diretor",
     APROVADA_DIRETOR: "Aprovada pelo diretor",
     AGUARDANDO_FINANCEIRO: "Aguardando financeiro",
+    CANCELADA: "Cancelada",
     PAGO: "Pago pelo financeiro"
   };
   return mapa[status] || status || "Sem status";
 }
 
 function statusMedicaoClass(status) {
-  if (status === "PAGO" || status === "APROVADA_DIRETOR" || status === "AGUARDANDO_FINANCEIRO") return "ok";
-  if (status === "REPROVADA_DIRETOR") return "bad";
+  if (status === "PAGO") return "ok";
+  if (status === "APROVADA_DIRETOR" || status === "AGUARDANDO_FINANCEIRO") return "info";
+  if (status === "REPROVADA_DIRETOR" || status === "CANCELADA") return "bad";
   if (status === "AGUARDANDO_DIRETOR") return "wait";
   return "draft";
 }
@@ -82,6 +84,133 @@ function abrirLinkMedicao(medicaoId, perfil) {
 
 function abrirWhatsAppLink(url) {
   if (url) window.open(url, "_blank");
+}
+
+
+function destinoPendenteMedicao(m) {
+  if (!m) return "coordenador";
+  if (m.status === "AGUARDANDO_DIRETOR") return "diretor";
+  if (m.status === "AGUARDANDO_FINANCEIRO" || m.status === "APROVADA_DIRETOR") return "financeiro";
+  if (m.status === "REPROVADA_DIRETOR") return "coordenador";
+  return "coordenador";
+}
+
+function nomeDestinoPendente(m) {
+  const d = destinoPendenteMedicao(m);
+  return d === "diretor" ? "diretor" : d === "financeiro" ? "financeiro" : "coordenador";
+}
+
+function escapeHtml(v) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+async function acaoWorkflowMedicao(medicaoId, acao, comentario) {
+  if (!estado.contratoId || !medicaoId) throw new Error("Contrato ou medição não carregados.");
+  const resp = await post(`${API_BASE}/atualizar_fluxo_medicao.php`, {
+    contrato_id: estado.contratoId,
+    medicao_id: medicaoId,
+    acao,
+    comentario: comentario || "",
+    usuario: val("userNome") || "Coordenador"
+  });
+  if (resp.contrato) preencherTelaComContrato(resp.contrato);
+  return resp;
+}
+
+async function reenviarWorkflowMedicao(medicaoId) {
+  const medicao = estado.medicoes.find(m => m.id === medicaoId);
+  if (!medicao) return;
+  const destino = nomeDestinoPendente(medicao);
+
+  const ok = await Swal.fire({
+    icon: "question",
+    title: `Reenviar para ${destino}?`,
+    html: `A medição <b>${escapeHtml(medicao.id)}</b> está com status:<br><b>${escapeHtml(statusMedicaoLabel(medicao.status))}</b>.<br><br>O sistema vai gerar novamente o WhatsApp para quem está pendente.`,
+    showCancelButton: true,
+    confirmButtonText: "Reenviar WhatsApp",
+    cancelButtonText: "Cancelar"
+  });
+
+  if (!ok.isConfirmed) return;
+
+  try {
+    const resp = await acaoWorkflowMedicao(medicaoId, "REENVIAR", `WhatsApp reenviado para ${destino}.`);
+    const wa = resp.whatsapp_url || resp.notificacoes?.diretor || resp.notificacoes?.financeiro || resp.notificacoes?.coordenador || "";
+    Swal.fire({
+      icon: "success",
+      title: "Reenvio preparado",
+      html: `O link foi gerado novamente para o <b>${destino}</b>.<br><br>${wa ? `<button class="impar-swal-confirm" onclick="abrirWhatsAppLink('${wa}')">Abrir WhatsApp</button>` : "Telefone não encontrado no cadastro."}`,
+      confirmButtonText: "OK"
+    });
+    if (wa) abrirWhatsAppLink(wa);
+  } catch (e) {
+    Swal.fire({ icon: "error", title: "Erro ao reenviar", text: e.message });
+  }
+}
+
+async function cancelarWorkflowMedicao(medicaoId) {
+  const medicao = estado.medicoes.find(m => m.id === medicaoId);
+  if (!medicao) return;
+
+  if (medicao.status === "PAGO") {
+    Swal.fire({ icon: "warning", title: "Medição já paga", text: "Medição paga não pode ser cancelada por aqui." });
+    return;
+  }
+
+  const respMotivo = await Swal.fire({
+    icon: "warning",
+    title: `Cancelar ${medicao.id}?`,
+    input: "textarea",
+    inputLabel: "Motivo do cancelamento",
+    inputPlaceholder: "Ex.: medição lançada com percentual errado",
+    showCancelButton: true,
+    confirmButtonText: "Cancelar medição",
+    cancelButtonText: "Voltar",
+    inputValidator: (v) => !String(v || "").trim() ? "Informe o motivo para manter rastreabilidade." : undefined
+  });
+
+  if (!respMotivo.isConfirmed) return;
+
+  try {
+    await acaoWorkflowMedicao(medicaoId, "CANCELAR", respMotivo.value || "Medição cancelada pelo coordenador.");
+    Swal.fire({ icon: "success", title: "Medição cancelada", text: "O status e o histórico foram atualizados." });
+  } catch (e) {
+    Swal.fire({ icon: "error", title: "Erro ao cancelar", text: e.message });
+  }
+}
+
+function etapaOk(m, etapa) {
+  const st = m.status;
+  if (etapa === "coord") return !!m.data_sistema;
+  if (etapa === "diretor") return ["AGUARDANDO_FINANCEIRO", "APROVADA_DIRETOR", "PAGO"].includes(st);
+  if (etapa === "financeiro") return st === "PAGO";
+  return false;
+}
+
+function etapaAtual(m, etapa) {
+  const st = m.status;
+  if (st === "AGUARDANDO_DIRETOR" && etapa === "diretor") return true;
+  if ((st === "AGUARDANDO_FINANCEIRO" || st === "APROVADA_DIRETOR") && etapa === "financeiro") return true;
+  if (st === "REPROVADA_DIRETOR" && etapa === "coord") return true;
+  return false;
+}
+
+function renderTimelineMedicao(m) {
+  const passos = [
+    ["coord", "Coordenador", "Enviou a medição"],
+    ["diretor", "Diretor", "Aprovar ou reprovar"],
+    ["financeiro", "Financeiro", "Confirmar pagamento"]
+  ];
+  return `<div class="workflow-timeline">${passos.map(([key, titulo, desc]) => {
+    const cls = m.status === "CANCELADA" ? "cancel" : etapaOk(m, key) ? "done" : etapaAtual(m, key) ? "current" : "pending";
+    const icon = cls === "done" ? "✓" : cls === "current" ? "…" : cls === "cancel" ? "×" : "";
+    return `<div class="workflow-step ${cls}"><span>${icon}</span><b>${titulo}</b><small>${desc}</small></div>`;
+  }).join("")}</div>`;
 }
 
 function abrirCalendario(id) {
@@ -641,7 +770,7 @@ function renderWorkflowMedicoes() {
   if (!box) return;
 
   const medicoes = Array.isArray(estado.medicoes) ? estado.medicoes : [];
-  const pendentes = medicoes.filter(m => m.status && m.status !== "PAGO");
+  const pendentes = medicoes.filter(m => m.status && !["PAGO", "CANCELADA"].includes(m.status));
 
   if (resumo) {
     resumo.textContent = medicoes.length
@@ -657,29 +786,36 @@ function renderWorkflowMedicoes() {
   box.innerHTML = medicoes.slice().reverse().map(m => {
     const hist = Array.isArray(m.historico_fluxo) ? m.historico_fluxo : [];
     const ultimo = hist.length ? hist[hist.length - 1] : null;
-    const comentario = m.comentario_diretor || m.pagamento?.observacao || ultimo?.comentario || m.obs || "—";
+    const comentario = m.cancelamento?.motivo || m.comentario_diretor || m.pagamento?.observacao || ultimo?.comentario || m.obs || "—";
     const responsavel = m.status === "AGUARDANDO_DIRETOR" ? "Diretor" :
       m.status === "AGUARDANDO_FINANCEIRO" || m.status === "APROVADA_DIRETOR" ? "Financeiro" :
-      m.status === "REPROVADA_DIRETOR" ? "Coordenador" : "Concluído";
+      m.status === "REPROVADA_DIRETOR" ? "Coordenador" :
+      m.status === "CANCELADA" ? "Cancelada" : "Concluído";
+    const podeReenviar = ["AGUARDANDO_DIRETOR", "AGUARDANDO_FINANCEIRO", "APROVADA_DIRETOR", "REPROVADA_DIRETOR"].includes(m.status);
+    const podeCancelar = !["PAGO", "CANCELADA"].includes(m.status);
+    const destino = nomeDestinoPendente(m);
 
     return `
       <div class="workflow-card ${statusMedicaoClass(m.status)}">
         <div class="workflow-card-top">
           <div>
-            <strong>${m.id || "MED"}</strong>
-            <span>${m.data || "sem data"}</span>
+            <strong>${escapeHtml(m.id || "MED")}</strong>
+            <span>${escapeHtml(m.data || "sem data")}</span>
           </div>
-          <span class="workflow-badge ${statusMedicaoClass(m.status)}">${statusMedicaoLabel(m.status)}</span>
+          <span class="workflow-badge ${statusMedicaoClass(m.status)}">${escapeHtml(statusMedicaoLabel(m.status))}</span>
         </div>
+        ${renderTimelineMedicao(m)}
         <div class="workflow-card-grid">
           <div><small>Valor</small><b>${moeda(m.total || 0)}</b></div>
-          <div><small>Responsável atual</small><b>${responsavel}</b></div>
-          <div><small>Última observação</small><b>${comentario}</b></div>
+          <div><small>Responsável atual</small><b>${escapeHtml(responsavel)}</b></div>
+          <div><small>Última observação</small><b>${escapeHtml(comentario)}</b></div>
         </div>
         <div class="workflow-actions">
           <button class="btn-secondary mini" onclick="abrirLinkMedicao('${m.id}', 'coordenador')" type="button">Acompanhar</button>
           ${m.status === "AGUARDANDO_DIRETOR" ? `<button class="btn-secondary mini" onclick="abrirLinkMedicao('${m.id}', 'diretor')" type="button">Visão diretor</button>` : ""}
           ${m.status === "AGUARDANDO_FINANCEIRO" || m.status === "APROVADA_DIRETOR" ? `<button class="btn-secondary mini" onclick="abrirLinkMedicao('${m.id}', 'financeiro')" type="button">Visão financeiro</button>` : ""}
+          ${podeReenviar ? `<button class="btn-primary mini" onclick="reenviarWorkflowMedicao('${m.id}')" type="button">Reenviar ${destino}</button>` : ""}
+          ${podeCancelar ? `<button class="btn-danger mini" onclick="cancelarWorkflowMedicao('${m.id}')" type="button">Cancelar medição</button>` : ""}
         </div>
       </div>
     `;
