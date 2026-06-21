@@ -701,10 +701,39 @@ function renderExtrato() {
   const body = document.getElementById("extratoBody");
   if (!body) return;
 
+  if (!document.getElementById("css-medicao-cancelada")) {
+    const style = document.createElement("style");
+    style.id = "css-medicao-cancelada";
+    style.textContent = `
+      .medicao-cancelada td{
+        color:#ef4444 !important;
+        text-decoration:line-through;
+        opacity:.75;
+      }
+      .badge-cancelada{
+        display:inline-flex;
+        margin-left:8px;
+        padding:3px 9px;
+        border-radius:999px;
+        background:rgba(239,68,68,.16);
+        border:1px solid rgba(239,68,68,.55);
+        color:#fca5a5 !important;
+        font-size:10px;
+        font-weight:1000;
+        letter-spacing:.08em;
+        text-decoration:none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   const linhas = [];
 
   estado.medicoes.forEach(m => {
     if (["AGUARDANDO_DIRETOR", "REPROVADA_DIRETOR"].includes(m.status)) return;
+
+    const cancelada = m.status === "CANCELADA";
+
     (m.itens || []).forEach(it => {
       linhas.push({
         medicao: m.id,
@@ -713,7 +742,8 @@ function renderExtrato() {
         descricao: it.descricao,
         percentual: it.percentual,
         valor: it.valor,
-        saldo_valor: it.saldo_valor
+        saldo_valor: it.saldo_valor,
+        cancelada
       });
     });
   });
@@ -727,9 +757,14 @@ function renderExtrato() {
 
   linhas.forEach(l => {
     const tr = document.createElement("tr");
+    if (l.cancelada) tr.classList.add("medicao-cancelada");
+
     tr.innerHTML = `
       <td>${l.data || "—"}</td>
-      <td>${l.medicao || "—"}</td>
+      <td>
+        ${l.medicao || "—"}
+        ${l.cancelada ? `<span class="badge-cancelada">CANCELADA</span>` : ""}
+      </td>
       <td>${l.item || "—"}</td>
       <td>${l.descricao || "—"}</td>
       <td>${Number(l.percentual || 0).toFixed(2).replace(".", ",")}%</td>
@@ -739,7 +774,6 @@ function renderExtrato() {
     body.appendChild(tr);
   });
 }
-
 async function compartilharMedicao(medicaoId) {
   const medicao = estado.medicoes.find(m => m.id === medicaoId);
   if (!medicao) return;
