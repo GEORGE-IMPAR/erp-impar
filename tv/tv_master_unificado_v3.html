@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP ÍMPAR • TV Master Unificado</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{
+      width:100%;
+      height:100%;
+      overflow:hidden;
+      background:#020617;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:#e5e7eb;
+    }
+
+    body{
+      position:relative;
+      background:linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e);
+    }
+
+    #tvFrame{
+      position:fixed;
+      inset:0;
+      width:100vw;
+      height:100vh;
+      border:0;
+      background:#020617;
+      opacity:1;
+      transition:opacity .45s ease;
+    }
+
+    #tvFrame.fade-out{opacity:0}
+    #tvFrame.fade-in{opacity:1}
+
+    .master-badge{
+      position:fixed;
+      top:52px;
+      left:50%;
+      transform:translateX(-50%);
+      z-index:99998;
+      background:rgba(34,197,94,.18);
+      border:1px solid rgba(34,197,94,.42);
+      color:#e5e7eb;
+      border-radius:999px;
+      padding:8px 18px;
+      font-size:12px;
+      font-weight:900;
+      white-space:nowrap;
+      box-shadow:0 12px 28px rgba(0,0,0,.25);
+      pointer-events:none;
+      max-width:70vw;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .master-actions{
+      position:fixed;
+      right:18px;
+      bottom:18px;
+      z-index:99999;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      align-items:stretch;
+    }
+
+    .master-actions.hide{display:none!important}
+
+    .btn-master{
+      background:#22c55e;
+      color:#00120a;
+      border:none;
+      border-radius:14px;
+      padding:14px 22px;
+      font-size:15px;
+      font-weight:1000;
+      cursor:pointer;
+      box-shadow:0 12px 28px rgba(34,197,94,.38);
+      min-width:150px;
+      text-align:center;
+    }
+
+    .btn-back-tv{
+      background:#3b82f6;
+      color:#fff;
+      box-shadow:0 12px 28px rgba(59,130,246,.34);
+    }
+
+    .loading-mask{
+      position:fixed;
+      inset:0;
+      z-index:99997;
+      background:linear-gradient(120deg,#0b1e4a,#0e3b6e,#0f766e);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-direction:column;
+      gap:14px;
+      color:#fff;
+      font-weight:1000;
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .25s ease;
+    }
+
+    .loading-mask.show{
+      opacity:1;
+      pointer-events:auto;
+    }
+
+    .orb{
+      width:58px;
+      height:58px;
+      border-radius:50%;
+      background:conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);
+      box-shadow:0 10px 22px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.18) inset;
+      position:relative;
+      overflow:hidden;
+      animation:pulse 1.4s ease-in-out infinite;
+    }
+
+    .orb:before{
+      content:"";
+      position:absolute;
+      inset:-6px;
+      background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.55),transparent 55%);
+    }
+
+    @keyframes pulse{
+      0%,100%{transform:scale(1);opacity:.9}
+      50%{transform:scale(1.06);opacity:1}
+    }
+  </style>
+</head>
+<body>
+  <iframe id="tvFrame" src="" allowfullscreen></iframe>
+
+  <div class="master-badge" id="masterBadge">📺 TV Master</div>
+
+  <div class="loading-mask show" id="loadingMask">
+    <div class="orb"></div>
+    <div id="loadingText">Carregando TV Master...</div>
+  </div>
+
+  <div class="master-actions" id="masterActions">
+    <button class="btn-master btn-back-tv" id="btnVoltarTV" onclick="voltarIndexTV()">⬅️ Voltar</button>
+    <button class="btn-master" id="btnFullscreen" onclick="ativarFullscreen()">🖥️ Tela Cheia</button>
+  </div>
+
+  <script>
+    const paginas = [
+      { nome:'Gestão à Vista • Status das Obras', url:'./gestao_a_vista_status_obras.html', tempo:100000 },
+      { nome:'Farol das Obras', url:'./farol_obras_tv.html', tempo:40000 },
+      { nome:'KPIs Coordenadores', url:'./kpis_coordenadores_tv.html', tempo:35000 },
+      { nome:'Quem está onde?', url:'./quem_esta_onde_tv.html', tempo:45000 },
+      { nome:'Agenda Semanal Premium', url:'./alocacao_semanal_tv.html', tempo:42000 }
+    ];
+
+    const frame = document.getElementById('tvFrame');
+    const badge = document.getElementById('masterBadge');
+    const loadingMask = document.getElementById('loadingMask');
+    const loadingText = document.getElementById('loadingText');
+    const btnFullscreen = document.getElementById('btnFullscreen');
+    const btnVoltarTV = document.getElementById('btnVoltarTV');
+    const masterActions = document.getElementById('masterActions');
+
+    let indiceAtual = 0;
+    let timer = null;
+    let injectionTimer = null;
+
+    function competenciaAtual(){
+      const d = new Date();
+      const ano = d.getFullYear();
+      const mes = String(d.getMonth() + 1).padStart(2, '0');
+      const ym = `${ano}-${mes}`;
+      const ymKpi = `${ano}_${mes}`;
+      return { ano, mes, ym, ymKpi };
+    }
+
+    function gravarCompetenciaKpiAtual(){
+      const c = competenciaAtual();
+      try{
+        localStorage.setItem('ERPIMPAR_KPI_COMPETENCIA', c.ym);
+        localStorage.setItem('ERPIMPAR_KPI_MONTH', c.ymKpi);
+        localStorage.setItem('ERPIMPAR_KPI_MES', c.ym);
+        localStorage.setItem('ERPIMPAR_KPI_ANO', String(c.ano));
+        localStorage.setItem('ERPIMPAR_KPI_MES_NUM', c.mes);
+        sessionStorage.setItem('ERPIMPAR_KPI_COMPETENCIA', c.ym);
+        sessionStorage.setItem('ERPIMPAR_KPI_MONTH', c.ymKpi);
+        sessionStorage.setItem('ERPIMPAR_KPI_MES', c.ym);
+        sessionStorage.setItem('ERPIMPAR_KPI_ANO', String(c.ano));
+        sessionStorage.setItem('ERPIMPAR_KPI_MES_NUM', c.mes);
+      }catch(e){}
+    }
+
+    function estaFullscreen(){
+      return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+    }
+
+    function atualizarBotaoFullscreen(){
+      const fs = estaFullscreen();
+      if(masterActions) masterActions.classList.toggle('hide', fs);
+    }
+
+    function urlComCacheBuster(url){
+      const c = competenciaAtual();
+      const sep = url.includes('?') ? '&' : '?';
+
+      // Envia a competência corrente para as visões carregadas pela TV.
+      // Isso corrige o KPI 1 na Gestão à Vista/TV, evitando leitura acumulada fora do mês atual.
+      return `${url}${sep}tvMaster=1&competencia=${encodeURIComponent(c.ym)}&mes=${encodeURIComponent(c.ym)}&kpiMonth=${encodeURIComponent(c.ymKpi)}&ERPIMPAR_KPI_MONTH=${encodeURIComponent(c.ymKpi)}&ano=${c.ano}&mesNum=${c.mes}&t=${Date.now()}`;
+    }
+
+    function atualizarBadge(){
+      const atual = paginas[indiceAtual];
+      badge.textContent = `📺 ${atual.nome} • ${indiceAtual + 1}/${paginas.length}`;
+      loadingText.textContent = `Carregando ${atual.nome}...`;
+    }
+
+    function carregarPagina(indice){
+      clearTimeout(timer);
+
+      indiceAtual = (indice + paginas.length) % paginas.length;
+      const atual = paginas[indiceAtual];
+      atualizarBadge();
+      atualizarBotaoFullscreen();
+
+      frame.classList.remove('fade-in');
+      frame.classList.add('fade-out');
+      loadingMask.classList.add('show');
+
+      setTimeout(() => {
+        frame.src = urlComCacheBuster(atual.url);
+      }, 300);
+    }
+
+    function agendarProxima(tempoCustom){
+      clearTimeout(timer);
+      const atual = paginas[indiceAtual];
+      const tempo = Number(tempoCustom || atual.tempo || 40000);
+
+      timer = setTimeout(() => {
+        carregarPagina((indiceAtual + 1) % paginas.length);
+      }, tempo);
+    }
+
+    function injetarCssNoDocumento(doc){
+      if(!doc || doc.getElementById('tvMasterSemBotaoFullscreen')) return;
+
+      const style = doc.createElement('style');
+      style.id = 'tvMasterSemBotaoFullscreen';
+      style.textContent = `
+        /* TV MASTER: botão de tela cheia fica somente no master */
+        #btnFullscreen,
+        .btn-fullscreen,
+        button[onclick*="Fullscreen"],
+        button[onclick*="fullscreen"],
+        button[onclick*="ativarFullscreen"],
+        button[onclick*="requestFullscreen"],
+        [class*="fullscreen"],
+        [id*="fullscreen"],
+        [class*="Fullscreen"],
+        [id*="Fullscreen"]{
+          display:none !important;
+          visibility:hidden !important;
+          opacity:0 !important;
+          pointer-events:none !important;
+        }
+      `;
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+
+    function aplicarModoMasterEmIframes(win, profundidade = 0){
+      if(!win || profundidade > 4) return;
+
+      try{
+        try{
+          const c = competenciaAtual();
+          win.localStorage.setItem('ERPIMPAR_KPI_COMPETENCIA', c.ym);
+          win.localStorage.setItem('ERPIMPAR_KPI_MES', c.ym);
+          win.localStorage.setItem('ERPIMPAR_KPI_ANO', String(c.ano));
+          win.localStorage.setItem('ERPIMPAR_KPI_MES_NUM', c.mes);
+          win.sessionStorage.setItem('ERPIMPAR_KPI_COMPETENCIA', c.ym);
+          win.sessionStorage.setItem('ERPIMPAR_KPI_MES', c.ym);
+          win.sessionStorage.setItem('ERPIMPAR_KPI_ANO', String(c.ano));
+          win.sessionStorage.setItem('ERPIMPAR_KPI_MES_NUM', c.mes);
+        }catch(e){}
+
+        const doc = win.document;
+        injetarCssNoDocumento(doc);
+
+        // Oculta botões de tela cheia mesmo quando a visão validada carrega outro HTML dentro dela.
+        const iframes = Array.from(doc.querySelectorAll('iframe'));
+        for(const child of iframes){
+          try{
+            injetarCssNoDocumento(child.contentDocument);
+            aplicarModoMasterEmIframes(child.contentWindow, profundidade + 1);
+          }catch(e){}
+        }
+      }catch(e){}
+    }
+
+    function iniciarInjecaoContinua(){
+      clearInterval(injectionTimer);
+
+      // Algumas visões carregam iframe interno depois do load; por isso reforça por alguns segundos.
+      let tentativas = 0;
+      injectionTimer = setInterval(() => {
+        aplicarModoMasterEmIframes(frame.contentWindow);
+        atualizarBotaoFullscreen();
+        tentativas++;
+        if(tentativas >= 30){
+          clearInterval(injectionTimer);
+          injectionTimer = null;
+        }
+      }, 500);
+    }
+
+    frame.addEventListener('load', () => {
+      iniciarInjecaoContinua();
+
+      setTimeout(() => {
+        aplicarModoMasterEmIframes(frame.contentWindow);
+        frame.classList.remove('fade-out');
+        frame.classList.add('fade-in');
+        loadingMask.classList.remove('show');
+        agendarProxima();
+      }, 700);
+    });
+
+    window.addEventListener('message', (event) => {
+      const data = event.data || {};
+
+      if(data.type === 'ERP_IMPAR_TV_BADGE' && data.text){
+        badge.textContent = `${data.text} • ${indiceAtual + 1}/${paginas.length}`;
+      }
+
+      if(data.type === 'ERP_IMPAR_TV_CYCLE_MS' && Number(data.value) > 0){
+        agendarProxima(Number(data.value));
+      }
+
+      if(data.type === 'ERP_IMPAR_TV_NEXT'){
+        carregarPagina((indiceAtual + 1) % paginas.length);
+      }
+    });
+
+    function voltarIndexTV(){
+      location.href = './index.html';
+    }
+
+    function ativarFullscreen(){
+      const el = document.documentElement;
+
+      if(el.requestFullscreen){
+        el.requestFullscreen();
+      }else if(el.webkitRequestFullscreen){
+        el.webkitRequestFullscreen();
+      }else if(el.msRequestFullscreen){
+        el.msRequestFullscreen();
+      }
+
+      atualizarBotaoFullscreen();
+    }
+
+    document.addEventListener('fullscreenchange', atualizarBotaoFullscreen);
+    document.addEventListener('webkitfullscreenchange', atualizarBotaoFullscreen);
+    document.addEventListener('msfullscreenchange', atualizarBotaoFullscreen);
+
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'ArrowRight'){
+        carregarPagina((indiceAtual + 1) % paginas.length);
+      }
+      if(e.key === 'ArrowLeft'){
+        carregarPagina((indiceAtual - 1 + paginas.length) % paginas.length);
+      }
+      if(e.key === 'f' || e.key === 'F'){
+        ativarFullscreen();
+      }
+    });
+
+    function bloquearVoltarNativo(){
+      try{
+        history.replaceState({erpImparTvMaster:true}, '', location.href);
+        history.pushState({erpImparTvMaster:true}, '', location.href);
+      }catch(e){}
+    }
+
+    window.addEventListener('popstate', () => {
+      // Bloqueia botão nativo do navegador/celular: a navegação deve ocorrer pelos botões do sistema.
+      bloquearVoltarNativo();
+    });
+
+    window.addEventListener('pageshow', bloquearVoltarNativo);
+
+    gravarCompetenciaKpiAtual();
+    bloquearVoltarNativo();
+    carregarPagina(0);
+  </script>
+</body>
+</html>
