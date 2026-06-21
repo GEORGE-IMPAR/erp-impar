@@ -168,15 +168,69 @@ function renderAcoes(){
   box.style.display = mostrar ? 'block' : 'none';
 }
 
+function destinoNotificacaoPorAcao(acao){
+  if(acao === 'APROVAR') return 'financeiro';
+  if(acao === 'PAGAR' || acao === 'REPROVAR') return 'coordenador';
+  return '';
+}
+
+function linkNotificacaoPreferencial(resp, acao){
+  const links = resp?.notificacoes || {};
+  const destino = destinoNotificacaoPorAcao(acao);
+  return (destino && links[destino]) ? links[destino] : (resp?.whatsapp_url || Object.values(links).find(Boolean) || '');
+}
+
+function textoDestinoPorAcao(acao){
+  if(acao === 'APROVAR') return 'financeiro';
+  if(acao === 'PAGAR') return 'coordenador';
+  if(acao === 'REPROVAR') return 'coordenador';
+  return 'responsável';
+}
+
 async function decidir(acao){
   const comentario = document.getElementById('comentarioAcao').value || '';
+
+  // Importante para celular: abre a aba do WhatsApp no clique do usuário.
+  // Depois que o PHP responder, essa aba recebe o link correto.
+  // Isso evita bloqueio de popup em iPhone/Android.
+  const deveAbrirWhats = ['APROVAR','REPROVAR','PAGAR'].includes(acao);
+  const janelaWhats = deveAbrirWhats ? window.open('about:blank', '_blank') : null;
+  if(janelaWhats){
+    try{
+      janelaWhats.document.write('<!doctype html><title>Abrindo WhatsApp...</title><body style="font-family:Arial;padding:24px;background:#020617;color:#e5e7eb"><h2>Abrindo WhatsApp...</h2><p>Aguarde, o sistema está registrando a ação e preparando a mensagem.</p></body>');
+      janelaWhats.document.close();
+    }catch(e){}
+  }
+
   try{
     const j = await post(`${API_BASE}/atualizar_fluxo_medicao.php`, {contrato_id:contratoId, medicao_id:medicaoId, acao, comentario, usuario:perfil.toUpperCase()});
     contrato = j.contrato; medicao = j.medicao; render();
+
+    const waPreferencial = linkNotificacaoPreferencial(j, acao);
+    const destino = textoDestinoPorAcao(acao);
+
+    if(waPreferencial && janelaWhats){
+      janelaWhats.location.href = waPreferencial;
+    }else if(janelaWhats){
+      janelaWhats.close();
+    }
+
     const links = j.notificacoes || {};
     const botoes = Object.entries(links).filter(([k,v])=>v).map(([k,v])=>`<button class="impar-swal-confirm" onclick="abrirWhats('${v}')">WhatsApp ${k}</button>`).join('');
-    Swal.fire({icon:'success',title:'Workflow atualizado',html:`Status atual: <b>${statusLabel(medicao.status)}</b><br><br>${botoes}`,confirmButtonText:'OK'});
-  }catch(e){Swal.fire({icon:'error',title:'Erro ao atualizar',text:e.message});}
+    const avisoWhats = waPreferencial
+      ? `<br><br><b>WhatsApp preparado:</b> mensagem para o ${destino}.<br>Se não abriu automaticamente, use o botão abaixo.`
+      : `<br><br><b>Atenção:</b> não encontrei telefone/link de WhatsApp para o ${destino}.`;
+
+    Swal.fire({
+      icon:'success',
+      title:'Workflow atualizado',
+      html:`Status atual: <b>${statusLabel(medicao.status)}</b>${avisoWhats}<br><br>${botoes}`,
+      confirmButtonText:'OK'
+    });
+  }catch(e){
+    if(janelaWhats) janelaWhats.close();
+    Swal.fire({icon:'error',title:'Erro ao atualizar',text:e.message});
+  }
 }
 
 window.addEventListener('DOMContentLoaded', carregar);
