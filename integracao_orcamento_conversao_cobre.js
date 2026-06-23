@@ -42,7 +42,7 @@ async function abrirTabelaConversaoCobre() {
           <button onclick="document.querySelector('.modal-cobre-backdrop').remove()">×</button>
         </div>
         <div class="modal-cobre-info">
-          Fórmula KG → METRO: <b>valor metro = valor kg / fator × (1 + margem)</b>
+          Fórmula KG → METRO: <b>valor metro = valor kg × fator × (1 + margem)</b>
         </div>
         <table>
           <thead>
