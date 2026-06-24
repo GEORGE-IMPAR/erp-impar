@@ -1,6 +1,6 @@
-const API_BASE = "https://api.erpimpar.com.br/empreiteiros_teste";
+const API_BASE = "https://api.erpimpar.com.br/empreiteiros";
 const API_OBRAS = "https://api.erpimpar.com.br/cronograma/listar_obras.php";
-const MEDICAO_PAGE = "https://erpimpar.com.br/contrato_empreiteiro/medicao_teste.html";
+const MEDICAO_PAGE = "https://erpimpar.com.br/contrato_empreiteiro/medicao.html";
 
 if (window.Swal && Swal.mixin) {
   window.Swal = Swal.mixin({
