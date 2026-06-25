@@ -180,16 +180,31 @@ async function carregarObras(){
     }))
     .filter(o=>o.nome && Array.isArray(o.atividades) && o.atividades.length)
     .sort((a,b)=>String(a.nome).localeCompare(String(b.nome),"pt-BR"));
-    console.log("OBRAS_CARREGADAS_V10", obras.length, obras);
+    console.log("OBRAS_CARREGADAS_V15", obras.length, obras);
     if(!obras.length){
       setStatus("A API de obras respondeu, mas não trouxe atividades pendentes (<100%). Verifique listar_obras_agenda.php.","err");
     }
   }catch(e){
     obras=[];
-    console.error("ERRO_CARREGAR_OBRAS_V10", e);
+    console.error("ERRO_CARREGAR_OBRAS_V15", e);
     setStatus("Não consegui carregar a árvore de obras da Agenda Semanal: "+(e.message||e),"err");
   }
 }
+
+function obraNome(obraId){
+  const id=String(obraId||'').trim();
+  if(!id) return '';
+  const o=(obras||[]).find(x=>String(x.id||'').trim()===id || String(x.codigo||'').trim()===id || String(x.nome||'').trim().toUpperCase()===id.toUpperCase());
+  return o ? String(o.nome||o.obra||'') : '';
+}
+function atividadeNome(obraId,atividadeId){
+  const id=String(atividadeId||'').trim();
+  if(!id) return '';
+  const o=(obras||[]).find(x=>String(x.id||'').trim()===String(obraId||'').trim() || String(x.codigo||'').trim()===String(obraId||'').trim() || String(x.nome||'').trim().toUpperCase()===String(obraId||'').trim().toUpperCase());
+  const a=(o?.atividades||[]).find((x,idx)=>String(x.id??x.codigo??idx).trim()===id || String(x.nome||x.atividade||x.descricao||'').trim().toUpperCase()===id.toUpperCase());
+  return a ? String(a.nome||a.atividade||a.descricao||'') : '';
+}
+
 function atividadeEhFilhaExecutavelDia(a){
   const nome=String(a?.nome||a?.atividade||"").trim();
   if(!nome) return false;
@@ -199,7 +214,7 @@ function atividadeEhFilhaExecutavelDia(a){
   if(Number.isFinite(perc)&&perc>=100) return false;
   return true;
 }
-async function carregarDia(){setStatus("Carregando agenda semanal...","");await carregarObras();const data=dataDia.value||iso(new Date());dataDia.value=data;diaLabel.textContent=`${weekDayName(data)} • ${br(data)}`;const semana=mondayOf(data);try{const j=await fetchJson(API_AGENDA+"carregar_agenda.php?semana="+encodeURIComponent(semana)+"&t="+Date.now());agendaSemanal=j.payload||j.agendaSemanal||{agenda:(j.data||{}),colaboradores:(j.colaboradores||[])};atividadeDia=extrairDiaDaAgenda(agendaSemanal,data);console.log("AGENDA_SEMANAL_LIDA",agendaSemanal,"ATIVIDADES_EXTRAIDAS",atividadeDia);if(!atividadeDia.length){atividadeDia=demoDia(data);setStatus("Nenhuma alocação encontrada no JSON da semana. Carreguei exemplo visual para teste de layout.","err");}else{setStatus(`Dia carregado da semana ${br(semana)} • ${atividadeDia.length} alocação(ões).`,"ok");}}catch(e){console.warn(e);atividadeDia=demoDia(data);setStatus("Não consegui carregar do servidor. Exibindo exemplo visual para teste.","err");}render();}
+async function carregarDia(){setStatus("Carregando agenda semanal...","");await carregarObras();const data=dataDia.value||iso(new Date());dataDia.value=data;diaLabel.textContent=`${weekDayName(data)} • ${br(data)}`;const semana=mondayOf(data);try{const j=await fetchJson(API_AGENDA+"carregar_agenda.php?semana="+encodeURIComponent(semana)+"&t="+Date.now());agendaSemanal=j.payload||j.agendaSemanal||{agenda:(j.data||{}),colaboradores:(j.colaboradores||[])};atividadeDia=extrairDiaDaAgenda(agendaSemanal,data);console.log("AGENDA_SEMANAL_LIDA",agendaSemanal,"ATIVIDADES_EXTRAIDAS",atividadeDia);if(!atividadeDia.length){atividadeDia=demoDia(data);setStatus("Nenhuma alocação encontrada no JSON da semana. Carreguei exemplo visual para teste de layout.","err");}else{setStatus(`Dia carregado da semana ${br(semana)} • ${atividadeDia.length} alocação(ões).`,"ok");}}catch(e){console.warn(e);atividadeDia=demoDia(data);setStatus("Não consegui carregar do servidor: "+(e.message||e)+". Exibindo exemplo visual para teste.","err");}render();}
 function extrairDiaDaAgenda(data,dataISO){
  const nomeDia=weekDayName(dataISO);
  const idxDia=parseISO(dataISO).getDay()-1; // segunda=0 ... sexta=4
