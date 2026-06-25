@@ -178,6 +178,18 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.shell{max-width
 .fleet-panel{position:relative!important;z-index:80!important}
 @media(max-width:760px){.topcard{top:0!important}}
 
+
+/* V19 — árvore copiada da Agenda Semanal: garante abertura e lista visível */
+.tree-box.obra-tree{display:grid!important;gap:10px!important;max-height:430px!important;overflow:auto!important;padding:12px!important;background:rgba(2,8,23,.64)!important;border:1px solid rgba(34,197,94,.24)!important;border-radius:16px!important;}
+.tree-box .obra-node{display:block!important;border:1px solid rgba(255,255,255,.11)!important;background:rgba(2,8,23,.48)!important;border-radius:16px!important;overflow:hidden!important;}
+.tree-box .obra-node>summary{list-style:none!important;cursor:pointer!important;padding:13px 14px!important;display:grid!important;grid-template-columns:22px minmax(0,1fr) auto!important;gap:10px!important;align-items:center!important;}
+.tree-box .obra-node>summary::-webkit-details-marker{display:none!important;}
+.tree-box .obra-node>summary:before{content:'▶'!important;color:#9be329!important;font-weight:950!important;transition:.15s ease!important;}
+.tree-box .obra-node[open]>summary:before{transform:rotate(90deg)!important;}
+.tree-box .obra-node[open]>.atividade-list{display:grid!important;gap:7px!important;padding:0 14px 14px 46px!important;visibility:visible!important;opacity:1!important;height:auto!important;}
+.tree-box .atividade-btn{display:grid!important;gap:7px!important;width:100%!important;border:1px solid rgba(255,255,255,.10)!important;background:#020817!important;color:#eef6ff!important;border-radius:12px!important;padding:10px 12px!important;text-align:left!important;font-size:12px!important;font-weight:850!important;line-height:1.25!important;cursor:pointer!important;}
+.tree-box .atividade-title{color:#eef6ff!important;font-weight:950!important;}
+.tree-box .atividade-meta{display:flex!important;gap:6px!important;flex-wrap:wrap!important;}
 </style>
 </head>
 <body>
@@ -557,32 +569,40 @@ function renderArvoreExecucao(execIdx){
   const e=modalExecucoes[execIdx]||{};
   const el=document.getElementById('arvoreExec'+execIdx);
   if(!el)return;
+
+  // Mesma regra da Agenda Semanal Premium R20:
+  // 1) usa obras carregadas por listar_obras_agenda.php
+  // 2) cria árvore GESTÃO / VISITA EM OBRA
+  // 3) depois cria árvores das obras do cronograma com atividades pendentes
   const q="";
-  el.className='obra-tree';
+  const match = txt => !q || normSearch(txt).includes(q);
+  const listaObras = (obras||[]).filter(o=>String(o.nome||'').trim());
 
-  const obrasValidas=(obras||[]).filter(o=>String(o.nome||'').trim());
-  const atividadesCronogramaTotal=obrasValidas.reduce((acc,o)=>acc+(Array.isArray(o.atividades)?o.atividades.filter(atividadeEhFilhaExecutavelDia).length:0),0);
-
-  const gestaoHtml = (()=>{
-    const obrasGestao = obrasValidas.map((o,oi)=>{
-      const oid=String(o.id??o.codigo??o.nome??oi);
-      const textoBuscaObra=`${o.nome} gestão visita reunião alinhamento levantamento campo medição empreiteiro análise projeto planejamento materiais`;
-      const atividades=ATIVIDADES_GESTAO.filter(a=>matchTree(q,`${o.nome} ${a.nome}`)||matchTree(q,textoBuscaObra));
-      if(q && !atividades.length && !matchTree(q,textoBuscaObra)) return "";
-      return `<details class="obra-node" ${q?"open":""}>
-        <summary>
-          <div>
-            <div class="obra-name">${escapeHtml(o.nome)}</div>
-            <div class="obra-count">Atividades gerenciais vinculadas a esta obra</div>
+  const gestaoHtml = (() => {
+    const obrasGestao = listaObras
+      .map((o,oi) => {
+        const oid=String(o.id ?? o.codigo ?? o.nome ?? oi);
+        const textoBuscaObra = `${o.nome} gestão visita reunião alinhamento levantamento campo medição empreiteiro análise projeto planejamento materiais`;
+        const atividades = ATIVIDADES_GESTAO.filter(a => match(`${o.nome} ${a.nome}`) || match(textoBuscaObra));
+        if(q && !atividades.length && !match(textoBuscaObra)) return "";
+        return `<details class="obra-node" ${q?"open":""}>
+          <summary>
+            <div>
+              <div class="obra-name">${escapeHtml(o.nome)}</div>
+              <div class="obra-count">Atividades gerenciais vinculadas a esta obra</div>
+            </div>
+            <div class="obra-count">OBRA ${escapeHtml(oid)}</div>
+          </summary>
+          <div class="atividade-list">
+            ${atividades.map(a=>`<button class="atividade-btn atividade-gestao-btn" data-exec="${execIdx}" data-obra="${escapeAttr(oid)}" data-ativ="${escapeAttr(a.id)}" type="button"><span class="atividade-title">${escapeHtml(a.nome)}</span><span class="atividade-meta"><span class="metric-pill ok">Gestão</span><span class="metric-pill">Obra vinculada</span></span></button>`).join("")}
           </div>
-          <div class="obra-count">OBRA ${escapeHtml(oid)}</div>
-        </summary>
-        <div class="atividade-list">
-          ${atividades.map(a=>`<button class="atividade-btn atividade-gestao-btn" data-exec="${execIdx}" data-obra="${escapeAttr(oid)}" data-ativ="${escapeAttr(a.id)}" type="button"><span class="atividade-title">${escapeHtml(a.nome)}</span><span class="atividade-meta"><span class="metric-pill ok">Gestão</span><span class="metric-pill">Obra vinculada</span></span></button>`).join("")}
-        </div>
-      </details>`;
-    }).filter(Boolean).join("");
-    if(q && !obrasGestao && !matchTree(q,"GESTÃO VISITA EM OBRA")) return "";
+        </details>`;
+      })
+      .filter(Boolean)
+      .join("");
+
+    if(q && !obrasGestao && !match("GESTÃO VISITA EM OBRA")) return "";
+
     return `<details class="obra-node gestao-root" ${q?"open":""}>
       <summary>
         <div>
@@ -595,46 +615,50 @@ function renderArvoreExecucao(execIdx){
     </details>`;
   })();
 
-  const cronogramaHtml=obrasValidas.map((o,oi)=>{
-    const oid=String(o.id??o.codigo??o.nome??oi);
-    const atividades=(Array.isArray(o.atividades)?o.atividades:[]).filter(atividadeEhFilhaExecutavelDia)
-      .filter(a=>!q || matchTree(q,`${o.nome} ${a.nome||a.atividade||a.descricao||''}`));
-    if(q && !atividades.length) return "";
-    if(!atividades.length) return "";
-    return `<details class="obra-node" ${String(oid)===String(e.obraId)||q?"open":""}>
+  const cronogramaHtml = listaObras.map((o,oi)=>{
+    const oid=String(o.id ?? o.codigo ?? o.nome ?? oi);
+    const atividades=(Array.isArray(o.atividades)?o.atividades:[]).filter(atividadeEhFilhaExecutavelDia);
+    const atFiltradas=atividades.filter(a=>!q || normSearch(`${o.nome} ${a.nome||a.atividade||a.descricao||''}`).includes(q));
+    if(q && !atFiltradas.length) return "";
+    if(!atFiltradas.length) return "";
+    return `<details class="obra-node" ${q?"open":""}>
       <summary>
         <div>
           <div class="obra-name">${escapeHtml(o.nome)}</div>
-          <div class="obra-count">${atividades.length} atividade(s) do cronograma</div>
+          <div class="obra-count">${atFiltradas.length} atividade(s) do cronograma</div>
           <div class="obra-metrics">${metricHtmlTree(o,"Obra: ")}</div>
         </div>
         <div class="obra-count">OBRA ${escapeHtml(oid)}</div>
       </summary>
       <div class="atividade-list">
-        ${atividades.map((a,idx)=>{
-          const aid=String(a.id??a.codigo??idx);
+        ${atFiltradas.map((a,idx)=>{
+          const aid=String(a.id ?? a.codigo ?? a.nome ?? a.atividade ?? idx);
           return `<button class="atividade-btn" data-exec="${execIdx}" data-obra="${escapeAttr(oid)}" data-ativ="${escapeAttr(aid)}" type="button"><span class="atividade-title">${escapeHtml(a.nome||a.atividade||a.descricao||'')}</span><span class="atividade-meta">${metricHtmlTree(a)}</span></button>`;
         }).join("")}
       </div>
     </details>`;
-  }).filter(Boolean).join("");
+  }).join("");
 
-  el.innerHTML=`<div class="tree-status"><b>${obrasValidas.length}</b> obra(s) com <b>${atividadesCronogramaTotal}</b> atividade(s) pendente(s). Clique na obra para abrir.</div>` + (gestaoHtml + cronogramaHtml || `<div class="tree-empty">Nenhuma obra ou atividade encontrada.</div>`);
-  el.querySelectorAll('.atividade-btn').forEach(btn=>{
-    btn.addEventListener('click',ev=>selecionarAtividadeExecucao(Number(btn.dataset.exec),btn.dataset.obra,btn.dataset.ativ,ev));
+  const atividadesCronogramaTotal=listaObras.reduce((acc,o)=>acc+(Array.isArray(o.atividades)?o.atividades.filter(atividadeEhFilhaExecutavelDia).length:0),0);
+  const html = (gestaoHtml + cronogramaHtml) || `<div class="tree-empty">Nenhuma obra ou atividade encontrada.</div>`;
+  el.className='obra-tree tree-box';
+  el.innerHTML=`<div class="tree-status"><b>${listaObras.length}</b> obra(s) com <b>${atividadesCronogramaTotal}</b> atividade(s) pendente(s). Clique na obra para abrir.</div>` + html;
+
+  el.querySelectorAll(".atividade-btn").forEach(btn=>{
+    btn.onclick=(ev)=>selecionarAtividadeExecucao(Number(btn.dataset.exec),btn.dataset.obra,btn.dataset.ativ,ev);
   });
 }
 function selecionarAtividadeExecucao(execIdx,obraId,atividadeId,ev){
   const o=(obras||[]).find((x,oi)=>String(x.id??x.codigo??x.nome??oi)===String(obraId));
-  let a=(o?.atividades||[]).find((x,idx)=>String(x.id??x.codigo??idx)===String(atividadeId));
+  let a=(o?.atividades||[]).find((x,idx)=>String(x.id??x.codigo??x.nome??x.atividade??idx)===String(atividadeId));
   if(!a) a=ATIVIDADES_GESTAO.find(x=>String(x.id)===String(atividadeId));
   if(!o||!a){alert("Não consegui localizar a obra/atividade selecionada.");return;}
-  modalExecucoes[execIdx]={...modalExecucoes[execIdx],obra:o.nome||"",atividade:a.nome||"",obraId:o.id||"",atividadeId:a.id||atividadeId,viagem:!!modalExecucoes[execIdx].viagem};
+  modalExecucoes[execIdx]={...modalExecucoes[execIdx],obra:o.nome||"",atividade:a.nome||a.atividade||a.descricao||"",obraId:o.id||o.codigo||obraId,atividadeId:a.id||a.codigo||atividadeId,viagem:!!modalExecucoes[execIdx].viagem};
   const box=document.getElementById('arvoreExec'+execIdx);
-  if(box)box.querySelectorAll('.atividade-btn,.tree-at').forEach(b=>b.classList.remove('active'));
+  if(box)box.querySelectorAll('.atividade-btn').forEach(b=>b.classList.remove('active'));
   ev?.currentTarget?.classList.add('active');
   const sel=document.getElementById('selecionadoExec'+execIdx);
-  if(sel)sel.innerHTML=`<b>${escapeHtml(o.nome)}</b><br>${escapeHtml(a.nome)}`;
+  if(sel)sel.innerHTML=`<b>${escapeHtml(o.nome)}</b><br>${escapeHtml(a.nome||a.atividade||a.descricao||'')}`;
 }
 
 
