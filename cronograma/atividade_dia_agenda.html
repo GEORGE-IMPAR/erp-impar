@@ -58,12 +58,52 @@ function getUser(){try{return JSON.parse(localStorage.getItem(KEY)||sessionStora
 async function fetchJson(url,opt){const r=await fetch(url,opt||{cache:"no-store"});const t=await r.text();if(!r.ok)throw new Error("HTTP "+r.status+" - "+t);try{return t?JSON.parse(t):{};}catch(e){throw new Error("JSON inválido: "+t.slice(0,180));}}
 function setStatus(t,cls=""){statusMsg.textContent=t||"";statusMsg.className="statusline "+cls;}
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function escapeAttr(s){return escapeHtml(s).replace(/`/g,"&#096;");}
 async function carregarObras(){try{const j=await fetchJson(API_AGENDA+"listar_obras_agenda.php");obras=(j.data||j.obras||[]).map(o=>({id:o.id||o.codigo||o.file||"",nome:o.nome||o.obra||("OBRA "+(o.id||"")),atividades:o.atividades||[]}));}catch(e){console.warn(e);obras=[];}}
 async function carregarDia(){setStatus("Carregando agenda semanal...","");await carregarObras();const data=dataDia.value||iso(new Date());dataDia.value=data;diaLabel.textContent=`${weekDayName(data)} • ${br(data)}`;const semana=mondayOf(data);try{const j=await fetchJson(API_AGENDA+"carregar_agenda.php?semana="+encodeURIComponent(semana));agendaSemanal=j.data||j.agendaSemanal||j;atividadeDia=extrairDiaDaAgenda(agendaSemanal,data);if(!atividadeDia.length){atividadeDia=demoDia(data);setStatus("Nenhuma alocação encontrada no JSON da semana. Carreguei exemplo visual para teste de layout.","err");}else{setStatus(`Dia carregado da semana ${br(semana)}.`,"ok");}}catch(e){console.warn(e);atividadeDia=demoDia(data);setStatus("Não consegui carregar do servidor. Exibindo exemplo visual para teste.","err");}render();}
-function extrairDiaDaAgenda(data,dataISO){const nomeDia=weekDayName(dataISO);const out=[];const ag=data?.agenda??data?.data?.agenda??[];const cols=data?.colaboradores??data?.data?.colaboradores??[];
- if(Array.isArray(ag)){ag.forEach((x,i)=>{const dia=x.dia||x.diaSemana||x.data||x.dataDia;if(String(dia).toUpperCase()===nomeDia||dia===dataISO){out.push(novaLinha(x.colaborador||x.nome||x.pessoa||`COLAB ${i+1}`,x.obraNome||x.obra,x.atividadeNome||x.atividade,x.obraId,x.atividadeId,!!x.viagem));}})}
- if(!out.length && ag && typeof ag==="object"){Object.keys(ag).forEach(col=>{const v=ag[col];let cell=null;if(v&&typeof v==="object"){cell=v[nomeDia]||v[dataISO]||v[nomeDia.toLowerCase()]||v[parseISO(dataISO).getDay()];} if(cell&&(cell.obra||cell.obraNome||cell.atividade||cell.atividadeNome)){out.push(novaLinha(col,cell.obraNome||cell.obra,cell.atividadeNome||cell.atividade,cell.obraId,cell.atividadeId,!!cell.viagem));}})}
- if(!out.length && Array.isArray(cols)){cols.forEach(c=>out.push(novaLinha(c,"","")))}return out;}
+function extrairDiaDaAgenda(data,dataISO){
+ const nomeDia=weekDayName(dataISO);
+ const idxDia=parseISO(dataISO).getDay()-1; // segunda=0 ... sexta=4
+ const out=[];
+ const root=data?.data??data??{};
+ const ag=root?.agenda??[];
+ const cols=root?.colaboradores??[];
+ function linhaFromCell(col,cell){
+   if(!cell||typeof cell!=="object")return;
+   const obraId=cell.obraId||cell.idObra||cell.obra_codigo||"";
+   const atividadeId=cell.atividadeId||cell.idAtividade||"";
+   const obra=cell.obraNome||cell.obra||obraNome(obraId)||"";
+   const atividade=cell.atividadeNome||cell.atividade||atividadeNome(obraId,atividadeId)||"";
+   if(obra||atividade||obraId||atividadeId||cell.viagem){
+     out.push(novaLinha(col,obra,atividade,obraId,atividadeId,!!cell.viagem));
+   }
+ }
+ // Formato novo da Agenda Semanal Premium: agenda[NOME].dias[0..4]
+ if(ag && typeof ag==="object" && !Array.isArray(ag)){
+   Object.keys(ag).forEach(col=>{
+     const v=ag[col];
+     if(!v||typeof v!=="object")return;
+     const dias=v.dias||v.days||v;
+     const cell=dias?.[idxDia]||dias?.[String(idxDia)]||dias?.[nomeDia]||dias?.[nomeDia.toLowerCase()]||dias?.[dataISO];
+     linhaFromCell(col,cell);
+   });
+ }
+ // Formato alternativo em array, caso algum PHP normalize assim
+ if(Array.isArray(ag)){
+   ag.forEach((x,i)=>{
+     const dia=x.dia||x.diaSemana||x.data||x.dataDia;
+     if(String(dia).toUpperCase()===nomeDia||dia===dataISO||Number(dia)===idxDia){
+       linhaFromCell(x.colaborador||x.nome||x.pessoa||`COLAB ${i+1}`,x);
+     }
+   });
+ }
+ // Se não achou alocação, não inventa colaboradores vazios quando há agenda real.
+ // Só usa colaboradores vazios quando realmente não veio nenhum mapa de agenda.
+ if(!out.length && Array.isArray(cols) && (!ag || (Array.isArray(ag)&&!ag.length) || (typeof ag==="object"&&!Object.keys(ag).length))){
+   cols.forEach(c=>out.push(novaLinha(c,"","")));
+ }
+ return out;
+}
 function getAtividadeMeta(obraId,atividadeId,atividadeNome=""){
  const o=(obras||[]).find(x=>String(x.id)===String(obraId)||String(x.nome||"").toUpperCase()===String(obraId||"").toUpperCase());
  const lista=o&&Array.isArray(o.atividades)?o.atividades:[];
