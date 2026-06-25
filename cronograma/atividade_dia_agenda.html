@@ -36,6 +36,15 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.shell{max-width
 .tiny.replanned{color:#fed7aa;border-color:rgba(251,146,60,.26);background:rgba(249,115,22,.10)}
 
 .planejamento-box{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:2px}.plan-mini{background:rgba(2,8,23,.48);border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:8px}.plan-mini span{display:block;color:#9fb3c8;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:950;margin-bottom:4px}.plan-mini b{font-size:13px;color:#fff}.real-dia{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:2px}.real-dia label{font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:#b8c7dc;font-weight:950}.real-dia input{height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:#020817;color:#fff;padding:0 10px;font-weight:900}.decision.locked{display:none!important}.btn.disabled,.btn[disabled]{opacity:.55;cursor:not-allowed;filter:grayscale(.2)}.tree-at.done{opacity:.42;text-decoration:line-through;cursor:not-allowed}.cron-note{font-size:10px;color:#a7f3d0;font-weight:900;margin-top:5px}.status-replanned .alloc-card{border-color:rgba(251,146,60,.45);border-left-color:#fb923c;background:linear-gradient(135deg,rgba(62,32,6,.65),rgba(7,31,45,.94))}.badge.replan{background:rgba(251,146,60,.16);color:#fed7aa;border-color:rgba(251,146,60,.38)}
+
+/* V7 ajustes: árvore do modal mais limpa e responsiva */
+.tree-box{max-height:360px!important;background:rgba(2,8,23,.52)!important;padding:12px!important;}
+.tree-obra{margin-bottom:8px!important;}
+.tree-obra summary{min-height:44px!important;}
+.tree-ats{padding:0 10px 12px 28px!important;}
+.tree-at{display:block;width:100%;min-height:auto!important;white-space:normal!important;overflow:visible!important;}
+.exec-item{overflow:visible!important;}
+.modal-card{overflow:auto!important;}
 </style>
 </head>
 <body>
@@ -60,6 +69,8 @@ function setStatus(t,cls=""){statusMsg.textContent=t||"";statusMsg.className="st
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 function escapeAttr(s){return escapeHtml(s).replace(/`/g,"&#096;");}
 async function carregarObras(){try{const j=await fetchJson(API_AGENDA+"listar_obras_agenda.php");obras=(j.data||j.obras||[]).map(o=>({id:o.id||o.codigo||o.file||"",nome:o.nome||o.obra||("OBRA "+(o.id||"")),atividades:o.atividades||[]}));}catch(e){console.warn(e);obras=[];}}
+function obraNome(obraId){const o=(obras||[]).find(x=>String(x.id)===String(obraId)||String(x.arquivo||'').includes(String(obraId)));return o?o.nome:'';}
+function atividadeNome(obraId,atividadeId){const o=(obras||[]).find(x=>String(x.id)===String(obraId)||String(x.arquivo||'').includes(String(obraId)));const lista=o&&Array.isArray(o.atividades)?o.atividades:[];const a=lista.find((x,idx)=>String(x.id||idx)===String(atividadeId));return a?a.nome:'';}
 async function carregarDia(){setStatus("Carregando agenda semanal...","");await carregarObras();const data=dataDia.value||iso(new Date());dataDia.value=data;diaLabel.textContent=`${weekDayName(data)} • ${br(data)}`;const semana=mondayOf(data);try{const j=await fetchJson(API_AGENDA+"carregar_agenda.php?semana="+encodeURIComponent(semana));agendaSemanal=j.data||j.agendaSemanal||j;atividadeDia=extrairDiaDaAgenda(agendaSemanal,data);if(!atividadeDia.length){atividadeDia=demoDia(data);setStatus("Nenhuma alocação encontrada no JSON da semana. Carreguei exemplo visual para teste de layout.","err");}else{setStatus(`Dia carregado da semana ${br(semana)}.`,"ok");}}catch(e){console.warn(e);atividadeDia=demoDia(data);setStatus("Não consegui carregar do servidor. Exibindo exemplo visual para teste.","err");}render();}
 function extrairDiaDaAgenda(data,dataISO){
  const nomeDia=weekDayName(dataISO);
@@ -70,12 +81,22 @@ function extrairDiaDaAgenda(data,dataISO){
  const cols=root?.colaboradores??[];
  function linhaFromCell(col,cell){
    if(!cell||typeof cell!=="object")return;
-   const obraId=cell.obraId||cell.idObra||cell.obra_codigo||"";
-   const atividadeId=cell.atividadeId||cell.idAtividade||"";
+
+   // Formato real da Agenda Semanal Premium: cada dia pode ter várias alocações.
+   if(Array.isArray(cell.alocacoes)){
+     cell.alocacoes.forEach(al=>linhaFromCell(col,al));
+     return;
+   }
+
+   const obraId=cell.obraId||cell.idObra||cell.obra_codigo||cell.obraCodigo||"";
+   const atividadeId=cell.atividadeId||cell.idAtividade||cell.atividadeCodigo||"";
    const obra=cell.obraNome||cell.obra||obraNome(obraId)||"";
    const atividade=cell.atividadeNome||cell.atividade||atividadeNome(obraId,atividadeId)||"";
+   const horas=Number(cell.horas||8);
    if(obra||atividade||obraId||atividadeId||cell.viagem){
-     out.push(novaLinha(col,obra,atividade,obraId,atividadeId,!!cell.viagem));
+     const linha=novaLinha(col,obra,atividade,obraId,atividadeId,!!cell.viagem);
+     linha.horas=Number.isFinite(horas)&&horas>0?horas:8;
+     out.push(linha);
    }
  }
  // Formato novo da Agenda Semanal Premium: agenda[NOME].dias[0..4]
