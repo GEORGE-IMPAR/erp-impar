@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ERP ÍMPAR — Árvore de Projetos</title>
+<style>
+:root{
+  --ink:#eef6ff;--muted:#a9bad0;--green:#22c55e;--lime:#9be329;--field:#020817;
+  --border:rgba(255,255,255,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  color:var(--ink);
+  background:
+    radial-gradient(circle at 18% 8%,rgba(34,211,238,.16),transparent 31%),
+    radial-gradient(circle at 84% 18%,rgba(155,227,41,.12),transparent 28%),
+    linear-gradient(135deg,#071a3b 0%,#0b2a5a 42%,#075f5a 100%);
+  display:grid;
+  place-items:start center;
+  padding:24px 14px;
+}
+body:before{
+  content:"";
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.42);
+  backdrop-filter:blur(5px);
+  pointer-events:none;
+}
+.panel{
+  position:relative;
+  width:min(680px,calc(100vw - 24px));
+  max-height:calc(100vh - 48px);
+  overflow:auto;
+  background:radial-gradient(circle at 14% 0%,rgba(34,211,238,.12),transparent 28%),linear-gradient(145deg,#0b1938,#041422);
+  border:1px solid rgba(34,197,94,.45);
+  border-radius:22px;
+  padding:18px;
+  box-shadow:0 24px 80px rgba(0,0,0,.62);
+  scrollbar-color:rgba(203,213,225,.8) rgba(2,8,23,.35);
+}
+.head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}
+.title{font-size:19px;font-weight:950;letter-spacing:-.02em}
+.sub{font-size:12px;color:#d4e2f3;margin-top:4px;font-weight:800}
+.close{
+  width:38px;height:38px;border-radius:14px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(2,8,23,.55);color:#fff;font-size:20px;font-weight:900;cursor:pointer;
+}
+input{
+  width:100%;height:42px;border:1px solid rgba(255,255,255,.10);background:#020817;color:#fff;
+  border-radius:10px;padding:0 12px;font-size:13px;outline:none;font-weight:850;margin-bottom:12px;
+}
+input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94,.15)}
+.tree{display:grid;gap:10px}
+.obra-node{border:1px solid rgba(255,255,255,.11);background:rgba(2,8,23,.48);border-radius:16px;overflow:hidden}
+.obra-node>summary{
+  list-style:none;cursor:pointer;padding:13px 14px;display:grid;
+  grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;
+}
+.obra-node>summary::-webkit-details-marker{display:none}
+.obra-node>summary:before{content:'▶';color:#9be329;font-weight:950;transition:.15s ease}
+.obra-node[open]>summary:before{transform:rotate(90deg)}
+.obra-name{font-size:13px;font-weight:950;text-transform:uppercase;color:#fff;line-height:1.25}
+.obra-count{font-size:10px;color:#a9bad0;font-weight:900}
+.obra-metrics,.atividade-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.atividade-list{display:grid;gap:7px;padding:0 14px 14px 46px}
+.atividade-btn{
+  border:1px solid rgba(255,255,255,.10);background:#020817;color:#eef6ff;border-radius:12px;
+  padding:10px 12px;text-align:left;cursor:pointer;font-size:12px;font-weight:850;line-height:1.25;
+  transition:.15s ease;display:grid;gap:7px;
+}
+.atividade-btn:hover{transform:translateY(-1px);border-color:rgba(34,197,94,.65);box-shadow:0 0 0 1px rgba(34,197,94,.20) inset;background:rgba(34,197,94,.13)}
+.atividade-title{color:#eef6ff;font-weight:950}
+.metric-pill{
+  display:inline-flex;align-items:center;gap:5px;width:max-content;max-width:100%;border-radius:999px;
+  padding:4px 7px;font-size:9px;font-weight:950;line-height:1.1;text-transform:uppercase;letter-spacing:.05em;
+  border:1px solid rgba(255,255,255,.13);color:#dbeafe;background:rgba(2,8,23,.42);white-space:normal;
+}
+.metric-pill.ok{color:#bbf7d0;border-color:rgba(34,197,94,.34);background:rgba(34,197,94,.12)}
+.metric-pill.warn{color:#fef08a;border-color:rgba(250,204,21,.34);background:rgba(250,204,21,.12)}
+.metric-pill.bad{color:#fecaca;border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12)}
+.farol-dot{width:10px;height:10px;border-radius:999px;display:inline-block;box-shadow:0 0 12px currentColor}
+.farol-dot.green{background:#22c55e;color:#22c55e}.farol-dot.yellow{background:#facc15;color:#facc15}.farol-dot.red{background:#ef4444;color:#ef4444}
+.gestao-root{border-color:rgba(155,227,41,.36)!important;background:linear-gradient(145deg,rgba(2,8,23,.56),rgba(34,197,94,.08))!important}
+.gestao-root>summary{background:rgba(34,197,94,.08)!important}
+.atividade-gestao-btn{border-color:rgba(155,227,41,.26)!important}
+.loading,.empty,.erro{padding:18px;border:1px dashed rgba(155,227,41,.30);border-radius:14px;color:#d4e2f3;font-size:13px;font-weight:850;line-height:1.4}
+.erro{border-color:rgba(239,68,68,.42);color:#fecaca}
+@media(max-width:640px){body{padding:10px}.panel{width:100%;max-height:calc(100vh - 20px);border-radius:18px}.atividade-list{padding-left:20px}.obra-node>summary{grid-template-columns:18px minmax(0,1fr)}}
+</style>
+</head>
+<body>
+  <section class="panel">
+    <div class="head">
+      <div>
+        <div class="title">Selecionar obra e atividade</div>
+        <div class="sub">Abra a obra na árvore e escolha a atividade do cronograma.</div>
+      </div>
+      <button class="close" type="button" onclick="history.length>1?history.back():void(0)">×</button>
+    </div>
+    <input id="treeSearch" placeholder="Pesquisar obra ou atividade..." autocomplete="off">
+    <div class="tree" id="obraTree"><div class="loading">Carregando obras e atividades...</div></div>
+  </section>
+
+<script>
+(() => {
+  const API = "https://api.erpimpar.com.br/agenda/";
+  let obras = [];
+  const ATIVIDADES_GESTAO = [
+    {id:"gestao_obra",nome:"Gestão da obra",previsto:0,real:0,tipo:"gerencial"},
+    {id:"visita_tecnica",nome:"Visita técnica em obra",previsto:0,real:0,tipo:"gerencial"},
+    {id:"reuniao_alinhamento",nome:"Reunião de alinhamento",previsto:0,real:0,tipo:"gerencial"},
+    {id:"levantamento_campo",nome:"Levantamento em campo",previsto:0,real:0,tipo:"gerencial"},
+    {id:"medicao_empreiteiro",nome:"Medição de empreiteiro",previsto:0,real:0,tipo:"gerencial"},
+    {id:"analise_projeto",nome:"Análise de projeto",previsto:0,real:0,tipo:"gerencial"},
+    {id:"planejamento_materiais",nome:"Planejamento de materiais",previsto:0,real:0,tipo:"gerencial"}
+  ];
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+  const norm = s => String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+  async function fetchJson(url){
+    const r = await fetch(url,{cache:"no-store"});
+    const t = await r.text();
+    if(!r.ok) throw new Error(t || ("HTTP " + r.status));
+    return t.trim()?JSON.parse(t):{};
+  }
+  function atividadeEhFilhaExecutavel(a){
+    const resp = String(a.responsavel ?? a.Responsavel ?? a.responsável ?? a.Responsável ?? a.responsavelNome ?? "").trim();
+    if(!resp) return false;
+    const status = norm(a.status ?? a.Status ?? a.situacao ?? a.situação ?? "");
+    if(status.includes("CONCLUID") || status.includes("FINALIZAD")) return false;
+    const raw = a.percentual ?? a.percentualReal ?? a.percReal ?? a.real ?? a.progresso ?? a.percentual_real ?? a["%real"] ?? a["%Real"] ?? 0;
+    const perc = Number(String(raw).replace("%","").replace(",","."));
+    if(Number.isFinite(perc) && perc >= 100) return false;
+    return true;
+  }
+  function num(v){ const n=Number(String(v??0).replace("%","").replace(",",".")); return Number.isFinite(n)?n:0; }
+  function statusClass(obj){
+    const previsto=num(obj.previsto ?? obj.percentualPrevisto ?? obj.percPrevisto ?? obj["%previsto"]);
+    const real=num(obj.real ?? obj.percentualReal ?? obj.percReal ?? obj["%real"]);
+    if(real >= previsto) return "ok";
+    if(previsto - real <= 15) return "warn";
+    return "bad";
+  }
+  function farol(obj){
+    const cls = statusClass(obj);
+    return cls==="ok"?"green":cls==="warn"?"yellow":"red";
+  }
+  function metricHtml(obj, prefix=""){
+    const previsto = num(obj.previsto ?? obj.percentualPrevisto ?? obj.percPrevisto ?? obj["%previsto"]);
+    const real = num(obj.real ?? obj.percentualReal ?? obj.percReal ?? obj["%real"]);
+    const cls=statusClass(obj), dot=farol(obj);
+    const label = cls==="ok" ? "Em dia" : cls==="warn" ? "Atenção" : "Atrasada";
+    return `<span class="metric-pill ${cls}"><span class="farol-dot ${dot}"></span>${prefix}${label}</span><span class="metric-pill">Prev. ${previsto}%</span><span class="metric-pill">Real ${real}%</span>`;
+  }
+
+  function getItemIdx(){
+    const params = new URLSearchParams(location.search);
+    const n = Number(params.get("item") || params.get("idx") || params.get("exec") || params.get("execIdx") || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function selecionarAtividade(obraId, atividadeId, btn){
+    const o = (obras || []).find((x,idx)=>String(x.id ?? x.codigo ?? x.nome ?? idx) === String(obraId));
+    let a = (o?.atividades || []).find((x,idx)=>String(x.id ?? x.codigo ?? x.nome ?? x.atividade ?? idx) === String(atividadeId));
+    if(!a) a = ATIVIDADES_GESTAO.find(x => String(x.id) === String(atividadeId));
+    const payload = {
+      type: "ERPIMPAR_TREE_SELECT",
+      itemIdx: getItemIdx(),
+      execIdx: getItemIdx(),
+      obraId: obraId || (o?.id ?? o?.codigo ?? ""),
+      obraNome: o?.nome || "",
+      atividadeId: atividadeId || (a?.id ?? a?.codigo ?? ""),
+      atividadeNome: a?.nome || a?.atividade || a?.descricao || ""
+    };
+
+    let entregue = false;
+    try{
+      if(window.opener && !window.opener.closed && typeof window.opener.receberAtividadeDaArvore === "function"){
+        window.opener.receberAtividadeDaArvore(payload);
+        entregue = true;
+      }
+    }catch(e){ console.warn("Falha opener", e); }
+
+    try{
+      if(window.parent && window.parent !== window){
+        window.parent.postMessage(payload, "*");
+        entregue = true;
+      }
+    }catch(e){ console.warn("Falha parent", e); }
+
+    try{
+      localStorage.setItem("ERPIMPAR_TREE_SELECT_PAYLOAD", JSON.stringify({...payload, ts:Date.now()}));
+      entregue = true;
+    }catch(e){ console.warn("Falha localStorage", e); }
+
+    document.querySelectorAll(".atividade-btn").forEach(b=>b.classList.remove("active"));
+    btn?.classList.add("active");
+    const aviso = document.createElement("div");
+    aviso.className = "loading";
+    aviso.style.cssText = "position:sticky;bottom:0;z-index:20;background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.45);color:#d1fae5;margin-top:10px";
+    aviso.innerHTML = `<b>Selecionado:</b> ${esc(payload.obraNome)} / ${esc(payload.atividadeNome)}<br>Voltando para a atividade do dia...`;
+    const panel = document.querySelector(".panel");
+    const old = document.getElementById("selectedToastTree");
+    if(old) old.remove();
+    aviso.id = "selectedToastTree";
+    panel?.appendChild(aviso);
+    console.log("Selecionado:", payload, "entregue:", entregue);
+    setTimeout(()=>{ try{ window.close(); }catch(e){} }, 450);
+  }
+
+  async function carregarObras(){
+    const j = await fetchJson(API+"listar_obras_agenda.php");
+    obras = (j.data || [])
+      .map(o => ({...o, atividades:(o.atividades || []).filter(atividadeEhFilhaExecutavel)}))
+      .filter(o => Array.isArray(o.atividades) && o.atividades.length)
+      .sort((a,b)=>String(a.nome).localeCompare(String(b.nome),"pt-BR"));
+    renderTree();
+  }
+  function renderTree(){
+    const q = norm($("treeSearch").value);
+    const match = txt => !q || norm(txt).includes(q);
+
+    const gestaoHtml = (() => {
+      const obrasGestao = obras.map(o => {
+        const textoBuscaObra = `${o.nome} gestão visita reunião alinhamento levantamento campo medição empreiteiro análise projeto planejamento materiais`;
+        const atividades = ATIVIDADES_GESTAO.filter(a => match(`${o.nome} ${a.nome}`) || match(textoBuscaObra));
+        if(q && !atividades.length && !match(textoBuscaObra)) return "";
+        return `<details class="obra-node" ${q?"open":""}>
+          <summary>
+            <div>
+              <div class="obra-name">${esc(o.nome)}</div>
+              <div class="obra-count">Atividades gerenciais vinculadas a esta obra</div>
+            </div>
+            <div class="obra-count">OBRA ${esc(o.id)}</div>
+          </summary>
+          <div class="atividade-list">
+            ${atividades.map(a=>`<button class="atividade-btn atividade-gestao-btn" data-obra="${esc(o.id)}" data-ativ="${esc(a.id)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta"><span class="metric-pill ok">Gestão</span><span class="metric-pill">Obra vinculada</span></span></button>`).join("")}
+          </div>
+        </details>`;
+      }).filter(Boolean).join("");
+      if(q && !obrasGestao && !match("GESTÃO VISITA EM OBRA")) return "";
+      return `<details class="obra-node gestao-root" ${q?"open":""}>
+        <summary>
+          <div>
+            <div class="obra-name">GESTÃO / VISITA EM OBRA</div>
+            <div class="obra-count">Escolha a obra e depois a atividade gerencial</div>
+          </div>
+          <div class="obra-count">GESTÃO</div>
+        </summary>
+        <div class="atividade-list">${obrasGestao || `<div class="empty">Nenhuma obra encontrada para gestão.</div>`}</div>
+      </details>`;
+    })();
+
+    const cronogramaHtml = obras.map(o => {
+      const atFiltradas = (o.atividades || []).filter(a => !q || norm(o.nome+" "+a.nome).includes(q));
+      if(q && !atFiltradas.length) return "";
+      return `<details class="obra-node" ${q?"open":""}>
+        <summary>
+          <div>
+            <div class="obra-name">${esc(o.nome)}</div>
+            <div class="obra-count">${atFiltradas.length} atividade(s) do cronograma</div>
+            <div class="obra-metrics">${metricHtml(o,"Obra: ")}</div>
+          </div>
+          <div class="obra-count">OBRA ${esc(o.id)}</div>
+        </summary>
+        <div class="atividade-list">
+          ${atFiltradas.map(a=>`<button class="atividade-btn" data-obra="${esc(o.id)}" data-ativ="${esc(a.id||a.nome)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta">${metricHtml(a)}</span></button>`).join("")}
+        </div>
+      </details>`;
+    }).join("");
+
+    $("obraTree").innerHTML = (gestaoHtml + cronogramaHtml) || `<div class="empty">Nenhuma obra ou atividade encontrada.</div>`;
+    document.querySelectorAll(".atividade-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        selecionarAtividade(btn.dataset.obra, btn.dataset.ativ, btn);
+      });
+    });
+  }
+  $("treeSearch").addEventListener("input", renderTree);
+  carregarObras().catch(err => {
+    console.error(err);
+    $("obraTree").innerHTML = `<div class="erro">Não consegui carregar a API de obras. Verifique se o arquivo está rodando em servidor e se o endpoint está liberado.<br><br>${esc(err.message)}</div>`;
+  });
+})();
+</script>
+</body>
+</html>
