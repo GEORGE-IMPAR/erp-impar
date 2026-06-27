@@ -88,6 +88,14 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
 .atividade-gestao-btn{border-color:rgba(155,227,41,.26)!important}
 .loading,.empty,.erro{padding:18px;border:1px dashed rgba(155,227,41,.30);border-radius:14px;color:#d4e2f3;font-size:13px;font-weight:850;line-height:1.4}
 .erro{border-color:rgba(239,68,68,.42);color:#fecaca}
+
+.avulsa-box{border:1px solid rgba(163,230,53,.32);background:rgba(34,197,94,.08);border-radius:16px;padding:12px;display:grid;gap:10px;margin-bottom:10px}
+.avulsa-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.avulsa-grid .full{grid-column:1/-1}
+.avulsa-box label{font-size:10px;color:#a9bad0;text-transform:uppercase;letter-spacing:.10em;font-weight:950}
+.avulsa-box select,.avulsa-box input{width:100%;height:40px;border:1px solid rgba(255,255,255,.10);background:#020817;color:#fff;border-radius:10px;padding:0 10px;font-size:12px;font-weight:850}
+.avulsa-btn{border:0;border-radius:999px;background:linear-gradient(135deg,#22c55e,#9be329);color:#052e16;padding:10px 14px;font-size:12px;font-weight:950;cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
+@media(max-width:640px){.avulsa-grid{grid-template-columns:1fr}}
+
 @media(max-width:640px){body{padding:10px}.panel{width:100%;max-height:calc(100vh - 20px);border-radius:18px}.atividade-list{padding-left:20px}.obra-node>summary{grid-template-columns:18px minmax(0,1fr)}}
 </style>
 </head>
@@ -117,6 +125,14 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     {id:"analise_projeto",nome:"Análise de projeto",previsto:0,real:0,tipo:"gerencial"},
     {id:"planejamento_materiais",nome:"Planejamento de materiais",previsto:0,real:0,tipo:"gerencial"}
   ];
+
+  const TIPOS_AVULSOS = {
+    garantia:"Garantia",
+    frente_nao_prevista:"Frente não prevista",
+    sem_cronograma:"Obra sem cronograma",
+    interno:"Interno / Empresa",
+    saida_empresa:"Saída da empresa / desligamento"
+  };
   const $ = id => document.getElementById(id);
   const esc = s => String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
   const norm = s => String(s??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
@@ -210,6 +226,36 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     setTimeout(()=>{ try{ window.close(); }catch(e){} }, 450);
   }
 
+
+  function selecionarAvulsa(){
+    const tipo = document.getElementById("avulsaTipo")?.value || "sem_cronograma";
+    const obra = String(document.getElementById("avulsaObra")?.value || "").trim();
+    const atividade = String(document.getElementById("avulsaAtividade")?.value || "").trim();
+    if(!atividade){ alert("Digite a atividade avulsa antes de confirmar."); document.getElementById("avulsaAtividade")?.focus(); return; }
+    const label = TIPOS_AVULSOS[tipo] || tipo;
+    const payload = {
+      type:"ERPIMPAR_TREE_SELECT",
+      itemIdx:getItemIdx(),
+      execIdx:getItemIdx(),
+      obraId:"AVULSA_"+tipo,
+      obraNome: obra || label,
+      atividadeId:"avulsa_"+tipo+"_"+Date.now(),
+      atividadeNome: atividade,
+      semCronograma:true,
+      tipoAvulsa:tipo,
+      atualizaCronograma:false
+    };
+    try{ if(window.opener && !window.opener.closed && typeof window.opener.receberAtividadeDaArvore === "function") window.opener.receberAtividadeDaArvore(payload); }catch(e){ console.warn(e); }
+    try{ if(window.parent && window.parent !== window) window.parent.postMessage(payload,"*"); }catch(e){ console.warn(e); }
+    try{ localStorage.setItem("ERPIMPAR_TREE_SELECT_PAYLOAD", JSON.stringify({...payload, ts:Date.now()})); }catch(e){ console.warn(e); }
+    const panel=document.querySelector(".panel");
+    const aviso=document.createElement("div");
+    aviso.className="loading"; aviso.style.cssText="position:sticky;bottom:0;z-index:20;background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.45);color:#d1fae5;margin-top:10px";
+    aviso.innerHTML=`<b>Selecionado:</b> ${esc(payload.obraNome)} / ${esc(payload.atividadeNome)}<br>Atividade sem cronograma — não atualizará cronograma.`;
+    const old=document.getElementById("selectedToastTree"); if(old) old.remove(); aviso.id="selectedToastTree"; panel?.appendChild(aviso);
+    setTimeout(()=>{ try{ window.close(); }catch(e){} },450);
+  }
+
   async function carregarObras(){
     const j = await fetchJson(API+"listar_obras_agenda.php");
     obras = (j.data || [])
@@ -221,6 +267,26 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
   function renderTree(){
     const q = norm($("treeSearch").value);
     const match = txt => !q || norm(txt).includes(q);
+
+    const avulsaHtml = (!q || match("atividade avulsa garantia frente não prevista obra sem cronograma interno empresa saída desligamento limpar organizar patio estoque")) ? `<details class="obra-node gestao-root" open>
+      <summary>
+        <div>
+          <div class="obra-name">➕ ATIVIDADE AVULSA / SEM CRONOGRAMA</div>
+          <div class="obra-count">Garantia, frente não prevista, obra sem cronograma, interno ou desligamento</div>
+        </div>
+        <div class="obra-count">AVULSA</div>
+      </summary>
+      <div class="atividade-list">
+        <div class="avulsa-box">
+          <div class="avulsa-grid">
+            <div><label>Tipo</label><select id="avulsaTipo"><option value="garantia">Garantia</option><option value="frente_nao_prevista">Frente não prevista</option><option value="sem_cronograma">Obra sem cronograma</option><option value="interno">Interno / Empresa</option><option value="saida_empresa">Saída da empresa / desligamento</option></select></div>
+            <div><label>Obra / Local</label><input id="avulsaObra" placeholder="Ex.: Pátio, Estoque, Garantia cliente X, Empresa"></div>
+            <div class="full"><label>Atividade</label><input id="avulsaAtividade" placeholder="Ex.: limpar e organizar o pátio, organizar estoque, desligamento do colaborador"></div>
+          </div>
+          <button class="avulsa-btn" type="button" id="btnSelecionarAvulsa">Usar esta atividade avulsa</button>
+        </div>
+      </div>
+    </details>` : "";
 
     const gestaoHtml = (() => {
       const obrasGestao = obras.map(o => {
@@ -271,7 +337,8 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
       </details>`;
     }).join("");
 
-    $("obraTree").innerHTML = (gestaoHtml + cronogramaHtml) || `<div class="empty">Nenhuma obra ou atividade encontrada.</div>`;
+    $("obraTree").innerHTML = (avulsaHtml + gestaoHtml + cronogramaHtml) || `<div class="empty">Nenhuma obra ou atividade encontrada.</div>`;
+    document.getElementById("btnSelecionarAvulsa")?.addEventListener("click", selecionarAvulsa);
     document.querySelectorAll(".atividade-btn").forEach(btn => {
       btn.addEventListener("click", () => {
         selecionarAtividade(btn.dataset.obra, btn.dataset.ativ, btn);
