@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ERP ÍMPAR — Mídias da Obra</title>
+  <style>
+    :root{--bg1:#0b1e4a;--bg2:#0e3b6e;--bg3:#0f766e;--green:#22c55e;--text:#e5e7eb;--soft:#cbd5e1;--panel:rgba(2,6,23,.72);--border:rgba(148,163,184,.34)}
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));display:flex;align-items:center;justify-content:center;padding:18px}
+    .wrap{width:100%;max-width:520px;border:1px solid var(--border);border-radius:24px;background:linear-gradient(135deg,rgba(2,6,23,.88),rgba(8,28,62,.78));box-shadow:0 24px 70px rgba(0,0,0,.45);padding:22px}
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:18px}.orb{width:42px;height:42px;border-radius:50%;background:conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset,0 12px 24px rgba(0,0,0,.32)}
+    .k{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:900;color:#a7f3d0}.t{font-size:21px;font-weight:1000;line-height:1.05}.s{font-size:13px;color:var(--soft);font-weight:800;margin-top:3px}
+    .obra{border-radius:18px;border:1px solid rgba(34,197,94,.32);background:rgba(34,197,94,.08);padding:14px;margin-bottom:16px}.obra small{display:block;color:#a7f3d0;text-transform:uppercase;letter-spacing:.12em;font-weight:900;font-size:10px;margin-bottom:6px}.obra b{font-size:18px;line-height:1.15}
+    .btn{width:100%;border:0;border-radius:18px;padding:16px 18px;margin:10px 0;font-size:16px;font-weight:1000;cursor:pointer;color:#04111f;background:linear-gradient(135deg,#22c55e,#16a34a);box-shadow:0 14px 32px rgba(22,163,74,.34)}
+    .btn.secondary{background:linear-gradient(135deg,#60a5fa,#2563eb);color:#fff}.btn.dark{background:rgba(15,23,42,.9);color:#e5e7eb;border:1px solid rgba(148,163,184,.28);box-shadow:none}.btn:disabled{opacity:.55;cursor:not-allowed}
+    textarea{width:100%;min-height:86px;border-radius:16px;border:1px solid rgba(148,163,184,.28);background:rgba(2,6,23,.65);color:#fff;padding:12px;font:inherit;outline:none;resize:vertical;margin-top:8px}label{font-size:11px;text-transform:uppercase;letter-spacing:.14em;font-weight:900;color:#cbd5e1}.preview{display:none;margin-top:12px;border-radius:18px;overflow:hidden;border:1px solid rgba(148,163,184,.20);background:#020617}.preview img,.preview video{display:block;width:100%;max-height:340px;object-fit:contain;background:#000}.status{min-height:22px;margin-top:12px;color:#cbd5e1;font-weight:800;font-size:13px;white-space:pre-wrap}.ok{color:#86efac}.err{color:#fca5a5}.muted{font-size:12px;color:#cbd5e1;line-height:1.35;margin-top:12px}.hidden{display:none!important} input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><div class="orb"></div><div><div class="k">PLATAFORMA</div><div class="t">ERP ÍMPAR</div><div class="s">Captura de mídias da obra</div></div></div>
+    <div class="obra"><small>Obra selecionada</small><b id="obraNome">Carregando...</b></div>
+
+    <input id="fotoInput" type="file" accept="image/*" capture="environment">
+    <input id="videoInput" type="file" accept="video/*" capture="environment">
+    <input id="galeriaInput" type="file" accept="image/*,video/*,audio/*">
+
+    <button class="btn" id="btnFoto">📷 Tirar foto</button>
+    <button class="btn secondary" id="btnVideo">🎥 Gravar vídeo</button>
+    <button class="btn dark" id="btnGaleria">🖼️ Escolher da galeria</button>
+
+    <div class="preview" id="preview"></div>
+
+    <div id="legendaBox" class="hidden">
+      <label for="legenda">Legenda opcional</label>
+      <textarea id="legenda" placeholder="Ex.: Prolongamento das linhas concluído no trecho liberado..."></textarea>
+      <button class="btn" id="btnEnviar">✅ Enviar para o RDO</button>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="muted">Dica: no celular, os botões de foto e vídeo usam a câmera nativa do aparelho. Após enviar, o registro entra automaticamente na timeline da obra.</div>
+    <button class="btn dark" id="btnVoltar">↩️ Voltar ao Telegram</button>
+  </div>
+
+<script>
+const API_UPLOAD = 'https://api.erpimpar.com.br/centro-integrado-obras/upload_midia.php';
+const TELEGRAM_BOT = 'ERPImparRDOBot';
+const qs = new URLSearchParams(location.search);
+const obra = qs.get('obra') || '';
+const chatId = qs.get('chat_id') || '';
+let arquivoSelecionado = null;
+let localizacao = {lat:'', lng:''};
+
+document.getElementById('obraNome').textContent = obra || 'Obra não informada';
+const statusEl = document.getElementById('status');
+function setStatus(txt, cls=''){ statusEl.className='status '+cls; statusEl.textContent=txt||''; }
+function pick(id){ document.getElementById(id).click(); }
+
+document.getElementById('btnFoto').onclick = () => pick('fotoInput');
+document.getElementById('btnVideo').onclick = () => pick('videoInput');
+document.getElementById('btnGaleria').onclick = () => pick('galeriaInput');
+document.getElementById('btnVoltar').onclick = () => { location.href = 'https://t.me/' + TELEGRAM_BOT; };
+['fotoInput','videoInput','galeriaInput'].forEach(id => {
+  document.getElementById(id).addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    arquivoSelecionado = f;
+    mostrarPreview(f);
+    document.getElementById('legendaBox').classList.remove('hidden');
+    setStatus('Arquivo selecionado. Confira a prévia e envie para o RDO.');
+  });
+});
+
+function mostrarPreview(f){
+  const box = document.getElementById('preview');
+  box.innerHTML = '';
+  const url = URL.createObjectURL(f);
+  if(f.type.startsWith('image/')){
+    const img = document.createElement('img'); img.src=url; box.appendChild(img);
+  }else if(f.type.startsWith('video/')){
+    const video = document.createElement('video'); video.src=url; video.controls=true; video.playsInline=true; box.appendChild(video);
+  }else{
+    box.textContent = f.name;
+  }
+  box.style.display='block';
+}
+
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(pos => {
+    localizacao.lat = String(pos.coords.latitude || '');
+    localizacao.lng = String(pos.coords.longitude || '');
+  }, () => {}, {enableHighAccuracy:true, timeout:7000, maximumAge:60000});
+}
+
+document.getElementById('btnEnviar').onclick = async () => {
+  if(!obra){ setStatus('Obra não informada no link.', 'err'); return; }
+  if(!arquivoSelecionado){ setStatus('Selecione uma foto ou vídeo primeiro.', 'err'); return; }
+  const btn = document.getElementById('btnEnviar');
+  btn.disabled = true;
+  setStatus('⏳ Enviando mídia para o servidor...');
+  try{
+    const fd = new FormData();
+    fd.append('obra', obra);
+    fd.append('chat_id', chatId);
+    fd.append('autor', 'Telegram / Câmera RDO');
+    fd.append('legenda', document.getElementById('legenda').value || '');
+    fd.append('lat', localizacao.lat || '');
+    fd.append('lng', localizacao.lng || '');
+    fd.append('arquivo', arquivoSelecionado, arquivoSelecionado.name || 'midia');
+    const r = await fetch(API_UPLOAD, {method:'POST', body:fd});
+    const txt = await r.text();
+    let j; try{ j=JSON.parse(txt); }catch(e){ throw new Error(txt || 'Resposta inválida'); }
+    if(!r.ok || !j.ok) throw new Error(j.erro || 'Falha no upload');
+    setStatus('✅ Mídia enviada e registrada na timeline da obra.\nVocê já pode voltar ao Telegram.', 'ok');
+    btn.textContent = '✅ Enviado';
+  }catch(err){
+    console.error(err);
+    setStatus('Erro ao enviar: ' + (err.message || err), 'err');
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
