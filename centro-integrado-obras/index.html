@@ -99,5 +99,65 @@ async function carregarDashboard(){
   carregarDashboard();
 })();
 </script>
+
+/* CIGO v16.19 - cole este bloco no final do index.html, antes de </body> */
+<script>
+(async function atualizarCacheFarolCIGO(){
+  const API = 'https://api.erpimpar.com.br/cronograma/';
+  const SAVE = 'https://api.erpimpar.com.br/centro-integrado-obras/cache_farol_save.php';
+
+  function pct(n){ const v=Number(n||0); return Math.max(0, Math.min(100, Math.round(v*10)/10)); }
+  function normId(id){ return String(id||'').trim(); }
+  function isInvalid(id){ const v=normId(id); return !v || v==='0' || v==='00' || v==='000'; }
+  function isGroup(atividades, idx){
+    const base = Number(atividades[idx]?.nivel || 0);
+    for(let i=idx+1;i<atividades.length;i++){
+      const lvl = Number(atividades[i]?.nivel || 0);
+      if(lvl <= base) break;
+      return true;
+    }
+    return false;
+  }
+  function timelinePercent(inicio, fim){
+    if(!inicio || !fim) return 0;
+    const a=new Date(inicio+'T12:00:00'), b=new Date(fim+'T12:00:00'), h=new Date(); h.setHours(12,0,0,0);
+    const total=b-a; if(!(total>0)) return 0; if(h<=a) return 0; if(h>=b) return 100;
+    return pct(((h-a)/total)*100);
+  }
+  function resumoCronograma(data){
+    const atividades = Array.isArray(data.atividades) ? data.atividades : [];
+    const folhas = atividades.filter((a,i)=>!isGroup(atividades,i));
+    const r = (data.resumo && typeof data.resumo==='object') ? data.resumo : {};
+    const inicio = String(r.inicio || data.inicio || '').trim();
+    const fim = String(r.fim || data.fim || '').trim();
+    const previsto = Number(r.previsto ?? data.previsto ?? 0);
+    const real = Number(r.real ?? data.real ?? 0);
+    let andamento=0, concluidas=0, atrasadas=0, naoIniciadas=0;
+    folhas.forEach(f=>{ const st=String(f.status||'').toLowerCase(); if(st.includes('conclu')) concluidas++; else if(st.includes('atras')) atrasadas++; else if(st.includes('andamento')) andamento++; else naoIniciadas++; });
+    let status = r.status || data.status || 'Não iniciado';
+    if(!status || status==='Não iniciado'){
+      if(real >= 100) status='Concluído'; else if(real<=0 && previsto<=0) status='Não iniciado'; else if(real>=previsto) status='Em andamento'; else status='Atrasado';
+    }
+    return { id:normId(data.id), nome:String(data.nome||data.obra||'').trim(), coordenador:String(data.coordenador||'').trim(), previsto:pct(previsto), real:pct(real), status, totalTarefas:folhas.length, duracaoProjeto:Number(r.dias ?? data.dias ?? 0), inicioPrevisto:inicio, fimPrevisto:fim, andamento, concluidas, atrasadas, naoIniciadas, timelineHoje:timelinePercent(inicio,fim) };
+  }
+  async function fetchJson(url, opts){ const r=await fetch(url, opts || {cache:'no-store'}); const t=await r.text(); if(!r.ok) throw new Error('HTTP '+r.status+' '+t); return JSON.parse(t); }
+  try{
+    console.log('[CIGO] Atualizando cache do Farol...');
+    const base = await fetchJson(API + 'listar_obras_farol.php');
+    const lista = Array.isArray(base.data) ? base.data : [];
+    const ids = [...new Set(lista.map(x=>normId(x.id)).filter(id=>!isInvalid(id)))];
+    const items = [];
+    for(const id of ids){
+      try{
+        const j = await fetchJson(API + 'carregar_cronograma.php?id=' + encodeURIComponent(id));
+        if(j && j.ok && j.data) items.push(resumoCronograma(j.data));
+      }catch(e){ console.warn('[CIGO] Falha obra', id, e); }
+    }
+    const salvo = await fetchJson(SAVE, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items})});
+    console.log('[CIGO] Cache Farol salvo:', salvo);
+  }catch(e){ console.warn('[CIGO] Cache Farol não atualizado:', e); }
+})();
+</script>
+  
 </body>
 </html>
