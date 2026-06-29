@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>ERP ÍMPAR — Mídias da Obra</title>
+  <title>ERP ÍMPAR — Câmera RDO</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root{--bg1:#0b1e4a;--bg2:#0e3b6e;--bg3:#0f766e;--green:#22c55e;--text:#e5e7eb;--soft:#cbd5e1;--panel:rgba(2,6,23,.72);--border:rgba(148,163,184,.34)}
     *{box-sizing:border-box} body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:linear-gradient(120deg,var(--bg1),var(--bg2),var(--bg3));display:flex;align-items:center;justify-content:center;padding:18px}
@@ -18,9 +19,10 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="brand"><div class="orb"></div><div><div class="k">PLATAFORMA</div><div class="t">ERP ÍMPAR</div><div class="s">Captura de mídias da obra</div></div></div>
+    <div class="brand"><div class="orb"></div><div><div class="k">PLATAFORMA</div><div class="t">ERP ÍMPAR</div><div class="s">Câmera RDO</div></div></div>
     <div class="obra"><small>Obra selecionada</small><b id="obraNome">Carregando...</b></div>
 
+    <input id="autoInput" type="file" accept="image/*,video/*" capture="environment">
     <input id="fotoInput" type="file" accept="image/*" capture="environment">
     <input id="videoInput" type="file" accept="video/*" capture="environment">
     <input id="galeriaInput" type="file" accept="image/*,video/*,audio/*">
@@ -38,8 +40,8 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="muted">Dica: no celular, os botões de foto e vídeo usam a câmera nativa do aparelho. Após enviar, o registro entra automaticamente na timeline da obra.</div>
-    <button class="btn dark" id="btnVoltar">↩️ Voltar ao Telegram</button>
+    <div class="muted" id="dica">A câmera será aberta automaticamente. Se não abrir, use um dos botões acima.</div>
+    <button class="btn dark hidden" id="btnVoltar">↩️ Voltar ao Telegram</button>
   </div>
 
 <script>
@@ -48,6 +50,7 @@ const TELEGRAM_BOT = 'ERPImparRDOBot';
 const qs = new URLSearchParams(location.search);
 const obra = qs.get('obra') || '';
 const chatId = qs.get('chat_id') || '';
+const auto = qs.get('auto') === '1' || qs.get('auto') === 'true';
 let arquivoSelecionado = null;
 let localizacao = {lat:'', lng:''};
 
@@ -59,15 +62,16 @@ function pick(id){ document.getElementById(id).click(); }
 document.getElementById('btnFoto').onclick = () => pick('fotoInput');
 document.getElementById('btnVideo').onclick = () => pick('videoInput');
 document.getElementById('btnGaleria').onclick = () => pick('galeriaInput');
-document.getElementById('btnVoltar').onclick = () => { location.href = 'https://t.me/' + TELEGRAM_BOT; };
-['fotoInput','videoInput','galeriaInput'].forEach(id => {
+document.getElementById('btnVoltar').onclick = voltarTelegram;
+['autoInput','fotoInput','videoInput','galeriaInput'].forEach(id => {
   document.getElementById(id).addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     if(!f) return;
     arquivoSelecionado = f;
     mostrarPreview(f);
-    document.getElementById('legendaBox').classList.remove('hidden');
-    setStatus('Arquivo selecionado. Confira a prévia e envie para o RDO.');
+    document.getElementById('legendaBox').classList.add('hidden');
+    setStatus('Arquivo capturado. Enviando automaticamente para o RDO...');
+    enviarMidia(true);
   });
 });
 
@@ -85,6 +89,34 @@ function mostrarPreview(f){
   box.style.display='block';
 }
 
+function voltarTelegram(){
+  try{
+    if(window.Telegram && Telegram.WebApp){
+      Telegram.WebApp.close();
+      return;
+    }
+  }catch(e){}
+  location.href = 'https://t.me/' + TELEGRAM_BOT;
+}
+
+function limparInputs(){
+  ['autoInput','fotoInput','videoInput','galeriaInput'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  arquivoSelecionado = null;
+}
+
+function abrirCapturaAutomatica(){
+  if(!auto) return;
+  setStatus('Abrindo câmera do aparelho...');
+  setTimeout(() => {
+    try{ document.getElementById('autoInput').click(); }
+    catch(e){ setStatus('Use um dos botões para abrir a câmera.', 'err'); }
+  }, 450);
+}
+
+
 if(navigator.geolocation){
   navigator.geolocation.getCurrentPosition(pos => {
     localizacao.lat = String(pos.coords.latitude || '');
@@ -92,7 +124,7 @@ if(navigator.geolocation){
   }, () => {}, {enableHighAccuracy:true, timeout:7000, maximumAge:60000});
 }
 
-document.getElementById('btnEnviar').onclick = async () => {
+async function enviarMidia(autoEnviar=false){
   if(!obra){ setStatus('Obra não informada no link.', 'err'); return; }
   if(!arquivoSelecionado){ setStatus('Selecione uma foto ou vídeo primeiro.', 'err'); return; }
   const btn = document.getElementById('btnEnviar');
@@ -111,14 +143,19 @@ document.getElementById('btnEnviar').onclick = async () => {
     const txt = await r.text();
     let j; try{ j=JSON.parse(txt); }catch(e){ throw new Error(txt || 'Resposta inválida'); }
     if(!r.ok || !j.ok) throw new Error(j.erro || 'Falha no upload');
-    setStatus('✅ Mídia enviada e registrada na timeline da obra.\nVocê já pode voltar ao Telegram.', 'ok');
+    setStatus('✅ Mídia enviada e registrada no RDO. Voltando ao Telegram...', 'ok');
     btn.textContent = '✅ Enviado';
+    limparInputs();
+    setTimeout(voltarTelegram, 900);
   }catch(err){
     console.error(err);
     setStatus('Erro ao enviar: ' + (err.message || err), 'err');
     btn.disabled = false;
   }
-};
+}
+document.getElementById('btnEnviar').onclick = () => enviarMidia(false);
+try{ if(window.Telegram && Telegram.WebApp){ Telegram.WebApp.ready(); Telegram.WebApp.expand(); } }catch(e){}
+abrirCapturaAutomatica();
 </script>
 </body>
 </html>
