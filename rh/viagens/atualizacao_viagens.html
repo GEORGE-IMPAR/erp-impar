@@ -89,7 +89,30 @@ async function salvarDraft(silencioso=false){if(!semana)return;try{if(!silencios
 async function finalizarCustos(){if(!semana)return;if(!confirm('Finalizar custos de viagens desta semana? Depois disso o rascunho vira histórico de custos.'))return;try{setStatus('Finalizando custos...');let j=await api('finalize',{semana,viagens,usuario:lerUsuario()});if(!j.ok)throw new Error(j.erro||'Falha ao finalizar');setStatus('Custos finalizados no histórico.');}catch(e){setStatus('Erro ao finalizar: '+e.message,true)}}
 function carregarGoogle(){return new Promise((resolve,reject)=>{if(googleLoaded&&window.google)return resolve(); if(!GOOGLE_MAPS_API_KEY)return reject(new Error('Chave Google Maps/Places não configurada.')); let s=document.createElement('script');s.src=`https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;s.onload=()=>{googleLoaded=true;resolve()};s.onerror=()=>reject(new Error('Não foi possível carregar Google Maps.'));document.head.appendChild(s);});}
 async function pesquisarGoogleMaps(){let obra=$('mObra').value.trim(); if(!obra)return alert('Informe a obra/local.'); $('hotelsBox').innerHTML='<div class="empty">Pesquisando localização e hotéis...</div>'; try{await carregarGoogle(); let mapDiv=$('mapBox'); mapDiv.innerHTML=''; map=new google.maps.Map(mapDiv,{zoom:14,center:{lat:-27.5954,lng:-48.5480}}); geocoder=new google.maps.Geocoder(); placesService=new google.maps.places.PlacesService(map); geocoder.geocode({address:obra+' Santa Catarina Brasil'},(res,status)=>{if(status!=='OK'||!res[0]){fallbackHoteis(obra);return;} let loc=res[0].geometry.location; map.setCenter(loc); new google.maps.Marker({map,position:loc,title:obra}); placesService.nearbySearch({location:loc,radius:5000,type:'lodging'},(places,st)=>{if(st!==google.maps.places.PlacesServiceStatus.OK||!places?.length){fallbackHoteis(obra);return;} renderHotels(places.slice(0,8),true);});}); }catch(e){ fallbackHoteis(obra,e.message); }}
-function fallbackHoteis(obra,msg=''){let url='https://www.google.com/maps/search/hotéis+próx
+function fallbackHoteis(obra, msg='') {
+
+    const url =
+        'https://www.google.com/maps/search/' +
+        encodeURIComponent('hotéis próximos de ' + obra);
+
+    $('mapBox').innerHTML = `
+        <div class="empty">
+            Google Maps indisponível.<br>
+            Abrindo pesquisa externa...
+        </div>
+    `;
+
+    $('hotelsBox').innerHTML = `
+        <div class="empty">
+            ${msg || 'Não foi possível localizar hotéis automaticamente.'}
+            <br><br>
+            <button class="btn ok"
+                onclick="window.open('${url}','_blank')">
+                Abrir Google Maps
+            </button>
+        </div>
+    `;
+}
 
 function grupoChave(v){ return (String(v.colaborador||'').toUpperCase()+'|'+String(v.obra||'').trim().toUpperCase()); }
 function diasOrdenadosDoGrupo(colab,obra){
