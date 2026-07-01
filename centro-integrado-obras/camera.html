@@ -14,6 +14,7 @@
     .btn{width:100%;border:0;border-radius:18px;padding:16px 18px;margin:10px 0;font-size:16px;font-weight:1000;cursor:pointer;color:#04111f;background:linear-gradient(135deg,#22c55e,#16a34a);box-shadow:0 14px 32px rgba(22,163,74,.34)}
     .btn.secondary{background:linear-gradient(135deg,#60a5fa,#2563eb);color:#fff}.btn.dark{background:rgba(15,23,42,.9);color:#e5e7eb;border:1px solid rgba(148,163,184,.28);box-shadow:none}.btn:disabled{opacity:.55;cursor:not-allowed}
     textarea{width:100%;min-height:86px;border-radius:16px;border:1px solid rgba(148,163,184,.28);background:rgba(2,6,23,.65);color:#fff;padding:12px;font:inherit;outline:none;resize:vertical;margin-top:8px}label{font-size:11px;text-transform:uppercase;letter-spacing:.14em;font-weight:900;color:#cbd5e1}.preview{display:none;margin-top:12px;border-radius:18px;overflow:hidden;border:1px solid rgba(148,163,184,.20);background:#020617}.preview img,.preview video{display:block;width:100%;max-height:340px;object-fit:contain;background:#000}.status{min-height:22px;margin-top:12px;color:#cbd5e1;font-weight:800;font-size:13px;white-space:pre-wrap}.ok{color:#86efac}.err{color:#fca5a5}.muted{font-size:12px;color:#cbd5e1;line-height:1.35;margin-top:12px}.hidden{display:none!important} input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+    .toast-ok{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9999;background:linear-gradient(135deg,#22c55e,#16a34a);color:#04111f;border-radius:18px;padding:18px 20px;font-weight:1000;box-shadow:0 24px 70px rgba(0,0,0,.45);text-align:center;min-width:230px}
   </style>
 </head>
 <body>
@@ -38,7 +39,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="muted">Dica: no celular, os botões de foto e vídeo usam a câmera nativa do aparelho. Após enviar, o registro entra automaticamente na timeline da obra. Esta versão usa o fluxo estável. No celular, os botões de foto/vídeo tentam abrir a câmera nativa; no desktop, o sistema abre seletor de arquivo porque não há câmera móvel.</div>
+    <div class="muted">Dica: no celular, os botões de foto e vídeo usam a câmera nativa do aparelho. Após enviar, o registro entra automaticamente na timeline da obra e esta tela fecha para evitar travar a próxima captura.</div>
   </div>
 
 <script>
@@ -48,16 +49,27 @@ const qs = new URLSearchParams(location.search);
 const obra = qs.get('obra') || '';
 const chatId = qs.get('chat_id') || '';
 let arquivoSelecionado = null;
+let previewObjectUrl = '';
 let localizacao = {lat:'', lng:''};
 
-document.getElementById('obraNome').textContent = obra || 'Obra não informada';
+const obraNomeEl = document.getElementById('obraNome');
 const statusEl = document.getElementById('status');
+const btnEnviar = document.getElementById('btnEnviar');
+
+obraNomeEl.textContent = obra || 'Obra não informada';
 function setStatus(txt, cls=''){ statusEl.className='status '+cls; statusEl.textContent=txt||''; }
-function pick(id){ document.getElementById(id).click(); }
+function pick(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  // Limpa antes de abrir para permitir capturar o mesmo tipo várias vezes seguidas.
+  try { el.value = ''; } catch(e) {}
+  el.click();
+}
 
 document.getElementById('btnFoto').onclick = () => pick('fotoInput');
 document.getElementById('btnVideo').onclick = () => pick('videoInput');
 document.getElementById('btnGaleria').onclick = () => pick('galeriaInput');
+
 ['fotoInput','videoInput','galeriaInput'].forEach(id => {
   document.getElementById(id).addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
@@ -65,6 +77,8 @@ document.getElementById('btnGaleria').onclick = () => pick('galeriaInput');
     arquivoSelecionado = f;
     mostrarPreview(f);
     document.getElementById('legendaBox').classList.remove('hidden');
+    btnEnviar.disabled = false;
+    btnEnviar.textContent = '✅ Enviar para o RDO';
     setStatus('Arquivo selecionado. Confira a prévia e envie para o RDO.');
   });
 });
@@ -72,35 +86,72 @@ document.getElementById('btnGaleria').onclick = () => pick('galeriaInput');
 function mostrarPreview(f){
   const box = document.getElementById('preview');
   box.innerHTML = '';
-  const url = URL.createObjectURL(f);
+  if(previewObjectUrl){ try { URL.revokeObjectURL(previewObjectUrl); } catch(e) {} }
+  previewObjectUrl = URL.createObjectURL(f);
+
   if(f.type.startsWith('image/')){
-    const img = document.createElement('img'); img.src=url; box.appendChild(img);
+    const img = document.createElement('img');
+    img.src = previewObjectUrl;
+    box.appendChild(img);
   }else if(f.type.startsWith('video/')){
-    const video = document.createElement('video'); video.src=url; video.controls=true; video.playsInline=true; box.appendChild(video);
+    const video = document.createElement('video');
+    video.src = previewObjectUrl;
+    video.controls = true;
+    video.playsInline = true;
+    box.appendChild(video);
   }else{
     box.textContent = f.name;
   }
-  box.style.display='block';
+  box.style.display = 'block';
 }
-
 
 function limparFormulario(){
   arquivoSelecionado = null;
-  ['fotoInput','videoInput','galeriaInput'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  const leg=document.getElementById('legenda'); if(leg) leg.value='';
-  const box=document.getElementById('preview'); if(box){ box.innerHTML=''; box.style.display='none'; }
-  const lb=document.getElementById('legendaBox'); if(lb) lb.classList.add('hidden');
+  ['fotoInput','videoInput','galeriaInput'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el){ try { el.value = ''; } catch(e){} }
+  });
+  const leg = document.getElementById('legenda');
+  if(leg) leg.value = '';
+  const box = document.getElementById('preview');
+  if(box){ box.innerHTML = ''; box.style.display = 'none'; }
+  const lb = document.getElementById('legendaBox');
+  if(lb) lb.classList.add('hidden');
+  if(previewObjectUrl){ try { URL.revokeObjectURL(previewObjectUrl); } catch(e) {} }
+  previewObjectUrl = '';
 }
 
-function voltarTelegram(){
-  try{
-    if(window.Telegram && Telegram.WebApp && typeof Telegram.WebApp.close === 'function'){
-      Telegram.WebApp.close();
+function mostrarToastEFechar(texto){
+  const aviso = document.createElement('div');
+  aviso.className = 'toast-ok';
+  aviso.innerHTML = texto || '✅ Enviado para o RDO';
+  document.body.appendChild(aviso);
+  setTimeout(fecharCameraRDO, 700);
+}
+
+function fecharCameraRDO(){
+  limparFormulario();
+
+  setTimeout(() => {
+    try{
+      if(window.Telegram && Telegram.WebApp && typeof Telegram.WebApp.close === 'function'){
+        Telegram.WebApp.close();
+        return;
+      }
+    }catch(e){}
+
+    try{
+      window.close();
       return;
-    }
-  }catch(e){}
-  try{ history.back(); return; }catch(e){}
-  location.href = 'https://t.me/' + TELEGRAM_BOT;
+    }catch(e){}
+
+    try{
+      history.back();
+      return;
+    }catch(e){}
+
+    location.href = 'https://t.me/' + TELEGRAM_BOT;
+  }, 250);
 }
 
 try{
@@ -117,12 +168,13 @@ if(navigator.geolocation){
   }, () => {}, {enableHighAccuracy:true, timeout:7000, maximumAge:60000});
 }
 
-document.getElementById('btnEnviar').onclick = async () => {
+btnEnviar.onclick = async () => {
   if(!obra){ setStatus('Obra não informada no link.', 'err'); return; }
   if(!arquivoSelecionado){ setStatus('Selecione uma foto ou vídeo primeiro.', 'err'); return; }
-  const btn = document.getElementById('btnEnviar');
-  btn.disabled = true;
+
+  btnEnviar.disabled = true;
   setStatus('⏳ Enviando mídia para o servidor...');
+
   try{
     const fd = new FormData();
     fd.append('obra', obra);
@@ -132,18 +184,21 @@ document.getElementById('btnEnviar').onclick = async () => {
     fd.append('lat', localizacao.lat || '');
     fd.append('lng', localizacao.lng || '');
     fd.append('arquivo', arquivoSelecionado, arquivoSelecionado.name || 'midia');
+
     const r = await fetch(API_UPLOAD, {method:'POST', body:fd});
     const txt = await r.text();
-    let j; try{ j=JSON.parse(txt); }catch(e){ throw new Error(txt || 'Resposta inválida'); }
+    let j;
+    try { j = JSON.parse(txt); } catch(e) { throw new Error(txt || 'Resposta inválida'); }
     if(!r.ok || !j.ok) throw new Error(j.erro || 'Falha no upload');
-    setStatus('✅ Mídia enviada e registrada no RDO.\nVoltando para o Telegram...', 'ok');
-    btn.textContent = '✅ Enviado';
-    limparFormulario();
-    setTimeout(voltarTelegram, 1200);
+
+    setStatus('✅ Mídia enviada e registrada no RDO. Voltando para o Telegram...', 'ok');
+    btnEnviar.textContent = '✅ Enviado';
+    mostrarToastEFechar('✅ Enviado para o RDO');
   }catch(err){
     console.error(err);
     setStatus('Erro ao enviar: ' + (err.message || err), 'err');
-    btn.disabled = false;
+    btnEnviar.disabled = false;
+    btnEnviar.textContent = '✅ Enviar para o RDO';
   }
 };
 </script>
