@@ -210,7 +210,8 @@ function renderMidiaTimeline(i){
   return html;
 }
 function renderTimeline(arr){
-  renderFotos();
+  window.__TIMELINE_ATUAL = arr || [];
+  renderPaineisSecundarios();
   const dados=(arr||[]).filter(i=>FILTRO_TIMELINE==='todos'||i.tipo===FILTRO_TIMELINE||(FILTRO_TIMELINE==='sistema'&&['participante','sistema','cronograma'].includes(i.tipo)));
   if(!dados.length){$('timeline').innerHTML='<div class="empty">Nenhum registro para este filtro nesta obra.</div>';return}
   let last='';
@@ -235,7 +236,32 @@ function tgAcao(tipo){if(tipo==='consulta'){const o=window.__OBRA_ATUAL||{};cons
 function chaveFotos(){return 'CIGO_FOTOS_'+norm(OBRA)}
 function lerFotos(){try{return JSON.parse(localStorage.getItem(chaveFotos())||'[]')}catch(e){return[]}}
 function salvarFotos(arr){localStorage.setItem(chaveFotos(),JSON.stringify(arr))}
-function renderFotos(){const fotos=lerFotos(); const el=$('galeriaFotos'); if(!el)return; if(!fotos.length){el.innerHTML='<div class="empty" style="grid-column:1/-1">Nenhuma foto registrada nesta obra ainda.</div>';return} el.innerHTML=fotos.map(f=>`<div class="photo-card"><img src="${f.src}" alt="Foto da obra"><div class="photo-info"><b>${escapeHtml(f.autor||'ERP')}</b><small>${escapeHtml(f.nome||'foto')} · ${new Date(f.data).toLocaleString('pt-BR')}</small></div><div class="photo-actions"><button class="btn-secondary" onclick="abrirFoto('${f.id}')">Abrir</button><button class="btn-danger" onclick="removerFoto('${f.id}')">Remover</button></div></div>`).join('')}
+function extMidia(url){return String(url||'').split('?')[0].split('.').pop().toLowerCase()}
+function isFotoItem(i){const tipo=String(i.tipo||'').toLowerCase();const ext=extMidia(urlMidiaItem(i));return tipo.includes('foto')||tipo.includes('imagem')||['jpg','jpeg','png','webp','gif'].includes(ext)}
+function isVideoItem(i){const tipo=String(i.tipo||'').toLowerCase();const ext=extMidia(urlMidiaItem(i));return tipo.includes('video')||['mp4','mov','webm','m4v'].includes(ext)}
+function isMensagemItem(i){const tipo=String(i.tipo||'mensagem').toLowerCase();return ['mensagem','inicio','fim','decisao','participante','sistema','cronograma'].some(t=>tipo.includes(t)) && !isFotoItem(i) && !isVideoItem(i)}
+function renderMensagens(){
+  const el=$('mensagens'); if(!el)return;
+  const itens=(timelineAtual()||[]).filter(isMensagemItem);
+  if(!itens.length){el.innerHTML='<div class="empty">Nenhuma mensagem registrada nesta obra.</div>';return}
+  el.className='timeline';
+  el.innerHTML=itens.map(i=>{let texto=String(i.texto||'').replace(/Localização:\s*https?:\/\/\S+/gi,'').trim();return `<div class="item"><div class="meta"><span class="typechip">${iconeTipo(i.tipo)} ${escapeHtml(labelTipo(i.tipo))}</span><span class="origin">${escapeHtml(i.origem||'ERP')}</span></div><h4>${escapeHtml(i.autor||'ERP')}</h4><p>${escapeHtml(texto||'—')}</p><small>${new Date(i.data).toLocaleString('pt-BR')}</small></div>`}).join('');
+}
+function renderFotos(){
+  const el=$('galeriaFotos'); if(!el)return;
+  const servidor=(timelineAtual()||[]).filter(i=>isFotoItem(i)||isVideoItem(i));
+  const locais=lerFotos().map(f=>({__local:true,id:f.id,src:f.src,autor:f.autor,nome:f.nome,data:f.data,tipo:'foto'}));
+  const itens=[...servidor,...locais];
+  if(!itens.length){el.innerHTML='<div class="empty" style="grid-column:1/-1">Nenhuma foto ou vídeo registrado nesta obra ainda.</div>';return}
+  el.innerHTML=itens.map((i,idx)=>{
+    const url=i.__local?i.src:urlMidiaItem(i);
+    const titulo=isVideoItem(i)?'Vídeo da obra':'Foto da obra';
+    const nome=i.nome||i.arquivo||i.arquivo_url||i.url||titulo;
+    const midia=isVideoItem(i)?`<video src="${escapeHtml(url)}" controls playsinline preload="metadata" style="width:100%;height:150px;object-fit:cover;background:#000;display:block"></video>`:`<img src="${escapeHtml(url)}" alt="${titulo}" onerror="this.closest('.photo-card').classList.add('erro-midia')">`;
+    return `<div class="photo-card">${midia}<div class="photo-info"><b>${escapeHtml(i.autor||'ERP')}</b><small>${escapeHtml(nome)} · ${new Date(i.data).toLocaleString('pt-BR')}</small></div><div class="photo-actions"><button class="btn-secondary" onclick="window.open('${escapeHtml(url)}','_blank')">Abrir</button></div></div>`
+  }).join('')
+}
+function renderPaineisSecundarios(){renderMensagens();renderFotos()}
 function abrirFoto(id){const f=lerFotos().find(x=>x.id===id); if(!f)return; const w=window.open('','_blank'); if(w){w.document.write(`<title>Foto da obra</title><body style="margin:0;background:#0b1728;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${f.src}" style="max-width:96vw;max-height:96vh;border-radius:18px"></body>`)}}
 function removerFoto(id){const fotos=lerFotos().filter(f=>f.id!==id); salvarFotos(fotos); renderFotos(); toast('Foto removida apenas do teste local desta obra.')}
 function receberFotos(files){const lista=[...(files||[])].filter(f=>f.type&&f.type.startsWith('image/')); if(!lista.length){toast('Selecione uma imagem.');return} const u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||'{}'); lista.forEach(file=>{const reader=new FileReader(); reader.onload=()=>{const foto={id:'foto_'+Date.now()+'_'+Math.random().toString(36).slice(2),nome:file.name,src:reader.result,autor:u.nome||u.email||'Gestor ERP',origem:'ERP',data:new Date().toISOString(),obra:OBRA}; const fotos=lerFotos(); fotos.unshift(foto); salvarFotos(fotos); const arr=lerTimeline(); arr.unshift({tipo:'foto',texto:'Foto anexada à obra: '+file.name,autor:foto.autor,origem:'ERP',data:foto.data,anexo_id:foto.id}); salvarTimeline(arr); renderFotos(); renderTimeline(arr); toast('Foto vinculada somente a esta obra.');}; reader.readAsDataURL(file);});}
