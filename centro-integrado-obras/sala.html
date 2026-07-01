@@ -162,11 +162,75 @@ async function adicionarParticipante(){
 }
 function registrarEventoSistema(tipo,texto){const u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||'{}'); const arr=lerTimeline(); arr.unshift({tipo,texto,autor:u.nome||u.email||'ERP',data:new Date().toISOString()}); salvarTimeline(arr); renderTimeline(arr)}
 function registrarLocal(tipo){let texto=$('msg').value.trim(); if(!texto && ['foto','video','audio','localizacao'].includes(tipo)) texto='Registro de '+labelTipo(tipo).toLowerCase()+' simulado para teste da timeline.'; if(!texto){toast('Digite uma mensagem para registrar.');return} const u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||'{}'); const item={tipo,texto,autor:u.nome||u.email||'Gestor ERP',origem:'ERP',data:new Date().toISOString()}; const arr=lerTimeline(); arr.unshift(item); salvarTimeline(arr); $('msg').value=''; renderTimeline(arr); toast('Registro adicionado na timeline local de teste.')}  
-function labelTipo(t){const m={mensagem:'Mensagem',decisao:'Decisão',foto:'Foto',video:'Vídeo',audio:'Áudio',localizacao:'Localização',participante:'Participante',sistema:'Sistema',cronograma:'Cronograma'};return m[t]||String(t||'Registro')}
-function iconeTipo(t){const m={mensagem:'💬',decisao:'✅',foto:'📷',video:'🎥',audio:'🎤',localizacao:'📍',participante:'👤',sistema:'⚙️',cronograma:'📅'};return m[t]||'📝'}
+function labelTipo(t){const m={mensagem:'Mensagem',decisao:'Decisão',foto:'Foto',imagem:'Foto',midia:'Mídia',arquivo:'Arquivo',video:'Vídeo',audio:'Áudio',localizacao:'Localização',participante:'Participante',sistema:'Sistema',cronograma:'Cronograma'};return m[t]||String(t||'Registro')}
+function iconeTipo(t){const m={mensagem:'💬',decisao:'✅',foto:'📷',imagem:'📷',midia:'📎',arquivo:'📎',video:'🎥',audio:'🎤',localizacao:'📍',participante:'👤',sistema:'⚙️',cronograma:'📅'};return m[t]||'📝'}
 function grupoData(iso){const d=new Date(iso), hoje=new Date(); const a=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate()); const b=new Date(d.getFullYear(),d.getMonth(),d.getDate()); const diff=Math.round((a-b)/86400000); if(diff===0)return'Hoje'; if(diff===1)return'Ontem'; if(diff<=7)return'Esta semana'; if(diff<=14)return'Semana passada'; return'Mais antigos'}
 function filtrarTimeline(f){FILTRO_TIMELINE=f; document.querySelectorAll('.filter').forEach(b=>b.classList.toggle('on',b.dataset.filter===f)); renderTimeline(lerTimeline())}
-function renderTimeline(arr){renderFotos();const dados=(arr||[]).filter(i=>FILTRO_TIMELINE==='todos'||i.tipo===FILTRO_TIMELINE||(FILTRO_TIMELINE==='sistema'&&['participante','sistema','cronograma'].includes(i.tipo))); if(!dados.length){$('timeline').innerHTML='<div class="empty">Nenhum registro para este filtro nesta obra.</div>';return} let last=''; $('timeline').innerHTML=dados.map(i=>{const g=grupoData(i.data); const sep=g!==last?`<div class="day-group">${g}</div>`:''; last=g; const midia=['foto','video','audio','localizacao'].includes(i.tipo)?`<div class="media-box">${iconeTipo(i.tipo)} Área preparada para anexo recebido do Telegram/ERP nesta obra.</div>`:''; return `${sep}<div class="item"><div class="meta"><span class="typechip">${iconeTipo(i.tipo)} ${escapeHtml(labelTipo(i.tipo))}</span><span class="origin">${escapeHtml(i.origem||'ERP')}</span></div><h4>${escapeHtml(i.autor||'ERP')}</h4><p>${escapeHtml(i.texto||'')}</p>${midia}<small>${new Date(i.data).toLocaleString('pt-BR')}</small></div>`}).join('')}
+function tipoVisualTimeline(i){
+  const tipo=String(i&&i.tipo||'').toLowerCase();
+  const url=String((i&&i.arquivo)||'');
+  if(tipo.includes('foto')||tipo.includes('imagem')) return 'foto';
+  if(tipo.includes('video')||tipo.includes('vídeo')) return 'video';
+  if(tipo.includes('audio')||tipo.includes('áudio')) return 'audio';
+  if(tipo.includes('local')) return 'localizacao';
+  if(/\.(jpg|jpeg|png|gif|webp|bmp|heic)$/i.test(url)) return 'foto';
+  if(/\.(mp4|mov|webm|m4v|avi)$/i.test(url)) return 'video';
+  if(/\.(mp3|ogg|wav|m4a|aac)$/i.test(url)) return 'audio';
+  return tipo||'mensagem';
+}
+function urlSegura(u){
+  const s=String(u||'').trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s) || /^data:/i.test(s)) return s;
+  return s;
+}
+function renderMidiaTimeline(i){
+  const url=urlSegura(i.arquivo||'');
+  const tipo=tipoVisualTimeline(i);
+  const lat=String(i.latitude||'').trim();
+  const lng=String(i.longitude||'').trim();
+  let html='';
+
+  if(url){
+    const safe=escapeHtml(url);
+    if(tipo==='foto'){
+      html+=`<div class="media-box"><a href="${safe}" target="_blank" rel="noopener"><img src="${safe}" alt="Foto da obra" style="width:100%;max-height:420px;object-fit:contain;border-radius:14px;background:#020617;display:block"></a></div>`;
+    }else if(tipo==='video'){
+      html+=`<div class="media-box"><video src="${safe}" controls playsinline preload="metadata" style="width:100%;max-height:420px;border-radius:14px;background:#020617;display:block"></video><div style="margin-top:8px"><a href="${safe}" target="_blank" rel="noopener">Abrir vídeo em nova aba</a></div></div>`;
+    }else if(tipo==='audio'){
+      html+=`<div class="media-box"><audio src="${safe}" controls style="width:100%"></audio><div style="margin-top:8px"><a href="${safe}" target="_blank" rel="noopener">Abrir áudio</a></div></div>`;
+    }else{
+      html+=`<div class="media-box">📎 <a href="${safe}" target="_blank" rel="noopener">Abrir arquivo</a></div>`;
+    }
+  }
+
+  if(lat && lng){
+    const maps=`https://www.google.com/maps?q=${encodeURIComponent(lat+','+lng)}`;
+    html+=`<div class="media-box">📍 <a href="${maps}" target="_blank" rel="noopener">Abrir localização no mapa</a><br><small>${escapeHtml(lat)}, ${escapeHtml(lng)}</small></div>`;
+  }
+
+  if(!html && ['foto','video','audio','localizacao','midia','arquivo'].includes(String(i.tipo||'').toLowerCase())){
+    html=`<div class="media-box">${iconeTipo(tipo)} Mídia registrada, mas sem arquivo disponível para visualização.</div>`;
+  }
+  return html;
+}
+function renderTimeline(arr){
+  renderFotos();
+  const dados=(arr||[]).filter(i=>{
+    const tipo=tipoVisualTimeline(i);
+    return FILTRO_TIMELINE==='todos'||tipo===FILTRO_TIMELINE||(FILTRO_TIMELINE==='sistema'&&['participante','sistema','cronograma'].includes(tipo));
+  });
+  if(!dados.length){$('timeline').innerHTML='<div class="empty">Nenhum registro para este filtro nesta obra.</div>';return}
+  let last='';
+  $('timeline').innerHTML=dados.map(i=>{
+    const tipo=tipoVisualTimeline(i);
+    const g=grupoData(i.data);
+    const sep=g!==last?`<div class="day-group">${g}</div>`:'';
+    last=g;
+    const midia=renderMidiaTimeline(i);
+    return `${sep}<div class="item"><div class="meta"><span class="typechip">${iconeTipo(tipo)} ${escapeHtml(labelTipo(tipo))}</span><span class="origin">${escapeHtml(i.origem||'ERP')}</span></div><h4>${escapeHtml(i.autor||'ERP')}</h4><p>${escapeHtml(i.texto||'')}</p>${midia}<small>${new Date(i.data).toLocaleString('pt-BR')}</small></div>`
+  }).join('')
+}
 
 function payloadBaseTelegram(tipo,texto,autor){return {origem:'telegram',bot:'ERP_IMPAR_BOT',obra:OBRA,obra_id:norm(OBRA),usuario:autor||'Equipe de campo',tipo:tipo||'mensagem',conteudo:texto||'',data_hora:new Date().toISOString(),destino:'timeline_obra'}}
 function atualizarPayloadTelegram(){const tipo=$('tgTipo')?$('tgTipo').value:'mensagem';const texto=$('tgTexto')?$('tgTexto').value:'';const autor=$('tgNome')?$('tgNome').value:'Equipe de campo';if($('payloadTelegram'))$('payloadTelegram').textContent=JSON.stringify(payloadBaseTelegram(tipo,texto,autor),null,2)}
@@ -207,7 +271,7 @@ function normalizarObraInfo(j){
 function timelineAtual(){return window.__TIMELINE_ATUAL||lerTimeline()}
 function normalizarTimeline(arr){return (arr||[]).map(x=>({tipo:x.tipo||x.type||'mensagem',texto:x.texto||x.conteudo||x.mensagem||x.caption||'',autor:x.autor||x.usuario||x.nome||'ERP',origem:x.origem||'ERP',data:x.data||x.data_hora||x.criado_em||new Date().toISOString(),arquivo:x.arquivo||x.arquivo_url||x.url||'',latitude:x.latitude||x.lat||'',longitude:x.longitude||x.lng||x.lon||''}))}
 async function carregarTimelineServidor(){try{const j=await fetchJson(CIGO_API_BASE+'/timeline_list.php?obra='+encodeURIComponent(OBRA)+'&t='+Date.now());const arr=Array.isArray(j)?j:(j.items||j.itens||j.data||[]);if(Array.isArray(arr)){window.__TIMELINE_ATUAL=normalizarTimeline(arr);return window.__TIMELINE_ATUAL}}catch(e){console.warn('Timeline servidor indisponível, usando localStorage',e)}window.__TIMELINE_ATUAL=lerTimeline();return window.__TIMELINE_ATUAL}
-function renderResumo(o){window.__OBRA_ATUAL=o||{}; const nome=campo(o,['obra','nome','projeto','titulo','codigo'],OBRA||'Obra não informada');const coord=campo(o,['coordenador','responsavel','gestor'],'Não informado');const farol=campo(o,['farol','status_farol','status'],'verde');const classe=farolClasse(farol);const previsto=pct(campo(o,['percentual_previsto','previsto','pct_previsto','progresso_previsto','perc_previsto'],0));const realizado=pct(campo(o,['percentual_realizado','realizado','pct_real','progresso_real','perc_real','percentual_real'],0));const agenda=campo(o,['agenda_dia','atividade_dia','atividadeHoje','atividades_hoje','agenda'],'Sem agenda do dia informada.');const tl=timelineAtual();$('titulo').textContent='Sala da Obra · '+nome;$('resumo').innerHTML=`<p><span class="badge ${classe}">${escapeHtml(String(farol||classe).toUpperCase())}</span></p><div class="resumo-grid"><div class="mini"><span>Coordenador</span><b>${escapeHtml(coord)}</b></div><div class="mini"><span>Obra</span><b>${escapeHtml(nome)}</b></div><div class="mini"><span>Previsto</span><b>${previsto.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${previsto}%"></i></div></div><div class="mini"><span>Realizado</span><b>${realizado.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${realizado}%"></i></div></div></div><p style="margin-top:12px;color:#344357;font-size:13px"><b>Status diário (TV):</b><br>${escapeHtml(String(agenda))}</p><div class="stats-mini"><div><b>${lerParticipantes().length+participantesPadrao(o).length}</b><span>PARTICIPANTES</span></div><div><b>${tl.length}</b><span>MENSAGENS</span></div><div><b>${tl.filter(x=>x.tipo==='foto').length}</b><span>FOTOS</span></div><div><b>${tl.filter(x=>['video','audio'].includes(x.tipo)).length}</b><span>MÍDIAS</span></div></div>`;$('cronograma').innerHTML=`<div class="resumo-grid"><div class="mini"><span>Previsto</span><b>${previsto.toFixed(1).replace('.',',')}%</b></div><div class="mini"><span>Realizado</span><b>${realizado.toFixed(1).replace('.',',')}%</b></div><div class="mini"><span>Início</span><b>${escapeHtml(String(o.inicio||'—'))}</b></div><div class="mini"><span>Fim</span><b>${escapeHtml(String(o.fim||'—'))}</b></div></div><p style="margin-top:12px;color:#607086">Duração: <b>${escapeHtml(String(o.dias||'—'))} dias</b> · Status: <b>${escapeHtml(String(campo(o,['status_cronograma','status'],'—')))}</b></p>`; renderParticipantes(lerParticipantes(),o); renderTelegramResumo()}
+function renderResumo(o){window.__OBRA_ATUAL=o||{}; const nome=campo(o,['obra','nome','projeto','titulo','codigo'],OBRA||'Obra não informada');const coord=campo(o,['coordenador','responsavel','gestor'],'Não informado');const farol=campo(o,['farol','status_farol','status'],'verde');const classe=farolClasse(farol);const previsto=pct(campo(o,['percentual_previsto','previsto','pct_previsto','progresso_previsto','perc_previsto'],0));const realizado=pct(campo(o,['percentual_realizado','realizado','pct_real','progresso_real','perc_real','percentual_real'],0));const agenda=campo(o,['agenda_dia','atividade_dia','atividadeHoje','atividades_hoje','agenda'],'Sem agenda do dia informada.');const tl=timelineAtual();$('titulo').textContent='Sala da Obra · '+nome;$('resumo').innerHTML=`<p><span class="badge ${classe}">${escapeHtml(String(farol||classe).toUpperCase())}</span></p><div class="resumo-grid"><div class="mini"><span>Coordenador</span><b>${escapeHtml(coord)}</b></div><div class="mini"><span>Obra</span><b>${escapeHtml(nome)}</b></div><div class="mini"><span>Previsto</span><b>${previsto.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${previsto}%"></i></div></div><div class="mini"><span>Realizado</span><b>${realizado.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${realizado}%"></i></div></div></div><p style="margin-top:12px;color:#344357;font-size:13px"><b>Status diário (TV):</b><br>${escapeHtml(String(agenda))}</p><div class="stats-mini"><div><b>${lerParticipantes().length+participantesPadrao(o).length}</b><span>PARTICIPANTES</span></div><div><b>${tl.length}</b><span>MENSAGENS</span></div><div><b>${tl.filter(x=>tipoVisualTimeline(x)==='foto').length}</b><span>FOTOS</span></div><div><b>${tl.filter(x=>['video','audio'].includes(tipoVisualTimeline(x))).length}</b><span>MÍDIAS</span></div></div>`;$('cronograma').innerHTML=`<div class="resumo-grid"><div class="mini"><span>Previsto</span><b>${previsto.toFixed(1).replace('.',',')}%</b></div><div class="mini"><span>Realizado</span><b>${realizado.toFixed(1).replace('.',',')}%</b></div><div class="mini"><span>Início</span><b>${escapeHtml(String(o.inicio||'—'))}</b></div><div class="mini"><span>Fim</span><b>${escapeHtml(String(o.fim||'—'))}</b></div></div><p style="margin-top:12px;color:#607086">Duração: <b>${escapeHtml(String(o.dias||'—'))} dias</b> · Status: <b>${escapeHtml(String(campo(o,['status_cronograma','status'],'—')))}</b></p>`; renderParticipantes(lerParticipantes(),o); renderTelegramResumo()}
 async function carregarSala(){loader(true);try{const info=await fetchJson(CIGO_API_BASE+'/obra_info.php?obra='+encodeURIComponent(OBRA)+'&t='+Date.now());const obra=(info&&info.ok)?normalizarObraInfo(info):{obra:OBRA};const tl=await carregarTimelineServidor();renderResumo(obra);renderTimeline(tl);toast('Sala atualizada com resumo oficial da obra.')}catch(e){console.error(e);renderResumo({obra:OBRA});renderTimeline(lerTimeline());toast('Falha ao buscar ERP; sala aberta em modo teste.')}finally{loader(false)}}
 (function init(){try{const u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||'{}');$('userBox').textContent=u.nome||u.email||'Usuário ERP'}catch(e){} if(!OBRA) toast('Obra não informada na URL.'); carregarSala(); setTimeout(renderTelegramResumo,300); setTimeout(renderFotos,300); setTimeout(()=>{const fi=$('fotoInput'); if(fi) fi.addEventListener('change',e=>receberFotos(e.target.files));},400); ['tgNome','tgTipo','tgTexto'].forEach(id=>{setTimeout(()=>{const el=$(id); if(el) el.addEventListener('input',atualizarPayloadTelegram);},400)});})();
 </script>
