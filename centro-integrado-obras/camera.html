@@ -51,6 +51,17 @@ const chatId = qs.get('chat_id') || '';
 let arquivoSelecionado = null;
 let previewObjectUrl = '';
 let localizacao = {lat:'', lng:''};
+function tipoArquivo(f){ const t=(f&&f.type)||''; if(t.startsWith('image/')) return 'foto'; if(t.startsWith('video/')) return 'video'; if(t.startsWith('audio/')) return 'audio'; return ''; }
+function obterLocalizacaoAtual(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation) return resolve(localizacao);
+    navigator.geolocation.getCurrentPosition(pos=>{
+      localizacao.lat=String(pos.coords.latitude||'');
+      localizacao.lng=String(pos.coords.longitude||'');
+      resolve(localizacao);
+    },()=>resolve(localizacao),{enableHighAccuracy:true,timeout:9000,maximumAge:30000});
+  });
+}
 
 const obraNomeEl = document.getElementById('obraNome');
 const statusEl = document.getElementById('status');
@@ -170,16 +181,18 @@ if(navigator.geolocation){
 
 btnEnviar.onclick = async () => {
   if(!obra){ setStatus('Obra não informada no link.', 'err'); return; }
-  if(!arquivoSelecionado){ setStatus('Selecione uma foto ou vídeo primeiro.', 'err'); return; }
+  if(!arquivoSelecionado){ setStatus('Selecione uma foto, vídeo ou áudio primeiro.', 'err'); return; }
 
   btnEnviar.disabled = true;
-  setStatus('⏳ Enviando mídia para o servidor...');
+  setStatus('⏳ Pegando localização e enviando mídia para o servidor...');
+  await obterLocalizacaoAtual();
 
   try{
     const fd = new FormData();
     fd.append('obra', obra);
     fd.append('chat_id', chatId);
     fd.append('autor', 'Telegram / Câmera RDO');
+    fd.append('tipo', tipoArquivo(arquivoSelecionado));
     fd.append('legenda', document.getElementById('legenda').value || '');
     fd.append('lat', localizacao.lat || '');
     fd.append('lng', localizacao.lng || '');
