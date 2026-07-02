@@ -377,6 +377,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.shell{max-width
 @media print{.report-close,.print-close{display:none!important}}
 
 
+
+.manual-alert{border:1px solid rgba(251,146,60,.40);background:rgba(251,146,60,.13);color:#fed7aa;border-radius:12px;padding:8px 10px;font-size:11px;font-weight:950;line-height:1.35;text-transform:uppercase;letter-spacing:.04em}
+.alloc-card.manual-ajuste{border-color:rgba(251,146,60,.65)!important;border-left-color:#fb923c!important;box-shadow:0 0 0 1px rgba(251,146,60,.18) inset,0 14px 30px rgba(0,0,0,.24)!important;}
 </style>
 </head>
 <body>
@@ -512,47 +515,6 @@ function atividadeNome(obraId,atividadeId){
   const o=(obras||[]).find(x=>String(x.id||'').trim()===String(obraId||'').trim() || String(x.codigo||'').trim()===String(obraId||'').trim() || String(x.nome||'').trim().toUpperCase()===String(obraId||'').trim().toUpperCase());
   const a=(o?.atividades||[]).find((x,idx)=>String(x.id??x.codigo??idx).trim()===id || String(x.nome||x.atividade||x.descricao||'').trim().toUpperCase()===id.toUpperCase());
   return a ? String(a.nome||a.atividade||a.descricao||'') : '';
-}
-
-function textoAtividadeGenerico(v){
-  const s=String(v||'').trim().normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
-  return !s || s==='ATIVIDADE DO CRONOGRAMA' || s==='ATIVIDADE CRONOGRAMA' || s==='CRONOGRAMA';
-}
-function resolverNomeAtividade(obraId,atividadeId,preferido=''){
-  if(!textoAtividadeGenerico(preferido)) return String(preferido||'').trim();
-  return atividadeNome(obraId,atividadeId) || nomeAtividadeGerencial(atividadeId) || '';
-}
-function resolverNomeObra(obraId,preferido=''){
-  const p=String(preferido||'').trim();
-  return p || obraNome(obraId) || '';
-}
-function normalizarNomesLinhaPorIds(x){
-  if(!x || typeof x!=='object') return x;
-  x.planejado = x.planejado || {};
-  x.executado = x.executado || {};
-  const obraId = x.planejado.obraId || x.executado.obraId || x.obraId || '';
-  const atividadeId = x.planejado.atividadeId || x.executado.atividadeId || x.atividadeId || '';
-  const obra = resolverNomeObra(obraId, x.planejado.obra || x.executado.obra || x.obra || '');
-  const atividade = resolverNomeAtividade(obraId, atividadeId, x.planejado.atividade || x.executado.atividade || x.atividade || '');
-  if(obra){
-    if(!x.planejado.obra) x.planejado.obra = obra;
-    if(!x.executado.obra) x.executado.obra = obra;
-  }
-  if(atividade){
-    if(textoAtividadeGenerico(x.planejado.atividade)) x.planejado.atividade = atividade;
-    if(textoAtividadeGenerico(x.executado.atividade)) x.executado.atividade = atividade;
-    if(textoAtividadeGenerico(x.atividade)) x.atividade = atividade;
-  }
-  if(Array.isArray(x.execucoes)){
-    x.execucoes = x.execucoes.map(e=>{
-      const eoId=e.obraId || obraId;
-      const eaId=e.atividadeId || atividadeId;
-      const eObra=resolverNomeObra(eoId, e.obra || obra);
-      const eAtiv=resolverNomeAtividade(eoId, eaId, e.atividade || atividade);
-      return {...e, obra:eObra, atividade:eAtiv};
-    });
-  }
-  return x;
 }
 
 function atividadeEhFilhaExecutavelDia(a){
@@ -710,7 +672,6 @@ function normalizarLinhaDraftServidor(x){
   x.motivo = x.motivo || x.justificativa || '';
   x.solicitante = x.solicitante || x.quemSolicitou || '';
   x.finalizado = !!x.finalizado;
-  normalizarNomesLinhaPorIds(x);
   return x;
 }
 function normalizarListaDraftServidor(lista){
@@ -837,8 +798,9 @@ function extrairDiaDaAgenda(data,dataISO){
 
    const obraId=cell.obraId||cell.idObra||cell.obra_codigo||cell.obraCodigo||cell.codigoObra||"";
    const atividadeId=cell.atividadeId||cell.idAtividade||cell.atividadeCodigo||cell.codigoAtividade||"";
-   const obra=resolverNomeObra(obraId, cell.obraNome||cell.nomeObra||cell.obra||"");
-   const atividade=resolverNomeAtividade(obraId, atividadeId, cell.atividadeNome||cell.nomeAtividade||cell.atividade||cell.descricao||cell.descrição||"");
+   const obra=cell.obra||cell.obraNome||cell.nomeObra||obraNome(obraId)||"";
+   // Atividade do Dia é ESPELHO da Agenda Semanal congelada: usa primeiro o texto salvo.
+   const atividade=cell.atividade||cell.atividadeNome||cell.nomeAtividade||cell.descricao||cell.descrição||atividadeNome(obraId,atividadeId)||nomeAtividadeGerencial(atividadeId)||"";
    const horas=Number(cell.horas||8);
    if(obra||atividade||obraId||atividadeId||cell.viagem){
      const linha=novaLinha(col,obra,atividade,obraId,atividadeId,!!cell.viagem);
@@ -893,9 +855,10 @@ function duracaoRealAtividade(a){
 function previstoDiaFromAtividade(a){const dur=duracaoRealAtividade(a); if(!dur||dur<=0)return 100; return Math.max(1,Math.min(100,Math.round((100/dur)*10)/10));}
 function realAtualFromAtividade(a){const v=Number(a?.real??0); return Number.isFinite(v)?Math.max(0,Math.min(100,v)):0;}
 function enriquecerLinha(item){
- normalizarNomesLinhaPorIds(item);
  const meta=getAtividadeMeta(item.executado?.obraId||item.planejado?.obraId,item.executado?.atividadeId||item.planejado?.atividadeId,item.executado?.atividade||item.planejado?.atividade);
  const a=meta.atividade;
+ const nomePlanejado = item.executado?.atividade || item.planejado?.atividade || "";
+ const semCronograma = !!nomePlanejado && !a && !(item.executado?.semCronograma || item.planejado?.semCronograma);
  item.cronograma={
    duracao:duracaoRealAtividade(a),
    previstoDia:previstoDiaFromAtividade(a),
@@ -903,15 +866,14 @@ function enriquecerLinha(item){
    status:a?.status||"",
    inicio:a?.inicio||a?.dataInicio||a?.inicioPrevisto||"",
    fim:a?.fim||a?.dataFim||a?.fimPrevisto||"",
-   atividadeId:a?.id||item.executado?.atividadeId||item.planejado?.atividadeId||""
+   atividadeId:a?.id||item.executado?.atividadeId||item.planejado?.atividadeId||"",
+   encontrado: !!a,
+   ajusteManual: semCronograma,
+   aviso: semCronograma ? "Atividade não encontrada no cronograma. Replanejar ou ajustar manualmente." : ""
  };
  return item;
 }
-function novaLinha(colaborador,obra,atividade,obraId="",atividadeId="",viagem=false){
-  const obraFinal=resolverNomeObra(obraId,obra);
-  const atividadeFinal=resolverNomeAtividade(obraId,atividadeId,atividade);
-  return enriquecerLinha({colaborador,planejado:{obra:obraFinal||"",atividade:atividadeFinal||"",obraId,atividadeId,viagem},executado:{obra:obraFinal||"",atividade:atividadeFinal||"",obraId,atividadeId,viagem},continua:null,motivo:"",solicitante:"",alteradoEm:"",percentual:0,horas:8,finalizado:false,execucoes:[],cronograma:{duracao:1,previstoDia:100,realAtual:0,status:"",atividadeId}});
-}
+function novaLinha(colaborador,obra,atividade,obraId="",atividadeId="",viagem=false){return enriquecerLinha({colaborador,planejado:{obra:obra||"",atividade:atividade||"",obraId,atividadeId,viagem},executado:{obra:obra||"",atividade:atividade||"",obraId,atividadeId,viagem},continua:null,motivo:"",solicitante:"",alteradoEm:"",percentual:0,horas:8,finalizado:false,execucoes:[],cronograma:{duracao:1,previstoDia:100,realAtual:0,status:"",atividadeId}});}
 function demoDia(data){return [novaLinha("SELO","SOS ONCOLOGIA","PRODUÇÃO DE DUTOS","demo1","a1",false),novaLinha("NICOLAS","CORPORATE 8","CONTINUIDADE NO PROLONGAMENTO DE LINHAS","demo2","a2",false),novaLinha("VALDECI","HOSPITAL NOSSA SENHORA DE FÁTIMA","ACABAMENTO / CONTROLE / IHM / SENSOR DE PRESSÃO","demo3","a3",true),novaLinha("PABLO","ASTEL","GESTÃO","demo4","a4",false)];}
 function render(){
   if(diaFinalizadoServidor && (!Array.isArray(atividadeDia) || !atividadeDia.length)){
@@ -982,7 +944,7 @@ function progressoHtml(item,i){
   const inicio=c.inicio?br(String(c.inicio).slice(0,10)):'—';
   const fim=c.fim?br(String(c.fim).slice(0,10)):'—';
   return `<div class="progress-box">
-    <div class="date-range"><span class="date-chip">Início: ${inicio}</span><span class="date-chip">Fim: ${fim}</span><span class="date-chip">Prazo total: ${dur} dia(s)</span></div>
+    <div class="date-range"><span class="date-chip">Início: ${inicio}</span><span class="date-chip">Fim: ${fim}</span><span class="date-chip">Prazo total: ${dur} dia(s)</span></div>${c.ajusteManual?'<div class="manual-alert">⚠ Atividade não existe mais no cronograma. Replanejar ou ajustar manualmente.</div>':''}
     <div class="duration-line"><span>0h</span><span class="dash"></span><span>DURAÇÃO DO DIA</span><span class="dash"></span><span>${Number(item.horas||8)}h</span></div>
     <div class="progress-slider-wrap">
       <input class="progress-slider" type="range" min="0" max="100" step="5" value="${pct}" oninput="setPercentualDia(${i},this.value)">
@@ -1038,10 +1000,10 @@ function cardHtml(item,i,embedded=false){
   }else if(vazio){
     corpo=`<div class="alloc-card alloc-empty status-${meta.cls}">Sem atividade planejada para este dia${decisao}</div>`;
   }else if(item.continua===false && execs.length>1){
-    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls}"><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span><div class="multi-exec">${execs.map((e,idx)=>`<div class="mini-exec"><small>${escapeHtml(e.periodo||('Atividade '+(idx+1)))} ${e.viagem?'• ✈ Viagem':''}</small><b>${escapeHtml(e.obra)}</b><span>${escapeHtml(e.atividade)}</span></div>`).join("")}</div><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
+    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls} ${item.cronograma?.ajusteManual?'manual-ajuste':''}"><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span><div class="multi-exec">${execs.map((e,idx)=>`<div class="mini-exec"><small>${escapeHtml(e.periodo||('Atividade '+(idx+1)))} ${e.viagem?'• ✈ Viagem':''}</small><b>${escapeHtml(e.obra)}</b><span>${escapeHtml(e.atividade)}</span></div>`).join("")}</div><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
   }else{
     const e=execs[0]||{};
-    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls}"><div class="obra-chip">${escapeHtml(e.obra)}</div><div class="atividade">${escapeHtml(e.atividade)}</div><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
+    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls} ${item.cronograma?.ajusteManual?'manual-ajuste':''}"><div class="obra-chip">${escapeHtml(e.obra)}</div><div class="atividade">${escapeHtml(e.atividade)}</div><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
   }
   if(embedded) return corpo;
   return `<article class="person-card status-${meta.cls}"><div class="person-top"><div><div class="person-name">${escapeHtml(item.colaborador)}</div><div class="badge ${meta.badgeCls}">${meta.label}</div></div></div>${corpo}</article>`;
@@ -1412,6 +1374,8 @@ async function finalizarDia(){
   if(pendentes.length){mensagemSistema('Finalização bloqueada','Não é possível finalizar: existem '+pendentes.length+' atividade(s) em aberto. Confirme/replaneje e deslize o botão para FECHADO antes de finalizar.',{sub:'Atividade do dia'});return;}
   const semPercentual=atividadeDia.filter(x=>!x.cancelado && (x.percentual==="" || x.percentual===null || isNaN(Number(x.percentual))));
   if(semPercentual.length){mensagemSistema('Finalização bloqueada','Não é possível finalizar: informe o percentual de todas as atividades executadas.',{sub:'Atividade do dia'});return;}
+  const manuais=atividadeDia.filter(x=>x.cronograma?.ajusteManual && !x.cancelado);
+  if(manuais.length){mensagemSistema('Ajuste manual no cronograma', manuais.length+' atividade(s) não existem mais no cronograma. O dia será gravado, mas essas atualizações automáticas precisarão de replanejamento/ajuste manual.', {sub:'Cronograma'});}
   const dataFechada=dataDia.value;
   await salvarDia(true);
   setStatus("Dia finalizado: histórico gravado, draft removido e cronograma atualizado.","ok");

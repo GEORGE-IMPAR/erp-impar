@@ -1493,7 +1493,9 @@ body.relatorio-view .report-page{display:block!important;}
     agenda=j.data||{};
     semanaBloqueada = !!(j.bloqueado || j.congelado || j.locked || j.estado==="historico_semanal");
     semanaEstado = j.estado || (semanaBloqueada ? "historico_semanal" : "rascunho");
-    normalizarAgendaEstrutura();limparAgendaInvalida();render();
+    normalizarAgendaEstrutura();
+    if(!semanaBloqueada) limparAgendaInvalida();
+    render();
     if(semanaBloqueada){
       toast("Agenda congelada", "Esta semana já virou agenda ativa/histórico semanal e não pode ser alterada.", "ok");
     }
@@ -1505,7 +1507,7 @@ body.relatorio-view .report-page{display:block!important;}
   }
   async function salvarAgenda(){try{const j=await salvarAgendaSilencioso();toast("Agenda salva", j?.estado==="historico_semanal"?"Semana salva e congelada como agenda ativa.":"Rascunho semanal gravado no servidor.","ok");await carregarAgenda();}catch(err){toast("Falha ao salvar",err.message||"Não foi possível gravar a agenda.","error");console.error(err);}}
   function obraNome(id){return String(id)===OBRA_AVULSA_ID ? "ATIVIDADE AVULSA" : (obras.find(o=>String(o.id)===String(id))?.nome||"");}
-  function obraNomeAloc(a){return a?.avulsa ? (a.obraLocal||a.tipoAvulsa||"ATIVIDADE AVULSA") : obraNome(a?.obraId);}
+  function obraNomeAloc(a){return a?.avulsa ? (a.obraLocal||a.tipoAvulsa||"ATIVIDADE AVULSA") : (a?.obra||a?.obraNome||a?.nomeObra||obraNome(a?.obraId));}
   function obraObj(id){return obras.find(o=>String(o.id)===String(id))||null;}
   function atividadeGestaoObj(ativId){return ATIVIDADES_GESTAO.find(a=>String(a.id||a.nome)===String(ativId))||null;}
   function atividadeObj(obraId, ativId){
@@ -1513,7 +1515,7 @@ body.relatorio-view .report-page{display:block!important;}
     return arr.find(a=>String(a.id||a.nome)===String(ativId)) || atividadeGestaoObj(ativId) || null;
   }
   function atividadeNome(obraId, ativId){return atividadeObj(obraId,ativId)?.nome||"";}
-  function atividadeNomeAloc(a){return a?.avulsa ? (a.atividadeTexto||"Atividade avulsa") : atividadeNome(a?.obraId,a?.atividadeId);}
+  function atividadeNomeAloc(a){return a?.avulsa ? (a.atividadeTexto||"Atividade avulsa") : (a?.atividade||a?.atividadeNome||a?.nomeAtividade||a?.descricao||atividadeNome(a?.obraId,a?.atividadeId));}
   function atividadeObjAloc(a){return a?.avulsa ? {id:a.atividadeId,nome:atividadeNomeAloc(a),previsto:0,real:0,tipo:"avulsa"} : atividadeObj(a?.obraId,a?.atividadeId);}
   function isAtividadeGestao(ativId){return !!atividadeGestaoObj(ativId);}
 
@@ -1561,6 +1563,8 @@ body.relatorio-view .report-page{display:block!important;}
         ...v,
         obraId:v.obraId||"",
         atividadeId:v.atividadeId||"",
+        obra:v.obra||v.obraNome||v.nomeObra||obraNome(v.obraId)||"",
+        atividade:v.atividade||v.atividadeNome||v.nomeAtividade||v.descricao||atividadeNome(v.obraId,v.atividadeId)||"",
         viagem:!!v.viagem,
         horas:Number(v.horas||8)||8
       };
@@ -1662,7 +1666,11 @@ body.relatorio-view .report-page{display:block!important;}
     if(!c) return false;
     if(c.avulsa) return !!String(c.atividadeTexto||"").trim();
     if(!c.obraId || !c.atividadeId) return false;
-    return !!atividadeObj(c.obraId,c.atividadeId);
+    if(atividadeObj(c.obraId,c.atividadeId)) return true;
+    // Agenda congelada é snapshot: se a atividade foi removida/renomeada no cronograma,
+    // mantém o texto salvo e apenas sinaliza ajuste manual.
+    if(semanaBloqueada && String(c.atividade||c.atividadeNome||c.nomeAtividade||"").trim()) return true;
+    return false;
   }
   function limparAgendaInvalida(){
     Object.keys(agenda||{}).forEach(nome=>{
@@ -1706,11 +1714,13 @@ body.relatorio-view .report-page{display:block!important;}
         const obra=obraNomeAloc(a);
         const ativ=atividadeNomeAloc(a);
         const valid=alocacaoValida(a);
-        const ativObj = valid ? (atividadeObjAloc(a)||{}) : {};
-        const farol = valid ? farolInfo(ativObj) : {cor:"green"};
+        const ativObjReal = atividadeObjAloc(a);
+        const semCronograma = valid && !a.avulsa && !ativObjReal;
+        const ativObj = valid ? (ativObjReal||{}) : {};
+        const farol = valid ? (semCronograma ? {cor:"yellow"} : farolInfo(ativObj)) : {cor:"green"};
         const viagemBadge = a.viagem ? `<div class="trip-badge"><span class="plane">✈</span> Viagem</div>` : "";
         const conteudo = valid
-          ? `<div class="alloc-topline"><div class="alloc-obra">${esc(obra)}</div><span class="hours-pill">⏱ ${Number(a.horas||0)}h</span></div><div class="alloc-ativ">${esc(ativ)}</div><div class="alloc-metrics">${metricHtml(ativObj)}</div>${viagemBadge}`
+          ? `<div class="alloc-topline"><div class="alloc-obra">${esc(obra)}</div><span class="hours-pill">⏱ ${Number(a.horas||0)}h</span></div><div class="alloc-ativ">${esc(ativ)}</div><div class="alloc-metrics">${semCronograma ? '<span class="metric-pill warn">⚠ Ajuste manual no cronograma</span>' : metricHtml(ativObj)}</div>${viagemBadge}`
           : `<div class="alloc-topline"><div class="alloc-obra">VIAGEM</div><span class="hours-pill">⏱ ${Number(a.horas||0)}h</span></div><div class="alloc-ativ">Sem obra/atividade vinculada</div>${viagemBadge}`;
         return `<div class="alloc-card alloc-mini status-${farol.cor}" draggable="true" data-nome="${esc(nome)}" data-dia="${idx}" data-aloc="${i}" title="Arraste para copiar esta alocação">
           <div class="alloc-main" onclick="abrirSelecao('${esc(nome)}',${idx},${i})">${conteudo}</div>
@@ -1850,8 +1860,15 @@ body.relatorio-view .report-page{display:block!important;}
     const btnAvulsa=$("btnUsarAvulsa");
     if(btnAvulsa) btnAvulsa.onclick=usarAtividadeAvulsa;
   }
+  function snapshotAlocacao(item){
+    if(!item || item.avulsa) return item;
+    const o=obraObj(item.obraId)||{};
+    const a=atividadeObj(item.obraId,item.atividadeId)||{};
+    return {...item,obra:item.obra||o.nome||"",atividade:item.atividade||a.nome||a.atividade||a.descricao||""};
+  }
   function aplicarAlocacao(item){
     if(!celulaSelecionada) return;
+    item = snapshotAlocacao(item);
     const {nome,dia,append}=celulaSelecionada;
     let {alocIndex}=celulaSelecionada;
     const diaObj=getDiaObj(nome,dia);
