@@ -41,6 +41,7 @@
     <section id="grid" class="grid"></section>
   </main>
 <script>
+const CIGO_API_BASE = 'https://api.erpimpar.com.br/centro-integrado-obras';
 const ENDPOINTS = {
   tvListar: 'https://api.erpimpar.com.br/tv/listar.php',
   tvProjetos: 'https://api.erpimpar.com.br/tv/data/projetos.json',
@@ -63,6 +64,41 @@ function mergeObras(tv, farol, agenda, kpi){
   const chaves = new Set(mapas.flatMap(m=>[...m.keys()]));
   return [...chaves].map(ch => Object.assign({}, ...mapas.map(m=>m.get(ch)||{})));
 }
+
+function normalizarInfoObra(j, nomeFallback){
+  const r = (j && (j.resumo || j.data || j)) || {};
+  const cron = (j && (j.resumo_cronograma || j.cronograma)) || {};
+  const tv = (j && (j.resumo_tv || j.tv)) || {};
+  return {
+    obra: j?.nome || r.nome || tv.nome || cron.nome || nomeFallback,
+    nome: j?.nome || r.nome || tv.nome || cron.nome || nomeFallback,
+    coordenador: r.coordenador || tv.coordenador || cron.coordenador || '',
+    farol: r.farol_tv || tv.farol_tv || r.farol || tv.farol || r.status_cronograma || cron.status_cronograma || '',
+    status: r.farol_tv || tv.farol_tv || r.farol || tv.farol || r.status_cronograma || cron.status_cronograma || '',
+    percentual_previsto: r.percentual_previsto ?? cron.percentual_previsto ?? cron.previsto ?? r.previsto ?? '',
+    percentual_realizado: r.percentual_realizado ?? cron.percentual_realizado ?? cron.real ?? r.realizado ?? '',
+    agenda_dia: r.status_tv || tv.status_tv || r.agenda_dia || '',
+    inicio: r.inicio || cron.inicio || '',
+    fim: r.fim || cron.fim || ''
+  };
+}
+async function enriquecerObrasComSala(dados){
+  // Corrige cards zerados quando os endpoints do dashboard não trazem %,
+  // usando a mesma fonte que funciona dentro do card/Sala da Obra.
+  const saida=[];
+  for(const o of dados){
+    const nome=campo(o,['obra','nome','projeto','titulo','codigo'],'');
+    if(!nome){saida.push(o); continue;}
+    try{
+      const info=await fetchJson(CIGO_API_BASE+'/obra_info.php?obra='+encodeURIComponent(nome)+'&t='+Date.now());
+      saida.push(Object.assign({}, o, normalizarInfoObra(info,nome)));
+    }catch(e){
+      saida.push(o);
+    }
+  }
+  return saida;
+}
+
 function campo(o, nomes, padrao=''){ for(const n of nomes){ if(o[n]!==undefined && o[n]!==null && o[n]!== '') return o[n]; } return padrao; }
 function renderCard(o){
   const nome = campo(o,['obra','nome','projeto','titulo','codigo'],'Obra sem nome');
@@ -86,7 +122,8 @@ async function carregarDashboard(){
   loader(true);
   try{
     const [tv1,tv2,farol,agenda,kpi] = await Promise.allSettled([fetchJson(ENDPOINTS.tvListar),fetchJson(ENDPOINTS.tvProjetos),fetchJson(ENDPOINTS.obrasFarol),fetchJson(ENDPOINTS.obrasAgenda),fetchJson(ENDPOINTS.kpi)]);
-    const dados = mergeObras(tv1.value||[], tv2.value||farol.value||[], agenda.value||[], kpi.value||[]).filter(o=>campo(o,['obra','nome','projeto','titulo','codigo'],''));
+    let dados = mergeObras(tv1.value||[], tv2.value||farol.value||[], agenda.value||[], kpi.value||[]).filter(o=>campo(o,['obra','nome','projeto','titulo','codigo'],''));
+    dados = await enriquecerObrasComSala(dados);
     $('grid').innerHTML = dados.length ? dados.map(renderCard).join('') : '<div class="empty">Nenhuma obra retornou dos endpoints oficiais.</div>';
     const c = {verde:0,amarelo:0,vermelho:0}; dados.forEach(o=>c[farolClasse(campo(o,['farol','status_farol','status'],'verde'))]++);
     $('kpiObras').textContent=dados.length; $('kpiVerde').textContent=c.verde; $('kpiAmarelo').textContent=c.amarelo; $('kpiVermelho').textContent=c.vermelho;
