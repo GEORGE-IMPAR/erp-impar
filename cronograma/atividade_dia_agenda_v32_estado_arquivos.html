@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>ERP ÍMPAR — Atividade do Dia</title>
+<title>ERP ÍMPAR — Atividade do Dia v35 Congelamento Seguro</title>
 <style>
 :root{--bg1:#071d46;--bg2:#064b52;--panel:#081a3a;--panel2:#062b36;--field:#020817;--ink:#eef6ff;--muted:#a8bdd4;--green:#22c55e;--lime:#a3e635;--blue:#3b82f6;--red:#ef4444;--yellow:#facc15;--border:rgba(255,255,255,.13);--shadow:0 24px 70px rgba(0,0,0,.34);--r:20px}
 *{box-sizing:border-box}html,body{min-height:100%;margin:0}body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--ink);background:linear-gradient(135deg,var(--bg1),#0d3f72,var(--bg2));}
@@ -378,8 +378,11 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.shell{max-width
 
 
 
-.manual-alert{border:1px solid rgba(251,146,60,.40);background:rgba(251,146,60,.13);color:#fed7aa;border-radius:12px;padding:8px 10px;font-size:11px;font-weight:950;line-height:1.35;text-transform:uppercase;letter-spacing:.04em}
-.alloc-card.manual-ajuste{border-color:rgba(251,146,60,.65)!important;border-left-color:#fb923c!important;box-shadow:0 0 0 1px rgba(251,146,60,.18) inset,0 14px 30px rgba(0,0,0,.24)!important;}
+/* V35 — congelamento seguro: atividade inexistente no cronograma vira ajuste manual, nunca apaga texto */
+.alloc-card.status-manual{border-color:rgba(251,146,60,.72)!important;border-left-color:#fb923c!important;box-shadow:0 0 0 1px rgba(251,146,60,.18) inset,0 14px 30px rgba(0,0,0,.24)!important;}
+.exec-status-pill.manual{background:rgba(251,146,60,.18);color:#fed7aa;border:1px solid rgba(251,146,60,.48)}
+.manual-alert{font-size:11px;color:#fed7aa;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.30);border-radius:12px;padding:8px 10px;font-weight:900;line-height:1.35}
+
 </style>
 </head>
 <body>
@@ -798,8 +801,9 @@ function extrairDiaDaAgenda(data,dataISO){
 
    const obraId=cell.obraId||cell.idObra||cell.obra_codigo||cell.obraCodigo||cell.codigoObra||"";
    const atividadeId=cell.atividadeId||cell.idAtividade||cell.atividadeCodigo||cell.codigoAtividade||"";
+   // Atividade do Dia é espelho da Agenda Semanal congelada.
+   // Primeiro usa o texto salvo na agenda. ID fica só para tentar atualizar cronograma depois.
    const obra=cell.obra||cell.obraNome||cell.nomeObra||obraNome(obraId)||"";
-   // Atividade do Dia é ESPELHO da Agenda Semanal congelada: usa primeiro o texto salvo.
    const atividade=cell.atividade||cell.atividadeNome||cell.nomeAtividade||cell.descricao||cell.descrição||atividadeNome(obraId,atividadeId)||nomeAtividadeGerencial(atividadeId)||"";
    const horas=Number(cell.horas||8);
    if(obra||atividade||obraId||atividadeId||cell.viagem){
@@ -857,19 +861,16 @@ function realAtualFromAtividade(a){const v=Number(a?.real??0); return Number.isF
 function enriquecerLinha(item){
  const meta=getAtividadeMeta(item.executado?.obraId||item.planejado?.obraId,item.executado?.atividadeId||item.planejado?.atividadeId,item.executado?.atividade||item.planejado?.atividade);
  const a=meta.atividade;
- const nomePlanejado = item.executado?.atividade || item.planejado?.atividade || "";
- const semCronograma = !!nomePlanejado && !a && !(item.executado?.semCronograma || item.planejado?.semCronograma);
  item.cronograma={
+   existe: !!a,
+   ajusteManual: !a && !!(item.planejado?.atividade || item.executado?.atividade),
    duracao:duracaoRealAtividade(a),
    previstoDia:previstoDiaFromAtividade(a),
    realAtual:realAtualFromAtividade(a),
    status:a?.status||"",
    inicio:a?.inicio||a?.dataInicio||a?.inicioPrevisto||"",
    fim:a?.fim||a?.dataFim||a?.fimPrevisto||"",
-   atividadeId:a?.id||item.executado?.atividadeId||item.planejado?.atividadeId||"",
-   encontrado: !!a,
-   ajusteManual: semCronograma,
-   aviso: semCronograma ? "Atividade não encontrada no cronograma. Replanejar ou ajustar manualmente." : ""
+   atividadeId:a?.id||item.executado?.atividadeId||item.planejado?.atividadeId||""
  };
  return item;
 }
@@ -944,7 +945,7 @@ function progressoHtml(item,i){
   const inicio=c.inicio?br(String(c.inicio).slice(0,10)):'—';
   const fim=c.fim?br(String(c.fim).slice(0,10)):'—';
   return `<div class="progress-box">
-    <div class="date-range"><span class="date-chip">Início: ${inicio}</span><span class="date-chip">Fim: ${fim}</span><span class="date-chip">Prazo total: ${dur} dia(s)</span></div>${c.ajusteManual?'<div class="manual-alert">⚠ Atividade não existe mais no cronograma. Replanejar ou ajustar manualmente.</div>':''}
+    <div class="date-range"><span class="date-chip">Início: ${inicio}</span><span class="date-chip">Fim: ${fim}</span><span class="date-chip">Prazo total: ${dur} dia(s)</span></div>
     <div class="duration-line"><span>0h</span><span class="dash"></span><span>DURAÇÃO DO DIA</span><span class="dash"></span><span>${Number(item.horas||8)}h</span></div>
     <div class="progress-slider-wrap">
       <input class="progress-slider" type="range" min="0" max="100" step="5" value="${pct}" oninput="setPercentualDia(${i},this.value)">
@@ -1000,10 +1001,10 @@ function cardHtml(item,i,embedded=false){
   }else if(vazio){
     corpo=`<div class="alloc-card alloc-empty status-${meta.cls}">Sem atividade planejada para este dia${decisao}</div>`;
   }else if(item.continua===false && execs.length>1){
-    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls} ${item.cronograma?.ajusteManual?'manual-ajuste':''}"><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span><div class="multi-exec">${execs.map((e,idx)=>`<div class="mini-exec"><small>${escapeHtml(e.periodo||('Atividade '+(idx+1)))} ${e.viagem?'• ✈ Viagem':''}</small><b>${escapeHtml(e.obra)}</b><span>${escapeHtml(e.atividade)}</span></div>`).join("")}</div><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
+    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls}"><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span>${item.cronograma?.ajusteManual?`<div class="manual-alert">⚠ A atividade planejada não existe mais no cronograma. Replaneje na Atividade do Dia ou faça atualização manual.</div>`:""}<div class="multi-exec">${execs.map((e,idx)=>`<div class="mini-exec"><small>${escapeHtml(e.periodo||('Atividade '+(idx+1)))} ${e.viagem?'• ✈ Viagem':''}</small><b>${escapeHtml(e.obra)}</b><span>${escapeHtml(e.atividade)}</span></div>`).join("")}</div><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
   }else{
     const e=execs[0]||{};
-    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls} ${item.cronograma?.ajusteManual?'manual-ajuste':''}"><div class="obra-chip">${escapeHtml(e.obra)}</div><div class="atividade">${escapeHtml(e.atividade)}</div><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span><div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
+    corpo=`<div class="alloc-card status-${meta.cls} status-${prazo.cls}"><div class="obra-chip">${escapeHtml(e.obra)}</div><div class="atividade">${escapeHtml(e.atividade)}</div><span class="exec-status-pill ${prazo.cls}">${prazo.txt}</span>${item.cronograma?.ajusteManual?`<div class="manual-alert">⚠ A atividade planejada não existe mais no cronograma. Replaneje na Atividade do Dia ou faça atualização manual.</div>`:""}<div class="meta-row"><span class="tiny">${Number(item.horas||8)}h</span>${viagemTag}${replanTag}</div>${viagemControle}${motivoBox}${decisao}${item.continua!==null?progressoHtml(item,i):''}</div>`;
   }
   if(embedded) return corpo;
   return `<article class="person-card status-${meta.cls}"><div class="person-top"><div><div class="person-name">${escapeHtml(item.colaborador)}</div><div class="badge ${meta.badgeCls}">${meta.label}</div></div></div>${corpo}</article>`;
@@ -1374,8 +1375,6 @@ async function finalizarDia(){
   if(pendentes.length){mensagemSistema('Finalização bloqueada','Não é possível finalizar: existem '+pendentes.length+' atividade(s) em aberto. Confirme/replaneje e deslize o botão para FECHADO antes de finalizar.',{sub:'Atividade do dia'});return;}
   const semPercentual=atividadeDia.filter(x=>!x.cancelado && (x.percentual==="" || x.percentual===null || isNaN(Number(x.percentual))));
   if(semPercentual.length){mensagemSistema('Finalização bloqueada','Não é possível finalizar: informe o percentual de todas as atividades executadas.',{sub:'Atividade do dia'});return;}
-  const manuais=atividadeDia.filter(x=>x.cronograma?.ajusteManual && !x.cancelado);
-  if(manuais.length){mensagemSistema('Ajuste manual no cronograma', manuais.length+' atividade(s) não existem mais no cronograma. O dia será gravado, mas essas atualizações automáticas precisarão de replanejamento/ajuste manual.', {sub:'Cronograma'});}
   const dataFechada=dataDia.value;
   await salvarDia(true);
   setStatus("Dia finalizado: histórico gravado, draft removido e cronograma atualizado.","ok");
