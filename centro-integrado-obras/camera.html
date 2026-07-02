@@ -51,17 +51,6 @@ const chatId = qs.get('chat_id') || '';
 let arquivoSelecionado = null;
 let previewObjectUrl = '';
 let localizacao = {lat:'', lng:''};
-function tipoArquivo(f){ const t=(f&&f.type)||''; if(t.startsWith('image/')) return 'foto'; if(t.startsWith('video/')) return 'video'; if(t.startsWith('audio/')) return 'audio'; return ''; }
-function obterLocalizacaoAtual(){
-  return new Promise(resolve=>{
-    if(!navigator.geolocation) return resolve(localizacao);
-    navigator.geolocation.getCurrentPosition(pos=>{
-      localizacao.lat=String(pos.coords.latitude||'');
-      localizacao.lng=String(pos.coords.longitude||'');
-      resolve(localizacao);
-    },()=>resolve(localizacao),{enableHighAccuracy:true,timeout:9000,maximumAge:30000});
-  });
-}
 
 const obraNomeEl = document.getElementById('obraNome');
 const statusEl = document.getElementById('status');
@@ -161,7 +150,8 @@ function fecharCameraRDO(){
       return;
     }catch(e){}
 
-    location.href = 'https://t.me/' + TELEGRAM_BOT;
+    document.body.innerHTML = '<div class="toast-ok">✅ Enviado. Volte ao Telegram.</div>';
+    setTimeout(() => { try { location.replace('about:blank'); } catch(e){} }, 900);
   }, 250);
 }
 
@@ -181,21 +171,21 @@ if(navigator.geolocation){
 
 btnEnviar.onclick = async () => {
   if(!obra){ setStatus('Obra não informada no link.', 'err'); return; }
-  if(!arquivoSelecionado){ setStatus('Selecione uma foto, vídeo ou áudio primeiro.', 'err'); return; }
+  if(!arquivoSelecionado){ setStatus('Selecione uma foto ou vídeo primeiro.', 'err'); return; }
 
   btnEnviar.disabled = true;
-  setStatus('⏳ Pegando localização e enviando mídia para o servidor...');
-  await obterLocalizacaoAtual();
+  setStatus('⏳ Enviando mídia para o servidor...');
 
   try{
     const fd = new FormData();
     fd.append('obra', obra);
     fd.append('chat_id', chatId);
     fd.append('autor', 'Telegram / Câmera RDO');
-    fd.append('tipo', tipoArquivo(arquivoSelecionado));
     fd.append('legenda', document.getElementById('legenda').value || '');
     fd.append('lat', localizacao.lat || '');
     fd.append('lng', localizacao.lng || '');
+    const tipoMidia = arquivoSelecionado.type.startsWith('image/') ? 'foto' : (arquivoSelecionado.type.startsWith('video/') ? 'video' : (arquivoSelecionado.type.startsWith('audio/') ? 'audio' : 'midia'));
+    fd.append('tipo', tipoMidia);
     fd.append('arquivo', arquivoSelecionado, arquivoSelecionado.name || 'midia');
 
     const r = await fetch(API_UPLOAD, {method:'POST', body:fd});
