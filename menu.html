@@ -1234,6 +1234,46 @@ body{
     }catch(e){}
   }
 
+
+  function hidePageLoader(){
+    const el = document.getElementById("pageLoader");
+    if(el) el.classList.add("hidden");
+
+    try{
+      document.querySelectorAll("button").forEach(b => {
+        if(b.getAttribute("data-was-disabled") !== "1") b.disabled = false;
+        b.removeAttribute("data-was-disabled");
+      });
+    }catch(e){}
+  }
+
+  async function manutencaoCronogramasAoAbrirMenu(){
+    showPageLoader(
+      "Verificando cronogramas…",
+      "Arquivando concluídos e removendo cronogramas fantasmas."
+    );
+
+    try{
+      const resp = await fetch("https://api.erpimpar.com.br/cronograma/arquivar_concluidos.php", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origem: "menu" })
+      });
+
+      const dados = await resp.json().catch(() => null);
+      if(!resp.ok || !dados || dados.ok !== true){
+        console.warn("Manutenção de cronogramas retornou alerta:", dados || resp.status);
+      }else{
+        console.log("Manutenção de cronogramas OK:", dados);
+      }
+    }catch(e){
+      console.warn("Falha na manutenção automática dos cronogramas:", e);
+    }finally{
+      hidePageLoader();
+    }
+  }
+
   function navegarComLoader(url){
     const t0 = performance.now();
     showPageLoader("Carregando módulo…", "Preparando sua sessão e carregando dados.");
@@ -1246,6 +1286,8 @@ const user = getSessao();
   if(!user){
     window.location.href = "index.html";
   } else {
+    manutencaoCronogramasAoAbrirMenu();
+
     // preencher cartão
     const card = document.getElementById("userCard");
     const fotoImg = document.getElementById("userFoto");
