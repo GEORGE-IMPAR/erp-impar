@@ -1060,6 +1060,9 @@ async function bootCronograma(){
   try{
     loadUser();
 
+    const podeContinuar = await verificarCronogramasConcluidos();
+    if(podeContinuar === false) return;
+
     await Promise.all([
       carregarResponsaveis(),
       carregarCoordenadores(),
@@ -1173,6 +1176,123 @@ async function bootCronograma(){
   function getQueryId(){
     const p = new URLSearchParams(location.search);
     return (p.get("id") || "001").trim();
+  }
+
+  function getHojeCompacto(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dia = String(d.getDate()).padStart(2, "0");
+    return `${y}${m}${dia}`;
+  }
+
+  async function verificarCronogramasConcluidos(opcoes = {}){
+    const force = !!opcoes.force;
+    const silent = !!opcoes.silent;
+    const hoje = getHojeCompacto();
+    const cacheKey = "ERPIMPAR_CRONO_VERIF_CONCLUIDOS_" + hoje;
+
+    // Na entrada evita repetir a varredura na mesma sessão.
+    // Após salvar/atualizar usamos force:true para garantir arquivamento imediato.
+    if(!force && sessionStorage.getItem(cacheKey) === "1"){
+      return true;
+    }
+
+    const idAtual = getQueryId();
+    const arquivoAtual = idAtual ? ("obra_" + idAtual + ".json") : "";
+
+    setSaveStatus("Verificando cronogramas...", "info");
+
+    if(window.Swal && !silent){
+      Swal.fire(Object.assign(swalBase(), {
+        title: "Verificando cronogramas",
+        html: "Aguarde enquanto o sistema remove da base ativa os cronogramas concluídos e arquivos fantasmas/zerados.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading()
+      }));
+    }
+
+    try{
+      const j = await fetchJsonSafe(API + "arquivar_concluidos.php", {
+        method: "POST",
+        headers: { "Content-Type":"text/plain;charset=UTF-8" },
+        body: JSON.stringify({ origem: "cronograma.html" })
+      });
+
+      sessionStorage.setItem(cacheKey, "1");
+
+      const movidos = Array.isArray(j.movidos) ? j.movidos : [];
+      const fantasmas = Array.isArray(j.fantasmas) ? j.fantasmas : [];
+      const ignorados = Array.isArray(j.ignorados) ? j.ignorados : [];
+
+      const atualFoiArquivado = !!arquivoAtual && movidos.some(m => String(m.arquivo || "") === arquivoAtual);
+      const atualFoiLimpoComoFantasma = !!arquivoAtual && fantasmas.some(m => String(m.arquivo || "") === arquivoAtual);
+
+      if(atualFoiLimpoComoFantasma){
+        await Swal.fire(Object.assign(swalBase(), {
+          icon: "warning",
+          title: "Cronograma vazio removido",
+          html: "Este arquivo estava zerado/sem conteúdo útil e foi movido para o <b>histórico</b> como fantasma. Ele não participará mais da base ativa.",
+          confirmButtonText: "Voltar ao farol"
+        }));
+        location.href = "/cronograma/farol.html";
+        return false;
+      }
+
+      if(atualFoiArquivado){
+        await Swal.fire(Object.assign(swalBase(), {
+          icon: "success",
+          title: "Cronograma arquivado",
+          html: "Este cronograma já está com <b>100% realizado</b> e foi movido para a pasta <b>histórico</b>. Ele não participará mais da TV, Farol ou KPIs.",
+          confirmButtonText: "Voltar ao farol"
+        }));
+        location.href = "/cronograma/farol.html";
+        return false;
+      }
+
+      if(movidos.length > 0 || fantasmas.length > 0){
+        const listaMovidos = movidos.slice(0, 8).map(m => `<li>${escapeHtml(m.destino || m.arquivo || "Cronograma")}</li>`).join("");
+        const listaFantasmas = fantasmas.slice(0, 8).map(m => `<li>${escapeHtml(m.destino || m.arquivo || "Cronograma")}</li>`).join("");
+        const extraMovidos = movidos.length > 8 ? `<p>+ ${movidos.length - 8} outro(s) cronograma(s) concluído(s).</p>` : "";
+        const extraFantasmas = fantasmas.length > 8 ? `<p>+ ${fantasmas.length - 8} outro(s) fantasma(s).</p>` : "";
+
+        if(window.Swal && !silent){
+          let html = "";
+          if(movidos.length > 0){
+            html += `<p><b>${movidos.length}</b> cronograma(s) concluído(s) foram movidos para o histórico.</p><ul style="text-align:left;margin:12px 0 0;padding-left:22px;">${listaMovidos}</ul>${extraMovidos}`;
+          }
+          if(fantasmas.length > 0){
+            html += `<p style="margin-top:14px;"><b>${fantasmas.length}</b> cronograma(s) fantasma/zerado(s) foram limpos da base ativa.</p><ul style="text-align:left;margin:12px 0 0;padding-left:22px;">${listaFantasmas}</ul>${extraFantasmas}`;
+          }
+
+          await Swal.fire(Object.assign(swalBase(), {
+            icon: "success",
+            title: "Manutenção concluída",
+            html,
+            confirmButtonText: "Continuar"
+          }));
+        }
+      }else{
+        if(window.Swal && !silent) Swal.close();
+        setSaveStatus("Nenhum cronograma concluído ou fantasma para limpar.", "info");
+      }
+
+      if(fantasmas.length > 0){
+        console.warn("Cronogramas fantasmas removidos da base ativa:", fantasmas);
+      }
+
+      if(ignorados.length > 0){
+        console.warn("Cronogramas ignorados na verificação:", ignorados);
+      }
+
+      return true;
+    }catch(e){
+      console.error("Falha ao verificar cronogramas concluídos:", e);
+      if(window.Swal && !silent) Swal.close();
+      setSaveStatus("Não foi possível verificar concluídos. Continuando carregamento normal.", "err");
+      return true;
+    }
   }
 
   async function fetchJsonSafe(url, opts){
@@ -2414,6 +2534,12 @@ async function saveCronograma(){
     }
 
     state.lastSavedHash = buildStableHash();
+    setSaveStatus("Salvo no servidor. Verificando conclusão...", "ok");
+
+    // Segunda proteção: após qualquer salvamento, roda sem cache para arquivar
+    // imediatamente cronogramas que acabaram de chegar em 100%.
+    await verificarCronogramasConcluidos({ force:true, silent:true });
+
     setSaveStatus("Salvo no servidor.", "ok");
   }catch(e){
     console.error(e);
