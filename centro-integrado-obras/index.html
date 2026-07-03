@@ -55,6 +55,7 @@ const ENDPOINTS = {
   tvListar: 'https://api.erpimpar.com.br/tv/listar.php',
   tvProjetos: 'https://api.erpimpar.com.br/tv/data/projetos.json',
   obrasFarol: 'https://api.erpimpar.com.br/cronograma/listar_obras_farol.php',
+  carregarCronograma: 'https://api.erpimpar.com.br/cronograma/carregar_cronograma.php',
   obrasAgenda: 'https://api.erpimpar.com.br/cronograma/listar_obras_agenda.php',
   kpi: 'https://api.erpimpar.com.br/cronograma/listar_kpi.php'
 };
@@ -102,7 +103,11 @@ async function enriquecerObrasComSala(dados){
     if(!nome){saida.push(o); continue;}
     try{
       const info=await fetchJson(CIGO_API_BASE+'/obra_info.php?obra='+encodeURIComponent(nome)+'&t='+Date.now());
-      saida.push(Object.assign({}, o, normalizarInfoObra(info,nome)));
+      if(!info || info.ok === false){
+        saida.push(o);
+      }else{
+        saida.push(Object.assign({}, o, normalizarInfoObra(info,nome)));
+      }
     }catch(e){
       saida.push(o);
     }
@@ -129,21 +134,129 @@ function renderCard(o){
 function num(v){ return Array.isArray(v) ? v.length : (Number(v)||0); }
 function escapeHtml(s){ return String(s).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[m])); }
 function abrirRdo(nome){ location.href = `sala.html?obra=${nome}`; }
+async function manutencaoCronogramas(){
+  try{
+    await fetch('https://api.erpimpar.com.br/cronograma/arquivar_concluidos.php', {
+      method:'POST',
+      cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({origem:'centro-integrado-obras'})
+    });
+  }catch(e){
+    console.warn('Manutenção de cronogramas não executada:', e);
+  }
+}
+
+function idCronograma(v){
+  const d = String(v ?? '').replace(/\D/g,'');
+  return d ? d.padStart(3,'0') : '';
+}
+
+function getIdFarol(o){
+  return idCronograma(campo(o, ['id','cronograma_id','farol_id','codigo'], ''));
+}
+
+async function carregarCronogramasDoFarol(farolData){
+  const base = asArray(farolData)
+    .map(o => ({
+      id: getIdFarol(o),
+      nome: campo(o, ['obra','nome','projeto','titulo','codigo'], '')
+    }))
+    .filter(o => o.id);
+
+  const vistos = new Set();
+  const unicos = base.filter(o => {
+    if(vistos.has(o.id)) return false;
+    vistos.add(o.id);
+    return true;
+  });
+
+  const saida = [];
+  for(const item of unicos){
+    try{
+      const j = await fetchJson(ENDPOINTS.carregarCronograma + '?id=' + encodeURIComponent(item.id));
+      if(!j || j.ok !== true || !j.data) continue;
+      const resumo = normalizarCronogramaAtivo(j.data, item);
+      if(!resumo || obraConcluida(resumo)) continue;
+      saida.push(resumo);
+    }catch(e){
+      console.warn('Falha ao carregar cronograma ativo', item.id, e);
+    }
+  }
+  return saida;
+}
+
+function normalizarCronogramaAtivo(data, fallback){
+  const r = data.resumo || data;
+  const id = idCronograma(data.id || fallback.id);
+  const nome = String(data.nome || fallback.nome || ('OBRA ' + id)).trim();
+
+  const previsto = pct(r.previsto ?? r.percentual_previsto ?? data.previsto ?? data.percentual_previsto ?? 0);
+  const real = pct(r.real ?? r.percentual_realizado ?? data.real ?? data.percentual_realizado ?? 0);
+  const status = r.status || data.status || (real >= 100 ? 'Concluído' : (real >= previsto ? 'Em andamento' : 'Atrasado'));
+
+  return {
+    id,
+    cronograma_id: id,
+    obra: nome,
+    nome,
+    coordenador: data.coordenador || r.coordenador || '',
+    farol: status,
+    status,
+    percentual_previsto: previsto,
+    percentual_realizado: real,
+    inicio: r.inicio || data.inicio || '',
+    fim: r.fim || data.fim || '',
+    dias: r.dias || data.dias || '',
+    agenda_dia: data.agenda_dia || ''
+  };
+}
+
+function anexarComplementosDaBaseCronograma(dadosCronograma, tv, agenda, kpi){
+  const fontes = [tv, agenda, kpi].map(indexPorObra);
+  return dadosCronograma.map(base => {
+    const nome = campo(base, ['obra','nome','projeto','titulo','codigo'], '');
+    const chave = norm(nome);
+    const extras = Object.assign({}, ...fontes.map(m => m.get(chave) || {}));
+    return Object.assign({}, extras, base);
+  });
+}
+
 async function carregarDashboard(){
   loader(true);
   try{
-    const [tv1,tv2,farol,agenda,kpi] = await Promise.allSettled([fetchJson(ENDPOINTS.tvListar),fetchJson(ENDPOINTS.tvProjetos),fetchJson(ENDPOINTS.obrasFarol),fetchJson(ENDPOINTS.obrasAgenda),fetchJson(ENDPOINTS.kpi)]);
-    let dados = mergeObras(tv1.value||[], tv2.value||farol.value||[], agenda.value||[], kpi.value||[]).filter(o=>campo(o,['obra','nome','projeto','titulo','codigo'],''));
+    await manutencaoCronogramas();
+
+    const [tv1,tv2,farol,agenda,kpi] = await Promise.allSettled([
+      fetchJson(ENDPOINTS.tvListar),
+      fetchJson(ENDPOINTS.tvProjetos),
+      fetchJson(ENDPOINTS.obrasFarol),
+      fetchJson(ENDPOINTS.obrasAgenda),
+      fetchJson(ENDPOINTS.kpi)
+    ]);
+
+    // REGRA PRINCIPAL:
+    // O Farol define quais cronogramas existem/estão ativos.
+    // Depois carregamos cada cronograma pelo mesmo PHP usado pelo Farol.
+    let dados = await carregarCronogramasDoFarol(farol.value || []);
+
+    // TV/Agenda/KPI só complementam informação. Não criam card novo.
+    dados = anexarComplementosDaBaseCronograma(dados, tv1.value || tv2.value || [], agenda.value || [], kpi.value || []);
+
+    // obra_info.php só complementa se encontrar a obra no de-para.
+    // Se não encontrar, mantém os dados vindos do cronograma.
     dados = await enriquecerObrasComSala(dados);
     dados = dados.filter(o => !obraConcluida(o));
-    $('grid').innerHTML = dados.length ? dados.map(renderCard).join('') : '<div class="empty">Nenhuma obra retornou dos endpoints oficiais.</div>';
+
+    $('grid').innerHTML = dados.length ? dados.map(renderCard).join('') : '<div class="empty">Nenhuma obra ativa retornou da fonte oficial de cronogramas.</div>';
     const c = {verde:0,amarelo:0,vermelho:0}; dados.forEach(o=>c[farolClasse(campo(o,['farol','status_farol','status'],'verde'))]++);
     $('kpiObras').textContent=dados.length; $('kpiVerde').textContent=c.verde; $('kpiAmarelo').textContent=c.amarelo; $('kpiVermelho').textContent=c.vermelho;
-    toast('Dashboard atualizado com dados oficiais do ERP.');
+    toast('Dashboard atualizado com a mesma base do Farol.');
   }catch(e){ console.error(e); $('grid').innerHTML='<div class="error">Erro ao carregar os dados oficiais do ERP. Verifique CORS, endpoint ou conexão.</div>'; toast('Falha ao carregar dashboard.'); }
   finally{ loader(false); }
 }
-function renderHeaderUser(){try{const u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||'{}');const nome=u.nome||'Usuário ERP';const email=u.email||'';const ini=(nome||email||'U').trim().charAt(0).toUpperCase();$('userBox').innerHTML=`<div class="avatar">${esc(ini)}</div><div class="user-lines"><b>${esc(nome)}</b><span>${esc(email)}</span></div>`;}catch(e){}}
+
+function renderHeaderUser(){try{const u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||'{}');const nome=u.nome||'Usuário ERP';const email=u.email||'';const ini=(nome||email||'U').trim().charAt(0).toUpperCase();$('userBox').innerHTML=`<div class="avatar">${escapeHtml(ini)}</div><div class="user-lines"><b>${escapeHtml(nome)}</b><span>${escapeHtml(email)}</span></div>`;}catch(e){}}
 (function init(){
   renderHeaderUser();
   carregarDashboard();
