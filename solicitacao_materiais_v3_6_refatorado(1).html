@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP ÍMPAR – Solicitação de Materiais V3.6</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    :root{
+      --bg-1:#061739;
+      --bg-2:#0c3b67;
+      --bg-3:#0f766e;
+      --surface:rgba(2,6,23,.62);
+      --surface-2:rgba(2,6,23,.82);
+      --line:rgba(255,255,255,.12);
+      --line-2:rgba(148,163,184,.22);
+      --text:#e5e7eb;
+      --muted:rgba(229,231,235,.72);
+      --soft:rgba(229,231,235,.52);
+      --blue:#3b82f6;
+      --green:#22c55e;
+      --red:#ef4444;
+      --yellow:#f59e0b;
+      --radius:22px;
+      --shadow:0 28px 80px rgba(0,0,0,.38);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;min-height:100%;overflow-x:hidden}
+    body{
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+      background:
+        radial-gradient(900px 480px at 18% 8%,rgba(59,130,246,.30),transparent 60%),
+        radial-gradient(760px 420px at 84% 18%,rgba(34,197,94,.20),transparent 58%),
+        linear-gradient(120deg,var(--bg-1),var(--bg-2),var(--bg-3));
+      opacity:0;
+    }
+    body.impar-enter{animation:imparEnter .72s cubic-bezier(.16,1,.3,1) both}
+    @keyframes imparEnter{from{opacity:0;transform:translateY(28px) scale(.985);filter:blur(10px)}to{opacity:1;transform:none;filter:none}}
+
+    #pageLoader{
+      position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:18px;
+      background:rgba(2,6,23,.48);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      transition:opacity .35s ease,visibility .35s ease,transform .35s ease;
+    }
+    #pageLoader.hidden{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-8px)}
+    .loader-card{width:min(420px,92vw);text-align:center;padding:20px;border-radius:20px;background:rgba(2,6,23,.78);border:1px solid var(--line);box-shadow:var(--shadow)}
+    .spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.14);border-top-color:var(--blue);border-right-color:var(--green);margin:0 auto 12px;animation:spin .85s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loader-title{font-weight:850;margin-bottom:4px}.loader-sub{font-size:12px;color:var(--muted)}
+
+    header{padding:14px 16px 8px;display:flex;justify-content:center}
+    .header-inner{width:100%;max-width:1220px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 16px;border:1px solid rgba(255,255,255,.13);border-radius:20px;background:linear-gradient(120deg,rgba(13,42,94,.74),rgba(10,112,104,.58));box-shadow:0 18px 45px rgba(0,0,0,.25)}
+    .brand{display:flex;align-items:center;gap:14px;min-width:0;text-shadow:0 2px 8px rgba(0,0,0,.52)}
+    .logo-orb{width:52px;height:52px;border-radius:14px;position:relative;overflow:hidden;flex:0 0 auto;background:conic-gradient(from 210deg,#22c55e,#06b6d4,#3b82f6,#a855f7,#f97316,#22c55e);box-shadow:0 12px 28px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.20) inset}
+    .logo-orb:before{content:"";position:absolute;inset:-6px;background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.58),transparent 55%)}
+    .brand-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .brand-kicker{font-size:12px;font-weight:900;letter-spacing:.24em;text-transform:uppercase;color:#d9ff6c;opacity:1}
+    .brand-title{font-size:26px;font-weight:950;line-height:.98;letter-spacing:.01em}
+    .brand-sub{font-size:13px;font-weight:850;opacity:.98}.brand-tagline{font-size:12px;color:rgba(229,231,235,.82);max-width:72ch;font-weight:650}
+    .top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
+    .user-card{display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(2,6,23,.60);padding:7px 10px 7px 8px;min-width:190px}
+    .user-avatar{width:34px;height:34px;border-radius:999px;background:linear-gradient(135deg,#22c55e,#06b6d4);display:grid;place-items:center;color:#fff;font-weight:950;letter-spacing:.02em;flex:0 0 auto}
+    .user-meta{min-width:0;line-height:1.05}.user-name{font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.user-email{font-size:10px;color:rgba(229,231,235,.70);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+    .pill-btn{border:1px solid var(--line);border-radius:999px;background:rgba(2,6,23,.60);color:var(--text);font:inherit;font-size:12px;font-weight:850;padding:10px 14px;display:flex;align-items:center;gap:7px;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
+    .pill-btn:hover{transform:translateY(-1px) scale(1.02);background:rgba(2,6,23,.78);box-shadow:0 16px 34px rgba(0,0,0,.28)}
+
+    main{flex:1;display:flex;justify-content:center;padding:10px 16px 22px}
+    .layout{width:100%;max-width:1220px}
+    .panel{border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(180deg,rgba(2,6,23,.58),rgba(2,6,23,.42));box-shadow:var(--shadow);backdrop-filter:blur(14px);overflow:hidden}
+    .panel-head{padding:18px 18px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+    h1{font-size:21px;line-height:1.12;margin-bottom:5px}.subtitle{font-size:13px;color:var(--muted);line-height:1.35;max-width:78ch}
+    .status-strip{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .chip{font-size:11px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);padding:7px 10px;color:var(--muted)}
+    .chip.ok{color:#bbf7d0;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.10)}
+    .chip.warn{color:#fde68a;border-color:rgba(245,158,11,.38);background:rgba(245,158,11,.12)}
+    .chip.err{color:#fecaca;border-color:rgba(239,68,68,.38);background:rgba(239,68,68,.12)}
+    .content{padding:18px}
+    .user-line{font-size:12px;color:var(--muted);margin-bottom:12px}
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:12px}
+    .field{grid-column:span 4;min-width:0}.field.wide{grid-column:span 8}.field.full{grid-column:1/-1}.field.small{grid-column:span 2}.field.mid{grid-column:span 3}
+    label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.10em;font-weight:850;color:var(--muted);margin:0 0 6px}
+    input,select,textarea,.ts-control{width:100%;min-height:42px;border-radius:13px!important;border:1px solid rgba(15,23,42,.95)!important;background:rgba(2,6,23,.82)!important;color:var(--text)!important;font-size:13px!important;outline:none;padding:10px 12px!important;box-shadow:none!important}
+    textarea{resize:vertical;min-height:84px;font-family:inherit}
+    input:focus,select:focus,textarea:focus,.ts-wrapper.focus .ts-control{border-color:rgba(59,130,246,.95)!important;box-shadow:none!important}
+    .ts-control input{border:0!important;box-shadow:none!important;outline:none!important;background:transparent!important;padding:0!important;min-height:auto!important}.ts-wrapper.focus input{box-shadow:none!important}
+    input[readonly],input[disabled]{opacity:.78;cursor:not-allowed}
+    input:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled]){opacity:1;cursor:text}
+    #quantidade{opacity:1!important;cursor:text!important;background:#020617!important;color:var(--text)!important}.ts-control.focus,.ts-wrapper.focus .ts-control{box-shadow:none!important;border-color:#3b82f6!important}.ts-dropdown{background:#020617!important;border-color:var(--line)!important;color:var(--text)!important}.ts-dropdown .option{color:var(--text)!important}.ts-dropdown .active{background:rgba(59,130,246,.18)!important}
+    .hint{font-size:11px;color:var(--soft);margin-top:5px;line-height:1.25}.inline-check{display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--muted);font-size:12px}.inline-check input{width:auto;min-height:auto;accent-color:var(--green)}
+    .date-wrap{position:relative}.date-wrap input{padding-right:52px!important}.calendar-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);cursor:pointer;display:grid;place-items:center}input[type="date"]::-webkit-calendar-picker-indicator{opacity:0}
+    .actions{display:flex;gap:9px;flex-wrap:wrap;margin:8px 0 12px}
+    .btn{border:0;border-radius:999px;padding:10px 15px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;cursor:pointer;transition:transform .22s cubic-bezier(.16,1,.3,1),box-shadow .22s ease,filter .22s ease;background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--line)}
+    .btn:hover{transform:translateY(-1px) scale(1.025);box-shadow:0 14px 34px rgba(0,0,0,.30)}
+    .btn.primary{background:linear-gradient(135deg,#22c55e,#16a34a);color:#02130a;border-color:rgba(34,197,94,.95);box-shadow:0 12px 34px rgba(22,163,74,.38)}
+    .btn.danger{background:rgba(239,68,68,.13);border-color:rgba(239,68,68,.35);color:#fecaca}.btn.ghost{background:rgba(2,6,23,.62)}
+    .table-card{border:1px solid var(--line);border-radius:16px;overflow:auto;background:rgba(2,6,23,.62);-webkit-overflow-scrolling:touch}
+    table{width:100%;min-width:780px;border-collapse:collapse;font-size:12px}th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:middle}th{position:sticky;top:0;background:#020617;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;z-index:1}tbody tr:hover{background:rgba(255,255,255,.045)}.empty-row td{text-align:center;color:var(--soft);padding:18px}.num{text-align:right}.tag{display:inline-flex;border-radius:999px;padding:4px 8px;background:rgba(59,130,246,.13);border:1px solid rgba(59,130,246,.28);font-weight:800;font-size:11px;color:#bfdbfe}
+    .summary{margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.summary-card{border:1px solid var(--line);border-radius:16px;background:rgba(2,6,23,.44);padding:12px}.summary-card b{display:block;font-size:18px}.summary-card span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+    footer{padding:10px 16px;color:rgba(229,231,235,.68);font-size:11px}.footer-inner{max-width:1220px;margin:0 auto;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .impar-swal{background:rgba(2,6,23,.94)!important;color:var(--text)!important;border:1px solid var(--line)!important;border-radius:18px!important;box-shadow:var(--shadow)!important}.impar-swal-confirm{border:0!important;border-radius:12px!important;padding:10px 14px!important;font-weight:900!important;color:#02130a!important;background:linear-gradient(135deg,#22c55e,#16a34a)!important}.impar-swal-cancel{border:1px solid var(--line)!important;border-radius:12px!important;padding:10px 14px!important;font-weight:900!important;color:var(--text)!important;background:rgba(255,255,255,.07)!important}.swal2-html-container{color:var(--muted)!important}
+    @media(max-width:860px){.field,.field.wide,.field.small,.field.mid{grid-column:1/-1}.panel-head{padding:16px}.content{padding:14px}.summary{grid-template-columns:1fr}main{padding:8px 12px 18px}.top-actions{width:100%;justify-content:flex-end;margin-left:0}.brand-title{font-size:22px}.brand-tagline{max-width:100%}.user-card{min-width:0;flex:1}.calendar-btn{top:28px}}
+    @media(prefers-reduced-motion:reduce){body{opacity:1}.impar-enter{animation:none!important}}
+  </style>
+</head>
+<body>
+  <div id="pageLoader">
+    <div class="loader-card">
+      <div class="spinner"></div>
+      <div class="loader-title">Carregando solicitação…</div>
+      <div class="loader-sub">Buscando obras ativas e a base nova de materiais.</div>
+    </div>
+  </div>
+
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="logo-orb" aria-hidden="true"></div>
+        <div class="brand-text">
+          <div class="brand-kicker">PLATAFORMA</div>
+          <div class="brand-title">ERP ÍMPAR</div>
+          <div class="brand-sub">Solicitação de Materiais</div>
+          <div class="brand-tagline">Pedido padronizado integrado com obras ativas, orçamento e suprimentos.</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="user-card" aria-label="Usuário logado">
+          <div class="user-avatar" id="userAvatar">--</div>
+          <div class="user-meta">
+            <div class="user-name" id="headerUserName">Carregando…</div>
+            <div class="user-email" id="headerUserEmail">sessão ERP</div>
+          </div>
+        </div>
+        <button class="pill-btn" id="btnVoltarMenu" type="button">🏠 Menu</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h1>Nova Solicitação de Materiais</h1>
+            <p class="subtitle">V3.4 refatorada: obras ativas com centro de custo obrigatório, unidade automática do material e fluxo de digitação por teclado.</p>
+          </div>
+          <div class="status-strip">
+            <span class="chip warn" id="chipObras">Obras: carregando</span>
+            <span class="chip warn" id="chipMateriais">Materiais: carregando</span>
+            <span class="chip ok" id="chipModo">V3.1</span><button class="pill-btn" id="btnRecarregar" type="button" style="padding:7px 10px;font-size:11px">↻ Recarregar</button>
+          </div>
+        </div>
+
+        <div class="content">
+          <p class="user-line" id="user-info">Usuário: carregando sessão…</p>
+
+          <form id="solicitacaoForm" autocomplete="off">
+            <div class="grid">
+              <div class="field wide">
+                <label for="obra">Obra ativa</label>
+                <select id="obra" required><option value="">Selecione a obra ativa.</option></select>
+                <div class="hint" id="obraHint">A lista tenta buscar cronogramas ativos. Encerradas, canceladas e inativas ficam ocultas.</div>
+              </div>
+              <div class="field small">
+                <label for="centroCusto">Centro de custo</label>
+                <input id="centroCusto" type="text" readonly />
+              </div>
+              <div class="field small date-wrap">
+                <label for="prazo">Prazo limite</label>
+                <input id="prazo" type="date" required />
+                <button class="calendar-btn" id="btnPrazoPicker" type="button" aria-label="Selecionar data">📅</button>
+              </div>
+            </div>
+
+            <div class="grid">
+              <div class="field wide">
+                <label for="material">Material</label>
+                <select id="material"><option value="">Selecione o material.</option></select>
+                <input id="materialManual" type="text" placeholder="Digite o material manualmente" style="display:none;margin-top:8px" />
+                <input id="unidadeManual" type="text" placeholder="Unidade manual. Ex.: caixa, saco, metro" style="display:none;margin-top:8px" />
+                <label class="inline-check">
+                  <input id="modoManual" type="checkbox" />
+                  <span>Não utilizar lista de materiais do sistema</span>
+                </label>
+                <div class="hint" id="materialHint">Ao selecionar pela base, unidade e código são preenchidos automaticamente.</div>
+              </div>
+              <div class="field small">
+                <label for="unidade">Unidade</label>
+                <input id="unidade" type="text" readonly placeholder="UND" />
+              </div>
+              <div class="field small">
+                <label for="quantidade">Quantidade</label>
+                <input id="quantidade" type="number" min="0" step="0.01" placeholder="Digite a quantidade" autocomplete="off" />
+              </div>
+            </div>
+
+            <div class="grid">
+              <div class="field mid">
+                <label for="codigoMaterial">Código</label>
+                <input id="codigoMaterial" type="text" readonly placeholder="Automático" />
+              </div>
+              <div class="field mid">
+                <label for="grupoMaterial">Grupo</label>
+                <input id="grupoMaterial" type="text" readonly placeholder="Automático" />
+              </div>
+              <div class="field mid">
+                <label for="localEntrega">Local de entrega</label>
+                <select id="localEntrega" required>
+                  <option value="">Selecione o local.</option>
+                  <option value="ÍMPAR">ÍMPAR</option>
+                  <option value="Cliente">Cliente</option>
+                  <option value="Obra">Obra</option>
+                </select>
+              </div>
+              <div class="field mid">
+                <label for="prioridade">Prioridade</label>
+                <select id="prioridade">
+                  <option value="Normal">Normal</option>
+                  <option value="Urgente">Urgente</option>
+                  <option value="Crítica">Crítica</option>
+                </select>
+              </div>
+              <div class="field full">
+                <label for="observacao">Observação</label>
+                <textarea id="observacao" placeholder="Ex.: marca preferencial, cor, metragem, local exato de entrega ou restrição técnica."></textarea>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn primary" id="adicionarMaterial" type="button">Adicionar material</button>
+              <button class="btn ghost" id="limparItem" type="button">Limpar item</button>
+            </div>
+
+            <div class="table-card">
+              <table id="tabelaMateriais">
+                <thead>
+                  <tr>
+                    <th>Material</th>
+                    <th>Código</th>
+                    <th>Grupo</th>
+                    <th>UND</th>
+                    <th class="num">Quantidade</th>
+                    <th>Observação</th>
+                    <th>Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="empty-row"><td colspan="7">Nenhum material adicionado.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="summary">
+              <div class="summary-card"><span>Itens</span><b id="sumItens">0</b></div>
+              <div class="summary-card"><span>Obra selecionada</span><b id="sumObra">—</b></div>
+              <div class="summary-card"><span>Origem da base</span><b id="sumBase">—</b></div>
+            </div>
+
+            <div class="actions" style="margin-top:14px">
+              <button class="btn primary" type="submit">Enviar solicitação</button>
+              <button class="btn ghost" id="btnConsultarSolicitacoes" type="button">Consultar solicitações</button>
+              <button class="btn danger" id="btnLimparTudo" type="button">Limpar tudo</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <span>© 2026 ERP ÍMPAR • Solicitação de Materiais V3.6</span>
+      <span>Integração: SSO • Cronogramas ativos • Base orçamento/Bering</span>
+    </div>
+  </footer>
+
+  <script>
+    document.body.classList.add('impar-enter');
+
+    if (window.Swal && Swal.mixin) {
+      window.Swal = Swal.mixin({
+        customClass: { popup: 'impar-swal', confirmButton: 'impar-swal-confirm', cancelButton: 'impar-swal-cancel' },
+        buttonsStyling: false
+      });
+    }
+
+    const CONFIG = {
+      menuUrl: './menu.html',
+      usuarioStorageKeys: ['ERPIMPAR_USER','erpimpar_user','usuarioLogado','user'],
+      obrasEndpoints: [
+        // Produção KingHost/API — evita tentar primeiro caminhos relativos no domínio do front.
+        'https://api.erpimpar.com.br/cronograma/listar.php',
+        'https://api.erpimpar.com.br/cronograma/listar_cronogramas.php',
+        'https://api.erpimpar.com.br/cronograma/cronogramas.json',
+        'https://api.erpimpar.com.br/tv/data/projetos.json',
+        'https://api.erpimpar.com.br/storage/data/cronogramas.json',
+        'https://api.erpimpar.com.br/storage/data/obras.json',
+        'https://api.erpimpar.com.br/storage/data/projetos.json',
+        // Fallbacks se o HTML for publicado dentro do mesmo host da API.
+        '/cronograma/listar.php',
+        '/cronograma/listar_cronogramas.php',
+        '/tv/data/projetos.json',
+        '/storage/data/cronogramas.json',
+        '/storage/data/obras.json',
+        '/storage/data/projetos.json'
+      ],
+      materiaisEndpoints: [
+        'materiais.json',
+        './materiais.json',
+        'assets/data/materiais.json',
+        './assets/data/materiais.json',
+        '/storage/data/materiais.json',
+        '/storage/orcamento/materiais.json',
+        '/storage/orcamentos/materiais.json',
+        '/orcamento/materiais.json',
+        '/orcamentos/materiais.json',
+        '/api/orcamento/materiais.json',
+        '/api/materiais/materiais.json',
+        'https://api.erpimpar.com.br/storage/data/materiais.json',
+        'https://api.erpimpar.com.br/storage/orcamento/materiais.json',
+        'https://api.erpimpar.com.br/storage/orcamentos/materiais.json',
+        'https://api.erpimpar.com.br/api/orcamento/materiais.json'
+      ],
+      salvarEndpoints: [
+        'https://api.erpimpar.com.br/materiais/salvar_solicitacao.php',
+        'https://api.erpimpar.com.br/solicitacoes/salvar_solicitacao.php',
+        'https://api.erpimpar.com.br/salvar_solicitacao.php',
+        '/materiais/salvar_solicitacao.php',
+        '/solicitacoes/salvar_solicitacao.php',
+        '/salvar_solicitacao.php'
+      ],
+      contratosEndpoints: [
+        // Produção: PHP instalado em /www/api/storage/docs/listar_contratos.php
+        'https://api.erpimpar.com.br/storage/docs/listar_contratos.php',
+        // Fallback se o HTML estiver no mesmo host da API
+        '/storage/docs/listar_contratos.php'
+      ]
+    };
+
+    const state = { usuario:null, obras:[], materiais:[], contratos:[], itens:[], baseMateriais:'—', baseObras:'—', baseContratos:'—', tsObra:null, tsMaterial:null };
+
+    // Carga inicial Obra x Centro de Custo vinda do Gerador de Documentos.
+    // Uso: enriquecer SOMENTE as obras ativas carregadas dos cronogramas/TV.
+    const DEPARA_CENTRO_CUSTO = [{"Obra": "AUDITÓRIO PRAIA GRANDE", "Centro de Custo": "AC17024R1", "Email": "pablo@imparsistemas.com"}, {"Obra": "BIOS FARMACEUTICA", "Centro de Custo": "AC08324R1", "Email": "fabio@imparsistemas.com"}, {"Obra": "COMBO FORQUILHINHA", "Centro de Custo": "AC02325R4", "Email": "pablo@imparsistemas.com"}, {"Obra": "HALL SUPERIOR TEATRO ELIAS ANGELONI", "Centro de Custo": "AC03425R2", "Email": "pablo@imparsistemas.com"}, {"Obra": "FUSION", "Centro de Custo": "AC05925", "Email": "fabio@imparsistemas.com"}, {"Obra": "FIESC", "Centro de Custo": "TH32525", "Email": "fabio@imparsistemas.com"}, {"Obra": "FOCUS", "Centro de Custo": "AC05225R1", "Email": "nicolas@imparsistemas.com"}, {"Obra": "HOSPITAL PRAIA GRANDE", "Centro de Custo": "AC02324R3", "Email": "pablo@imparsistemas.com"}, {"Obra": "MELEIRO", "Centro de Custo": "AC02225", "Email": "nicolas@imparsistemas.com"}, {"Obra": "AEMFLO", "Centro de Custo": "AC06224R2", "Email": "fabio@imparsistemas.com"}, {"Obra": "ARTISTI", "Centro de Custo": "AC05725R2", "Email": "fabio@imparsistemas.com"}, {"Obra": "CASSOL - FRENTE DE CAIXA", "Centro de Custo": "AC15325R1", "Email": "silvio@imparsistemas.com"}, {"Obra": "ASTEL", "Centro de Custo": "AC00925R2", "Email": "fabio@imparsistemas.com"}, {"Obra": "CONTATO INTERNET", "Centro de Custo": "AC06625R4", "Email": "nicolas@imparsistemas.com"}, {"Obra": "CLINICA CERNE", "Centro de Custo": "AC13824", "Email": "fabio@imparsistemas.com"}, {"Obra": "BLUE GARDEN", "Centro de Custo": "AC03622", "Email": "fabio@imparsistemas.com"}, {"Obra": "COOPERATIVA FUMACENSE DE ELETRECIDADE", "Centro de Custo": "AC01326", "Email": "nicolas@imparsistemas.com"}, {"Obra": "EDUARDA TONIETTO", "Centro de Custo": "AC02926", "Email": "nicolas@imparsistemas.com"}, {"Obra": "RESTAURANTE SAN TROPEIRO", "Centro de Custo": "AC04826", "Email": "pablo@imparsistemas.com"}, {"Obra": "HOSPITAL DE  TRAMANDAÍ", "Centro de Custo": "AC01026", "Email": "pablo@imparsistemas.com"}, {"Obra": "CLÍNICA RENAL IMBITUBA", "Centro de Custo": "AC12425", "Email": "nicolas@imparsistemas.com"}, {"Obra": "FORUM ARAQUARI", "Centro de Custo": "AC14924R2", "Email": "silvio@imparsistemas.com"}, {"Obra": "ARTISTI - ADITIVO", "Centro de Custo": "AC04626", "Email": "fabio@imparsistemas.com"}, {"Obra": "ARTISTI - ADITIVO", "Centro de Custo": "AC04626", "Email": "nicolas@imparsistemas.com"}, {"Obra": "KRHONOS", "Centro de Custo": "AC15925R2", "Email": "fabio@imparsistemas.com"}, {"Obra": "HOSPITAL SÃO SEBASTIÃO", "Centro de Custo": "AC06425", "Email": "nicolas@imparsistemas.com"}, {"Obra": "GIASSI ARARANGUÁ", "Centro de Custo": "AC07125R3", "Email": "pablo@imparsistemas.com"}, {"Obra": "GIASSI TUBARÃO", "Centro de Custo": "AC07225", "Email": "pablo@imparsistemas.com"}, {"Obra": "RESTAURANTE SAN TROPEIRO", "Centro de Custo": "AC04826-R3", "Email": "pablo@imparsistemas.com"}, {"Obra": "FORUM ARAQUARI", "Centro de Custo": "AC14924R2", "Email": "silvio@imparsistemas.com"}, {"Obra": "RESIDÊNCIA JOÃO BATISTA LOHN", "Centro de Custo": "AC13425", "Email": "fabio@imparsistemas.com"}, {"Obra": "CORPORATE 8", "Centro de Custo": "AC13825", "Email": "nicolas@imparsistemas.com"}, {"Obra": "CORPORATE 8 - LOJAS", "Centro de Custo": "AC17925", "Email": "fabio@imparsistemas.com"}, {"Obra": "CORPORATE 8 - LOJAS", "Centro de Custo": "AC17925", "Email": "nicolas@imparsistemas.com"}, {"Obra": "CORPORE 8 - CPD E SALA DE REUNIÃO", "Centro de Custo": "AC03326", "Email": "nicolas@imparsistemas.com"}, {"Obra": "MED-401 IMPACT HUB", "Centro de Custo": "AC08125R3", "Email": "nicolas@imparsistemas.com"}, {"Obra": "KUBOO", "Centro de Custo": "AC15823", "Email": "fabio@imparsistemas.com"}, {"Obra": "RESIDENCIAL FABIANE E CARLOS", "Centro de Custo": "AC02423R3", "Email": "fabio@imparsistemas.com"}, {"Obra": "SOS AMBULATÓRIO", "Centro de Custo": "AC08824R2 ", "Email": "rhuan@imparsistemas.com"}, {"Obra": "SOS COZINHA", "Centro de Custo": "AC06824R2", "Email": "rhuan@imparsistemas.com"}, {"Obra": "SOS ISOLAMENTO", "Centro de Custo": "AC09223R3", "Email": "rhuan@imparsistemas.com"}, {"Obra": "SOS ONCOLOGIA", "Centro de Custo": "AC02126", "Email": "nicolas@imparsistemas.com"}, {"Obra": "SOS RECEPÇÃO CAFÉ", "Centro de Custo": "AC17824R1 ", "Email": "rhuan@imparsistemas.com"}, {"Obra": "SOS SUBESTAÇÃO", "Centro de Custo": "AC03025 ", "Email": "rhuan@imparsistemas.com"}, {"Obra": "CLINICA CASA GRANDE", "Centro de Custo": "AC02125R2", "Email": "rhuan@imparsistemas.com"}, {"Obra": "FIORI", "Centro de Custo": "AC05825", "Email": "rhuan@imparsistemas.com"}, {"Obra": "HOTEL MERCURE AP 904", "Centro de Custo": "AC11825", "Email": "rhuan@imparsistemas.com"}, {"Obra": "HOTEL MERCURE(TOSCANA)", "Centro de Custo": "AC09125R2", "Email": "rhuan@imparsistemas.com"}, {"Obra": "UROFLOW", "Centro de Custo": "AC03125R2", "Email": "rhuan@imparsistemas.com"}, {"Obra": "FARMACIA IONICA", "Centro de Custo": "AC24418R3", "Email": "rhuan@imparsistemas.com"}, {"Obra": "FORUM DE SÃO LOURENÇO", "Centro de Custo": "AC16523R2", "Email": "nicolas@imparsistemas.com"}, {"Obra": "CONTATO INTERNET", "Centro de Custo": "AC06625R4", "Email": "nicolas@imparsistemas.com"}, {"Obra": "CASSOL", "Centro de Custo": "AC11725R2", "Email": "silvio@imparsistemas.com"}, {"Obra": "HOSPITAL SÃO CAMILO/SÃO BRÁZ", "Centro de Custo": "AC02724R3", "Email": "silvio@imparsistemas.com"}, {"Obra": "HOSPITAL SÃO JOSÉ", "Centro de Custo": "AC04224R2", "Email": "silvio@imparsistemas.com"}];
+
+    const $ = (id) => document.getElementById(id);
+
+    function setChip(id, text, kind){ const el=$(id); if(!el) return; el.textContent=text; el.className='chip ' + (kind||'warn'); }
+    function hideLoader(){ const el=$('pageLoader'); if(!el) return; setTimeout(()=>el.classList.add('hidden'),250); setTimeout(()=>{try{el.remove()}catch(e){}},800); }
+    function showLoader(title, sub){ let el=$('pageLoader'); if(!el) return; el.querySelector('.loader-title').textContent=title||'Carregando…'; el.querySelector('.loader-sub').textContent=sub||'Aguarde.'; el.classList.remove('hidden'); }
+
+    async function fetchJsonFirst(urls){
+      const errors=[];
+      for(const url of urls){
+        try{
+          const resp = await fetch(url, { cache:'no-store' });
+          if(!resp.ok) throw new Error('HTTP '+resp.status);
+          const data = await resp.json();
+          return { data, url };
+        }catch(err){ errors.push(url+': '+err.message); }
+      }
+      throw new Error(errors.slice(0,5).join(' | '));
+    }
+
+    function asArray(data){
+      if(Array.isArray(data)) return data;
+      if(!data || typeof data !== 'object') return [];
+      const keys = ['dados','data','items','itens','obras','projetos','cronogramas','materiais','lista','records'];
+      for(const k of keys){ if(Array.isArray(data[k])) return data[k]; }
+      return Object.values(data).filter(v => v && typeof v === 'object');
+    }
+
+    function normText(v){ return String(v ?? '').trim(); }
+    function upper(v){ return normText(v).toUpperCase(); }
+    function isAtiva(item){
+      const status = upper(item.status_cronograma || item.status || item.situacao || item.ativo || item.estado || item.andamento);
+      const nome = upper(item.nome || item.obra || item.projeto || item.title);
+      if(status === 'FALSE' || status === '0' || status === 'NÃO' || status === 'NAO') return false;
+      if(/ENCERR|CANCEL|FINALIZ|CONCLU|INATIV|ARQUIV/.test(status)) return false;
+      if(/ENCERR|CANCEL|FINALIZ|CONCLU|INATIV|ARQUIV/.test(nome)) return false;
+      return true;
+    }
+
+    function normalizeKeyName(v){
+      return upper(v)
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+        .replace(/[^A-Z0-9]+/g,' ')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+
+    function looksCentroCusto(v){
+      const s = upper(v).replace(/\s+/g,'');
+      return /^(AC|TH|MED)[0-9]{2,}/.test(s);
+    }
+
+    function cleanCentroCusto(v){
+      const s = normText(v).replace(/\s+/g,'').replace(/–/g,'-');
+      return looksCentroCusto(s) ? s : '';
+    }
+
+    function getDeepByName(raw, tests){
+      if(!raw || typeof raw !== 'object') return '';
+      const stack=[raw];
+      const seen=new Set();
+      while(stack.length){
+        const obj=stack.shift();
+        if(!obj || typeof obj !== 'object' || seen.has(obj)) continue;
+        seen.add(obj);
+        for(const [k,v] of Object.entries(obj)){
+          const nk = normalizeKeyName(k);
+          if(tests.some(fn=>fn(nk,k)) && v !== null && typeof v !== 'object') return normText(v);
+          if(v && typeof v === 'object') stack.push(v);
+        }
+      }
+      return '';
+    }
+
+    function findDeparaObra(nome){
+      const key = normalizeKeyName(nome);
+      if(!key) return null;
+      let exact = DEPARA_CENTRO_CUSTO.find(x => normalizeKeyName(x.Obra) === key);
+      if(exact) return exact;
+      // tolerância: remove sufixos comuns e compara contém, mas evita matches curtos demais
+      const compact = key.replace(/\b(ADITIVO|LOJAS|FRENTE DE CAIXA|CPD|SALA DE REUNIAO)\b/g,'').replace(/\s+/g,' ').trim();
+      if(compact.length >= 5){
+        return DEPARA_CENTRO_CUSTO.find(x => {
+          const kx = normalizeKeyName(x.Obra);
+          return kx === compact || kx.includes(compact) || compact.includes(kx);
+        }) || null;
+      }
+      return null;
+    }
+
+    function normalizeObra(raw){
+      const nome = normText(raw.nome || raw.obra || raw.projeto || raw.name || raw.title || raw.descricao || raw.consulta);
+      const id = normText(raw.id || raw.cronograma_id || raw.codigo_obra || raw.obra_key || raw.key || nome);
+      const direto = cleanCentroCusto(
+        raw.centroCusto || raw.centro_custo || raw.centro_de_custo || raw['centro custo'] || raw['Centro de Custo'] || raw.CentroCusto || raw.CENTRO_CUSTO || raw.cc || raw.CC || raw.codigo_cc || raw.cod_cc || raw.codigoCentroCusto || raw.codigo_centro_custo || raw.codCentroCusto || raw.cod_centro_custo || raw.codigoProjeto || raw.codigo_projeto || raw['Código do Projeto'] || raw['codigo do projeto'] || raw.codProjeto
+      );
+      const profundo = cleanCentroCusto(getDeepByName(raw, [nk => nk.includes('CENTRO') && nk.includes('CUSTO'), nk => nk.includes('CODIGO') && nk.includes('PROJETO')]));
+      const centroCusto = direto || profundo || '';
+      const email = normText(raw.email || raw.Email || raw.emailCoordenador || raw.email_coordenador || '');
+      return {
+        id, nome,
+        centroCusto,
+        email,
+        coordenador: normText(raw.coordenador || raw.responsavel || raw.gestor || email.split('@')[0] || ''),
+        status: normText(raw.status_cronograma || raw.status || raw.situacao || 'Ativo'),
+        contratoGerado:false,
+        contratoCodigo:'',
+        contratoArquivo:'',
+        contratoObra:'',
+        raw
+      };
+    }
+
+    function normalizeMaterial(raw, idx){
+      const nome = normText(raw.material || raw.nome || raw.descricao || raw.item || raw.produto || raw.Nome || raw.Material || raw.DESCRICAO || raw.Descrição || raw['Descrição']);
+      let unidade = normText(raw.unidade || raw.Unidade || raw.UNIDADE || raw.und || raw.UND || raw.UN || raw.unidade_medida || raw['unidade medida'] || raw['Unidade Medida'] || raw['Unidade de Medida'] || raw.UnidadeMedida || raw.unidadeMedida || raw.unid || raw.Unid || raw.UNID || raw['U.M.'] || raw['U M'] || raw.u_m || raw.um || raw.UM || raw.medida || raw.Medida || raw.UNIDADEMEDIDA || raw['UNIDADE MEDIDA']);
+      if(!unidade){
+        unidade = getDeepByName(raw, [nk => nk === 'UND' || nk === 'UNID' || nk === 'UNIDADE' || nk === 'UN' || (nk.includes('UNIDADE') && nk.includes('MEDIDA')) || nk === 'UM' || nk === 'U M']);
+      }
+      unidade = normText(unidade).toUpperCase();
+      const codigo = normText(raw.codigo || raw.cod || raw.id || raw.sku || raw.Codigo || raw.CÓDIGO || raw.CODIGO || raw.codigo_material || raw.cod_material || raw['Código'] || raw['Cod.'] || raw['Cód.'] || raw.COD || '');
+      const grupo = normText(raw.grupo || raw.categoria || raw.familia || raw.Grupo || raw.GRUPO || raw.tipo || raw.Tipo || raw['Grupo Material'] || raw.GRUPO_MATERIAL || '');
+      return { id: codigo || String(idx+1), nome, unidade, codigo, grupo, raw };
+    }
+
+    async function carregarObras(){
+      try{
+        const found = await fetchJsonFirst(CONFIG.obrasEndpoints);
+        const arr = asArray(found.data).map(normalizeObra).filter(o => o.nome && isAtiva(o.raw));
+        arr.forEach(o => {
+          const contrato = contratoDaObra(o);
+          if(contrato && contrato.codigo){
+            o.centroCusto = contrato.codigo;
+            o.email = o.email || contrato.email || '';
+            o.contratoGerado = true;
+            o.contratoCodigo = contrato.codigo;
+            o.contratoArquivo = contrato.arquivo || `${contrato.codigo}.json`;
+            o.contratoObra = contrato.obra || '';
+          }
+        });
+        const dedup = new Map();
+        arr.forEach(o => { if(!dedup.has(upper(o.nome))) dedup.set(upper(o.nome), o); });
+        state.obras = [...dedup.values()].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+        state.baseObras = found.url;
+        popularObras();
+        const comContrato = state.obras.filter(o=>o.contratoGerado).length;
+        setChip('chipObras', `Obras: ${state.obras.length} ativas`, state.obras.length ? 'ok' : 'warn');
+        $('obraHint').textContent = state.obras.length ? `Origem: ${found.url} • ${comContrato} obra(s) com contrato localizado em /storage/docs/data.` : 'Nenhuma obra ativa encontrada. Verifique o endpoint dos cronogramas.';
+      }catch(err){
+        state.obras = [];
+        popularObras();
+        setChip('chipObras','Obras: indisponível','err');
+        $('obraHint').textContent = 'Não consegui ler os cronogramas ativos. O campo manual de materiais continua disponível.';
+        console.warn('Falha ao carregar obras', err);
+      }
+    }
+
+
+    function normalizeContrato(raw){
+      const arquivo = normText(raw.arquivo || raw.file || raw.filename || raw.nomeArquivo || raw.path || '');
+      const codigoArquivo = cleanCentroCusto(arquivo.replace(/\.json$/i,''));
+      const codigo = cleanCentroCusto(raw.codigo || raw.codigoProjeto || raw.codigo_projeto || raw.centroCusto || raw.centro_custo || raw['Centro de Custo'] || raw['Código do Projeto'] || raw.projeto || raw.id || codigoArquivo || '');
+      const obra = normText(raw.obra || raw.nomeObra || raw.nome_obra || raw.nome || raw.cliente || raw.titulo || raw.title || raw.consulta || raw.NomeObra || raw.NOME_OBRA || '');
+      const email = normText(raw.email || raw.Email || raw.emailResponsavel || raw.usuario_email || raw.meta?.usuario_email || '');
+      return { codigo, obra, arquivo, email, raw };
+    }
+
+    async function carregarContratos(){
+      try{
+        const found = await fetchJsonFirst(CONFIG.contratosEndpoints);
+        const arr = asArray(found.data).map(normalizeContrato).filter(c => c.codigo || c.obra);
+        state.contratos = arr;
+        state.baseContratos = found.url;
+        setChip('chipContratos', `Contratos: ${arr.length}`, arr.length ? 'ok' : 'warn');
+      }catch(err){
+        state.contratos = [];
+        setChip('chipContratos','Contratos: indisponível','warn');
+        console.warn('Falha ao carregar contratos', err);
+      }
+    }
+
+    function contratoDaObra(obra){
+      if(!obra) return null;
+      const cc = cleanCentroCusto(obra.centroCusto);
+      const key = normalizeKeyName(obra.nome);
+      return state.contratos.find(c => (cc && cleanCentroCusto(c.codigo) === cc) || (key && normalizeKeyName(c.obra) === key)) || null;
+    }
+
+    async function carregarMateriais(){
+      try{
+        const found = await fetchJsonFirst(CONFIG.materiaisEndpoints);
+        const arr = asArray(found.data).map(normalizeMaterial).filter(m => m.nome);
+        const dedup = new Map();
+        arr.forEach(m => { const key=upper(m.codigo || m.nome); if(!dedup.has(key)) dedup.set(key,m); });
+        state.materiais = [...dedup.values()].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+        state.baseMateriais = found.url;
+        popularMateriais();
+        setChip('chipMateriais', `Materiais: ${state.materiais.length}`, state.materiais.length ? 'ok' : 'warn');
+        $('sumBase').textContent = state.materiais.length ? 'Orçamento/Bering' : '—';
+        $('materialHint').textContent = state.materiais.length ? `Origem: ${found.url}` : 'Base vazia. Use modo manual ou ajuste o endpoint.';
+      }catch(err){
+        state.materiais = [];
+        popularMateriais();
+        setChip('chipMateriais','Materiais: indisponível','err');
+        $('sumBase').textContent = 'Manual';
+        $('materialHint').textContent = 'Não consegui ler a base nova de materiais. Ative o modo manual para testar a solicitação.';
+        console.warn('Falha ao carregar materiais', err);
+      }
+    }
+
+    function destroyTom(which){ if(state[which]){ try{state[which].destroy()}catch(e){} state[which]=null; } }
+    function popularObras(){
+      destroyTom('tsObra');
+      const select=$('obra');
+      select.innerHTML='<option value="">Selecione a obra ativa.</option>';
+      state.obras.forEach((o,i)=>{
+        const opt=document.createElement('option');
+        opt.value=String(i);
+        const statusContrato = o.contratoGerado ? `✓ Contrato • ${o.centroCusto}` : '⚠ Sem contrato';
+        opt.textContent = `${o.nome} • ${statusContrato}`;
+        opt.dataset.centro=o.centroCusto;
+        opt.dataset.coordenador=o.coordenador;
+        opt.dataset.email=o.email||'';
+        opt.dataset.contrato=o.contratoGerado ? '1' : '0';
+        select.appendChild(opt);
+      });
+      if(window.TomSelect){ state.tsObra = new TomSelect(select,{create:false,sortField:{field:'text',direction:'asc'},placeholder:'Selecione a obra ativa'}); }
+    }
+
+    function popularMateriais(){
+      destroyTom('tsMaterial');
+      const select=$('material');
+      select.innerHTML='<option value="">Selecione o material.</option>';
+      state.materiais.forEach((m,i)=>{
+        const opt=document.createElement('option'); opt.value=String(i); opt.textContent=m.codigo ? `${m.nome} • ${m.codigo}` : m.nome; opt.dataset.unidade=m.unidade||''; opt.dataset.codigo=m.codigo||''; opt.dataset.grupo=m.grupo||''; select.appendChild(opt);
+      });
+      if(window.TomSelect){ state.tsMaterial = new TomSelect(select,{create:false,sortField:{field:'text',direction:'asc'},placeholder:'Pesquisar material', onChange:function(){ onMaterialChange(true); }}); }
+    }
+
+    function getUsuario(){
+      for(const key of CONFIG.usuarioStorageKeys){
+        const raw = localStorage.getItem(key) || sessionStorage.getItem(key);
+        if(raw){
+          try{ return JSON.parse(raw); }catch(e){ return { nome: raw }; }
+        }
+      }
+      return { nome:'Usuário não identificado', email:'' };
+    }
+
+    function preencherUsuario(){
+      state.usuario = getUsuario();
+      const nome = state.usuario.nome || state.usuario.name || state.usuario.usuario || state.usuario.email || 'Usuário não identificado';
+      const email = state.usuario.email ? ` • ${state.usuario.email}` : '';
+      $('user-info').textContent = `Usuário: ${nome}${email}`;
+      const initials = String(nome || 'US').trim().split(/\s+/).slice(0,2).map(p=>p[0]).join('').toUpperCase() || 'US';
+      if($('headerUserName')) $('headerUserName').textContent = nome;
+      if($('headerUserEmail')) $('headerUserEmail').textContent = state.usuario.email || 'sessão ERP';
+      if($('userAvatar')) $('userAvatar').textContent = initials;
+    }
+
+    function onObraChange(){
+      const idx = $('obra').value;
+      const obra = state.obras[Number(idx)];
+      $('centroCusto').value = obra ? obra.centroCusto : '';
+      $('sumObra').textContent = obra ? obra.nome : '—';
+      if(!obra){ return; }
+      const contrato = contratoDaObra(obra);
+      if(contrato && contrato.codigo){
+        obra.centroCusto = contrato.codigo;
+        obra.contratoGerado = true;
+        obra.contratoCodigo = contrato.codigo;
+        obra.contratoArquivo = contrato.arquivo || `${contrato.codigo}.json`;
+        $('centroCusto').value = contrato.codigo;
+        $('obraHint').textContent = `Contrato cadastrado no Gerador de Documentos: SIM • Centro de Custo ${contrato.codigo} • ${obra.contratoArquivo}.`;
+      }
+      else if(!obra.centroCusto){
+        $('obraHint').textContent = 'Contrato cadastrado no Gerador de Documentos: NÃO localizado. Solicitação bloqueada até gerar/cadastrar o contrato.';
+      }
+      else {
+        $('obraHint').textContent = `Centro de custo existe no cronograma (${obra.centroCusto}), mas não localizei contrato em /storage/docs/data. Validar antes de solicitar.`;
+      }
+    }
+
+    function onMaterialChange(focarQuantidade){
+      const idx = $('material').value;
+      const mat = state.materiais[Number(idx)];
+      $('unidade').value = mat ? (mat.unidade || '') : '';
+      $('codigoMaterial').value = mat ? (mat.codigo || '') : '';
+      $('grupoMaterial').value = mat ? (mat.grupo || '') : '';
+      if(mat && !mat.unidade){ $('materialHint').textContent = 'Material selecionado sem unidade na base. Verifique a coluna de unidade da base Bering/orçamento.'; }
+      if(mat && focarQuantidade){ setTimeout(()=>{ $('quantidade').disabled=false; $('quantidade').readOnly=false; $('quantidade').focus(); $('quantidade').select?.(); },80); }
+    }
+
+    function toggleManual(){
+      const manual = $('modoManual').checked;
+      $('material').closest('.ts-wrapper') ? $('material').closest('.ts-wrapper').style.display = manual ? 'none' : '' : $('material').style.display = manual ? 'none' : '';
+      $('materialManual').style.display = manual ? '' : 'none';
+      $('unidadeManual').style.display = manual ? '' : 'none';
+      $('unidade').readOnly = !manual;
+      if(manual){ $('material').value=''; $('unidade').value=''; $('codigoMaterial').value='MANUAL'; $('grupoMaterial').value='Manual'; }
+      else { $('codigoMaterial').value=''; $('grupoMaterial').value=''; $('materialManual').value=''; $('unidadeManual').value=''; onMaterialChange(); }
+    }
+
+    function limparItem(){
+      if(state.tsMaterial){ state.tsMaterial.clear(true); state.tsMaterial.setTextboxValue(''); }
+      else $('material').value='';
+      $('materialManual').value=''; $('unidadeManual').value=''; $('unidade').value=''; $('codigoMaterial').value=''; $('grupoMaterial').value=''; $('quantidade').value=''; $('observacao').value='';
+      $('quantidade').disabled=false; $('quantidade').readOnly=false;
+    }
+
+    function resetarTelaAposEnvio(){
+      // Limpeza forte: evita TomSelect manter o último texto/valor visual e evita o resumo ficar preso na primeira obra.
+      state.itens = [];
+      renderItens();
+
+      $('solicitacaoForm').reset();
+
+      if(state.tsObra){
+        state.tsObra.clear(true);
+        state.tsObra.setTextboxValue('');
+        state.tsObra.refreshOptions(false);
+      }
+      $('obra').value = '';
+      $('centroCusto').value = '';
+      $('sumObra').textContent = '—';
+
+      if(state.tsMaterial){
+        state.tsMaterial.clear(true);
+        state.tsMaterial.setTextboxValue('');
+        state.tsMaterial.refreshOptions(false);
+      }
+      $('material').value = '';
+      $('materialManual').value = '';
+      $('unidadeManual').value = '';
+      $('unidade').value = '';
+      $('codigoMaterial').value = '';
+      $('grupoMaterial').value = '';
+      $('quantidade').value = '';
+      $('quantidade').disabled = false;
+      $('quantidade').readOnly = false;
+      $('observacao').value = '';
+      $('localEntrega').value = '';
+      $('prioridade').value = 'Normal';
+      $('modoManual').checked = false;
+      toggleManual();
+
+      $('obraHint').textContent = state.baseObras && state.baseObras !== '—'
+        ? `Origem: ${state.baseObras} • centro de custo enriquecido pelo de/para do Gerador de Documentos quando necessário.`
+        : 'Selecione uma obra ativa.';
+      $('materialHint').textContent = state.baseMateriais && state.baseMateriais !== '—'
+        ? `Origem: ${state.baseMateriais}`
+        : 'Ao selecionar pela base, unidade e código são preenchidos automaticamente.';
+
+      setTimeout(()=>{
+        try{ state.tsObra ? state.tsObra.focus() : $('obra').focus(); }catch(e){}
+      },120);
+    }
+
+    function adicionarItem(){
+      const manual = $('modoManual').checked;
+      let item;
+      if(manual){
+        const nome = normText($('materialManual').value);
+        const unidade = normText($('unidadeManual').value || $('unidade').value);
+        if(!nome){ return Swal.fire('Material obrigatório','Digite o nome do material manualmente.','warning'); }
+        if(!unidade){ return Swal.fire('Unidade obrigatória','Informe a unidade de medida.','warning'); }
+        item = { nome, unidade, codigo:'MANUAL', grupo:'Manual' };
+      }else{
+        const idx = $('material').value;
+        const mat = state.materiais[Number(idx)];
+        if(!mat){ return Swal.fire('Material obrigatório','Selecione um material da base ou ative o modo manual.','warning'); }
+        item = { ...mat };
+      }
+      const qtd = Number(String($('quantidade').value).replace(',','.'));
+      if(!qtd || qtd <= 0){ return Swal.fire('Quantidade obrigatória','Informe uma quantidade maior que zero.','warning'); }
+      state.itens.push({
+        material:item.nome,
+        codigo:item.codigo || '',
+        grupo:item.grupo || '',
+        unidade:item.unidade || '',
+        quantidade:qtd,
+        observacao:normText($('observacao').value)
+      });
+      renderItens();
+      limparItem();
+    }
+
+    function renderItens(){
+      const tbody = $('tabelaMateriais').querySelector('tbody');
+      tbody.innerHTML='';
+      if(!state.itens.length){ tbody.innerHTML='<tr class="empty-row"><td colspan="7">Nenhum material adicionado.</td></tr>'; }
+      state.itens.forEach((it,idx)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(it.material)}</strong></td>
+          <td>${it.codigo ? `<span class="tag">${escapeHtml(it.codigo)}</span>` : '—'}</td>
+          <td>${escapeHtml(it.grupo || '—')}</td>
+          <td>${escapeHtml(it.unidade || '—')}</td>
+          <td class="num">${formatQtd(it.quantidade)}</td>
+          <td>${escapeHtml(it.observacao || '—')}</td>
+          <td><button class="btn danger" type="button" data-remover="${idx}">Remover</button></td>`;
+        tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('[data-remover]').forEach(btn=>btn.addEventListener('click',()=>{ state.itens.splice(Number(btn.dataset.remover),1); renderItens(); }));
+      $('sumItens').textContent = String(state.itens.length);
+    }
+
+    function escapeHtml(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+    function formatQtd(n){ return Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+
+    function montarPayload(){
+      const obra = state.obras[Number($('obra').value)];
+      return {
+        versao:'3.6-contratos-storage-docs',
+        origem:'ERP ÍMPAR - Solicitação de Materiais',
+        criado_em:new Date().toISOString(),
+        usuario:state.usuario || {},
+        obra: obra ? { id:obra.id, nome:obra.nome, centroCusto:obra.centroCusto, coordenador:obra.coordenador, email:obra.email, status:obra.status, contratoGerado:!!obra.contratoGerado, contratoArquivo:obra.contratoArquivo || '', contratoCodigo:obra.contratoCodigo || obra.centroCusto || '' } : null,
+        prazo:$('prazo').value,
+        localEntrega:$('localEntrega').value,
+        prioridade:$('prioridade').value,
+        bases:{ obras:state.baseObras, materiais:state.baseMateriais },
+        itens:state.itens
+      };
+    }
+
+    async function salvarSolicitacao(payload){
+      for(const url of CONFIG.salvarEndpoints){
+        try{
+          const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+          if(!resp.ok) throw new Error('HTTP '+resp.status);
+          let data={ok:true}; try{data=await resp.json()}catch(e){}
+          if(data.ok === false) throw new Error(data.msg || data.erro || 'Retorno sem OK');
+          return { ok:true, url, data };
+        }catch(err){ console.warn('Falha salvar em', url, err); }
+      }
+      const lista = JSON.parse(localStorage.getItem('ERPIMPAR_SOLICITACOES_MATERIAIS_V3') || '[]');
+      lista.unshift(payload);
+      localStorage.setItem('ERPIMPAR_SOLICITACOES_MATERIAIS_V3', JSON.stringify(lista.slice(0,100)));
+      return { ok:true, url:'localStorage', data:{ fallback:true } };
+    }
+
+    async function enviar(e){
+      e.preventDefault();
+      if(!$('obra').value) return Swal.fire('Obra obrigatória','Selecione uma obra ativa.','warning');
+      if(!$('prazo').value) return Swal.fire('Prazo obrigatório','Informe o prazo limite de entrega.','warning');
+      if(!$('localEntrega').value) return Swal.fire('Local obrigatório','Selecione o local de entrega.','warning');
+      if(!state.itens.length) return Swal.fire('Lista vazia','Adicione pelo menos um material.','warning');
+      const payload = montarPayload();
+      if(!payload.obra || !payload.obra.centroCusto){
+        return Swal.fire('Centro de custo obrigatório','Essa obra ainda não possui contrato localizado em /storage/docs/data. Gere/cadastre o contrato no Gerador de Documentos antes de solicitar material.','warning');
+      }
+      Swal.fire({title:'Enviando solicitação…',html:'Gravando pedido de materiais.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+      const result = await salvarSolicitacao(payload);
+      await Swal.fire('Solicitação registrada', result.url === 'localStorage' ? 'Não encontrei o PHP de gravação, então salvei no navegador para teste.' : 'Solicitação enviada com sucesso.', 'success');
+      resetarTelaAposEnvio();
+    }
+
+    function consultarSolicitacoes(){
+      const lista = JSON.parse(localStorage.getItem('ERPIMPAR_SOLICITACOES_MATERIAIS_V3') || '[]');
+      if(!lista.length) return Swal.fire('Consulta','Nenhuma solicitação local encontrada neste navegador. Se o PHP estiver ativo, use a tela oficial de consulta.','info');
+      const html = lista.slice(0,10).map(s=>`<div style="text-align:left;margin:8px 0;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:10px"><b>${escapeHtml(s.obra?.nome || 'Sem obra')}</b><br><small>${new Date(s.criado_em).toLocaleString('pt-BR')} • ${s.itens?.length || 0} item(ns) • ${escapeHtml(s.prioridade || '')}</small></div>`).join('');
+      Swal.fire({title:'Solicitações locais',html,confirmButtonText:'Fechar'});
+    }
+
+    async function recarregarBases(){
+      showLoader('Recarregando bases…','Buscando cronogramas ativos e materiais atualizados.');
+      await carregarContratos();
+      await Promise.all([carregarObras(), carregarMateriais()]);
+      hideLoader();
+    }
+
+    function bindEvents(){
+      $('btnVoltarMenu').addEventListener('click',()=>{ window.location.href = CONFIG.menuUrl; });
+      $('btnRecarregar').addEventListener('click',recarregarBases);
+      $('btnPrazoPicker').addEventListener('click',()=>{ const input=$('prazo'); try{ if(input.showPicker) input.showPicker(); else input.focus(); }catch(e){ input.focus(); } });
+      $('obra').addEventListener('change',onObraChange);
+      $('material').addEventListener('change',()=>onMaterialChange(true));
+      $('modoManual').addEventListener('change',toggleManual);
+      $('adicionarMaterial').addEventListener('click',adicionarItem);
+      $('limparItem').addEventListener('click',limparItem);
+      $('btnLimparTudo').addEventListener('click',()=>{ resetarTelaAposEnvio(); });
+      $('btnConsultarSolicitacoes').addEventListener('click',consultarSolicitacoes);
+      $('solicitacaoForm').addEventListener('submit',enviar);
+    }
+
+    async function init(){
+      preencherUsuario();
+      bindEvents();
+      const hoje = new Date(); hoje.setDate(hoje.getDate()+1); $('prazo').value = hoje.toISOString().slice(0,10);
+      await carregarContratos();
+      await Promise.all([carregarObras(), carregarMateriais()]);
+      renderItens();
+      toggleManual();
+      hideLoader();
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
