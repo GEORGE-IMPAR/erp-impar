@@ -24,7 +24,7 @@
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--card);border:1px solid var(--borda);border-radius:22px;padding:16px;box-shadow:var(--shadow);position:relative;overflow:hidden}.card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--verde)}.card.amarelo:before{background:var(--amarelo)}.card.vermelho:before{background:var(--vermelho)}
     .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.obra{font-weight:900;font-size:16px;line-height:1.2}.coord{font-size:12px;color:var(--muted);margin-top:4px}.badge{border-radius:999px;padding:7px 10px;font-size:11px;font-weight:900;background:#e9fff2;color:#0d813b}.badge.amarelo{background:#fff7da;color:#9a6800}.badge.vermelho{background:#ffecec;color:#b91c1c}
     .progress{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.prog{background:#f3f7fb;border-radius:15px;padding:10px}.prog small{display:block;color:var(--muted);font-size:11px}.prog b{font-size:18px}.bar{height:8px;background:#dfeaf4;border-radius:999px;overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--verde),#7ee787)}
-    .meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.mini{background:#f8fbfe;border:1px solid var(--borda);border-radius:14px;padding:8px;text-align:center}.mini b{display:block;font-size:15px}.mini span{font-size:10px;color:var(--muted)}
+    .meta{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}.mini{background:#f8fbfe;border:1px solid var(--borda);border-radius:14px;padding:8px;text-align:center}.mini b{display:block;font-size:15px}.mini span{font-size:10px;color:var(--muted)}
     .agenda{border-radius:15px;background:#f8fbfe;padding:10px;color:#344357;font-size:12px;min-height:42px}.open{width:100%;margin-top:12px}.empty,.error{background:#fff;border:1px dashed var(--borda);border-radius:22px;padding:24px;text-align:center;color:var(--muted)}
     .loader{position:fixed;inset:0;background:rgba(238,245,251,.82);display:none;align-items:center;justify-content:center;z-index:50}.loader.on{display:flex}.spin{width:54px;height:54px;border:6px solid #cfe0ee;border-top-color:var(--verde);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
     .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--azul);color:#fff;padding:12px 16px;border-radius:16px;display:none;box-shadow:var(--shadow);z-index:60}.toast.on{display:block}
@@ -94,39 +94,62 @@ function normalizarInfoObra(j, nomeFallback){
     fim: r.fim || cron.fim || ''
   };
 }
+
+function normalizarTimelineDashboard(arr){
+  return (arr || []).map(x => ({
+    tipo: x.tipo || x.type || 'mensagem',
+    texto: x.texto || x.conteudo || x.mensagem || x.caption || '',
+    autor: x.autor || x.usuario || x.nome || 'ERP',
+    origem: x.origem || 'ERP',
+    data: x.data || x.data_hora || x.criado_em || new Date().toISOString(),
+    arquivo: x.arquivo || x.arquivo_url || x.url || '',
+    latitude: x.latitude || x.lat || '',
+    longitude: x.longitude || x.lng || x.lon || ''
+  }));
+}
+
+function tipoMidiaUrlDashboard(url){
+  const u = String(url || '').split('?')[0].toLowerCase();
+  if(/\.(jpg|jpeg|png|gif|webp)$/i.test(u)) return 'foto';
+  if(/\.(mp4|mov|webm|m4v)$/i.test(u)) return 'video';
+  if(/\.(mp3|ogg|wav|m4a|aac)$/i.test(u)) return 'audio';
+  return '';
+}
+
+function tipoRealDashboard(i){
+  const t = String(i.tipo || '').toLowerCase();
+  return ['foto','video','audio'].includes(t) ? t : (tipoMidiaUrlDashboard(i.arquivo) || t || 'mensagem');
+}
+
+async function carregarResumoTimeline(nome){
+  try{
+    const tl = await fetchJson(CIGO_API_BASE + '/timeline_list.php?obra=' + encodeURIComponent(nome) + '&t=' + Date.now());
+    const itens = normalizarTimelineDashboard(tl.items || tl.itens || tl.data || []);
+    return {
+      qtd_timeline: itens.length,
+      qtd_mensagens: itens.filter(i => tipoRealDashboard(i) === 'mensagem').length,
+      qtd_fotos: itens.filter(i => tipoRealDashboard(i) === 'foto').length,
+      qtd_videos: itens.filter(i => tipoRealDashboard(i) === 'video').length,
+      qtd_audios: itens.filter(i => tipoRealDashboard(i) === 'audio').length
+    };
+  }catch(e){
+    return { qtd_timeline:0, qtd_mensagens:0, qtd_fotos:0, qtd_videos:0, qtd_audios:0 };
+  }
+}
+
 async function enriquecerObrasComSala(dados){
-  // Corrige cards zerados quando os endpoints do dashboard não trazem %,
-  // usando a mesma fonte que funciona dentro do card/Sala da Obra.
-  const saida=[];
+  // Mantém os dados do cronograma/Farol como base e busca apenas os totais da timeline,
+  // usando a mesma fonte da Sala da Obra: timeline_list.php.
+  const saida = [];
   for(const o of dados){
-    const nome=campo(o,['obra','nome','projeto','titulo','codigo'],'');
-    if(!nome){saida.push(o); continue;}
-    try{
-      const info=await fetchJson(CIGO_API_BASE+'/obra_info.php?obra='+encodeURIComponent(nome)+'&t='+Date.now());
-      const tl = await fetchJson(
-       CIGO_API_BASE +
-       '/timeline_list.php?obra=' +
-        encodeURIComponent(nome) +
-       '&t=' + Date.now()
-      );
-
-      const itens = normalizarTimeline(
-      tl.items || tl.itens || tl.data || []
-      );
-
-      obj.qtd_mensagens = itens.filter(i => tipoReal(i) === 'mensagem').length;
-      obj.qtd_fotos     = itens.filter(i => tipoReal(i) === 'foto').length;
-      obj.qtd_videos    = itens.filter(i => tipoReal(i) === 'video').length;
-      obj.qtd_audios    = itens.filter(i => tipoReal(i) === 'audio').length;
-      
-      if(!info || info.ok === false){
-        saida.push(o);
-      }else{
-        saida.push(Object.assign({}, o, normalizarInfoObra(info,nome)));
-      }
-    }catch(e){
+    const nome = campo(o,['obra','nome','projeto','titulo','codigo'],'');
+    if(!nome){
       saida.push(o);
+      continue;
     }
+
+    const resumoTimeline = await carregarResumoTimeline(nome);
+    saida.push(Object.assign({}, o, resumoTimeline));
   }
   return saida;
 }
@@ -140,12 +163,13 @@ function renderCard(o){
   const previsto = pct(campo(o,['percentual_previsto','previsto','pct_previsto','progresso_previsto','perc_previsto'],0));
   const realizado = pct(campo(o,['percentual_realizado','realizado','pct_real','progresso_real','perc_real','percentual_real'],0));
   const agenda = campo(o,['agenda_dia','atividade_dia','atividadeHoje','atividades_hoje','agenda'],'Sem agenda do dia informada.');
-  const participantes = campo(o,['qtd_participantes','participantes_count','participantes'],0);
+  const timeline = campo(o,['qtd_timeline','timeline_count','timeline'],0);
   const mensagens = campo(o,['qtd_mensagens','mensagens_count','mensagens'],0);
   const fotos = campo(o,['qtd_fotos','fotos_count','fotos'],0);
   const videos = campo(o,['qtd_videos','videos_count','videos'],0);
+  const audios = campo(o,['qtd_audios','audios_count','audios'],0);
   const id = encodeURIComponent(nome);
-  return `<article class="card ${classe}"><div class="card-head"><div><div class="obra">${escapeHtml(nome)}</div><div class="coord">${escapeHtml(coord)}</div></div><span class="badge ${classe}">${escapeHtml(String(farol||classe).toUpperCase())}</span></div><div class="progress"><div class="prog"><small>Previsto</small><b>${previsto.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${previsto}%"></i></div></div><div class="prog"><small>Realizado</small><b>${realizado.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${realizado}%"></i></div></div></div><div class="agenda">${escapeHtml(String(agenda))}</div><div class="meta"><div class="mini"><b>${num(participantes)}</b><span>Participantes</span></div><div class="mini"><b>${num(mensagens)}</b><span>Mensagens</span></div><div class="mini"><b>${num(fotos)}</b><span>Fotos</span></div><div class="mini"><b>${num(videos)}</b><span>Vídeos</span></div></div><button class="btn-primary open" onclick="abrirRdo('${id}')">Abrir RDO</button></article>`;
+  return `<article class="card ${classe}"><div class="card-head"><div><div class="obra">${escapeHtml(nome)}</div><div class="coord">${escapeHtml(coord)}</div></div><span class="badge ${classe}">${escapeHtml(String(farol||classe).toUpperCase())}</span></div><div class="progress"><div class="prog"><small>Previsto</small><b>${previsto.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${previsto}%"></i></div></div><div class="prog"><small>Realizado</small><b>${realizado.toFixed(1).replace('.',',')}%</b><div class="bar"><i style="width:${realizado}%"></i></div></div></div><div class="agenda">${escapeHtml(String(agenda))}</div><div class="meta"><div class="mini"><b>${num(timeline)}</b><span>Timeline</span></div><div class="mini"><b>${num(mensagens)}</b><span>Mensagens</span></div><div class="mini"><b>${num(fotos)}</b><span>Fotos</span></div><div class="mini"><b>${num(videos)}</b><span>Vídeos</span></div><div class="mini"><b>${num(audios)}</b><span>Áudios</span></div></div><button class="btn-primary open" onclick="abrirRdo('${id}')">Abrir RDO</button></article>`;
 }
 function num(v){ return Array.isArray(v) ? v.length : (Number(v)||0); }
 function escapeHtml(s){ return String(s).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[m])); }
