@@ -32,6 +32,7 @@ h1{font-size:18px;margin:0}.sub{font-size:12px;opacity:.84}.user{font-size:12px;
 </div></div>
 <div class="modal" id="modal"><div class="modalBox"><div class="title">Confirmar registro</div><div class="hint">Será gravado quem recebeu, data, hora, itens conferidos e status final.</div><div class="field"><label>Usuário</label><input id="usuarioModal" disabled /></div><div class="field"><label>Senha de confirmação</label><input id="senha" type="password" placeholder="Digite sua senha" /></div><div class="actions"><button class="btn btn-soft" onclick="fecharModal()">Cancelar</button><button class="btn btn-primary" onclick="registrarRecebimento()">Registrar</button></div></div></div>
 <script>
+if('serviceWorker' in navigator){ navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{}); }
 const API_BASE = './api/';
 let recebimentoAtual = null, stream = null, detector = null, detectTimer = null;
 function getUser(){ try{return JSON.parse(localStorage.getItem('ERPIMPAR_USER')||localStorage.getItem('erp_user')||'{}')}catch(e){return {}} }
@@ -62,8 +63,11 @@ async function consultarDanfe(){
   const chave=onlyDigits(document.getElementById('chave').value); if(chave.length!==44){alert('Informe a chave com 44 dígitos.');return}
   setLoading(true); document.getElementById('statusText').textContent='Consultando DANFE...';
   try{
-    const r=await fetch(API_BASE+'recebimento_consultar.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chave})});
-    const j=await r.json(); if(!j.ok){ throw new Error(j.mensagem||j.erro||JSON.stringify(j.retorno||j)); }
+    const r=await fetch(API_BASE+'recebimento_consultar.php?chave='+encodeURIComponent(chave)+'&_=' + Date.now(),{method:'GET',cache:'no-store'});
+    const txt=await r.text();
+    let j;
+    try{ j=JSON.parse(txt); }catch(parseErr){ throw new Error('O servidor não devolveu JSON. HTTP '+r.status+' - '+txt.slice(0,180).replace(/\s+/g,' ')); }
+    if(!j.ok){ throw new Error(j.mensagem||j.erro||JSON.stringify(j.retorno||j)); }
     recebimentoAtual=j.recebimento; renderNota();
   }catch(e){ alert('Falha na consulta: '+e.message); document.getElementById('statusText').textContent='Falha na consulta.'; }
   finally{setLoading(false)}
@@ -87,7 +91,7 @@ async function registrarRecebimento(){
   const senha=document.getElementById('senha').value; if(!senha.trim()){alert('Digite a senha de confirmação.');return}
   const u=getUser();
   const payload={chave_acesso:recebimentoAtual.chave_acesso,itens:recebimentoAtual.nota.itens,observacao_geral:document.getElementById('obsGeral').value,usuario:{nome:userName(),email:u.email||''},senha_confirmacao:senha};
-  try{ const r=await fetch(API_BASE+'recebimento_salvar.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const j=await r.json(); if(!j.ok) throw new Error(j.erro||'Erro ao salvar'); recebimentoAtual=j.recebimento; fecharModal(); renderNota(); document.getElementById('statusText').innerHTML='<span class="pill pill-ok">Recebimento registrado</span>'; alert('Recebimento registrado com sucesso!'); }
+  try{ const r=await fetch(API_BASE+'recebimento_salvar.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const txt=await r.text(); let j; try{j=JSON.parse(txt)}catch(parseErr){throw new Error('O servidor não devolveu JSON. HTTP '+r.status+' - '+txt.slice(0,180).replace(/\s+/g,' '))} if(!j.ok) throw new Error(j.erro||'Erro ao salvar'); recebimentoAtual=j.recebimento; fecharModal(); renderNota(); document.getElementById('statusText').innerHTML='<span class="pill pill-ok">Recebimento registrado</span>'; alert('Recebimento registrado com sucesso!'); }
   catch(e){alert('Falha ao registrar: '+e.message)}
 }
 function limparTela(){pararCamera();recebimentoAtual=null;document.getElementById('chave').value='';document.getElementById('obsGeral').value='';document.getElementById('btnRegistrar').style.display='none';document.getElementById('statusText').textContent='Nenhuma nota carregada.';document.getElementById('notaArea').className='empty';document.getElementById('notaArea').textContent='Consulte uma DANFE para carregar os dados da nota e os itens.'}
