@@ -107,7 +107,7 @@ body.module-open .module-frame{margin-top:0!important}
       <label>Diretório no KingHost</label>
       <div class="secret-line">
         <input id="dirCombustivelAngeloni" type="password" data-fonte="combustivel_angeloni" placeholder="Ex.: /home/.../rh/combustivel/angeloni">
-        <button class="btn-eye" onclick="revelarFonteRH('combustivel_angeloni')" type="button">👁</button>
+        <button class="btn-eye" data-eye-fonte="combustivel_angeloni" onclick="revelarFonteRH('combustivel_angeloni')" type="button">👁 Mostrar</button>
       </div>
       <div class="rh-mini-actions"><button class="btn" onclick="importarFontesRH('combustivel_angeloni')" type="button">Importar Angeloni</button></div>
     </div>
@@ -117,7 +117,7 @@ body.module-open .module-frame{margin-top:0!important}
       <label>Diretório no KingHost</label>
       <div class="secret-line">
         <input id="dirCombustivelFrotas" type="password" data-fonte="combustivel_frotas" placeholder="Ex.: /home/.../rh/combustivel/pro-frotas">
-        <button class="btn-eye" onclick="revelarFonteRH('combustivel_frotas')" type="button">👁</button>
+        <button class="btn-eye" data-eye-fonte="combustivel_frotas" onclick="revelarFonteRH('combustivel_frotas')" type="button">👁 Mostrar</button>
       </div>
       <div class="rh-mini-actions"><button class="btn" onclick="importarFontesRH('combustivel_frotas')" type="button">Importar Pró-Frotas</button></div>
     </div>
@@ -127,7 +127,7 @@ body.module-open .module-frame{margin-top:0!important}
       <label>Diretório no KingHost</label>
       <div class="secret-line">
         <input id="dirHoraExtra" type="password" data-fonte="horaextra" placeholder="Ex.: /home/.../rh/horaextra/importacao">
-        <button class="btn-eye" onclick="revelarFonteRH('horaextra')" type="button">👁</button>
+        <button class="btn-eye" data-eye-fonte="horaextra" onclick="revelarFonteRH('horaextra')" type="button">👁 Mostrar</button>
       </div>
       <div class="rh-mini-actions"><button class="btn" onclick="importarFontesRH('horaextra')" type="button">Importar Hora Extra</button></div>
     </div>
@@ -289,6 +289,8 @@ async function apiFontes(action, body={}){
 function mascaraFonte(v){
   const s=String(v||'');
   if(!s) return '';
+  // Se o servidor já mandou mascarado, não mascara de novo.
+  if(/[•*]{3,}/.test(s)) return s;
   const tail=s.split(/[\/\\]/).filter(Boolean).slice(-1)[0] || 'configurado';
   return '••••••••••••••••/' + tail;
 }
@@ -296,13 +298,21 @@ function setFonteInput(key, valor, masked=true){
   const el=$(RH_FONTE_INPUTS[key]);
   if(!el) return;
   el.value = masked ? mascaraFonte(valor) : (valor||'');
-  el.type = masked ? 'password' : 'text';
+  el.type = masked ? 'text' : 'text';
+  el.readOnly = !!masked;
   el.dataset.masked = masked ? '1' : '0';
+  el.dataset.hasValue = String(valor||'').trim() ? '1' : '0';
+  const btn = document.querySelector(`button[data-eye-fonte="${key}"]`) || el.parentElement?.querySelector('.btn-eye');
+  if(btn) btn.textContent = masked ? '👁 Mostrar' : '🙈 Ocultar';
 }
 function getFonteValueForSave(key){
   const el=$(RH_FONTE_INPUTS[key]);
   if(!el) return '';
-  return el.dataset.masked === '1' ? '__KEEP__' : String(el.value||'').trim();
+  const v=String(el.value||'').trim();
+  if(el.dataset.masked === '1') return '__KEEP__';
+  // Segurança: nunca salva texto mascarado como caminho real.
+  if(/[•*]{3,}/.test(v)) return '__KEEP__';
+  return v;
 }
 function statusClass(s){
   s=String(s||'').toLowerCase();
@@ -379,16 +389,22 @@ async function salvarFontesRH(){
 }
 
 async function revelarFonteRH(fonte){
-  const senha=prompt('Senha para visualizar o diretório:');
+  const el=$(RH_FONTE_INPUTS[fonte]);
+  if(el && el.dataset.masked === '0'){
+    setFonteInput(fonte, el.value || '', true);
+    $('fontesStatus').textContent='Diretório ocultado. Para editar novamente, clique em Mostrar.';
+    return;
+  }
+  const senha=prompt('Senha para visualizar/editar o diretório:');
   if(!senha) return;
   try{
     const j=await apiFontes('reveal',{fonte,senha,usuario:{nome:$('userName').textContent,email:$('userEmail').textContent}});
     if(!j.ok) throw new Error(j.erro||'Senha inválida ou fonte não encontrada');
     setFonteInput(fonte, j.valor||'', false);
-    $('fontesStatus').textContent='Diretório liberado temporariamente para visualização.';
-    setTimeout(()=>carregarFontesRH(), 30000);
-  }catch(e){alert('Não foi possível revelar: '+e.message);}
+    $('fontesStatus').textContent='Diretório liberado para visualização/edição. Ajuste o caminho e clique em Salvar fontes.';
+  }catch(e){$('fontesStatus').textContent='Não foi possível liberar diretório: '+e.message;}
 }
+
 
 async function importarFontesRH(fonte){
   try{
