@@ -949,6 +949,311 @@ function pesquisarGoogleMaps(){
   }).catch(e=>fallbackHoteis(obra,e.message));
 }
 
+
+/* ================= PATCH RP — regras finais de diárias/hospedagem =================
+   - Viagem com pernoite: quantidade financeira = dias alocados - 1.
+   - Bate-volta: 0 diária de alimentação e 0 hospedagem.
+   - Diária de alimentação (R$ 30 ou valor informado): individual para cada colaborador.
+   - Hospedagem: custo do quarto, lançado somente no responsável/pagante.
+   - Quarto duplo/triplo: companheiros recebem hotelValor = 0 e mantêm diária de alimentação individual.
+*/
+function sequenciasDoGrupo(colab, obra){
+  const g = diasOrdenadosDoGrupo(colab, obra);
+  if(!g.length) return [];
+  const seqs = [];
+  let cur = [g[0]];
+  for(let i=1;i<g.length;i++){
+    const atual = DIAS.indexOf(g[i].dia);
+    const ant = DIAS.indexOf(g[i-1].dia);
+    if(atual === ant + 1) cur.push(g[i]);
+    else { seqs.push(cur); cur = [g[i]]; }
+  }
+  seqs.push(cur);
+  return seqs;
+}
+
+function diasConsecutivosPrincipal(colab, obra){
+  const seqs = sequenciasDoGrupo(colab, obra);
+  if(!seqs.length) return [];
+  return seqs.sort((a,b)=>b.length-a.length)[0] || [];
+}
+
+function qtdHospedagens(colab, obra){
+  // Regra validada: terça a sexta = 4 alocações, mas 3 diárias/hospedagens.
+  const seq = diasConsecutivosPrincipal(colab, obra);
+  return Math.max(0, seq.length - 1);
+}
+
+function valorDiariaGrupo(colab, obra){
+  const g = diasOrdenadosDoGrupo(colab, obra);
+  const ref = g.find(v => Number(v.diaria || 0) > 0) || g[0] || {};
+  return Number(ref.diaria || 30);
+}
+
+function diariasColabGrupo(colab, obra){
+  // Alimentação é individual, mas também segue dias alocados - 1 quando há pernoite.
+  // Bate-volta (1 alocação): não paga diária porque volta para jantar em casa.
+  return qtdHospedagens(colab, obra) * valorDiariaGrupo(colab, obra);
+}
+
+function baseHotelGrupo(colab, obra){
+  const g = diasOrdenadosDoGrupo(colab, obra);
+  return g.find(v => v.hospedagemPagante && v.hotel) ||
+         g.find(v => !v.hospedagemCompartilhada && v.hotel && Number(v.hotelValor || 0) > 0) ||
+         g.find(v => v.hotel || v.hotelValor || v.quarto) ||
+         g[0] || {};
+}
+
+function hotelTotalGrupo(colab, obra){
+  const qtd = qtdHospedagens(colab, obra);
+  if(qtd <= 0) return 0;
+  const payer = baseHotelGrupo(colab, obra);
+  if(payer.hospedagemCompartilhada) return 0;
+  return Number(payer.hotelValor || 0) * qtd;
+}
+
+function grupoCompleto(colab, obra){
+  const g = diasOrdenadosDoGrupo(colab, obra);
+  if(!g.length) return false;
+  const qtd = qtdHospedagens(colab, obra);
+  // bate-volta não exige hotel/diária
+  if(qtd <= 0) return true;
+  const base = baseHotelGrupo(colab, obra);
+  if(base.hospedagemCompartilhada){
+    return !!(base.hotel && base.quarto && (base.disponibilidade || '') !== 'consultar');
+  }
+  return !!(base.hotel && Number(base.hotelValor || 0) > 0 && base.quarto && (base.disponibilidade || '') !== 'consultar');
+}
+
+function totaisPorGrupo(){
+  const grupos = new Map();
+  viagens.filter(v => !v.cancelado).forEach(v => grupos.set(grupoChave(v), v));
+  let diarias = 0, hotel = 0, pend = 0;
+  grupos.forEach(v => {
+    diarias += diariasColabGrupo(v.colaborador, v.obra);
+    hotel += hotelTotalGrupo(v.colaborador, v.obra);
+    if(!grupoCompleto(v.colaborador, v.obra)) pend++;
+  });
+  return {grupos, diarias, hotel, pend};
+}
+
+function resumo(){
+  const ativas = viagens.filter(v => !v.cancelado);
+  const t = totaisPorGrupo();
+  $('kViagens').textContent = ativas.length;
+  $('kDiarias').textContent = brl(t.diarias);
+  $('kHotel').textContent = brl(t.hotel);
+  $('kTotal').textContent = brl(t.diarias + t.hotel);
+  $('kPend').textContent = t.pend;
+  $('kOrigem').textContent = origem === 'draft' ? 'Rascunho interno' : 'Histórico';
+}
+
+function abrirColaborador(colab){
+  const arr = viagens.map((v,i)=>({...v,_i:i})).filter(v => !v.cancelado && (v.colaborador || '').toUpperCase() === colab);
+  const obras = [...new Set(arr.map(v => String(v.obra || 'SEM OBRA').toUpperCase()))];
+  if(!obras.length) return;
+  const preferida = obras.find(o => !grupoCompleto(colab,o)) || obras[0];
+  editarGrupoHospedagem(colab, preferida);
+}
+
+function render(){
+  let by = {};
+  viagens.forEach((v,i)=>{
+    if(v.cancelado) return;
+    let c = (v.colaborador || 'SEM NOME').toUpperCase();
+    by[c] = by[c] || {};
+    DIAS.forEach(d => by[c][d] = by[c][d] || []);
+    if(DIAS.includes(v.dia)){
+      let key = (v.obra || '').trim().toUpperCase();
+      let exists = by[c][v.dia].find(x => (x.obra || '').trim().toUpperCase() === key);
+      if(!exists) by[c][v.dia].push({...v,_idxs:[i]});
+      else exists._idxs.push(i);
+    }
+  });
+
+  let cols = DIAS.map(d=>`<div class="hcell">${DIA_LABEL[d]}<span>${(semana?.datas?.[d] || '')}</span></div>`).join('');
+  let html = `<div class="head"><div class="hcell">Colaborador</div>${cols}</div>`;
+
+  Object.keys(by).sort().forEach(c=>{
+    const locais = [...new Set(Object.values(by[c]).flat().map(v => String(v.obra || '').toUpperCase()))].length;
+    html += `<div class="row"><div class="name" onclick="abrirColaborador('${escAttr(c)}')">${esc(c)}<span class="mini">${locais} obra(s) / clique para editar</span></div>`;
+    DIAS.forEach(d=>{
+      html += `<div class="day" data-colab="${escAttr(c)}" data-dia="${d}" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="dropTrip(event,this)">`;
+      let arr = by[c][d] || [];
+      html += arr.map(v=>{
+        const hosp = qtdHospedagens(c, v.obra);
+        const totalHotel = hotelTotalGrupo(c, v.obra);
+        const totalDiaria = diariasColabGrupo(c, v.obra);
+        const completo = grupoCompleto(c, v.obra);
+        const cls = completo ? 'ok' : statusTrip(v);
+        const base = baseHotelGrupo(c, v.obra);
+        return `<div class="trip ${cls}" draggable="true" ondragstart="dragTrip(event,'${v._idxs.join(',')}')" title="Arraste para copiar para outro dia">
+          <button class="cancel-x" onclick="event.stopPropagation();cancelarGrupo('${escAttr(c)}','${d}','${escAttr(v.obra)}')">×</button>
+          <div class="trip-title">${esc(v.obra)}</div>
+          <div class="trip-sub">${base.hotel ? esc(base.hotel) : 'Hotel não definido'}${base.hospedagemCompartilhada ? ' • compartilhado' : ''}</div>
+          <div class="trip-foot">
+            <span class="pill">${hosp} diária(s)</span>
+            <span class="pill">Alim. ${brl(totalDiaria)}</span>
+            <span class="pill">Hotel ${brl(totalHotel)}</span>
+          </div>
+        </div>`;
+      }).join('') || '<div class="empty">—</div>';
+      html += `</div>`;
+    });
+    html += '</div>';
+  });
+
+  $('matrix').innerHTML = html || '<div class="empty">Nenhuma viagem encontrada.</div>';
+  resumo();
+}
+
+function editarGrupoHospedagem(colab,obra){
+  const g = diasOrdenadosDoGrupo(colab,obra);
+  if(!g.length) return alert('Grupo não encontrado.');
+  editing = -1000;
+  window.__EDIT_GROUP = {colab,obra,idxs:g.map(x=>x._i)};
+  const base = baseHotelGrupo(colab,obra);
+  const hospedagens = qtdHospedagens(colab,obra);
+  $('modalTitle').textContent = 'Hospedagem e diárias';
+  $('modalSub').textContent = `${colab} • ${obra} • ${g.map(v=>DIA_LABEL[v.dia]).join(', ')} • ${g.length} alocação(ões) → ${hospedagens} diária(s)`;
+  $('mColab').value = colab;
+  $('mObra').value = obra;
+  $('mDiaria').value = Number(base.diaria || 30);
+  $('mHotel').value = base.hotel || '';
+  $('mHotelValor').value = Number(base.hospedagemCompartilhada ? 0 : (base.hotelValor || 0));
+  $('mQuarto').value = base.quarto || 'Simples';
+  $('mDisp').value = base.disponibilidade || 'consultar';
+  $('mStatus').value = base.cancelado ? 'cancelado' : (base.status || 'pendente');
+  $('mObs').value = base.obs || '';
+  $('mDia').innerHTML = g.map(v=>`<option value="${v.dia}">${DIA_LABEL[v.dia]}</option>`).join('');
+  const diaDiv = $('mDia')?.closest('div'); if(diaDiv) diaDiv.style.display='none';
+  const obsDiv = $('mObs')?.closest('div'); if(obsDiv) obsDiv.style.display='none';
+  $('hotelsBox').innerHTML = '<div class="empty">Carregando hotéis próximos...</div>';
+  $('mapBox').innerHTML = 'Carregando mapa da obra...';
+  renderCompanheiros(colab,obra,base);
+  const modal = $('modalTrip'); modal.classList.add('open');
+  setTimeout(()=>{ try{ modal.scrollTop=0; document.querySelector('#modalTrip .modal-card').scrollTop=0; }catch(e){} },50);
+  setTimeout(()=>pesquisarGoogleMaps(),250);
+}
+
+function aplicarModal(){
+  const baseData = {
+    colaborador:$('mColab').value.trim().toUpperCase(),
+    obra:$('mObra').value.trim(),
+    dia:$('mDia').value,
+    diaria:Number($('mDiaria').value || 30),
+    hotel:$('mHotel').value.trim(),
+    hotelValor:Number($('mHotelValor').value || 0),
+    quarto:$('mQuarto').value,
+    disponibilidade:$('mDisp').value,
+    status:$('mStatus').value,
+    obs:$('mObs').value.trim(),
+    atualizado:true,
+    cancelado:$('mStatus').value === 'cancelado'
+  };
+  if(!baseData.colaborador || !baseData.obra) return alert('Informe colaborador e obra.');
+
+  const comp = [...document.querySelectorAll('#companheirosBox input[type=checkbox]:checked')].map(c=>c.value);
+  if(window.__EDIT_GROUP && editing === -1000){
+    const {colab,obra,idxs} = window.__EDIT_GROUP;
+    idxs.forEach(i=>{
+      viagens[i] = {
+        ...viagens[i],
+        ...baseData,
+        dia:viagens[i].dia,
+        hospedagemPagante:true,
+        hospedagemCompartilhada:false,
+        companheiros:comp,
+        status:'ok',
+        disponibilidade:baseData.disponibilidade === 'consultar' ? 'disponivel' : baseData.disponibilidade
+      };
+    });
+
+    comp.forEach(nome=>{
+      diasOrdenadosDoGrupo(nome,obra).forEach(v=>{
+        viagens[v._i] = {
+          ...viagens[v._i],
+          diaria:baseData.diaria,
+          hotel:baseData.hotel,
+          hotelValor:0,
+          quarto:baseData.quarto,
+          disponibilidade:baseData.disponibilidade === 'consultar' ? 'disponivel' : baseData.disponibilidade,
+          status:'ok',
+          obs:baseData.obs,
+          atualizado:true,
+          hospedagemCompartilhada:true,
+          hospedagemPagante:false,
+          companheiros:[colab]
+        };
+      });
+    });
+  }else if(editing >= 0){
+    viagens[editing] = {...viagens[editing], ...baseData};
+  }else{
+    viagens.push(baseData);
+  }
+  origem='draft';
+  window.__EDIT_GROUP=null;
+  fecharModal('modalTrip');
+  render();
+  salvarDraft(true);
+}
+
+function abrirRelatorio(){
+  const ativas = viagens.filter(v=>!v.cancelado);
+  const t = totaisPorGrupo();
+  $('reportSub').textContent = `Semana ${semana?.id || ''} • Diárias colaborador ${brl(t.diarias)} • Hospedagem ${brl(t.hotel)} • Total geral ${brl(t.diarias + t.hotel)}`;
+  $('reportSummary').innerHTML = `<div class="report-kpi"><small>Viagens</small><b>${ativas.length}</b></div><div class="report-kpi"><small>Total diária colaborador</small><b>${brl(t.diarias)}</b></div><div class="report-kpi"><small>Total hospedagem</small><b>${brl(t.hotel)}</b></div><div class="report-kpi"><small>Total geral</small><b>${brl(t.diarias+t.hotel)}</b></div>`;
+
+  const rows = [];
+  t.grupos.forEach(v=>{
+    const g = diasOrdenadosDoGrupo(v.colaborador,v.obra);
+    const base = baseHotelGrupo(v.colaborador,v.obra);
+    const qtd = qtdHospedagens(v.colaborador,v.obra);
+    const diariaAlim = diariasColabGrupo(v.colaborador,v.obra);
+    const totalHotel = hotelTotalGrupo(v.colaborador,v.obra);
+    rows.push(`<tr><td>${esc(v.colaborador)}</td><td>${g.map(x=>DIA_LABEL[x.dia]).join(', ')}</td><td>${esc(v.obra)}</td><td>${brl(diariaAlim)}</td><td>${esc(base.hotel||'—')}</td><td>${esc(base.quarto||'—')}</td><td>${qtd}</td><td>${brl(base.hospedagemCompartilhada ? 0 : Number(base.hotelValor||0))}</td><td class="report-total">${brl(totalHotel + diariaAlim)}</td><td>${grupoCompleto(v.colaborador,v.obra)?'ok':'pendente'}</td></tr>`);
+  });
+  $('reportBody').innerHTML = rows.join('');
+  $('appWrap').classList.add('hide-main');
+  $('reportPage').classList.add('open');
+}
+
+function exportarExcel(){
+  const rows = [['Colaborador','Dias alocados','Obra','Qtd diárias pagas','Diária alimentação','Total alimentação','Hotel','Quarto','Qtd hospedagens','Diária hotel','Total hotel','Total','Status']];
+  const t = totaisPorGrupo();
+  t.grupos.forEach(v=>{
+    const g = diasOrdenadosDoGrupo(v.colaborador,v.obra);
+    const base = baseHotelGrupo(v.colaborador,v.obra);
+    const qtd = qtdHospedagens(v.colaborador,v.obra);
+    const valorAlim = valorDiariaGrupo(v.colaborador,v.obra);
+    const totalAlim = diariasColabGrupo(v.colaborador,v.obra);
+    const totalHotel = hotelTotalGrupo(v.colaborador,v.obra);
+    rows.push([
+      v.colaborador,
+      g.map(x=>DIA_LABEL[x.dia]).join(', '),
+      v.obra,
+      qtd,
+      valorAlim,
+      totalAlim,
+      base.hotel || '',
+      base.quarto || '',
+      qtd,
+      base.hospedagemCompartilhada ? 0 : Number(base.hotelValor || 0),
+      totalHotel,
+      totalAlim + totalHotel,
+      grupoCompleto(v.colaborador,v.obra) ? 'ok' : 'pendente'
+    ]);
+  });
+  let csv = rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
+  let blob = new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'custos_viagens_'+(semana?.id||'semana')+'.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 $('agendaSel').addEventListener('change',carregarSemana); lerUsuario(); listar();
 </script>
 </body>
