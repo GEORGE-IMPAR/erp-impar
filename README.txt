@@ -1,28 +1,13 @@
-# ERP Impar - Atualização do módulo de Solicitação de Materiais
+ERP ÍMPAR Interface V1.1
 
-## Passo a passo para atualizar no GitHub Pages
+Arquivos:
+- index.html
+- menu.html
+- abertura_arte_erp_impar.html
+- saida_erp_impar.html
 
-1. Extraia este ZIP na pasta do seu projeto (substitua os arquivos existentes).
-   - solicitacao.html
-   - script.js
+Inclui:
+- abertura_mobile_conceito.png
 
-2. Abra o Git Bash ou CMD na pasta do projeto. Exemplo:
-   cd C:/IMPAR/erp-impar
-
-3. Execute os comandos abaixo:
-
-   git add solicitacao.html script.js
-   git commit -m "Atualização: botão de envio de solicitação por e-mail"
-   git push origin main
-
-4. Aguarde de 1 a 5 minutos até o GitHub Pages atualizar.
-
-5. Teste acessando:
-   https://www.erpimpar.com.br/solicitacao.html
-
-## Observações
-- O botão antigo de baixar Word foi removido.
-- Agora o botão "Gerar solicitação de material e enviar por e-mail" cria o arquivo Word automaticamente e envia em anexo pelo EmailJS.
-- O arquivo é nomeado no formato:
-  SOLICITACAO_MATERIAIS_NomeUsuario_Data_Numero.docx
-
+Próximo passo:
+Substituir a arte mobile dentro da abertura_arte_erp_impar.html para detectar automaticamente Desktop x Mobile.
