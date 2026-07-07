@@ -12,6 +12,7 @@ main{max-width:1280px;margin:0 auto;padding:18px}.layout{display:grid;grid-templ
 @media(max-width:1000px){.layout{grid-template-columns:1fr}.infoGrid{grid-template-columns:1fr 1fr}.itemHead{grid-template-columns:1fr 1fr}.itemHead .desc{grid-column:1/-1}.rp-master-inner{align-items:flex-start;flex-direction:column}.rp-user-box{width:100%;justify-content:space-between;border-radius:18px}.rp-master-header{width:calc(100% - 24px)}main{padding:12px}.quick{grid-template-columns:1fr}.actions{flex-direction:column}.actions .btn,.btn{width:100%}.rp-title{font-size:20px}.rp-logo{width:46px;height:46px;flex-basis:46px}}
 @media(max-width:560px){.infoGrid,.itemHead{grid-template-columns:1fr}.card{padding:13px}.cameraViewport{min-height:220px}}
 .cameraReadOk{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,8,23,.72);z-index:5}.cameraReadOkBox{background:linear-gradient(135deg,#16a34a,#22c55e);color:#001b10;border-radius:22px;padding:18px 22px;font-weight:950;font-size:18px;box-shadow:0 18px 50px rgba(34,197,94,.35);text-align:center}.cameraReadOkBox small{display:block;margin-top:5px;font-size:12px;color:#052e16}
+.toastRP{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;z-index:130;background:linear-gradient(135deg,#16a34a,#22c55e);color:#001b10;border-radius:999px;padding:13px 18px;font-weight:950;box-shadow:0 18px 50px rgba(34,197,94,.35);transition:.22s ease}.toastRP.show{opacity:1;transform:translateX(-50%) translateY(0)}.successActions{display:grid;gap:10px;margin-top:14px}.successActions .btn{width:100%}
 </style>
 </head>
 <body>
@@ -58,6 +59,19 @@ main{max-width:1280px;margin:0 auto;padding:18px}.layout{display:grid;grid-templ
   </div>
 </main>
 <div class="modal" id="modal"><div class="modalBox"><div class="title">Confirmar registro C.I.M</div><div class="hint">Será gravado quem recebeu, data, hora, itens conferidos e status final. O usuário vem da sessão do ERP e a senha confirma a operação.</div><div class="field"><label>Usuário</label><input id="usuarioModal" disabled /></div><div class="field"><label>Senha de confirmação</label><input id="senha" type="password" placeholder="Digite sua senha" /></div><div class="actions"><button class="btn btn2" onclick="fecharModal()" type="button">Cancelar</button><button class="btn" onclick="registrarRecebimento()" type="button">Registrar</button></div></div></div>
+<div class="toastRP" id="toastRP">✅ Recebimento registrado com sucesso</div>
+<div class="modal" id="modalSucesso">
+  <div class="modalBox">
+    <div class="title">Recebimento registrado</div>
+    <div class="hint">Agora você pode ir para a conciliação C.I.M. para cruzar a nota com as solicitações de material, ou iniciar outro recebimento.</div>
+    <div class="successActions">
+      <button class="btn" onclick="location.href='cim_conciliacao.html'" type="button">🔗 Ir para Conciliação C.I.M</button>
+      <button class="btn btn2" onclick="novoRecebimentoAposRegistro()" type="button">📷 Novo recebimento</button>
+      <button class="btn btn2" onclick="location.href='menu.html'" type="button">🏠 Voltar ao menu</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API_BASE = 'https://api.erpimpar.com.br/';
 let recebimentoAtual=null, stream=null, detector=null, detectTimer=null, currentDeviceId=null, videoDevices=[], torchOn=false, zoomLevel=1, leituraAtiva=false;
@@ -310,7 +324,10 @@ function atualizarItem(i,campo,valor){const it=recebimentoAtual?.nota?.itens?.[i
 function atualizarResumo(){if(!recebimentoAtual)return;const itens=recebimentoAtual.nota.itens||[];const ok=itens.filter(x=>x.status_conferencia==='ok').length;const div=itens.filter(x=>x.status_conferencia==='divergente').length;const nao=itens.filter(x=>x.status_conferencia==='nao_recebido').length;recebimentoAtual.conferencia={itens_total:itens.length,itens_ok:ok,itens_divergentes:div,itens_nao_recebidos:nao,observacao_geral:$('obsGeral').value};const s=$('sum');if(s)s.innerHTML=`<span class="statusPill ok">${ok} OK</span><span class="statusPill warn">${div} divergentes</span><span class="statusPill bad">${nao} não recebidos</span>`}
 function abrirModalRegistro(){if(!recebimentoAtual)return;atualizarResumo();$('usuarioModal').value=getUser().nome||'Usuário RP';$('senha').value='';$('modal').style.display='flex'}
 function fecharModal(){$('modal').style.display='none'}
-async function registrarRecebimento(){if(!$('senha').value.trim()){alert('Digite a senha de confirmação.');return}atualizarResumo();const u=getUser();const payload={...recebimentoAtual,chave_acesso:recebimentoAtual.chave_acesso||recebimentoAtual.nota?.chave_acesso,observacao_geral:$('obsGeral').value,itens:recebimentoAtual.nota?.itens||[],usuario:u,senha_confirmacao:$('senha').value,conferencia:{...recebimentoAtual.conferencia,observacao_geral:$('obsGeral').value},registro:{usuario:u.nome||'Usuário RP',email:u.email||'sessão local',data_hora:new Date().toISOString(),confirmado_com_senha:true}};try{const j=await apiFetch('recebimento_salvar.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!j.ok)throw new Error(j.erro||'Falha ao salvar');recebimentoAtual=j.recebimento||payload;fecharModal();$('statusText').innerHTML='<span class="statusPill ok">registrado</span>';alert('Recebimento registrado com sucesso.')}catch(e){alert('Falha ao registrar: '+e.message)}}
+function toast(msg){const el=$('toastRP');if(!el)return;el.textContent=msg||'✅ Operação realizada com sucesso';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2600)}
+function novoRecebimentoAposRegistro(){$('modalSucesso').style.display='none';limparTela()}
+
+async function registrarRecebimento(){if(!$('senha').value.trim()){alert('Digite a senha de confirmação.');return}atualizarResumo();const u=getUser();const payload={...recebimentoAtual,chave_acesso:recebimentoAtual.chave_acesso||recebimentoAtual.nota?.chave_acesso,observacao_geral:$('obsGeral').value,itens:recebimentoAtual.nota?.itens||[],usuario:u,senha_confirmacao:$('senha').value,conferencia:{...recebimentoAtual.conferencia,observacao_geral:$('obsGeral').value},registro:{usuario:u.nome||'Usuário RP',email:u.email||'sessão local',data_hora:new Date().toISOString(),confirmado_com_senha:true}};try{const j=await apiFetch('recebimento_salvar.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!j.ok)throw new Error(j.erro||'Falha ao salvar');recebimentoAtual=j.recebimento||payload;fecharModal();$('statusText').innerHTML='<span class="statusPill ok">registrado</span>';toast('✅ Recebimento registrado com sucesso');$('modalSucesso').style.display='flex'}catch(e){alert('Falha ao registrar: '+e.message)}}
 function limparTela(){pararCamera();recebimentoAtual=null;$('chave').value='';$('obsGeral').value='';$('statusText').textContent='Nenhuma nota carregada.';$('notaArea').className='empty';$('notaArea').textContent='Consulte uma DANFE para carregar os dados da nota e os itens.';$('btnRegistrar').style.display='none';setLoading(false)}
 </script>
 </body>
