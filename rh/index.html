@@ -413,7 +413,13 @@ function resizeVisibleFrame(){
 
 function user(){let u=null;try{u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||sessionStorage.getItem('ERPIMPAR_USER')||'null')}catch{};let nome=u?.nome||u?.Nome||u?.name||u?.displayName||'George Ramos';let email=u?.email||u?.Email||u?.mail||'george@imparsistemas.com';$('userName').textContent=nome;$('userEmail').textContent=email;$('avatar').textContent=(nome||'U')[0].toUpperCase()}function setTab(id){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===id));document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));updateModuleDock(id);setTimeout(resizeVisibleFrame,80);setTimeout(resizeVisibleFrame,600);setTimeout(resizeVisibleFrame,1800)}document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.view));async function fetchJson(url){try{let r=await fetch(url+'?_='+Date.now(),{cache:'no-store'});let t=await r.text();return JSON.parse(t)}catch(e){return{ok:false,erro:String(e),registros:[]}}}
 function getRows(obj){return Array.isArray(obj)?obj:(obj.registros||obj.data||[])}function valor(r){return Number(r.valor_total??r.total_valor??r.valor??0)||0}function mes(r){return normalizeMonth(r)}function add(m,k,v){m[k]=(m[k]||0)+(Number(v)||0)}function destroy(id){if(charts[id])charts[id].destroy()}function opt(){return{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#e5f0ff',boxWidth:12,usePointStyle:true}},tooltip:{backgroundColor:'rgba(2,8,23,.95)',titleColor:'#fff',bodyColor:'#dbeafe',padding:12}},scales:{x:{ticks:{color:'#b7c9df'},grid:{color:'rgba(255,255,255,.06)'}},y:{ticks:{color:'#b7c9df'},grid:{color:'rgba(255,255,255,.06)'}}}}}function chart(id,type,labels,datasets,custom={}){destroy(id);charts[id]=new Chart($(id),{type,data:{labels,datasets},options:{...opt(),...custom}})}
-async function loadAll(force=false){$('insightBox').innerHTML='<b>Leitura executiva:</b><br><span class="loader"><span class="dot"></span> Atualizando bases...</span>';let [c,h,d]=await Promise.all([fetchJson(APIS.comb),fetchJson(APIS.he),fetchJson(APIS.dia)]);RAW.comb=getRows(c);RAW.he=getRows(h);RAW.dia=getRows(d);render();}
+async function loadAll(force=false){$('insightBox').innerHTML='<b>Leitura executiva:</b><br><span class="loader"><span class="dot"></span> Atualizando bases...</span>';let [c,h,d]=await Promise.all([fetchJson(APIS.comb),fetchJson(APIS.he),fetchJson(APIS.dia)]);
+  // Fallback local para hora extra importada pelo motor JS, caso o PHP de gravação ainda não esteja publicado.
+  try{
+    const heLocal=JSON.parse(localStorage.getItem('ERPIMPAR_RH_HORAEXTRA_JS')||'null');
+    if((!h || !h.ok || !getRows(h).length) && heLocal && Array.isArray(heLocal.registros)) h=heLocal;
+  }catch(e){}
+  RAW.comb=getRows(c);RAW.he=getRows(h);RAW.dia=getRows(d);render();}
 function render(){let meses=new Set();let by={};function init(m){if(!by[m])by[m]={comb:0,he:0,dia:0,total:0};return by[m]}RAW.comb.forEach(r=>{let m=mes(r);meses.add(m);let o=init(m);o.comb+=valor(r);o.total+=valor(r)});RAW.he.forEach(r=>{let m=mes(r);meses.add(m);let o=init(m);o.he+=valor(r);o.total+=valor(r)});RAW.dia.forEach(r=>{let m=mes(r);meses.add(m);let o=init(m);o.dia+=valor(r);o.total+=valor(r)});let months=[...meses].filter(Boolean).sort(sortMonths);let totalComb=RAW.comb.reduce((a,r)=>a+valor(r),0),totalHE=RAW.he.reduce((a,r)=>a+valor(r),0),totalDia=RAW.dia.reduce((a,r)=>a+valor(r),0),total=totalComb+totalHE+totalDia;$('kTotal').textContent=brl(total);$('kComb').textContent=brl(totalComb);$('kHE').textContent=brl(totalHE);$('kDia').textContent=brl(totalDia);$('qComb').textContent=brl(totalComb);$('qHE').textContent=brl(totalHE);$('qDia').textContent=brl(totalDia);let leader=months.map(m=>[m,by[m].total]).sort((a,b)=>b[1]-a[1])[0];$('kMes').textContent=leader?mesLabel(leader[0]):'-';$('kMesSub').textContent=leader?brl(leader[1]):'-';let comps=[['Combustível',totalComb],['Hora Extra',totalHE],['Diárias/Hosp.',totalDia]].sort((a,b)=>b[1]-a[1]);$('kComp').textContent=comps[0]?.[0]||'-';$('kCompSub').textContent=brl(comps[0]?.[1]||0);$('insightBox').innerHTML=`<b>Leitura executiva:</b><br>Total acumulado de <b>${brl(total)}</b>. O maior componente é <b>${comps[0]?.[0]||'-'}</b>, com ${brl(comps[0]?.[1]||0)}. O mês de maior custo é <b>${leader?mesLabel(leader[0]):'-'}</b>, totalizando ${brl(leader?.[1]||0)}.`;let valsTotal=months.map(m=>by[m].total);chart('chartTotalMes','line',months.map(mesLabel),[{label:'Total mensal',data:valsTotal,borderColor:'#9be329',backgroundColor:'rgba(155,227,41,.18)',borderWidth:3,tension:.35,fill:true,pointRadius:4,pointBackgroundColor:'#9be329'}]);chart('chartComposicao','bar',comps.map(x=>x[0]),[{label:'Valor acumulado',data:comps.map(x=>x[1]),backgroundColor:['#22c55e','#60a5fa','#f59e0b'],borderRadius:12}],{indexAxis:'y'});chart('chartStack','bar',months.map(mesLabel),[{label:'Combustível',data:months.map(m=>by[m].comb),backgroundColor:'#22c55e',borderRadius:8},{label:'Hora Extra',data:months.map(m=>by[m].he),backgroundColor:'#60a5fa',borderRadius:8},{label:'Diárias/Hosp.',data:months.map(m=>by[m].dia),backgroundColor:'#f59e0b',borderRadius:8}],{scales:{x:{stacked:true,ticks:{color:'#b7c9df'},grid:{color:'rgba(255,255,255,.06)'}},y:{stacked:true,ticks:{color:'#b7c9df'},grid:{color:'rgba(255,255,255,.06)'}}}});$('tbodyMes').innerHTML=months.map(m=>{let o=by[m];let maior=[['Combustível',o.comb],['Hora Extra',o.he],['Diárias/Hosp.',o.dia]].sort((a,b)=>b[1]-a[1])[0];return `<tr><td><b>${mesLabel(m)}</b></td><td>${brl(o.comb)}</td><td>${brl(o.he)}</td><td>${brl(o.dia)}</td><td><b class="money">${brl(o.total)}</b></td><td><span class="pill green">${maior[0]} • ${brl(maior[1])}</span></td></tr>`}).join('')||'<tr><td colspan="6">Nenhuma base encontrada. Gere as bases dos módulos primeiro.</td></tr>'}
 
 
@@ -671,12 +677,126 @@ async function rhSalvarCombustivelNormalizado(fonte, leitura){
   const t=await r.text();
   try{return JSON.parse(t)}catch(e){throw new Error(t.slice(0,300)||e.message)}
 }
+
+function rhNormHE(s){return String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim()}
+function rhKeyHE(s){return rhNormHE(s).toUpperCase()}
+function rhParseNumHE(v){return rhParseNumComb(v)}
+function rhDetectMonthFromSheetHE(nome, fileName){
+  const s=String(nome||'')+' '+String(fileName||'');
+  let m=s.match(/(\d{1,2})[-_\/](20\d{2})/);
+  if(m) return `${m[2]}-${String(m[1]).padStart(2,'0')}`;
+  const meses={JANEIRO:1,FEVEREIRO:2,MARCO:3,MARÇO:3,ABRIL:4,MAIO:5,JUNHO:6,JULHO:7,AGOSTO:8,SETEMBRO:9,OUTUBRO:10,NOVEMBRO:11,DEZEMBRO:12};
+  const up=rhKeyHE(s);
+  for(const [nomeMes,mes] of Object.entries(meses)){
+    if(up.includes(nomeMes)){
+      const y=(up.match(/20\d{2}/)||['2026'])[0];
+      return `${y}-${String(mes).padStart(2,'0')}`;
+    }
+  }
+  return '2026-06';
+}
+function rhFindHeaderIndexHE(rows){
+  for(let i=0;i<Math.min(rows.length,25);i++){
+    const keys=(rows[i]||[]).map(rhKeyHE);
+    const hasNome=keys.some(v=>v==='NOME');
+    const hasHE=keys.some(v=>v.includes('HE') && v.includes('DSR'));
+    const hasNoturno=keys.some(v=>v.includes('ADIC') && v.includes('NOTURNO'));
+    if(hasNome && hasHE && hasNoturno) return i;
+  }
+  return -1;
+}
+function rhHeaderMapHE(header){
+  const map={};
+  (header||[]).forEach((v,i)=>{
+    const k=rhKeyHE(v);
+    if(k==='NOME') map.nome=i;
+    if(k==='PROJETO' || k==='PROJET O') map.projeto=i;
+    if(k.includes('HE') && k.includes('DSR')) map.he=i;
+    if(k.includes('ADIC') && k.includes('NOTURNO')) map.noturno=i;
+  });
+  return map;
+}
+async function rhProcessarHoraExtraLocal(file){
+  const ab=await file.arrayBuffer();
+  const wb=XLSX.read(ab,{type:'array',cellDates:true,cellNF:false,cellText:false});
+  const sheetName = wb.SheetNames.find(n=>/^\d{1,2}[-_\/]20\d{2}$/i.test(String(n).trim())) ||
+                    wb.SheetNames.find(n=>rhKeyHE(n).includes('RESUMO')) ||
+                    wb.SheetNames[0];
+  const ws=wb.Sheets[sheetName];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+  const headerIdx=rhFindHeaderIndexHE(rows);
+  if(headerIdx<0) throw new Error('Não encontrei o cabeçalho com NOME, HE + DSR e Adic. Noturno.');
+  const col=rhHeaderMapHE(rows[headerIdx]);
+  if(col.nome===undefined || col.he===undefined || col.noturno===undefined) throw new Error('Cabeçalho da hora extra incompleto.');
+  const mesRef=rhDetectMonthFromSheetHE(sheetName,file.name);
+  const registros=[], descartes=[];
+  for(let i=headerIdx+1;i<rows.length;i++){
+    const row=rows[i]||[];
+    const nome=rhNormHE(row[col.nome]);
+    if(!nome || ['TOTAL','NOME'].includes(rhKeyHE(nome))) continue;
+    const heDsr=rhParseNumHE(row[col.he]);
+    const adicNoturno=rhParseNumHE(row[col.noturno]);
+    const total=Number((heDsr+adicNoturno).toFixed(2));
+    if(total<=0){ descartes.push({linha:i+1,nome,motivo:'zerado'}); continue; }
+    registros.push({
+      tipo:'horaextra',
+      fonte:'HORA EXTRA',
+      arquivo:file.name,
+      aba:sheetName,
+      linha_origem:i+1,
+      mes:mesRef,
+      competencia:mesRef,
+      colaborador:nome,
+      colaborador_origem:nome,
+      projeto: col.projeto!==undefined ? rhNormHE(row[col.projeto]) : '',
+      he_dsr:Number(heDsr.toFixed(2)),
+      adic_noturno:Number(adicNoturno.toFixed(2)),
+      valor:total,
+      valor_total:total
+    });
+  }
+  registros.sort((a,b)=>a.colaborador.localeCompare(b.colaborador,'pt-BR'));
+  const totalValor=registros.reduce((s,r)=>s+Number(r.valor||0),0);
+  return {
+    ok:true,
+    tipo:'horaextra',
+    arquivo:{nome:file.name,tamanho:file.size,ultima_modificacao:new Date(file.lastModified).toISOString(),aba:sheetName,abas:wb.SheetNames},
+    mes:mesRef,
+    linhas:registros.length,
+    colunas:4,
+    registros,
+    preview:registros.slice(0,8),
+    estatisticas:{total_valor:Number(totalValor.toFixed(2)),descartadas:descartes.length,colaboradores:registros.length,aba:sheetName,mes:mesRef}
+  };
+}
+async function rhSalvarHoraExtraNormalizada(leitura){
+  const payload={tipo:'horaextra',ok:true,gerado_em:new Date().toISOString(),...leitura,usuario:{nome:$('userName').textContent,email:$('userEmail').textContent}};
+  // Guarda no navegador para atualizar o painel imediatamente mesmo antes de publicar o PHP definitivo.
+  try{localStorage.setItem('ERPIMPAR_RH_HORAEXTRA_JS',JSON.stringify(payload));}catch(e){}
+  try{
+    const r=await fetch('https://api.erpimpar.com.br/rh/horaextra/salvar_horaextra_js.php?_='+Date.now(),{
+      method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
+      body:JSON.stringify(payload)
+    });
+    const t=await r.text();
+    let j; try{j=JSON.parse(t)}catch(e){throw new Error(t.slice(0,300)||e.message)}
+    if(!j.ok) throw new Error(j.erro||'Falha ao gravar hora extra.');
+    return j;
+  }catch(e){
+    // Fallback: registra somente a saúde da importação se o endpoint novo ainda não existir.
+    try{ await apiFontes('local_import',{fonte:'horaextra',leitura,usuario:{nome:$('userName').textContent,email:$('userEmail').textContent}}); }catch(_){}
+    return {ok:true,mensagem:'Hora extra processada no navegador. Publique salvar_horaextra_js.php para gravar no KingHost.',status:{},historico:[]};
+  }
+}
 async function lerArquivoLocalFonte(fonte){
   const file=RH_ARQUIVOS_LOCAIS[fonte];
   if(!file) throw new Error('Selecione o Excel antes de importar. O navegador não consegue ler automaticamente o caminho Z:\\ sem o usuário escolher o arquivo.');
   if(typeof XLSX === 'undefined') throw new Error('Biblioteca XLSX não carregou. Verifique internet/CDN.');
   if(fonte==='combustivel_angeloni' || fonte==='combustivel_frotas'){
     return await rhProcessarCombustivelLocal(fonte,file);
+  }
+  if(fonte==='horaextra'){
+    return await rhProcessarHoraExtraLocal(file);
   }
   const buffer=await file.arrayBuffer();
   const wb=XLSX.read(buffer,{type:'array',cellDates:true});
@@ -784,6 +904,11 @@ async function importarFontesRH(fonte){
       // V15: sem pop-up de colaboradores. O filtro volta para o fluxo padrão:
       // aba Combustível > Importação > Carregar colaboradores > marcar/desmarcar > Salvar/Gerar.
       j=await rhSalvarCombustivelNormalizado(fonte,leitura);
+    }else if(fonte==='horaextra'){
+      $('fontesStatus').textContent='Hora extra normalizada. Salvando base...';
+      j=await rhSalvarHoraExtraNormalizada(leitura);
+      RAW.he=leitura.registros||[];
+      render();
     }else{
       $('fontesStatus').textContent='Arquivo lido. Enviando status para o servidor...';
       j=await apiFontes('local_import',{fonte,leitura,usuario:{nome:$('userName').textContent,email:$('userEmail').textContent}});
@@ -792,8 +917,9 @@ async function importarFontesRH(fonte){
     renderHealth(j.status||{});
     renderHistory(j.historico||[]);
     const est=leitura.estatisticas||{};
-    $('fontesStatus').textContent=(j.mensagem||'Importação local registrada.')+' Registros: '+(leitura.linhas||0)+(est.total_valor?' • Total '+brl(est.total_valor):'')+'. Para filtrar colaboradores: abra Combustível > Importação > Carregar colaboradores.';
-    loadAll(true);
+    const extraMsg = fonte==='horaextra' ? ' Hora extra: HE + DSR + Adic. Noturno; zerados ignorados.' : ' Para filtrar colaboradores: abra Combustível > Colaboradores.';
+    $('fontesStatus').textContent=(j.mensagem||'Importação local registrada.')+' Registros: '+(leitura.linhas||0)+(est.total_valor?' • Total '+brl(est.total_valor):'')+'.'+extraMsg;
+    if(fonte!=='horaextra') loadAll(true);
   }catch(e){
     $('fontesStatus').textContent='Erro na importação local: '+e.message;
     throw e;
