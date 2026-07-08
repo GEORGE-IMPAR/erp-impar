@@ -104,7 +104,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     <div class="head">
       <div>
         <div class="title">Selecionar obra e atividade</div>
-        <div class="sub">Abra a obra na árvore e escolha a atividade do cronograma.</div>
+        <div class="sub">Abra a obra para escolher atividade do cronograma. Gestão fica separada no final.</div>
       </div>
       <button class="close" type="button" onclick="history.length>1?history.back():void(0)">×</button>
     </div>
@@ -177,7 +177,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     const n = Number(params.get("item") || params.get("idx") || params.get("exec") || params.get("execIdx") || 0);
     return Number.isFinite(n) ? n : 0;
   }
-  function selecionarAtividade(obraId, atividadeId, btn){
+  function selecionarAtividade(obraId, atividadeId, btn, tipoSelecionado="cronograma"){
     const o = (obras || []).find((x,idx)=>String(x.id ?? x.codigo ?? x.nome ?? idx) === String(obraId));
     let a = (o?.atividades || []).find((x,idx)=>String(x.id ?? x.codigo ?? x.nome ?? x.atividade ?? idx) === String(atividadeId));
     if(!a) a = ATIVIDADES_GESTAO.find(x => String(x.id) === String(atividadeId));
@@ -188,7 +188,11 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
       obraId: obraId || (o?.id ?? o?.codigo ?? ""),
       obraNome: o?.nome || "",
       atividadeId: atividadeId || (a?.id ?? a?.codigo ?? ""),
-      atividadeNome: a?.nome || a?.atividade || a?.descricao || ""
+      atividadeNome: a?.nome || a?.atividade || a?.descricao || "",
+      tipoSelecionado: tipoSelecionado,
+      tipoAtividade: tipoSelecionado,
+      semCronograma: tipoSelecionado !== "cronograma",
+      atualizaCronograma: tipoSelecionado === "cronograma"
     };
 
     let entregue = false;
@@ -302,7 +306,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
             <div class="obra-count">OBRA ${esc(o.id)}</div>
           </summary>
           <div class="atividade-list">
-            ${atividades.map(a=>`<button class="atividade-btn atividade-gestao-btn" data-obra="${esc(o.id)}" data-ativ="${esc(a.id)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta"><span class="metric-pill ok">Gestão</span><span class="metric-pill">Obra vinculada</span></span></button>`).join("")}
+            ${atividades.map(a=>`<button class="atividade-btn atividade-gestao-btn" data-tipo="gestao" data-obra="${esc(o.id)}" data-ativ="${esc(a.id)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta"><span class="metric-pill ok">Gestão</span><span class="metric-pill">Obra vinculada</span></span></button>`).join("")}
           </div>
         </details>`;
       }).filter(Boolean).join("");
@@ -332,16 +336,16 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
           <div class="obra-count">OBRA ${esc(o.id)}</div>
         </summary>
         <div class="atividade-list">
-          ${atFiltradas.map(a=>`<button class="atividade-btn" data-obra="${esc(o.id)}" data-ativ="${esc(a.id||a.nome)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta">${metricHtml(a)}</span></button>`).join("")}
+          ${atFiltradas.map(a=>`<button class="atividade-btn" data-tipo="cronograma" data-obra="${esc(o.id)}" data-ativ="${esc(a.id||a.nome)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta">${metricHtml(a)}</span></button>`).join("")}
         </div>
       </details>`;
     }).join("");
 
-    $("obraTree").innerHTML = (avulsaHtml + gestaoHtml + cronogramaHtml) || `<div class="empty">Nenhuma obra ou atividade encontrada.</div>`;
+    $("obraTree").innerHTML = (avulsaHtml + cronogramaHtml + gestaoHtml) || `<div class="empty">Nenhuma obra ou atividade encontrada.</div>`;
     document.getElementById("btnSelecionarAvulsa")?.addEventListener("click", selecionarAvulsa);
     document.querySelectorAll(".atividade-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        selecionarAtividade(btn.dataset.obra, btn.dataset.ativ, btn);
+        selecionarAtividade(btn.dataset.obra, btn.dataset.ativ, btn, btn.dataset.tipo || "cronograma");
       });
     });
   }
