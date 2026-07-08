@@ -253,21 +253,51 @@ function normMenuName(s){return String(s||'').normalize('NFD').replace(/[\u0300-
 function dataAtualizacaoCronograma(obj){
   if(!obj) return '';
   const d = obj.data || obj;
-  const keys = ['ultima_atualizacao','ultimaAtualizacao','data_atualizacao','dataAtualizacao','atualizado_em','updated_at','modificado_em','modified_at','dt_atualizacao','last_update','lastModified'];
+  const keys = ['ultimaAtualizacao','ultima_atualizacao','updated_at','updatedAt','baselineAt','dataAtualizacao','data_atualizacao','atualizado_em','modificado_em','modified_at','dt_atualizacao','last_update','lastModified'];
   for(const k of keys){ if(d && d[k]) return d[k]; }
   if(d?.meta){ for(const k of keys){ if(d.meta[k]) return d.meta[k]; } }
   if(d?.cabecalho){ for(const k of keys){ if(d.cabecalho[k]) return d.cabecalho[k]; } }
   return '';
 }
-async function carregarDetalheCronograma(obra){
-  try{
-    const j = await fetchJsonMenu('https://api.erpimpar.com.br/cronograma/carregar_cronograma.php?id='+encodeURIComponent(obra.id));
-    const data = j.data || j.cronograma || j;
-    return {...obra, detalhe:data, ultimaAtualizacao:dataAtualizacaoCronograma(data)};
-  }catch(e){
-    console.warn('Falha ao carregar cronograma', obra.id, e);
-    return {...obra, detalhe:null, ultimaAtualizacao:dataAtualizacaoCronograma(obra.raw)};
+function extrairPercentualRealMenu(raw){
+  const cand=[raw?.percentual_realizado,raw?.realizado,raw?.pct_real,raw?.progresso_real,raw?.perc_real,raw?.percentual_real,raw?.real,raw?.percentualRealizado,raw?.['%real'],raw?.resumo?.percentual_realizado,raw?.resumo?.real];
+  for(const v of cand){ if(v!==undefined && v!==null && v!==''){ const n=Number(String(v).replace('%','').replace(',','.')); if(Number.isFinite(n)) return n; } }
+  return 0;
+}
+function extractCoordMenu(raw){
+  const val=String(raw?.coordenador||raw?.Coordenador||raw?.responsavel||raw?.usuario||raw?.owner||'');
+  const n=normMenuName(val);
+  if(n.includes('PABLO')) return 'PABLO';
+  if(n.includes('FABIO')) return 'FABIO';
+  if(n.includes('NICOLAS')) return 'NICOLAS';
+  return val.trim();
+}
+function extrairDiasCronKpi(raw){
+  const cand=[raw?.diasSemAtualizacao,raw?.dias_sem_atualizacao,raw?.dias_ultima_atualizacao,raw?.dias_sem_update,raw?.dias,raw?.qpi4?.diasSemAtualizacao,raw?.resumo?.diasSemAtualizacao];
+  for(const v of cand){
+    if(v!==undefined && v!==null && v!=='' && String(v).toLowerCase()!=='infinity'){
+      const n=Number(String(v).replace(',','.'));
+      if(Number.isFinite(n)) return n;
+    }
   }
+  return null;
+}
+function normalizaListaCronKpi(j){
+  const arr=Array.isArray(j)?j:(Array.isArray(j.obras)?j.obras:(Array.isArray(j.data)?j.data:[]));
+  return arr.map((o,idx)=>{
+    const ultima=dataAtualizacaoCronograma(o);
+    const diasDireto=extrairDiasCronKpi(o);
+    const diasCalculado=diasDireto!==null ? diasDireto : daysAgo(ultima);
+    return {
+      raw:o,
+      id:String(o.id||o.codigo||o.cronograma_id||o.farol_id||idx+1).replace(/\D/g,'').padStart(3,'0'),
+      nome:String(o.nome||o.Nome||o.obra||o.Obra||o.projeto||o.titulo||o.arquivo||o.filename||'').replace(/^cronograma[_-]?\d*[_-]?/i,'').replace(/\.json$/i,'').trim(),
+      coord:extractCoordMenu(o),
+      ultimaAtualizacao:ultima,
+      diasSemAtualizacao:diasCalculado,
+      real:extrairPercentualRealMenu(o)
+    };
+  }).filter(o=>o.nome && o.real<100);
 }
 function nomeEmpreiteiro(e){return String(e.nome||e.razao_social||e.razaoSocial||e.empreiteiro||e.empresa||e.fantasia||e.nome_fantasia||'Sem nome').trim();}
 function obrasDoEmpreiteiro(e){
@@ -282,6 +312,7 @@ function obrasDoEmpreiteiro(e){
 }
 async function carregarEmpreiteirosMenu(){
   const urls = [
+    'https://api.erpimpar.com.br/empreiteiros/listar_contratos_empreiteiros.php',
     'https://api.erpimpar.com.br/empreiteiros/listar_empreiteiros.php',
     'https://api.erpimpar.com.br/api/empreiteiros/listar_empreiteiros.php',
     'https://api.erpimpar.com.br/storage/data/empreiteiros/empreiteiros.json'
@@ -290,8 +321,15 @@ async function carregarEmpreiteirosMenu(){
   for(const url of urls){
     try{
       const j=await fetchJsonMenu(url);
-      const arr=Array.isArray(j)?j:(j.empreiteiros||j.data||j.lista||[]);
-      if(Array.isArray(arr)) return arr.map(e=>({raw:e,nome:nomeEmpreiteiro(e),obras:obrasDoEmpreiteiro(e)})).filter(e=>e.nome);
+      const arr=Array.isArray(j)?j:(j.contratos||j.empreiteiros||j.data||j.lista||[]);
+      if(Array.isArray(arr)){
+        return arr.map(e=>({
+          raw:e,
+          nome:nomeEmpreiteiro(e),
+          obras:obrasDoEmpreiteiro(e),
+          contrato:e.id||e.contrato||e.arquivo||''
+        })).filter(e=>e.nome);
+      }
     }catch(e){ultimoErro=e;}
   }
   if(ultimoErro) console.warn('Falha ao carregar empreiteiros:', ultimoErro);
@@ -304,13 +342,15 @@ async function atualizarResumoMenu(){
     MENU_DASH_STATE.obras=obras;
     setMenuNumber('kpiObrasAtivas',obras.length);
 
-    const detalhados = await Promise.all(obras.map(carregarDetalheCronograma));
-    const atrasados = detalhados
+    const jkpi=await fetchJsonMenu('https://api.erpimpar.com.br/cronograma/listar_kpi.php');
+    const cronKpi=normalizaListaCronKpi(jkpi);
+    const atrasados = cronKpi
       .map(o=>({...o,diasSemAtualizacao:daysAgo(o.ultimaAtualizacao)}))
-      .filter(o=>o.diasSemAtualizacao>7)
+      .filter(o=>Number.isFinite(o.diasSemAtualizacao) && o.diasSemAtualizacao>7)
       .sort((a,b)=>b.diasSemAtualizacao-a.diasSemAtualizacao || a.nome.localeCompare(b.nome,'pt-BR'));
     MENU_DASH_STATE.cronogramasAtrasados=atrasados;
     setMenuNumber('kpiCronogramasAtrasados',atrasados.length);
+    document.querySelector('[data-kpi="cronogramas_atrasados"]')?.closest('.kpi')?.classList.toggle('alert', atrasados.length > 0);
   }catch(e){console.warn('Falha ao carregar obras/cronogramas do menu:',e);setMenuNumber('kpiObrasAtivas','—');setMenuNumber('kpiCronogramasAtrasados','—');}
 
   try{
@@ -324,21 +364,41 @@ async function atualizarResumoMenu(){
     const j=await fetchJsonMenu('https://api.erpimpar.com.br/tv/data/projetos.json');
     const arr=Array.isArray(j)?j:(j.data?.projetos||j.projetos||j.data||[]);
     const obrasAtivas=MENU_DASH_STATE.obras||[];
-    const idsAtivos=new Set(obrasAtivas.map(o=>String(o.id||'').padStart(3,'0')));
-    const nomesAtivos=new Set(obrasAtivas.map(o=>normMenuName(o.nome)));
-    const tvAtiva=(Array.isArray(arr)?arr:[])
-      .map(p=>({
-        raw:p,
-        id:String(p.id||p.cronograma_id||p.farol_id||'').replace(/\D/g,'').padStart(3,'0'),
-        nome:String(p.nome||p.obra||p.titulo||'').trim(),
-        data:String(p.data_atualizacao||p.ultima_atualizacao||p.atualizado_em||p.updated_at||'').trim(),
-        dias:daysAgo(p.data_atualizacao||p.ultima_atualizacao||p.atualizado_em||p.updated_at)
-      }))
-      .filter(p=>p.nome && (idsAtivos.has(p.id) || nomesAtivos.has(normMenuName(p.nome))));
-    const tvAtualizadas=tvAtiva.filter(p=>p.dias<=7).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
-    const tvAtrasadas=tvAtiva.filter(p=>p.dias>7).sort((a,b)=>b.dias-a.dias || a.nome.localeCompare(b.nome,'pt-BR'));
+    const tvLista=(Array.isArray(arr)?arr:[]).map(p=>({
+      raw:p,
+      id:String(p.id||p.cronograma_id||p.farol_id||'').replace(/\D/g,'').padStart(3,'0'),
+      nome:String(p.nome||p.obra||p.titulo||'').trim(),
+      data:String(p.data_atualizacao||p.ultima_atualizacao||p.atualizado_em||p.updated_at||'').trim(),
+      dias:daysAgo(p.data_atualizacao||p.ultima_atualizacao||p.atualizado_em||p.updated_at)
+    })).filter(p=>p.nome);
+
+    function matchTvPorObra(obra){
+      const id=String(obra.id||'').replace(/\D/g,'').padStart(3,'0');
+      const nome=normMenuName(obra.nome);
+      let m=tvLista.find(p=>p.id===id);
+      if(m) return m;
+      m=tvLista.find(p=>normMenuName(p.nome)===nome);
+      if(m) return m;
+      // fallback leve para nomes com complemento, sem depender de de-para/alias
+      m=tvLista.find(p=>{
+        const n=normMenuName(p.nome);
+        return (nome.length>8 && n.includes(nome)) || (n.length>8 && nome.includes(n));
+      });
+      return m||null;
+    }
+
+    const statusTv=obrasAtivas.map(o=>{
+      const tv=matchTvPorObra(o);
+      if(!tv){
+        return {id:o.id,nome:o.nome,data:'',dias:Infinity,pendente:true,motivo:'Sem registro na TV'};
+      }
+      return {id:o.id,nome:o.nome,data:tv.data,dias:tv.dias,pendente:!(tv.dias<=7),motivo:tv.dias<=7?'Atualizada':'TV +7 dias'};
+    });
+    const tvAtualizadas=statusTv.filter(p=>!p.pendente).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    const tvAtrasadas=statusTv.filter(p=>p.pendente).sort((a,b)=>(Number.isFinite(b.dias)?b.dias:-1)-(Number.isFinite(a.dias)?a.dias:-1) || a.nome.localeCompare(b.nome,'pt-BR'));
     MENU_DASH_STATE.tv=tvAtualizadas;
     MENU_DASH_STATE.tvAtrasadas=tvAtrasadas;
+    MENU_DASH_STATE.tvTotal=statusTv.length;
     setMenuNumber('kpiAtualizacoesTv',tvAtualizadas.length);
     const cardTv = document.getElementById('kpiCardTv');
     if(cardTv) cardTv.classList.toggle('warn', tvAtrasadas.length > 0);
@@ -358,12 +418,12 @@ function abrirMenuKpiModal(tipo){
   }else if(tipo==='cronogramas_atrasados'){
     rows=MENU_DASH_STATE.cronogramasAtrasados||[];
     title.textContent='Cronogramas desatualizados há mais de 7 dias';
-    sub.textContent='Cronogramas ativos cuja última atualização passou da janela operacional de 7 dias.';
-    html=rows.length?rows.map(r=>`<div class="menu-modal-row"><b>${r.diasSemAtualizacao} dias</b><span><strong>${r.nome}</strong><br><small>OBRA ${r.id}${r.ultimaAtualizacao?' • Última atualização: '+r.ultimaAtualizacao:''}</small></span></div>`).join(''):'<div class="menu-modal-empty">Nenhum cronograma ativo está desatualizado há mais de 7 dias.</div>';
+    sub.textContent='Mesma fonte e regra do KPI dos Coordenadores: /cronograma/listar_kpi.php.';
+    html=rows.length?rows.map(r=>`<div class="menu-modal-row"><b>${r.diasSemAtualizacao} dias</b><span><strong>${r.nome}</strong><br><small>OBRA ${r.id}${r.coord?' • '+r.coord:''}${r.ultimaAtualizacao?' • Última atualização: '+r.ultimaAtualizacao:''}</small></span></div>`).join(''):'<div class="menu-modal-empty">Nenhum cronograma ativo está desatualizado há mais de 7 dias.</div>';
   }else if(tipo==='empreiteiros'){
     const emp=MENU_DASH_STATE.empreiteiros||{lista:[],obras:[]};
     title.textContent='Empreiteiras cadastradas x obras vinculadas';
-    sub.textContent='Fonte: cadastro de empreiteiros. O número principal mostra empreiteiras cadastradas / obras com vínculo.';
+    sub.textContent='Fonte: contratos em /storage/data/empreiteiros/contratos. O número principal mostra empreiteiras únicas / obras vinculadas.';
     const mini=`<div class="menu-modal-kpi"><div class="menu-modal-mini"><small>Empreiteiras</small><strong>${emp.lista.length||0}</strong></div><div class="menu-modal-mini"><small>Obras vinculadas</small><strong>${emp.obras.length||0}</strong></div></div>`;
     const lista=emp.lista.length?emp.lista.map(e=>`<div class="menu-modal-row"><b>EMP</b><span><strong>${e.nome}</strong>${e.obras?.length?'<br><small>'+e.obras.join(' • ')+'</small>':'<br><small>Sem obra vinculada informada</small>'}</span></div>`).join(''):'<div class="menu-modal-empty">Nenhuma empreiteira encontrada na fonte oficial.</div>';
     html=mini+lista;
@@ -373,7 +433,7 @@ function abrirMenuKpiModal(tipo){
     title.textContent='Status TV das obras ativas';
     sub.textContent='Lista das obras OK nos últimos 7 dias e das pendentes de atualização. Fonte filtrada pelas obras ativas do cronograma.';
     const blocoOk=rows.length?rows.map(r=>`<div class="menu-modal-row"><b>${r.id||'TV'}</b><span>${r.nome}${r.data?'<br><small>Atualizado em '+r.data+'</small>':''}</span></div>`).join(''):'<div class="menu-modal-empty">Nenhuma obra ativa com TV atualizada nos últimos 7 dias.</div>';
-    const blocoAtraso=atrasadas.length?`<div class="menu-modal-section-title">Pendências TV +7 dias</div>`+atrasadas.map(r=>`<div class="menu-modal-row menu-modal-danger"><b>${r.dias} dias</b><span><strong>${r.nome}</strong>${r.data?'<br><small>Última atualização: '+r.data+'</small>':''}</span></div>`).join(''):'<div class="menu-modal-empty">Nenhuma TV atrasada entre as obras ativas.</div>';
+    const blocoAtraso=atrasadas.length?`<div class="menu-modal-section-title">Pendências TV +7 dias</div>`+atrasadas.map(r=>`<div class="menu-modal-row menu-modal-danger"><b>${Number.isFinite(r.dias)?(r.dias+' dias'):'sem TV'}</b><span><strong>${r.nome}</strong><br><small>${r.motivo||'Pendente'}${r.data?' • Última atualização: '+r.data:''}</small></span></div>`).join(''):'<div class="menu-modal-empty">Nenhuma TV atrasada entre as obras ativas.</div>';
     html=`<div class="menu-modal-kpi"><div class="menu-modal-mini"><small>Atualizadas</small><strong>${rows.length}</strong></div><div class="menu-modal-mini"><small>Pendentes</small><strong>${atrasadas.length}</strong></div></div><div class="menu-modal-section-title">Obras OK nos últimos 7 dias</div>${blocoOk}${blocoAtraso}`;
   }
   body.innerHTML=html;
