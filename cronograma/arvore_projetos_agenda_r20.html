@@ -104,7 +104,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     <div class="head">
       <div>
         <div class="title">Selecionar obra e atividade</div>
-        <div class="sub">Abra a obra para escolher atividade do cronograma. Gestão fica separada no final.</div>
+        <div class="sub">Abra a obra na árvore e escolha a atividade do cronograma.</div>
       </div>
       <button class="close" type="button" onclick="history.length>1?history.back():void(0)">×</button>
     </div>
@@ -177,10 +177,10 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     const n = Number(params.get("item") || params.get("idx") || params.get("exec") || params.get("execIdx") || 0);
     return Number.isFinite(n) ? n : 0;
   }
-  function selecionarAtividade(obraId, atividadeId, btn, tipoSelecionado="cronograma"){
+  function selecionarAtividade(obraId, atividadeId, btn){
     const o = (obras || []).find((x,idx)=>String(x.id ?? x.codigo ?? x.nome ?? idx) === String(obraId));
     let a = (o?.atividades || []).find((x,idx)=>String(x.id ?? x.codigo ?? x.nome ?? x.atividade ?? idx) === String(atividadeId));
-    if(!a) a = ATIVIDADES_GESTAO.find(x => String(x.id) === String(atividadeId));
+    if(!a && btn?.dataset?.tipo === "gestao") a = ATIVIDADES_GESTAO.find(x => String(x.id) === String(atividadeId));
     const payload = {
       type: "ERPIMPAR_TREE_SELECT",
       itemIdx: getItemIdx(),
@@ -188,11 +188,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
       obraId: obraId || (o?.id ?? o?.codigo ?? ""),
       obraNome: o?.nome || "",
       atividadeId: atividadeId || (a?.id ?? a?.codigo ?? ""),
-      atividadeNome: a?.nome || a?.atividade || a?.descricao || "",
-      tipoSelecionado: tipoSelecionado,
-      tipoAtividade: tipoSelecionado,
-      semCronograma: tipoSelecionado !== "cronograma",
-      atualizaCronograma: tipoSelecionado === "cronograma"
+      atividadeNome: a?.nome || a?.atividade || a?.descricao || ""
     };
 
     let entregue = false;
@@ -260,12 +256,66 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     setTimeout(()=>{ try{ window.close(); }catch(e){} },450);
   }
 
+  function extrairAtividadesCronograma(data){
+    const raiz = data?.data || data || {};
+    const candidatos = raiz.atividades || raiz.linhas || raiz.rows || raiz.itens || raiz.cronograma || [];
+    const saida = [];
+    function temFilhos(x){
+      return Array.isArray(x?.filhos) || Array.isArray(x?.children) || Array.isArray(x?.subatividades) || Array.isArray(x?.tarefas);
+    }
+    function filhos(x){
+      return x?.filhos || x?.children || x?.subatividades || x?.tarefas || [];
+    }
+    function percReal(x){
+      return num(x?.real ?? x?.percentualReal ?? x?.percReal ?? x?.percentual_real ?? x?.['%real'] ?? x?.['%Real'] ?? x?.progresso ?? 0);
+    }
+    function percPrev(x){
+      return num(x?.previsto ?? x?.percentualPrevisto ?? x?.percPrevisto ?? x?.percentual_previsto ?? x?.['%previsto'] ?? x?.['%Previsto'] ?? x?.percentual ?? 0);
+    }
+    function visita(x,idxBase=''){
+      if(!x || typeof x !== 'object') return;
+      const fs = filhos(x);
+      if(fs.length){ fs.forEach((f,i)=>visita(f, idxBase+'_'+i)); }
+      const nome = String(x.nome || x.atividade || x.descricao || x.descrição || x.tarefa || x.title || '').trim();
+      if(!nome) return;
+      const status = norm(x.status || x.situacao || x.situação || '');
+      const real = percReal(x);
+      if(status.includes('CONCLUID') || status.includes('FINALIZAD') || real >= 100) return;
+      // Inclui folhas e também linhas com responsável. Evita usar agrupadores vazios como atividade.
+      const resp = String(x.responsavel || x.responsável || x.Responsável || x.responsavelNome || '').trim();
+      if(fs.length && !resp) return;
+      saida.push({
+        id: x.id || x.codigo || x.uid || x.uuid || nome,
+        nome,
+        previsto: percPrev(x),
+        real,
+        status: x.status || '',
+        responsavel: resp,
+        inicio: x.inicio || x.dataInicio || x.inicioPrevisto || '',
+        fim: x.fim || x.dataFim || x.fimPrevisto || ''
+      });
+    }
+    (Array.isArray(candidatos) ? candidatos : []).forEach((x,i)=>visita(x,String(i)));
+    const seen = new Set();
+    return saida.filter(a=>{ const k=norm(a.nome)+'|'+String(a.id); if(seen.has(k)) return false; seen.add(k); return true; });
+  }
+
   async function carregarObras(){
-    const j = await fetchJson(API+"listar_obras_agenda.php");
-    obras = (j.data || [])
-      .map(o => ({...o, atividades:(o.atividades || []).filter(atividadeEhFilhaExecutavel)}))
-      .filter(o => Array.isArray(o.atividades) && o.atividades.length)
-      .sort((a,b)=>String(a.nome).localeCompare(String(b.nome),"pt-BR"));
+    const lista = await fetchJson(API+'listar_obras.php?t='+Date.now());
+    const bases = Array.isArray(lista.data) ? lista.data : [];
+    const carregadas = [];
+    for(const b of bases){
+      const id = String(b.id || b.codigo || '').padStart(3,'0');
+      if(!id) continue;
+      try{
+        const cj = await fetchJson(API+'carregar_cronograma.php?id='+encodeURIComponent(id)+'&t='+Date.now());
+        const raiz = cj.data || cj || {};
+        const nome = String(raiz.nome || raiz.obra || b.nome || '').trim();
+        const atividades = extrairAtividadesCronograma(raiz);
+        if(atividades.length) carregadas.push({id, nome:nome || b.nome || ('OBRA '+id), atividades, previsto:num(raiz.previsto||raiz.percentualPrevisto||0), real:num(raiz.real||raiz.percentualReal||0)});
+      }catch(e){ console.warn('Falha ao carregar cronograma', id, e); }
+    }
+    obras = carregadas.sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
     renderTree();
   }
   function renderTree(){
@@ -336,7 +386,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
           <div class="obra-count">OBRA ${esc(o.id)}</div>
         </summary>
         <div class="atividade-list">
-          ${atFiltradas.map(a=>`<button class="atividade-btn" data-tipo="cronograma" data-obra="${esc(o.id)}" data-ativ="${esc(a.id||a.nome)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta">${metricHtml(a)}</span></button>`).join("")}
+          ${atFiltradas.map(a=>`<button class="atividade-btn" data-obra="${esc(o.id)}" data-ativ="${esc(a.id||a.nome)}" type="button"><span class="atividade-title">${esc(a.nome)}</span><span class="atividade-meta">${metricHtml(a)}</span></button>`).join("")}
         </div>
       </details>`;
     }).join("");
@@ -345,7 +395,7 @@ input:focus{border-color:rgba(34,197,94,.75);box-shadow:0 0 0 3px rgba(34,197,94
     document.getElementById("btnSelecionarAvulsa")?.addEventListener("click", selecionarAvulsa);
     document.querySelectorAll(".atividade-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        selecionarAtividade(btn.dataset.obra, btn.dataset.ativ, btn, btn.dataset.tipo || "cronograma");
+        selecionarAtividade(btn.dataset.obra, btn.dataset.ativ, btn);
       });
     });
   }
