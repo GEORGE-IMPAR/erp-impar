@@ -376,7 +376,7 @@ const __LOADER_MIN_MS=650;
 function showPageLoader(titulo,sub){const el=document.getElementById('pageLoader');if(!el)return;el.querySelector('.loader-title').textContent=titulo||'Carregando módulo…';el.querySelector('.loader-sub').textContent=sub||'Preparando sua sessão e carregando dados.';el.classList.remove('hidden');document.querySelectorAll('button').forEach(b=>{b.dataset.wasDisabled=b.disabled?'1':'0';b.disabled=true;});}
 function hidePageLoader(){const el=document.getElementById('pageLoader');if(el)el.classList.add('hidden');document.querySelectorAll('button').forEach(b=>{if(b.dataset.wasDisabled!=='1')b.disabled=false;delete b.dataset.wasDisabled;});}
 async function manutencaoCronogramasAoAbrirMenu(){
-  showPageLoader('Carregando resumo…','Consultando o cache consolidado do ERP.');
+  showPageLoader('Carregando resumo…','Consultando dados do ERP.');
   try{await atualizarResumoMenu()}finally{hidePageLoader()}
 }
 function navegarComLoader(url){if(!url||url==='#')return;const t0=performance.now();showPageLoader('Carregando módulo…','Preparando sua sessão e carregando dados.');setTimeout(()=>{window.location.href=url},Math.max(0,__LOADER_MIN_MS-(performance.now()-t0)));}
@@ -480,6 +480,82 @@ async function carregarEmpreiteirosMenu(){
   if(ultimoErro) console.warn('Falha ao carregar empreiteiros:', ultimoErro);
   return [];
 }
+
+async function atualizarResumoMenuDireto(){
+  try{
+    const j=await fetchJsonMenu('https://api.erpimpar.com.br/cronograma/listar_obras.php');
+    const obras=normalizaListaObras(j).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    MENU_DASH_STATE.obras=obras;
+    setMenuNumber('kpiObrasAtivas',obras.length);
+
+    const jkpi=await fetchJsonMenu('https://api.erpimpar.com.br/cronograma/listar_kpi.php');
+    const cronKpi=normalizaListaCronKpi(jkpi);
+    const atrasados=cronKpi
+      .map(o=>({...o,diasSemAtualizacao:daysAgo(o.ultimaAtualizacao)}))
+      .filter(o=>Number.isFinite(o.diasSemAtualizacao)&&o.diasSemAtualizacao>7)
+      .sort((a,b)=>b.diasSemAtualizacao-a.diasSemAtualizacao||a.nome.localeCompare(b.nome,'pt-BR'));
+    MENU_DASH_STATE.cronogramasAtrasados=atrasados;
+    setMenuNumber('kpiCronogramasAtrasados',atrasados.length);
+    document.querySelector('[data-kpi="cronogramas_atrasados"]')?.closest('.kpi')?.classList.toggle('alert',atrasados.length>0);
+  }catch(e){
+    console.warn('Falha ao carregar obras/cronogramas diretamente:',e);
+    setMenuNumber('kpiObrasAtivas','—');
+    setMenuNumber('kpiCronogramasAtrasados','—');
+  }
+
+  try{
+    const empreiteiros=await carregarEmpreiteirosMenu();
+    const obrasVinculadas=[...new Set(empreiteiros.flatMap(e=>e.obras))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    MENU_DASH_STATE.empreiteiros={lista:empreiteiros,obras:obrasVinculadas};
+    setMenuNumber('kpiEmpreiteirosObras',empreiteiros.length+'/'+obrasVinculadas.length);
+  }catch(e){
+    console.warn('Falha ao carregar empreiteiros diretamente:',e);
+    setMenuNumber('kpiEmpreiteirosObras','—');
+  }
+
+  try{
+    const j=await fetchJsonMenu('https://api.erpimpar.com.br/tv/data/projetos.json');
+    const arr=Array.isArray(j)?j:(j.data?.projetos||j.projetos||j.data||[]);
+    const obrasAtivas=MENU_DASH_STATE.obras||[];
+    const tvLista=(Array.isArray(arr)?arr:[]).map(p=>({
+      raw:p,
+      id:String(p.id||p.cronograma_id||p.farol_id||'').replace(/\D/g,'').padStart(3,'0'),
+      nome:String(p.nome||p.obra||p.titulo||'').trim(),
+      data:String(p.data_atualizacao||p.ultima_atualizacao||p.atualizado_em||p.updated_at||'').trim(),
+      dias:daysAgo(p.data_atualizacao||p.ultima_atualizacao||p.atualizado_em||p.updated_at)
+    })).filter(p=>p.nome);
+
+    function matchTvPorObra(obra){
+      const id=String(obra.id||'').replace(/\D/g,'').padStart(3,'0');
+      const nome=normMenuName(obra.nome);
+      return tvLista.find(p=>p.id===id)
+        ||tvLista.find(p=>normMenuName(p.nome)===nome)
+        ||tvLista.find(p=>{
+          const n=normMenuName(p.nome);
+          return (nome.length>8&&n.includes(nome))||(n.length>8&&nome.includes(n));
+        })||null;
+    }
+
+    const statusTv=obrasAtivas.map(o=>{
+      const tv=matchTvPorObra(o);
+      return tv
+        ? {id:o.id,nome:o.nome,data:tv.data,dias:tv.dias,pendente:!(tv.dias<=7),motivo:tv.dias<=7?'Atualizada':'TV +7 dias'}
+        : {id:o.id,nome:o.nome,data:'',dias:Infinity,pendente:true,motivo:'Sem registro na TV'};
+    });
+    const tvAtualizadas=statusTv.filter(p=>!p.pendente).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    const tvAtrasadas=statusTv.filter(p=>p.pendente).sort((a,b)=>(Number.isFinite(b.dias)?b.dias:-1)-(Number.isFinite(a.dias)?a.dias:-1)||a.nome.localeCompare(b.nome,'pt-BR'));
+    MENU_DASH_STATE.tv=tvAtualizadas;
+    MENU_DASH_STATE.tvAtrasadas=tvAtrasadas;
+    MENU_DASH_STATE.tvTotal=statusTv.length;
+    setMenuNumber('kpiAtualizacoesTv',tvAtualizadas.length);
+    document.getElementById('kpiCardTv')?.classList.toggle('warn',tvAtrasadas.length>0);
+  }catch(e){
+    console.warn('Falha ao carregar TV diretamente:',e);
+    setMenuNumber('kpiAtualizacoesTv','—');
+    document.getElementById('kpiCardTv')?.classList.remove('warn');
+  }
+}
+
 async function atualizarResumoMenu(){
   try{
     const cache=await fetchJsonMenu('https://api.erpimpar.com.br/sistema/storage/cache/resumo_menu.json');
@@ -543,9 +619,8 @@ async function atualizarResumoMenu(){
     setMenuNumber('kpiAtualizacoesTv',tvAtualizadas.length);
     document.getElementById('kpiCardTv')?.classList.toggle('warn',tvAtrasadas.length>0);
   }catch(e){
-    console.warn('Falha ao carregar cache consolidado do menu:',e);
-    ['kpiObrasAtivas','kpiCronogramasAtrasados','kpiEmpreiteirosObras','kpiAtualizacoesTv']
-      .forEach(id=>setMenuNumber(id,'—'));
+    console.warn('Cache indisponível; usando APIs originais:',e);
+    await atualizarResumoMenuDireto();
   }
 }
 function abrirMenuKpiModal(tipo){
