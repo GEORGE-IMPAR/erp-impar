@@ -380,6 +380,47 @@ async function manutencaoCronogramasAoAbrirMenu(){
   try{await atualizarResumoMenu()}finally{hidePageLoader()}
 }
 function navegarComLoader(url){if(!url||url==='#')return;const t0=performance.now();showPageLoader('Carregando módulo…','Preparando sua sessão e carregando dados.');setTimeout(()=>{window.location.href=url},Math.max(0,__LOADER_MIN_MS-(performance.now()-t0)));}
+
+/* =========================================================
+   ESTABILIZAÇÃO DE NAVEGAÇÃO / BFCACHE
+   ========================================================= */
+function resetPageLoaderAfterNavigation(){
+  hidePageLoader();
+  closeSidebar();
+}
+
+/*
+ * Ao sair, o loader é fechado antes que o navegador congele a página
+ * no Back/Forward Cache. Assim ele não volta preso ao retornar.
+ */
+window.addEventListener('pagehide', () => {
+  resetPageLoaderAfterNavigation();
+});
+
+/*
+ * Ao retornar pelo botão nativo do navegador, limpa imediatamente
+ * qualquer estado visual restaurado pelo BFCache.
+ */
+window.addEventListener('pageshow', event => {
+  const nav = performance.getEntriesByType?.('navigation')?.[0];
+  const isBackForward = event.persisted || nav?.type === 'back_forward';
+  if(isBackForward){
+    resetPageLoaderAfterNavigation();
+  }
+});
+
+/*
+ * Proteção adicional para abas restauradas pelo navegador.
+ */
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible'){
+    const nav = performance.getEntriesByType?.('navigation')?.[0];
+    if(nav?.type === 'back_forward'){
+      resetPageLoaderAfterNavigation();
+    }
+  }
+});
+
 function getIniciais(nome=''){const p=nome.trim().split(/\s+/).filter(Boolean);const a=(p[0]||'U').charAt(0).toUpperCase();const b=(p[p.length-1]||'').charAt(0).toUpperCase();return (a+(b&&b!==a?b:'')).slice(0,2)}
 function canAccess(mod,user){const allow=new Set((user.modulos||[]).map(m=>String(m).toLowerCase()));if(allow.size===0)return true;const item=MODULES.find(m=>m.mod===mod);const aliases=item?.aliases||[mod];return aliases.some(a=>allow.has(a));}
 function renderModules(user){const grid=document.getElementById('modulesGrid');grid.innerHTML='';MODULES.forEach(item=>{const ok=canAccess(item.mod,user);const card=document.createElement('article');card.className='module-card'+(ok?'':' locked');card.dataset.module=item.mod;card.innerHTML=`<div class="module-icon">${item.icon}</div><h3>${item.title}</h3><p>${item.desc}</p><button class="open-btn" type="button">${ok?'Abrir módulo':'🔒 Sem permissão'} <span>${ok?'→':''}</span></button>`;if(ok){card.querySelector('.open-btn').addEventListener('click',()=>navegarComLoader(ROUTES[item.mod]));card.addEventListener('dblclick',()=>navegarComLoader(ROUTES[item.mod]));}grid.appendChild(card);});}
