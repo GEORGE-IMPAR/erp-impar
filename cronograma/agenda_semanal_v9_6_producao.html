@@ -1120,6 +1120,25 @@ body.toolbar-collapsed .content{
 
 
 
+
+<style id="v7-production-fixes">
+/* V7 — estabilidade de navegação, quebra de texto e alcance do último card */
+.activity-card,.activity-card *{min-width:0!important;max-width:100%!important}
+.activity-card .obra{
+  display:block!important;width:100%!important;max-width:100%!important;
+  white-space:normal!important;overflow:visible!important;text-overflow:clip!important;
+  overflow-wrap:anywhere!important;word-break:break-word!important;line-height:1.2!important;
+  padding-right:18px!important;
+}
+.schedule-area{
+  padding-bottom:calc(var(--footer-h) + 76px)!important;
+  scroll-padding-bottom:calc(var(--footer-h) + 76px)!important;
+}
+.week-grid:not(.header){padding-bottom:28px!important}
+.menu-btn{cursor:pointer!important;pointer-events:auto!important;position:relative!important;z-index:5!important}
+.toolbar-btn[aria-busy="true"]{opacity:.62!important;cursor:wait!important;pointer-events:none!important}
+</style>
+
 <body>
 <div class="shell">
   <header class="app-header">
@@ -1135,7 +1154,7 @@ body.toolbar-collapsed .content{
       <div class="real-user">
         <div class="avatar">GR</div>
         <div class="user-text"><b>George Ramos</b><small>george@imparsistemas.com</small></div>
-        <button class="menu-btn">🏠 Menu</button>
+        <button class="menu-btn" id="menuBtn" type="button">🏠 Menu</button>
       </div>
     </div>
   </header>
@@ -2767,22 +2786,45 @@ renderAll();
     await saveCatalogs();showToast('success','Agenda salva','O rascunho semanal foi gravado no servidor.');
   }
   async function toggleFreeze(){
-    if(currentServerType==='historico'||weekRelation(selectedWeekStart)!=='future'){showToast('warning','Semana bloqueada','Semanas vigentes ou históricas não podem ser alteradas.');return;}
-    const frozen=getWeekMeta(currentWeekKey).status==='frozen';
-    if(!currentServerFile&&!frozen)await saveAgendaServer();
-    const ok=await askSystem({title:frozen?'Descongelar semana?':'Congelar semana?',message:frozen?'A agenda voltará a permitir alterações e deixará de ser disponibilizada para a Agenda do Dia.':'A agenda será bloqueada e disponibilizada para a Agenda do Dia.',confirmText:frozen?'Descongelar':'Congelar'});
-    if(!ok)return;
-    const freezeRes=await apiJson('congelar_agenda_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:frozen?'descongelar':'congelar',usuario:getERPUser()})});
-    if(Boolean(freezeRes.congelado)===frozen){
-      throw new Error('O servidor não confirmou a alteração do congelamento.');
+    if(currentServerType==='historico'||weekRelation(selectedWeekStart)!=='future'){
+      showToast('warning','Semana bloqueada','Semanas vigentes ou históricas não podem ser alteradas.');
+      return;
     }
-    getWeekMeta(currentWeekKey).status=freezeRes.congelado?'frozen':'draft';
-    updateWeekUI();
-    showToast('success',freezeRes.congelado?'Agenda congelada':'Semana descongelada',freezeRes.congelado?'Planejamento publicado e bloqueado.':'Edição liberada novamente.');
+    const freezeButton=document.getElementById('freezeWeekBtn');
+    const frozen=getWeekMeta(currentWeekKey).status==='frozen';
+    if(!currentServerFile&&!frozen) await saveAgendaServer();
+    const ok=await askSystem({
+      title:frozen?'Descongelar semana?':'Congelar semana?',
+      message:frozen?'A agenda voltará a permitir alterações e deixará de ser disponibilizada para a Agenda do Dia.':'A agenda será bloqueada e disponibilizada para a Agenda do Dia.',
+      confirmText:frozen?'Descongelar':'Congelar'
+    });
+    if(!ok)return;
+    if(freezeButton){freezeButton.setAttribute('aria-busy','true');freezeButton.disabled=true;}
+    try{
+      const freezeRes=await apiJson('congelar_agenda_novo.php',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({acao:frozen?'descongelar':'congelar',usuario:getERPUser()})
+      });
+      if(Boolean(freezeRes.congelado)===frozen){
+        throw new Error('O servidor não confirmou a alteração do congelamento.');
+      }
+      // Recarrega do servidor: a tela nunca assume um estado apenas local.
+      const check=await apiJson('carregar_agenda_novo.php?semana='+encodeURIComponent(currentWeekKey)+'&_='+Date.now());
+      if(Boolean(check.congelado)!==Boolean(freezeRes.congelado)){
+        throw new Error('O estado confirmado pelo servidor diverge do marcador de congelamento.');
+      }
+      applyPayload(check,selectedWeekStart);
+      showToast('success',check.congelado?'Agenda congelada':'Semana descongelada',check.congelado?'Planejamento publicado e bloqueado.':'Edição liberada novamente.');
+    }finally{
+      if(freezeButton){freezeButton.removeAttribute('aria-busy');freezeButton.disabled=false;}
+      updateWeekUI();
+    }
   }
   saveState=function(){/* memória do navegador; persistência somente pelo botão Salvar */};
   async function bootstrap(){
     try{
+      const menuBtn=document.getElementById('menuBtn');
+      if(menuBtn) menuBtn.onclick=()=>{ window.location.href='/menu.html'; };
       await loadCatalogs();await loadWeek(new Date());
       const saveBtn=document.getElementById('saveMock');if(saveBtn)saveBtn.onclick=()=>saveAgendaServer().catch(e=>showToast('error','Erro ao salvar',e.message));
       const freezeBtn=document.getElementById('freezeWeekBtn');if(freezeBtn)freezeBtn.onclick=()=>toggleFreeze().catch(e=>showToast('error','Erro',e.message));
