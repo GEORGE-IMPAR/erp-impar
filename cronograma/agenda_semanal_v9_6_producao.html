@@ -1106,6 +1106,16 @@ body.toolbar-collapsed .content{
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
+
+<style id="v6-card-overflow-fix">
+/* V6 — nomes longos sempre permanecem dentro do card. */
+.agenda-cell,.alloc-card,.alloc-card>*,.cell-card,.activity-card{min-width:0!important;max-width:100%!important;}
+.alloc-obra,.activity-work,.obra-title,[data-role="obra-title"]{
+  display:block!important;width:100%!important;max-width:100%!important;
+  white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;
+  line-height:1.18!important;
+}
+</style>
 </head>
 
 
@@ -1660,9 +1670,11 @@ inlineSearch.addEventListener("keydown",e=>{
   else if(e.key==="Escape")closeInline();
 });
 
-const ACTIVE_WORKS = new Set(obras.map(name=>name.trim().toLowerCase()));
+// Catálogo compartilhado entre o motor visual e a integração com o servidor.
+// Começa vazio para o primeiro render e é preenchido após listar_obras_novo.php.
+window.__AGENDA_ACTIVE_WORK_NAMES = window.__AGENDA_ACTIVE_WORK_NAMES || new Set();
 function isActiveWork(name){
-  return ACTIVE_WORKS.has(String(name||"").trim().toLowerCase());
+  return window.__AGENDA_ACTIVE_WORK_NAMES.has(String(name||"").trim().toLowerCase());
 }
 
 function activityElement(a,personId,day){
@@ -2602,7 +2614,7 @@ renderAll();
 
 <script>
 /* =========================================================
-   PRODUÇÃO V9.6 — dados compartilhados somente no servidor.
+   PRODUÇÃO V9.6 — revisão V5: dados compartilhados somente no servidor.
    localStorage/sessionStorage são usados exclusivamente para ERPIMPAR_USER.
    ========================================================= */
 (function(){
@@ -2610,7 +2622,8 @@ renderAll();
   let currentServerType='novo';
   let currentServerFile=null;
   let catalogLoaded=false;
-  let activeWorkNames=new Set();
+  let activeWorkNames=window.__AGENDA_ACTIVE_WORK_NAMES;
+  let manualWorkNames=new Set();
 
   function getERPUser(){
     for(const store of [window.localStorage,window.sessionStorage]){
@@ -2690,8 +2703,11 @@ renderAll();
     const [worksRes,cadRes]=await Promise.all([apiJson('listar_obras_novo.php'),apiJson('cadastros_agenda_novo.php')]);
     const allWorks=Array.isArray(worksRes.data)?worksRes.data:[];
     const activeRows=allWorks.filter(x=>String(x.origem||'ativa').toLowerCase()==='ativa'&&x.ativa!==false);
+    const manualRows=allWorks.filter(x=>String(x.origem||'').toLowerCase()==='manual'||x.ativa===false);
     const active=activeRows.map(x=>String(x.nome||x.obra||'').trim()).filter(Boolean);
     activeWorkNames=new Set(active.map(x=>x.toLowerCase()));
+    manualWorkNames=new Set(manualRows.map(x=>String(x.nome||x.obra||'').trim().toLowerCase()).filter(Boolean));
+    window.__AGENDA_ACTIVE_WORK_NAMES=activeWorkNames;
     obras=[...new Set(allWorks.map(x=>String(x.nome||x.obra||'').trim()).filter(Boolean))];
     if(!obras.length)obras=['Empresa'];
     const acts=(cadRes.data?.atividades||[]).map(x=>typeof x==='string'?x:String(x.nome||'')).filter(Boolean);
@@ -2701,9 +2717,16 @@ renderAll();
     catalogLoaded=true;
   }
   async function saveCatalogs(){
-    const manual=obras.filter(name=>!activeWorkNames.has(String(name).trim().toLowerCase()));
+    const manual=[...new Set(obras
+      .map(name=>String(name||'').trim())
+      .filter(Boolean)
+      .filter(name=>!activeWorkNames.has(name.toLowerCase()))
+    )];
+    manualWorkNames=new Set(manual.map(name=>name.toLowerCase()));
+    const erpUser=getERPUser();
+    const usuarioMinimo={nome:erpUser.nome||erpUser.name||'',email:erpUser.email||''};
     await Promise.all([
-      apiJson('listar_obras_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({obrasManuais:manual,usuario:getERPUser()})}),
+      apiJson('listar_obras_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({obrasManuais:manual,usuario:usuarioMinimo})}),
       apiJson('cadastros_agenda_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({colaboradores:people,atividades,usuario:getERPUser()})})
     ]);
     return true;
@@ -2749,9 +2772,13 @@ renderAll();
     if(!currentServerFile&&!frozen)await saveAgendaServer();
     const ok=await askSystem({title:frozen?'Descongelar semana?':'Congelar semana?',message:frozen?'A agenda voltará a permitir alterações e deixará de ser disponibilizada para a Agenda do Dia.':'A agenda será bloqueada e disponibilizada para a Agenda do Dia.',confirmText:frozen?'Descongelar':'Congelar'});
     if(!ok)return;
-    await apiJson('congelar_agenda_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:frozen?'descongelar':'congelar',usuario:getERPUser()})});
-    getWeekMeta(currentWeekKey).status=frozen?'draft':'frozen';updateWeekUI();
-    showToast('success',frozen?'Semana descongelada':'Agenda congelada',frozen?'Edição liberada novamente.':'Planejamento publicado e bloqueado.');
+    const freezeRes=await apiJson('congelar_agenda_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acao:frozen?'descongelar':'congelar',usuario:getERPUser()})});
+    if(Boolean(freezeRes.congelado)===frozen){
+      throw new Error('O servidor não confirmou a alteração do congelamento.');
+    }
+    getWeekMeta(currentWeekKey).status=freezeRes.congelado?'frozen':'draft';
+    updateWeekUI();
+    showToast('success',freezeRes.congelado?'Agenda congelada':'Semana descongelada',freezeRes.congelado?'Planejamento publicado e bloqueado.':'Edição liberada novamente.');
   }
   saveState=function(){/* memória do navegador; persistência somente pelo botão Salvar */};
   async function bootstrap(){
