@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Motor GPS × Obras</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  body{font-family:Arial,sans-serif;margin:24px;background:#f4f6f8;color:#172033}
+  main{max-width:1000px;margin:auto;background:#fff;padding:22px;border-radius:12px;box-shadow:0 8px 28px #0001}
+  h1{margin:0 0 8px;font-size:24px} p{color:#566074}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  label{font-size:12px;font-weight:bold;color:#465064;display:block;margin-bottom:5px}
+  input,select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #ccd3dc;border-radius:8px}
+  .full{grid-column:1/-1}.actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  button{padding:11px 16px;border:0;border-radius:8px;font-weight:bold;cursor:pointer;background:#1358c8;color:#fff}
+  button.secondary{background:#42526a}button:disabled{opacity:.45;cursor:not-allowed}
+  #status{margin-top:16px;padding:12px;border-radius:8px;background:#eef3f8;white-space:pre-wrap}
+  #status.erro{background:#feecec;color:#9b1c1c}#status.ok{background:#eaf8ef;color:#176b36}
+  table{width:100%;border-collapse:collapse;margin-top:18px;font-size:12px}th,td{border:1px solid #dde2e8;padding:7px;text-align:left}th{background:#e9eef5}
+  .small{font-size:11px;color:#687386}.warn{background:#fff7dd;padding:10px;border-radius:8px;margin:12px 0;color:#755600}
+  .map-panel{margin-top:18px;border-top:1px solid #dde2e8;padding-top:18px}.map-toolbar{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.map-wrap{position:relative;margin-top:12px}.map{height:520px;border:1px solid #ccd3dc;border-radius:12px;overflow:hidden;background:#eef2f6}.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px}.legend span{display:flex;align-items:center;gap:6px}.sw{width:28px;height:8px;border-radius:999px;display:inline-block}.day-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.day-card{padding:10px;border:1px solid #dde2e8;border-radius:10px;background:#f8fafc}.day-card b{display:block;font-size:18px;margin-top:4px}.timeline{margin-top:12px;display:grid;gap:7px}.timeline-row{display:grid;grid-template-columns:115px 120px 1fr 120px;gap:8px;padding:9px;border:1px solid #e1e6ec;border-radius:9px;font-size:12px}.timeline-row.nao{background:#fff0f0;border-color:#f2b8b8}.timeline-row.obra{background:#edf9f1}.timeline-row.empresa{background:#eef5ff}@media(max-width:700px){.map-toolbar,.day-summary{grid-template-columns:1fr}.timeline-row{grid-template-columns:1fr 1fr}.map{height:420px}}
+  @media(max-width:700px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Motor GPS × Obras</h1>
+  <p>Carregue a planilha, processe os endereços e baixe o resultado em Excel.</p>
+  <div class="warn">O navegador precisa de internet para usar Google Maps e baixar a biblioteca de Excel. A chave informada fica somente neste navegador.</div>
+
+  <div class="grid">
+    <div class="full"><label>Planilha de entrada (.xlsx)</label><input id="arquivo" type="file" accept=".xlsx,.xls"></div>
+    <div class="full"><label>Chave Google Maps</label><input id="apiKey" type="password" placeholder="Cole a chave usada na RP"></div>
+    <div class="full"><label>Endereço da empresa</label><input id="empresa" placeholder="Ex.: Rua..., São José - SC"></div>
+    <div><label>Raio da cerca virtual (metros)</label><input id="raio" type="number" value="500" min="50"></div>
+    <div><label>Consumo médio do veículo (km/l)</label><input id="consumo" type="number" value="10" min="0.1" step="0.1"></div>
+    <div><label>Preço do combustível (R$/litro)</label><input id="preco" type="number" value="6.20" min="0" step="0.01"></div>
+    <div><label>Estado/país para completar endereços</label><input id="sufixo" value="Santa Catarina, Brasil"></div>
+    <div><label>Distância</label><select id="modoDistancia"><option value="rota">Rota pelas ruas (Google)</option><option value="linha">Linha reta (mais rápido)</option></select></div>
+  </div>
+
+  <div class="actions">
+    <button id="processar">Processar e calcular</button>
+    <button id="baixar" class="secondary" disabled>Baixar planilha de resultado</button>
+  </div>
+  <div id="status">Aguardando a planilha.</div>
+  <div id="preview"></div>
+  <section class="map-panel" id="mapPanel" hidden>
+    <h2>Validação visual do dia</h2>
+    <div class="map-toolbar"><div><label>Veículo / data</label><select id="grupoMapa"></select></div><button id="mostrarMapa">Mostrar no mapa</button></div>
+    <div class="day-summary" id="daySummary"></div>
+    <div class="map-wrap"><div id="map" class="map"></div></div>
+    <div class="legend"><span><i class="sw" style="background:#145bd7"></i>Rota registrada</span><span><i class="sw" style="background:rgba(20,91,215,.22);height:18px"></i>Faixa visual de tolerância</span><span><i class="sw" style="background:#22a55b"></i>Trecho apropriado</span><span><i class="sw" style="background:#df3030"></i>Sem obra/empresa reconhecida</span></div>
+    <div class="timeline" id="timelineVisual"></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+let googlePronto=false, resultadoFinal=null, cacheGeo=new Map(), cacheRota=new Map(), gruposMapa=new Map(), mapaAtual=null, overlaysMapa=[];
+
+function status(msg,tipo=''){$('status').textContent=msg;$('status').className=tipo;}
+function texto(v){return String(v??'').trim();}
+function normalizaPlaca(v){return texto(v).toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function normaliza(s){return texto(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ');}
+function numero(v,padrao=0){const n=Number(String(v??'').replace(',','.'));return Number.isFinite(n)?n:padrao;}
+function excelDate(v){
+  if(v instanceof Date) return v;
+  if(typeof v==='number') return new Date(Math.round((v-25569)*86400*1000));
+  const d=new Date(v); return isNaN(d)?null:d;
+}
+function dataBR(d){return d?d.toLocaleDateString('pt-BR'):'';}
+function horaBR(d){return d?d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';}
+function horas(ms){return Math.max(0,ms/3600000);}
+function haversine(a,b){
+  const R=6371, rad=x=>x*Math.PI/180;
+  const dLat=rad(b.lat-a.lat), dLng=rad(b.lng-a.lng);
+  const q=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(q));
+}
+function concatEndereco(end,sufixo){const e=texto(end);return normaliza(e).includes('BRASIL')?e:`${e}, ${sufixo}`;}
+function lerAba(wb,nome){const ws=wb.Sheets[nome];if(!ws)throw new Error(`Aba obrigatória não encontrada: ${nome}`);return XLSX.utils.sheet_to_json(ws,{defval:null,raw:true});}
+
+function carregarGoogle(key){
+  return new Promise((resolve,reject)=>{
+    if(window.google?.maps){googlePronto=true;return resolve();}
+    if(!key)return reject(new Error('Informe a chave do Google Maps.'));
+    window.__gmOk=()=>{googlePronto=true;resolve();};
+    const s=document.createElement('script');
+    s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=geometry&callback=__gmOk`;
+    s.async=true;s.defer=true;s.onerror=()=>reject(new Error('Não foi possível carregar Google Maps. Verifique a chave e as restrições.'));
+    document.head.appendChild(s);
+  });
+}
+
+async function geocodificar(endereco,sufixo){
+  const chave=normaliza(endereco);
+  if(cacheGeo.has(chave))return cacheGeo.get(chave);
+  const geocoder=new google.maps.Geocoder();
+  const full=concatEndereco(endereco,sufixo);
+  const r=await new Promise((resolve,reject)=>geocoder.geocode({address:full},(res,st)=>st==='OK'&&res[0]?resolve(res[0]):reject(new Error(`Geocodificação falhou: ${endereco} (${st})`))));
+  const out={lat:r.geometry.location.lat(),lng:r.geometry.location.lng(),formatado:r.formatted_address};
+  cacheGeo.set(chave,out);await pausa(80);return out;
+}
+function pausa(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function distanciaRota(a,b,modo){
+  if(!a||!b)return {km:0,min:0,fonte:'sem coordenada'};
+  if(modo==='linha')return {km:haversine(a,b),min:0,fonte:'linha reta'};
+  const k=`${a.lat.toFixed(5)},${a.lng.toFixed(5)}>${b.lat.toFixed(5)},${b.lng.toFixed(5)}`;
+  if(cacheRota.has(k))return cacheRota.get(k);
+  const service=new google.maps.DirectionsService();
+  try{
+    const r=await new Promise((resolve,reject)=>service.route({origin:a,destination:b,travelMode:google.maps.TravelMode.DRIVING},(res,st)=>st==='OK'?resolve(res):reject(new Error(st))));
+    const leg=r.routes[0].legs[0];const out={km:leg.distance.value/1000,min:leg.duration.value/60,fonte:'rota Google'};
+    cacheRota.set(k,out);await pausa(80);return out;
+  }catch(e){const out={km:haversine(a,b),min:0,fonte:'linha reta (fallback)'};cacheRota.set(k,out);return out;}
+}
+
+function localizarPonto(coord,obras,empresa,raio){
+  let candidatos=[];
+  if(empresa?.coord)candidatos.push({tipo:'EMPRESA',nome:'EMPRESA',...empresa,dist:haversine(coord,empresa.coord)*1000});
+  for(const o of obras)candidatos.push({tipo:'OBRA',nome:o.obra,...o,dist:haversine(coord,o.coord)*1000});
+  candidatos.sort((a,b)=>a.dist-b.dist);
+  const c=candidatos[0];
+  return c&&c.dist<=raio?c:{tipo:'OUTRO',nome:'OUTRO / NÃO IDENTIFICADO',dist:c?.dist??null};
+}
+
+function colaboradoresPorPlaca(rows){
+  const map=new Map();
+  for(const r of rows){
+    const p=normalizaPlaca(r.Identificador);if(!p)continue;
+    if(!map.has(p))map.set(p,[]);
+    map.get(p).push({responsavel:texto(r['Responsável']),valorHora:numero(r['VALOR h/h'])});
+  }
+  return map;
+}
+function escolherColab(lista){
+  if(!lista?.length)return {responsavel:'NÃO CADASTRADO',valorHora:0,observacao:'Placa sem colaborador cadastrado'};
+  if(lista.length===1)return {...lista[0],observacao:''};
+  return {responsavel:lista.map(x=>x.responsavel).join(' + '),valorHora:lista.reduce((a,x)=>a+x.valorHora,0),observacao:'Mais de um colaborador vinculado; valores-hora somados'};
+}
+function atribuirObra(origem,destino){
+  if(destino?.tipo==='OBRA')return destino.nome;
+  if(origem?.tipo==='OBRA')return origem.nome;
+  return 'NÃO APROPRIADO';
+}
+
+
+function classificarPeriodo(atual,prox){
+  const tipoAtual=normaliza(atual?.evento||''), tipoProx=normaliza(prox?.evento||'');
+  if(!prox)return 'FIM';
+  if(tipoAtual.includes('DESLIGOU') && tipoProx.includes('LIGOU'))return 'PARADO';
+  return 'MOVIMENTO';
+}
+function descricaoRegiao(e){
+  if(e.ponto?.tipo==='OBRA')return e.ponto.nome;
+  if(e.ponto?.tipo==='EMPRESA')return 'EMPRESA';
+  return e.endereco || 'REGIÃO NÃO IDENTIFICADA';
+}
+function limparMapa(){overlaysMapa.forEach(x=>x.setMap&&x.setMap(null));overlaysMapa=[];}
+function adicionarOverlay(x){overlaysMapa.push(x);return x;}
+function formatHoras(h){const min=Math.round((h||0)*60);return `${Math.floor(min/60)}h ${String(min%60).padStart(2,'0')}min`;}
+function renderMapaGrupo(chave){
+  const arr=gruposMapa.get(chave);if(!arr?.length)return;
+  limparMapa();
+  const center=arr[0].coord;
+  mapaAtual=mapaAtual||new google.maps.Map($('map'),{zoom:12,center,mapTypeId:'roadmap'});
+  mapaAtual.setCenter(center);
+  const bounds=new google.maps.LatLngBounds();
+  const path=arr.map(e=>({lat:e.coord.lat,lng:e.coord.lng}));path.forEach(p=>bounds.extend(p));
+  // Banda visual larga por baixo e linha real por cima.
+  adicionarOverlay(new google.maps.Polyline({map:mapaAtual,path,strokeColor:'#145bd7',strokeOpacity:.18,strokeWeight:28,geodesic:true,zIndex:1}));
+  adicionarOverlay(new google.maps.Polyline({map:mapaAtual,path,strokeColor:'#145bd7',strokeOpacity:1,strokeWeight:4,geodesic:true,zIndex:3}));
+  const raio=numero($('raio').value,500);
+  // Círculos em metros ao longo dos pontos deixam explícita a tolerância real configurada.
+  arr.forEach((e,i)=>{
+    adicionarOverlay(new google.maps.Circle({map:mapaAtual,center:e.coord,radius:raio,strokeOpacity:0,fillColor:'#145bd7',fillOpacity:.025,zIndex:0}));
+    if(i===0 || i===arr.length-1 || e.ponto.tipo!=='OUTRO'){
+      const cor=e.ponto.tipo==='OBRA'?'green':e.ponto.tipo==='EMPRESA'?'blue':'red';
+      const m=adicionarOverlay(new google.maps.Marker({map:mapaAtual,position:e.coord,title:`${horaBR(e.dt)} • ${descricaoRegiao(e)}`,icon:`https://maps.google.com/mapfiles/ms/icons/${cor}-dot.png`,zIndex:5}));
+      const info=new google.maps.InfoWindow({content:`<b>${descricaoRegiao(e)}</b><br>${horaBR(e.dt)}<br>${e.endereco}`});m.addListener('click',()=>info.open(mapaAtual,m));
+    }
+  });
+  // Colore cada trecho conforme apropriado ou não.
+  for(let i=0;i<arr.length-1;i++){
+    const a=arr[i],b=arr[i+1],obra=atribuirObra(a.ponto,b.ponto),ok=obra!=='NÃO APROPRIADO';
+    adicionarOverlay(new google.maps.Polyline({map:mapaAtual,path:[a.coord,b.coord],strokeColor:ok?'#22a55b':'#df3030',strokeOpacity:.95,strokeWeight:6,zIndex:4}));
+  }
+  mapaAtual.fitBounds(bounds,50);
+  renderResumoDia(arr);
+}
+function renderResumoDia(arr){
+  let obra=0,empresa=0,nao=0,mov=0,parado=0;
+  const rows=[];
+  for(let i=0;i<arr.length-1;i++){
+    const a=arr[i],b=arr[i+1],h=horas(b.dt-a.dt),estado=classificarPeriodo(a,b),apro=atribuirObra(a.ponto,b.ponto);
+    if(estado==='MOVIMENTO')mov+=h;else parado+=h;
+    if(apro!=='NÃO APROPRIADO')obra+=h;else if(a.ponto.tipo==='EMPRESA'&&b.ponto.tipo==='EMPRESA')empresa+=h;else nao+=h;
+    const cls=apro!=='NÃO APROPRIADO'?'obra':(a.ponto.tipo==='EMPRESA'?'empresa':'nao');
+    rows.push(`<div class="timeline-row ${cls}"><b>${horaBR(a.dt)}–${horaBR(b.dt)}</b><span>${estado}</span><span>${descricaoRegiao(a)} → ${descricaoRegiao(b)}</span><b>${formatHoras(h)}</b></div>`);
+  }
+  const total=obra+empresa+nao;
+  $('daySummary').innerHTML=`<div class="day-card">Tempo observado<b>${formatHoras(total)}</b></div><div class="day-card">Apropriado a obra<b>${formatHoras(obra)}</b></div><div class="day-card">Empresa<b>${formatHoras(empresa)}</b></div><div class="day-card">Sem identificação<b>${formatHoras(nao)}</b></div><div class="day-card">Em movimento<b>${formatHoras(mov)}</b></div><div class="day-card">Parado<b>${formatHoras(parado)}</b></div>`;
+  $('timelineVisual').innerHTML=rows.join('');
+}
+
+async function processar(){
+  const file=$('arquivo').files[0];if(!file)return status('Selecione a planilha de entrada.','erro');
+  $('processar').disabled=true;$('baixar').disabled=true;$('preview').innerHTML='';resultadoFinal=null;
+  try{
+    localStorage.setItem('MOTOR_GPS_GOOGLE_KEY',$('apiKey').value);
+    await carregarGoogle($('apiKey').value.trim());
+    status('Lendo a planilha...');
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});
+    const gps=lerAba(wb,'Base_GPS'), carros=lerAba(wb,'Cadastro_Carros_Valor_h_h'), cadastroObras=lerAba(wb,'Cadastro_Obras');
+    const sufixo=$('sufixo').value.trim(), raio=numero($('raio').value,500), consumo=numero($('consumo').value,10), preco=numero($('preco').value,0), modo=$('modoDistancia').value;
+    const colabMap=colaboradoresPorPlaca(carros);
+
+    status(`Geocodificando ${cadastroObras.length} obra(s)...`);
+    const obras=[];const erros=[];
+    for(let i=0;i<cadastroObras.length;i++){
+      const r=cadastroObras[i], obra=texto(r.OBRA), endereco=texto(r['ENDEREÇO']);if(!obra||!endereco)continue;
+      try{const coord=await geocodificar(endereco,sufixo);obras.push({obra,endereco,coord});status(`Geocodificando obras: ${i+1}/${cadastroObras.length}`);}
+      catch(e){erros.push({tipo:'OBRA',identificador:obra,endereco,erro:e.message});}
+    }
+    let empresa=null;
+    if($('empresa').value.trim()){
+      try{empresa={endereco:$('empresa').value.trim(),coord:await geocodificar($('empresa').value.trim(),sufixo)};}
+      catch(e){erros.push({tipo:'EMPRESA',identificador:'EMPRESA',endereco:$('empresa').value.trim(),erro:e.message});}
+    }
+
+    const eventos=[];
+    const enderecos=[...new Set(gps.map(r=>texto(r['Endereço'])).filter(Boolean))];
+    const geoGps=new Map();
+    for(let i=0;i<enderecos.length;i++){
+      const end=enderecos[i];
+      try{geoGps.set(normaliza(end),await geocodificar(end,sufixo));}
+      catch(e){erros.push({tipo:'GPS',identificador:'',endereco:end,erro:e.message});}
+      status(`Geocodificando pontos do GPS: ${i+1}/${enderecos.length}`);
+    }
+
+    for(const r of gps){
+      const dt=excelDate(r['Data/Hora']), placa=normalizaPlaca(r['Placas']), endereco=texto(r['Endereço']);
+      if(!dt||!placa||!endereco)continue;
+      const coord=geoGps.get(normaliza(endereco));if(!coord)continue;
+      const ponto=localizarPonto(coord,obras,empresa,raio);
+      eventos.push({dt,placa,evento:texto(r.Tipo),status:texto(r.Status),endereco,coord,ponto});
+    }
+    eventos.sort((a,b)=>a.placa.localeCompare(b.placa)||a.dt-b.dt);
+
+    const linha=[], resumoMap=new Map();
+    const grupos=new Map();
+    for(const e of eventos){const k=`${e.placa}|${dataBR(e.dt)}`;if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(e);}
+    gruposMapa=grupos;
+    $('grupoMapa').innerHTML=[...grupos.keys()].map(k=>`<option value="${k}">${k.replace('|',' • ')}</option>`).join('');
+    $('mapPanel').hidden=grupos.size===0;
+    let nGrupo=0;
+    for(const [chave,arr] of grupos){
+      nGrupo++;const placa=arr[0].placa, data=dataBR(arr[0].dt), colab=escolherColab(colabMap.get(placa));
+      for(let i=0;i<arr.length;i++){
+        const atual=arr[i], prox=arr[i+1]||null;
+        let durH=prox?horas(prox.dt-atual.dt):0, natureza='EVENTO', km=0, minRota=0, fonte='', obra='NÃO APROPRIADO';
+        const tipoAtual=normaliza(atual.evento), tipoProx=normaliza(prox?.evento||'');
+        if(prox){
+          if(tipoAtual.includes('DESLIGOU') && tipoProx.includes('LIGOU')){
+            natureza='PERMANÊNCIA';obra=atual.ponto.tipo==='OBRA'?atual.ponto.nome:'NÃO APROPRIADO';
+          }else{
+            natureza='DESLOCAMENTO';obra=atribuirObra(atual.ponto,prox.ponto);
+            const dist=await distanciaRota(atual.coord,prox.coord,modo);km=dist.km;minRota=dist.min;fonte=dist.fonte;
+          }
+        }
+        const horasMao=obra!=='NÃO APROPRIADO'?durH:0;
+        const custoMao=horasMao*colab.valorHora;
+        const litros=consumo>0?km/consumo:0, custoComb=litros*preco;
+        linha.push({
+          Data:data,Placa:placa,Responsavel:colab.responsavel,'Valor hora':colab.valorHora,'Observação cadastro':colab.observacao,
+          'Hora inicial':horaBR(atual.dt),'Hora final':prox?horaBR(prox.dt):'',Natureza:natureza,'Evento inicial':atual.evento,'Evento final':prox?.evento||'',
+          'Ponto inicial':atual.ponto.nome,'Ponto final':prox?.ponto.nome||'',Obra_apropriada:obra,'Endereço inicial':atual.endereco,'Endereço final':prox?.endereco||'',
+          'Tempo horas':durH,'Distância km':km,'Duração rota min':minRota,'Fonte distância':fonte,'Litros estimados':litros,
+          'Custo combustível':custoComb,'Horas mão de obra':horasMao,'Custo mão de obra':custoMao,'Custo total':custoMao+custoComb
+        });
+        if(obra!=='NÃO APROPRIADO'){
+          const rk=`${data}|${placa}|${colab.responsavel}|${obra}`;
+          if(!resumoMap.has(rk))resumoMap.set(rk,{Data:data,Placa:placa,Responsavel:colab.responsavel,Obra:obra,'Valor hora':colab.valorHora,'Tempo total horas':0,'Tempo permanência horas':0,'Tempo deslocamento horas':0,'Distância km':0,'Litros estimados':0,'Custo combustível':0,'Custo mão de obra':0,'Custo total':0});
+          const z=resumoMap.get(rk);z['Tempo total horas']+=horasMao;if(natureza==='PERMANÊNCIA')z['Tempo permanência horas']+=horasMao;if(natureza==='DESLOCAMENTO')z['Tempo deslocamento horas']+=horasMao;z['Distância km']+=km;z['Litros estimados']+=litros;z['Custo combustível']+=custoComb;z['Custo mão de obra']+=custoMao;z['Custo total']+=custoMao+custoComb;
+        }
+      }
+      status(`Calculando placas/dias: ${nGrupo}/${grupos.size}`);
+    }
+
+    const resumo=[...resumoMap.values()].sort((a,b)=>a.Data.localeCompare(b.Data)||a.Placa.localeCompare(b.Placa)||a.Obra.localeCompare(b.Obra));
+    const geocodificacao=[...obras.map(o=>({Tipo:'OBRA',Nome:o.obra,Endereco:o.endereco,Latitude:o.coord.lat,Longitude:o.coord.lng})),...(empresa?[{Tipo:'EMPRESA',Nome:'EMPRESA',Endereco:empresa.endereco,Latitude:empresa.coord.lat,Longitude:empresa.coord.lng}]:[])];
+    const resumoDia=[...grupos.entries()].map(([k,a])=>{let hObra=0,hEmpresa=0,hNao=0,hMov=0,hPar=0;for(let i=0;i<a.length-1;i++){const h=horas(a[i+1].dt-a[i].dt),est=classificarPeriodo(a[i],a[i+1]),ap=atribuirObra(a[i].ponto,a[i+1].ponto);if(est==='MOVIMENTO')hMov+=h;else hPar+=h;if(ap!=='NÃO APROPRIADO')hObra+=h;else if(a[i].ponto.tipo==='EMPRESA'&&a[i+1].ponto.tipo==='EMPRESA')hEmpresa+=h;else hNao+=h;}const [Placa,Data]=k.split('|');return {Data,Placa,'Tempo observado horas':hObra+hEmpresa+hNao,'Horas apropriadas a obras':hObra,'Horas na empresa':hEmpresa,'Horas sem identificação':hNao,'Horas em movimento':hMov,'Horas parado':hPar};});
+    resultadoFinal={resumo,resumoDia,linha,geocodificacao,erros,parametros:[{Parametro:'Raio da cerca (m)',Valor:raio},{Parametro:'Consumo médio (km/l)',Valor:consumo},{Parametro:'Preço combustível (R$/l)',Valor:preco},{Parametro:'Modo distância',Valor:modo},{Parametro:'Endereço empresa',Valor:$('empresa').value.trim()}]};
+    $('baixar').disabled=false;status(`Concluído. ${resumo.length} linha(s) no resumo, ${linha.length} evento(s) calculado(s) e ${erros.length} alerta(s). Clique em “Baixar planilha de resultado”.`,'ok');
+    renderPreview(resumo.slice(0,20));
+    const primeira=[...grupos.keys()][0];if(primeira)renderMapaGrupo(primeira);
+  }catch(e){console.error(e);status('Erro: '+e.message,'erro');}
+  finally{$('processar').disabled=false;}
+}
+
+function renderPreview(rows){
+  if(!rows.length){$('preview').innerHTML='<p>Nenhuma obra apropriada foi identificada. Verifique o raio, endereços e endereço da empresa.</p>';return;}
+  const cols=['Data','Placa','Responsavel','Obra','Tempo total horas','Distância km','Custo combustível','Custo mão de obra','Custo total'];
+  $('preview').innerHTML='<h3>Prévia do resultado</h3><table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${typeof r[c]==='number'?r[c].toFixed(2):r[c]}</td>`).join('')+'</tr>').join('')+'</tbody></table><div class="small">Prévia limitada às primeiras 20 linhas.</div>';
+}
+function larguraAutomatica(ws,rows){
+  if(!rows.length)return;const keys=Object.keys(rows[0]);ws['!cols']=keys.map(k=>({wch:Math.min(42,Math.max(10,k.length+2,...rows.slice(0,200).map(r=>String(r[k]??'').length+2)))}));
+}
+function exportar(){
+  if(!resultadoFinal)return;
+  const wb=XLSX.utils.book_new();
+  const add=(nome,rows)=>{const dados=rows.length?rows:[{Mensagem:'Sem registros'}];const ws=XLSX.utils.json_to_sheet(dados);larguraAutomatica(ws,dados);ws['!autofilter']={ref:ws['!ref']};XLSX.utils.book_append_sheet(wb,ws,nome);};
+  add('Resumo_por_Obra',resultadoFinal.resumo);add('Resumo_do_Dia',resultadoFinal.resumoDia);add('Linha_do_Tempo',resultadoFinal.linha);add('Geocodificacao',resultadoFinal.geocodificacao);add('Parametros',resultadoFinal.parametros);add('Alertas',resultadoFinal.erros);
+  XLSX.writeFile(wb,`resultado_gps_obras_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+$('processar').addEventListener('click',processar);$('baixar').addEventListener('click',exportar);$('mostrarMapa').addEventListener('click',()=>renderMapaGrupo($('grupoMapa').value));$('grupoMapa').addEventListener('change',()=>renderMapaGrupo($('grupoMapa').value));
+$('apiKey').value=localStorage.getItem('MOTOR_GPS_GOOGLE_KEY')||'';
+</script>
+</body>
+</html>
