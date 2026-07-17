@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP ÍMPAR — Inteligência de Deslocamentos</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  body{font-family:Arial,sans-serif;margin:24px;background:#f4f6f8;color:#172033}
+  main{max-width:1000px;margin:auto;background:#fff;padding:22px;border-radius:12px;box-shadow:0 8px 28px #0001}
+  h1{margin:0 0 8px;font-size:24px} p{color:#566074}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  label{font-size:12px;font-weight:bold;color:#465064;display:block;margin-bottom:5px}
+  input,select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #ccd3dc;border-radius:8px}
+  .full{grid-column:1/-1}.actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  button{padding:11px 16px;border:0;border-radius:8px;font-weight:bold;cursor:pointer;background:#1358c8;color:#fff}
+  button.secondary{background:#42526a}button:disabled{opacity:.45;cursor:not-allowed}
+  #status{margin-top:16px;padding:12px;border-radius:8px;background:#eef3f8;white-space:pre-wrap}
+  #status.erro{background:#feecec;color:#9b1c1c}#status.ok{background:#eaf8ef;color:#176b36}
+  table{width:100%;border-collapse:collapse;margin-top:18px;font-size:12px}th,td{border:1px solid #dde2e8;padding:7px;text-align:left}th{background:#e9eef5}
+  .small{font-size:11px;color:#687386}.warn{background:#fff7dd;padding:10px;border-radius:8px;margin:12px 0;color:#755600}
+  .map-panel{margin-top:18px;border-top:1px solid #dde2e8;padding-top:18px}.map-toolbar{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.map-wrap{position:relative;margin-top:12px}.map{height:520px;border:1px solid #ccd3dc;border-radius:12px;overflow:hidden;background:#eef2f6}.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px}.legend span{display:flex;align-items:center;gap:6px}.sw{width:28px;height:8px;border-radius:999px;display:inline-block}.day-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.day-card{padding:10px;border:1px solid #dde2e8;border-radius:10px;background:#f8fafc}.day-card b{display:block;font-size:18px;margin-top:4px}.timeline{margin-top:12px;display:grid;gap:7px}.timeline-row{display:grid;grid-template-columns:115px 120px 1fr 120px;gap:8px;padding:9px;border:1px solid #e1e6ec;border-radius:9px;font-size:12px}.timeline-row.nao{background:#fff0f0;border-color:#f2b8b8}.timeline-row.obra{background:#edf9f1}.timeline-row.empresa{background:#eef5ff}@media(max-width:700px){.map-toolbar,.day-summary{grid-template-columns:1fr}.timeline-row{grid-template-columns:1fr 1fr}.map{height:420px}}
+  @media(max-width:700px){.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+
+  .map-actions{display:flex;gap:8px;flex-wrap:wrap}.map-actions button{padding:10px 14px}
+  .analytics{display:grid;grid-template-columns:220px 1fr;gap:16px;margin-top:14px;align-items:center}
+  .donut{width:190px;height:190px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#22a55b 0deg,#22a55b var(--obraDeg),#2563eb var(--obraDeg),#2563eb var(--empresaDeg),#df3030 var(--empresaDeg),#df3030 360deg);position:relative;margin:auto}
+  .donut:after{content:"";width:112px;height:112px;background:white;border-radius:50%;position:absolute}.donut-label{position:relative;z-index:2;text-align:center;font-weight:bold}.donut-label b{font-size:25px;display:block}.analytics-list{display:grid;gap:8px}.analytics-item{display:grid;grid-template-columns:14px 1fr auto;gap:8px;align-items:center;padding:9px;border:1px solid #e1e6ec;border-radius:9px}.dotc{width:12px;height:12px;border-radius:3px}.anim-marker{width:22px;height:22px;border-radius:50%;background:#ffb000;border:3px solid white;box-shadow:0 2px 9px #0008}
+  @media(max-width:700px){.analytics{grid-template-columns:1fr}}
+
+  /* V4 — linha do tempo operacional 07:00–19:00 */
+  .linear-panel{margin-top:16px;border:1px solid #d9e1ea;border-radius:14px;padding:14px;background:#fff;box-shadow:0 8px 24px rgba(15,47,87,.08)}
+  .linear-head{display:flex;justify-content:space-between;gap:12px;align-items:end;flex-wrap:wrap}.linear-title{font-size:18px;font-weight:900;color:#102033}.linear-sub{font-size:12px;color:#607086;margin-top:3px}.linear-tools{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.linear-tools label{font-size:11px;font-weight:800;color:#475569}.linear-tools input{width:90px;height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px}.linear-tools button{height:38px;padding:0 13px}
+  .linear-scroll{overflow-x:auto;padding:18px 4px 8px}.linear-stage{position:relative;min-width:980px;height:240px;margin:0 18px}.linear-axis{position:absolute;left:0;right:0;top:92px;height:8px;border-radius:999px;background:#cbd5e1}.linear-hour{position:absolute;top:76px;width:1px;height:40px;background:#94a3b8}.linear-hour span{position:absolute;top:-25px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:900;color:#475569}
+  .linear-block{position:absolute;top:70px;height:52px;min-width:4px;border-radius:8px;box-shadow:0 7px 16px rgba(15,23,42,.15);border:2px solid rgba(255,255,255,.9);overflow:hidden;cursor:pointer}.linear-block.obra{background:#22a55b}.linear-block.empresa{background:#2563eb}.linear-block.outro{background:#df3030}.linear-block.movimento{top:87px;height:18px;background:#f59e0b;border-radius:999px;border:0;box-shadow:none;opacity:.9}.linear-block.gap{top:87px;height:18px;background:repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 6px,#eef2f7 6px,#eef2f7 12px);border:0;box-shadow:none}
+  .linear-label{position:absolute;top:132px;transform:translateX(-50%);width:170px;text-align:center;font-size:11px;color:#334155}.linear-label b{display:block;color:#0f172a;font-size:12px}.linear-label small{display:block;margin-top:2px;color:#64748b;line-height:1.2}.linear-dot{position:absolute;top:81px;width:26px;height:26px;border-radius:50%;background:#ffb000;border:4px solid white;box-shadow:0 7px 18px rgba(0,0,0,.28);transform:translateX(-50%);z-index:20;display:none}.linear-dot.on{display:block}
+  .linear-list{display:grid;gap:7px;margin-top:10px}.linear-stop-row{display:grid;grid-template-columns:120px 100px 1fr 120px;gap:8px;align-items:center;padding:9px 10px;border:1px solid #e2e8f0;border-radius:10px;font-size:12px}.linear-stop-row.obra{background:#effaf3}.linear-stop-row.empresa{background:#eff6ff}.linear-stop-row.outro{background:#fff1f1}.linear-stop-row b{color:#0f172a}.linear-badge{display:inline-flex;justify-content:center;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:900;color:white}.linear-badge.obra{background:#22a55b}.linear-badge.empresa{background:#2563eb}.linear-badge.outro{background:#df3030}
+  @media(max-width:700px){.linear-stop-row{grid-template-columns:1fr 1fr}.linear-tools{width:100%}.linear-tools button{flex:1}}
+
+  /* V5 — visão executiva por obra */
+  .work-analytics{margin-top:14px;border:1px solid #dbe3ec;border-radius:14px;padding:14px;background:linear-gradient(180deg,#fbfdff,#f6f9fc)}
+  .work-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.work-head h3{margin:0;font-size:18px}.work-head p{margin:4px 0 0;font-size:12px}
+  .coverage-badge{padding:8px 11px;border-radius:999px;font-size:11px;font-weight:900;background:#e8f7ee;color:#176b36;border:1px solid #b8e2c7}.coverage-badge.warn{background:#fff4df;color:#8a5a00;border-color:#f1d59b}.coverage-badge.bad{background:#feecec;color:#9b1c1c;border-color:#efb9b9}
+  .journey-bar{height:54px;border-radius:12px;overflow:hidden;display:flex;margin-top:14px;background:#e2e8f0;border:1px solid #cbd5e1;box-shadow:inset 0 1px 4px #0001}.journey-seg{height:100%;min-width:2px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:10px;text-align:center;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}.journey-seg.empresa{background:#2563eb}.journey-seg.nao{background:#dc2626}.journey-seg.gap{background:repeating-linear-gradient(45deg,#64748b,#64748b 7px,#94a3b8 7px,#94a3b8 14px)}
+  .work-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.work-card{border:1px solid #dbe3ec;border-left:6px solid var(--wc);border-radius:11px;background:#fff;padding:11px}.work-card small{display:block;color:#64748b;font-weight:800}.work-card b{display:block;font-size:19px;margin:5px 0}.work-card span{font-size:11px;color:#475569}.work-card.nao{border-left-color:#dc2626}.work-card.empresa{border-left-color:#2563eb}
+  .work-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11px}.work-legend span{display:flex;align-items:center;gap:6px}.work-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .insight-box{margin-top:12px;padding:12px;border-radius:11px;background:#0f2f57;color:#eef6ff;font-size:12px;line-height:1.5}.insight-box b{color:#b8ff38}
+  @media(max-width:800px){.work-grid{grid-template-columns:1fr}.journey-seg{font-size:0}.journey-bar{height:38px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Inteligência de Deslocamentos por Obra</h1>
+  <p>Visão operacional completa da jornada: obras visitadas, empresa, deslocamentos, paradas e períodos sem cobertura.</p>
+  <div class="warn">O navegador precisa de internet para usar Google Maps e baixar a biblioteca de Excel. A chave informada fica somente neste navegador.</div>
+
+  <div class="grid">
+    <div class="full"><label>Planilha de entrada (.xlsx)</label><input id="arquivo" type="file" accept=".xlsx,.xls"></div>
+    <div class="full"><label>Chave Google Maps</label><input id="apiKey" type="password" placeholder="Cole a chave usada na RP"></div>
+    <div class="full"><label>Endereço da empresa</label><input id="empresa" placeholder="Ex.: Rua..., São José - SC"></div>
+    <div><label>Raio da cerca virtual (metros)</label><input id="raio" type="number" value="500" min="50"></div>
+    <div><label>Consumo médio do veículo (km/l)</label><input id="consumo" type="number" value="10" min="0.1" step="0.1"></div>
+    <div><label>Preço do combustível (R$/litro)</label><input id="preco" type="number" value="6.20" min="0" step="0.01"></div>
+    <div><label>Estado/país para completar endereços</label><input id="sufixo" value="Santa Catarina, Brasil"></div>
+    <div><label>Distância</label><select id="modoDistancia"><option value="rota">Rota pelas ruas (Google)</option><option value="linha">Linha reta (mais rápido)</option></select></div>
+  </div>
+
+  <div class="actions">
+    <button id="processar">Processar e calcular</button>
+    <button id="baixar" class="secondary" disabled>Baixar planilha de resultado</button>
+  </div>
+  <div id="status">Aguardando a planilha.</div>
+  <div id="preview"></div>
+  <section class="map-panel" id="mapPanel" hidden>
+    <h2>Validação visual do dia</h2>
+    <div class="map-toolbar"><div><label>Veículo / data</label><select id="grupoMapa"></select></div><div class="map-actions"><button id="mostrarMapa">Mostrar no mapa</button><button id="animarRota" class="secondary">▶ Animar rota</button><button id="pararAnimacao" class="secondary">■ Parar</button></div></div>
+    <div class="day-summary" id="daySummary"></div>
+    <div class="day-analytics" id="dayAnalytics"></div>
+    <div class="work-analytics" id="workAnalytics"></div>
+
+    <div class="linear-panel" id="linearPanel">
+      <div class="linear-head"><div><div class="linear-title">Linha do tempo operacional</div><div class="linear-sub">Paradas relevantes e deslocamentos entre 07:00 e 19:00. O mapa continua abaixo para conferência.</div></div><div class="linear-tools"><label>Parada mínima<br><input id="minParada" type="number" min="5" max="180" step="5" value="20"> minutos</label><button id="atualizarLinha" class="secondary">Atualizar</button><button id="animarLinha">▶ Animar linha</button><button id="pararLinha" class="secondary">■ Parar</button></div></div>
+      <div class="linear-scroll"><div class="linear-stage" id="linearStage"></div></div>
+      <div class="linear-list" id="linearList"></div>
+    </div>
+    <div class="map-wrap"><div id="map" class="map"></div></div>
+    <div class="legend"><span><i class="sw" style="background:#145bd7"></i>Rota registrada</span><span><i class="sw" style="background:rgba(20,91,215,.22);height:18px"></i>Faixa visual de tolerância</span><span><i class="sw" style="background:#22a55b"></i>Trecho apropriado</span><span><i class="sw" style="background:#df3030"></i>Sem obra/empresa reconhecida</span></div>
+    <div class="timeline" id="timelineVisual"></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+let googlePronto=false, resultadoFinal=null, cacheGeo=new Map(), cacheRota=new Map(), gruposMapa=new Map(), mapaAtual=null, overlaysMapa=[], animacaoAtual=null, marcadorAnimado=null;
+
+function status(msg,tipo=''){$('status').textContent=msg;$('status').className=tipo;}
+function texto(v){return String(v??'').trim();}
+function normalizaPlaca(v){return texto(v).toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function normaliza(s){return texto(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ');}
+function numero(v,padrao=0){const n=Number(String(v??'').replace(',','.'));return Number.isFinite(n)?n:padrao;}
+function excelDate(v){
+  if(v instanceof Date) return v;
+  if(typeof v==='number') return new Date(Math.round((v-25569)*86400*1000));
+  const d=new Date(v); return isNaN(d)?null:d;
+}
+function dataBR(d){return d?d.toLocaleDateString('pt-BR'):'';}
+function horaBR(d){return d?d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';}
+function horas(ms){return Math.max(0,ms/3600000);}
+function haversine(a,b){
+  const R=6371, rad=x=>x*Math.PI/180;
+  const dLat=rad(b.lat-a.lat), dLng=rad(b.lng-a.lng);
+  const q=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(q));
+}
+function concatEndereco(end,sufixo){const e=texto(end);return normaliza(e).includes('BRASIL')?e:`${e}, ${sufixo}`;}
+function lerAba(wb,nome){const ws=wb.Sheets[nome];if(!ws)throw new Error(`Aba obrigatória não encontrada: ${nome}`);return XLSX.utils.sheet_to_json(ws,{defval:null,raw:true});}
+
+function carregarGoogle(key){
+  return new Promise((resolve,reject)=>{
+    if(window.google?.maps){googlePronto=true;return resolve();}
+    if(!key)return reject(new Error('Informe a chave do Google Maps.'));
+    window.__gmOk=()=>{googlePronto=true;resolve();};
+    const s=document.createElement('script');
+    s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=geometry&callback=__gmOk`;
+    s.async=true;s.defer=true;s.onerror=()=>reject(new Error('Não foi possível carregar Google Maps. Verifique a chave e as restrições.'));
+    document.head.appendChild(s);
+  });
+}
+
+async function geocodificar(endereco,sufixo){
+  const chave=normaliza(endereco);
+  if(cacheGeo.has(chave))return cacheGeo.get(chave);
+  const geocoder=new google.maps.Geocoder();
+  const full=concatEndereco(endereco,sufixo);
+  const r=await new Promise((resolve,reject)=>geocoder.geocode({address:full},(res,st)=>st==='OK'&&res[0]?resolve(res[0]):reject(new Error(`Geocodificação falhou: ${endereco} (${st})`))));
+  const out={lat:r.geometry.location.lat(),lng:r.geometry.location.lng(),formatado:r.formatted_address};
+  cacheGeo.set(chave,out);await pausa(80);return out;
+}
+function pausa(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function distanciaRota(a,b,modo){
+  if(!a||!b)return {km:0,min:0,fonte:'sem coordenada'};
+  if(modo==='linha')return {km:haversine(a,b),min:0,fonte:'linha reta'};
+  const k=`${a.lat.toFixed(5)},${a.lng.toFixed(5)}>${b.lat.toFixed(5)},${b.lng.toFixed(5)}`;
+  if(cacheRota.has(k))return cacheRota.get(k);
+  const service=new google.maps.DirectionsService();
+  try{
+    const r=await new Promise((resolve,reject)=>service.route({origin:a,destination:b,travelMode:google.maps.TravelMode.DRIVING},(res,st)=>st==='OK'?resolve(res):reject(new Error(st))));
+    const leg=r.routes[0].legs[0];const out={km:leg.distance.value/1000,min:leg.duration.value/60,fonte:'rota Google'};
+    cacheRota.set(k,out);await pausa(80);return out;
+  }catch(e){const out={km:haversine(a,b),min:0,fonte:'linha reta (fallback)'};cacheRota.set(k,out);return out;}
+}
+
+function localizarPonto(coord,obras,empresa,raio){
+  let candidatos=[];
+  if(empresa?.coord)candidatos.push({tipo:'EMPRESA',nome:'EMPRESA',...empresa,dist:haversine(coord,empresa.coord)*1000});
+  for(const o of obras)candidatos.push({tipo:'OBRA',nome:o.obra,...o,dist:haversine(coord,o.coord)*1000});
+  candidatos.sort((a,b)=>a.dist-b.dist);
+  const c=candidatos[0];
+  return c&&c.dist<=raio?c:{tipo:'OUTRO',nome:'OUTRO / NÃO IDENTIFICADO',dist:c?.dist??null};
+}
+
+function colaboradoresPorPlaca(rows){
+  const map=new Map();
+  for(const r of rows){
+    const p=normalizaPlaca(r.Identificador);if(!p)continue;
+    if(!map.has(p))map.set(p,[]);
+    map.get(p).push({responsavel:texto(r['Responsável']),valorHora:numero(r['VALOR h/h'])});
+  }
+  return map;
+}
+function escolherColab(lista){
+  if(!lista?.length)return {responsavel:'NÃO CADASTRADO',valorHora:0,observacao:'Placa sem colaborador cadastrado'};
+  if(lista.length===1)return {...lista[0],observacao:''};
+  return {responsavel:lista.map(x=>x.responsavel).join(' + '),valorHora:lista.reduce((a,x)=>a+x.valorHora,0),observacao:'Mais de um colaborador vinculado; valores-hora somados'};
+}
+function atribuirObra(origem,destino){
+  if(destino?.tipo==='OBRA')return destino.nome;
+  if(origem?.tipo==='OBRA')return origem.nome;
+  return 'NÃO APROPRIADO';
+}
+
+
+function classificarPeriodo(atual,prox){
+  const tipoAtual=normaliza(atual?.evento||''), tipoProx=normaliza(prox?.evento||'');
+  if(!prox)return 'FIM';
+  if(tipoAtual.includes('DESLIGOU') && tipoProx.includes('LIGOU'))return 'PARADO';
+  return 'MOVIMENTO';
+}
+function descricaoRegiao(e){
+  if(e.ponto?.tipo==='OBRA')return e.ponto.nome;
+  if(e.ponto?.tipo==='EMPRESA')return 'EMPRESA';
+  return e.endereco || 'REGIÃO NÃO IDENTIFICADA';
+}
+function limparMapa(){overlaysMapa.forEach(x=>x.setMap&&x.setMap(null));overlaysMapa=[];}
+function adicionarOverlay(x){overlaysMapa.push(x);return x;}
+function formatHoras(h){const min=Math.round((h||0)*60);return `${Math.floor(min/60)}h ${String(min%60).padStart(2,'0')}min`;}
+
+function dentroJanela(dt){const h=dt.getHours()+dt.getMinutes()/60+dt.getSeconds()/3600;return h>=7&&h<=19;}
+function clipHorasJanela(a,b){
+  const ini=new Date(a);ini.setHours(7,0,0,0);const fim=new Date(a);fim.setHours(19,0,0,0);
+  const x=Math.max(a.getTime(),ini.getTime()), y=Math.min(b.getTime(),fim.getTime());return Math.max(0,(y-x)/3600000);
+}
+function obraDoTrecho(arr,i){
+  const a=arr[i],b=arr[i+1]; if(!b)return 'NÃO APROPRIADO';
+  if(b.ponto.tipo==='OBRA')return b.ponto.nome;
+  if(a.ponto.tipo==='OBRA')return a.ponto.nome;
+  // Saída da empresa: procura a próxima obra antes de voltar à empresa.
+  if(a.ponto.tipo==='EMPRESA'){
+    for(let j=i+1;j<arr.length;j++){if(arr[j].ponto.tipo==='OBRA')return arr[j].ponto.nome;if(j>i+1&&arr[j].ponto.tipo==='EMPRESA')break;}
+  }
+  // Retorno: procura a última obra desde a última passagem pela empresa.
+  for(let j=i;j>=0;j--){if(arr[j].ponto.tipo==='OBRA')return arr[j].ponto.nome;if(j<i&&arr[j].ponto.tipo==='EMPRESA')break;}
+  return 'NÃO APROPRIADO';
+}
+function pararAnimacao(){if(animacaoAtual){cancelAnimationFrame(animacaoAtual);animacaoAtual=null;}if(marcadorAnimado){marcadorAnimado.setMap(null);marcadorAnimado=null;}}
+function animarGrupo(chave){
+  const arr=gruposMapa.get(chave);if(!arr||arr.length<2)return;pararAnimacao();renderMapaGrupo(chave);
+  const path=arr.map(e=>new google.maps.LatLng(e.coord.lat,e.coord.lng));
+  marcadorAnimado=new google.maps.Marker({map:mapaAtual,position:path[0],title:'Veículo em movimento',zIndex:20,icon:{path:google.maps.SymbolPath.CIRCLE,scale:9,fillColor:'#ffb000',fillOpacity:1,strokeColor:'#fff',strokeWeight:3}});
+  const segs=[];let total=0;for(let i=0;i<path.length-1;i++){const d=google.maps.geometry.spherical.computeDistanceBetween(path[i],path[i+1]);segs.push(d);total+=d;}
+  const dur=Math.max(8000,Math.min(30000,total/20));const start=performance.now();
+  function frame(now){const frac=Math.min(1,(now-start)/dur);let target=frac*total,acc=0,idx=0;while(idx<segs.length-1&&acc+segs[idx]<target){acc+=segs[idx];idx++;}const local=segs[idx]?Math.max(0,Math.min(1,(target-acc)/segs[idx])):0;const pos=google.maps.geometry.spherical.interpolate(path[idx],path[idx+1]||path[idx],local);marcadorAnimado.setPosition(pos);mapaAtual.panTo(pos);if(frac<1)animacaoAtual=requestAnimationFrame(frame);else animacaoAtual=null;}
+  animacaoAtual=requestAnimationFrame(frame);
+}
+function renderMapaGrupo(chave){
+  const arr=gruposMapa.get(chave);if(!arr?.length)return;
+  limparMapa();
+  const center=arr[0].coord;
+  mapaAtual=mapaAtual||new google.maps.Map($('map'),{zoom:12,center,mapTypeId:'roadmap'});
+  mapaAtual.setCenter(center);
+  const bounds=new google.maps.LatLngBounds();
+  const path=arr.map(e=>({lat:e.coord.lat,lng:e.coord.lng}));path.forEach(p=>bounds.extend(p));
+  // Banda visual larga por baixo e linha real por cima.
+  adicionarOverlay(new google.maps.Polyline({map:mapaAtual,path,strokeColor:'#145bd7',strokeOpacity:.18,strokeWeight:28,geodesic:true,zIndex:1}));
+  adicionarOverlay(new google.maps.Polyline({map:mapaAtual,path,strokeColor:'#145bd7',strokeOpacity:1,strokeWeight:4,geodesic:true,zIndex:3}));
+  const raio=numero($('raio').value,500);
+  // Círculos em metros ao longo dos pontos deixam explícita a tolerância real configurada.
+  arr.forEach((e,i)=>{
+    adicionarOverlay(new google.maps.Circle({map:mapaAtual,center:e.coord,radius:raio,strokeOpacity:0,fillColor:'#145bd7',fillOpacity:.025,zIndex:0}));
+    if(i===0 || i===arr.length-1 || e.ponto.tipo!=='OUTRO'){
+      const cor=e.ponto.tipo==='OBRA'?'green':e.ponto.tipo==='EMPRESA'?'blue':'red';
+      const m=adicionarOverlay(new google.maps.Marker({map:mapaAtual,position:e.coord,title:`${horaBR(e.dt)} • ${descricaoRegiao(e)}`,icon:`https://maps.google.com/mapfiles/ms/icons/${cor}-dot.png`,zIndex:5}));
+      const info=new google.maps.InfoWindow({content:`<b>${descricaoRegiao(e)}</b><br>${horaBR(e.dt)}<br>${e.endereco}`});m.addListener('click',()=>info.open(mapaAtual,m));
+    }
+  });
+  // Colore cada trecho conforme apropriado ou não.
+  for(let i=0;i<arr.length-1;i++){
+    const a=arr[i],b=arr[i+1],obra=obraDoTrecho(arr,i),ok=obra!=='NÃO APROPRIADO';
+    adicionarOverlay(new google.maps.Polyline({map:mapaAtual,path:[a.coord,b.coord],strokeColor:ok?'#22a55b':'#df3030',strokeOpacity:.95,strokeWeight:6,zIndex:4}));
+  }
+  mapaAtual.fitBounds(bounds,50);
+  renderResumoDia(arr);
+}
+function corObra(nome){
+  const cores=['#16a34a','#7c3aed','#0891b2','#ea580c','#be123c','#4f46e5','#0f766e','#a16207','#9333ea','#15803d'];
+  let h=0;for(const c of String(nome||''))h=((h<<5)-h)+c.charCodeAt(0);
+  return cores[Math.abs(h)%cores.length];
+}
+function renderResumoDia(arr){
+  const janela=12, inicioJanela=new Date(arr[0].dt), fimJanela=new Date(arr[0].dt);
+  inicioJanela.setHours(7,0,0,0);fimJanela.setHours(19,0,0,0);
+  let empresa=0,nao=0,mov=0,parado=0;const porObra=new Map(),rows=[],segmentos=[];
+  // Falta de cobertura antes do primeiro e depois do último sinal.
+  const primeiro=arr[0].dt>inicioJanela?Math.max(0,(arr[0].dt-inicioJanela)/3600000):0;
+  const ultimo=arr[arr.length-1].dt<fimJanela?Math.max(0,(fimJanela-arr[arr.length-1].dt)/3600000):0;
+  if(primeiro>0)segmentos.push({tipo:'gap',nome:'SEM SINAL',h:primeiro,inicio:inicioJanela,fim:arr[0].dt});
+  for(let i=0;i<arr.length-1;i++){
+    const a=arr[i],b=arr[i+1],h=clipHorasJanela(a.dt,b.dt);if(h<=0)continue;
+    const estado=classificarPeriodo(a,b),apro=obraDoTrecho(arr,i);
+    if(estado==='MOVIMENTO')mov+=h;else parado+=h;
+    let tipo,nome,cls;
+    if(apro!=='NÃO APROPRIADO'){
+      tipo='obra';nome=apro;cls='obra';porObra.set(nome,(porObra.get(nome)||0)+h);
+    }else if(a.ponto.tipo==='EMPRESA'&&b.ponto.tipo==='EMPRESA'){
+      tipo='empresa';nome='EMPRESA';cls='empresa';empresa+=h;
+    }else{
+      tipo='nao';nome='NÃO LOCALIZADO';cls='nao';nao+=h;
+    }
+    segmentos.push({tipo,nome,h,inicio:a.dt,fim:b.dt});
+    rows.push(`<div class="timeline-row ${cls}"><b>${horaBR(a.dt)}–${horaBR(b.dt)}</b><span>${estado}</span><span>${descricaoRegiao(a)} → ${descricaoRegiao(b)}${apro!=='NÃO APROPRIADO'?` • <b>${apro}</b>`:''}</span><b>${formatHoras(h)}</b></div>`);
+  }
+  if(ultimo>0)segmentos.push({tipo:'gap',nome:'SEM SINAL',h:ultimo,inicio:arr[arr.length-1].dt,fim:fimJanela});
+  const hObras=[...porObra.values()].reduce((a,b)=>a+b,0),cobertura=Math.max(0,janela-primeiro-ultimo),gap=primeiro+ultimo;
+  const totalClass=hObras+empresa+nao+gap;
+  const ajuste=Math.max(0,janela-totalClass);nao+=ajuste;if(ajuste)segmentos.push({tipo:'nao',nome:'SEM CLASSIFICAÇÃO',h:ajuste});
+  const pctObra=hObras/janela*100,pctEmp=empresa/janela*100,pctNao=(nao+gap)/janela*100,pctCob=cobertura/janela*100;
+  $('daySummary').innerHTML=`<div class="day-card">Janela analisada<b>12h 00min</b><small>07:00–19:00</small></div><div class="day-card">Obras visitadas<b>${porObra.size}</b><small>${[...porObra.keys()].join(' • ')||'Nenhuma identificada'}</small></div><div class="day-card">Apropriado às obras<b>${formatHoras(hObras)}</b></div><div class="day-card">Empresa<b>${formatHoras(empresa)}</b></div><div class="day-card">Não localizado<b>${formatHoras(nao)}</b></div><div class="day-card">Sem sinal GPS<b>${formatHoras(gap)}</b></div><div class="day-card">Em movimento<b>${formatHoras(mov)}</b></div><div class="day-card">Parado<b>${formatHoras(parado)}</b></div>`;
+  const d1=pctObra*3.6,d2=(pctObra+pctEmp)*3.6;
+  $('dayAnalytics').innerHTML=`<div class="donut" style="--obraDeg:${d1}deg;--empresaDeg:${d2}deg"><div class="donut-label"><b>${pctObra.toFixed(0)}%</b>em obras</div></div><div class="analytics-list"><div class="analytics-item"><i class="dotc" style="background:#22a55b"></i><span>Total em obras</span><b>${pctObra.toFixed(1)}% • ${formatHoras(hObras)}</b></div><div class="analytics-item"><i class="dotc" style="background:#2563eb"></i><span>Empresa</span><b>${pctEmp.toFixed(1)}% • ${formatHoras(empresa)}</b></div><div class="analytics-item"><i class="dotc" style="background:#df3030"></i><span>Não localizado + sem sinal</span><b>${pctNao.toFixed(1)}% • ${formatHoras(nao+gap)}</b></div><div class="small">Cada obra aparece individualmente no gráfico detalhado abaixo.</div></div>`;
+  const badgeClass=pctCob>=90?'':pctCob>=70?'warn':'bad';
+  const bar=segmentos.filter(x=>x.h>0).map(x=>{const w=x.h/janela*100, cor=x.tipo==='obra'?corObra(x.nome):'';const cls=x.tipo==='obra'?'':x.tipo;return `<div class="journey-seg ${cls}" style="width:${w}%;${cor?`background:${cor}`:''}" title="${x.nome} • ${formatHoras(x.h)}">${w>=8?x.nome:''}</div>`}).join('');
+  const obraCards=[...porObra.entries()].sort((a,b)=>b[1]-a[1]).map(([nome,h])=>`<div class="work-card" style="--wc:${corObra(nome)}"><small>OBRA</small><b>${nome}</b><span>${formatHoras(h)} • ${(h/janela*100).toFixed(1)}% da jornada</span></div>`).join('');
+  const legends=[...porObra.keys()].map(nome=>`<span><i style="background:${corObra(nome)}"></i>${nome}</span>`).join('');
+  const fimSinal=horaBR(arr[arr.length-1].dt), inicioSinal=horaBR(arr[0].dt);
+  const principal=[...porObra.entries()].sort((a,b)=>b[1]-a[1])[0];
+  $('workAnalytics').innerHTML=`<div class="work-head"><div><h3>Distribuição da jornada por obra</h3><p>As obras são separadas individualmente, inclusive quando o veículo visita várias no mesmo dia.</p></div><span class="coverage-badge ${badgeClass}">Cobertura GPS ${pctCob.toFixed(1)}%</span></div><div class="journey-bar">${bar}</div><div class="work-legend">${legends}<span><i style="background:#2563eb"></i>Empresa</span><span><i style="background:#dc2626"></i>Não localizado</span><span><i style="background:#64748b"></i>Sem sinal</span></div><div class="work-grid">${obraCards}<div class="work-card empresa"><small>EMPRESA</small><b>${formatHoras(empresa)}</b><span>${pctEmp.toFixed(1)}% da jornada</span></div><div class="work-card nao"><small>NÃO LOCALIZADO / SEM SINAL</small><b>${formatHoras(nao+gap)}</b><span>${pctNao.toFixed(1)}% da jornada</span></div></div><div class="insight-box"><b>Leitura automática:</b> sinais entre ${inicioSinal} e ${fimSinal}. ${porObra.size?`Foram identificadas ${porObra.size} obra(s): ${[...porObra.keys()].join(', ')}.`:'Nenhuma obra foi identificada.'} ${principal?`A maior apropriação foi para ${principal[0]}, com ${formatHoras(principal[1])}.`:''} ${gap>0?`Há ${formatHoras(gap)} sem cobertura GPS no início ou final da janela.`:'A cobertura alcançou toda a janela operacional.'}</div>`;
+  $('timelineVisual').innerHTML=rows.join('');
+}
+
+async function processar(){
+  const file=$('arquivo').files[0];if(!file)return status('Selecione a planilha de entrada.','erro');
+  $('processar').disabled=true;$('baixar').disabled=true;$('preview').innerHTML='';resultadoFinal=null;
+  try{
+    localStorage.setItem('MOTOR_GPS_GOOGLE_KEY',$('apiKey').value);
+    await carregarGoogle($('apiKey').value.trim());
+    status('Lendo a planilha...');
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});
+    const gps=lerAba(wb,'Base_GPS'), carros=lerAba(wb,'Cadastro_Carros_Valor_h_h'), cadastroObras=lerAba(wb,'Cadastro_Obras');
+    const sufixo=$('sufixo').value.trim(), raio=numero($('raio').value,500), consumo=numero($('consumo').value,10), preco=numero($('preco').value,0), modo=$('modoDistancia').value;
+    const colabMap=colaboradoresPorPlaca(carros);
+
+    status(`Geocodificando ${cadastroObras.length} obra(s)...`);
+    const obras=[];const erros=[];
+    for(let i=0;i<cadastroObras.length;i++){
+      const r=cadastroObras[i], obra=texto(r.OBRA), endereco=texto(r['ENDEREÇO']);if(!obra||!endereco)continue;
+      try{const coord=await geocodificar(endereco,sufixo);obras.push({obra,endereco,coord});status(`Geocodificando obras: ${i+1}/${cadastroObras.length}`);}
+      catch(e){erros.push({tipo:'OBRA',identificador:obra,endereco,erro:e.message});}
+    }
+    let empresa=null;
+    if($('empresa').value.trim()){
+      try{empresa={endereco:$('empresa').value.trim(),coord:await geocodificar($('empresa').value.trim(),sufixo)};}
+      catch(e){erros.push({tipo:'EMPRESA',identificador:'EMPRESA',endereco:$('empresa').value.trim(),erro:e.message});}
+    }
+
+    const eventos=[];
+    const enderecos=[...new Set(gps.map(r=>texto(r['Endereço'])).filter(Boolean))];
+    const geoGps=new Map();
+    for(let i=0;i<enderecos.length;i++){
+      const end=enderecos[i];
+      try{geoGps.set(normaliza(end),await geocodificar(end,sufixo));}
+      catch(e){erros.push({tipo:'GPS',identificador:'',endereco:end,erro:e.message});}
+      status(`Geocodificando pontos do GPS: ${i+1}/${enderecos.length}`);
+    }
+
+    for(const r of gps){
+      const dt=excelDate(r['Data/Hora']), placa=normalizaPlaca(r['Placas']), endereco=texto(r['Endereço']);
+      if(!dt||!placa||!endereco)continue;
+      const coord=geoGps.get(normaliza(endereco));if(!coord)continue;
+      const ponto=localizarPonto(coord,obras,empresa,raio);
+      eventos.push({dt,placa,evento:texto(r.Tipo),status:texto(r.Status),endereco,coord,ponto});
+    }
+    eventos.sort((a,b)=>a.placa.localeCompare(b.placa)||a.dt-b.dt);
+
+    const linha=[], resumoMap=new Map();
+    const grupos=new Map();
+    for(const e of eventos){const k=`${e.placa}|${dataBR(e.dt)}`;if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(e);}
+    for(const [k,a] of [...grupos]){const f=a.filter(e=>e && e.dt instanceof Date && !isNaN(e.dt) && dentroJanela(e.dt));if(f.length<2)grupos.delete(k);else grupos.set(k,f);}
+    gruposMapa=grupos;
+    $('grupoMapa').innerHTML=[...grupos.keys()].map(k=>`<option value="${k}">${k.replace('|',' • ')}</option>`).join('');
+    $('mapPanel').hidden=grupos.size===0;
+    let nGrupo=0;
+    for(const [chave,arr] of grupos){
+      nGrupo++;const placa=arr[0].placa, data=dataBR(arr[0].dt), colab=escolherColab(colabMap.get(placa));
+      for(let i=0;i<arr.length;i++){
+        const atual=arr[i], prox=arr[i+1]||null;
+        let durH=prox?clipHorasJanela(atual.dt,prox.dt):0, natureza='EVENTO', km=0, minRota=0, fonte='', obra='NÃO APROPRIADO';
+        const tipoAtual=normaliza(atual.evento), tipoProx=normaliza(prox?.evento||'');
+        if(prox){
+          if(tipoAtual.includes('DESLIGOU') && tipoProx.includes('LIGOU')){
+            natureza='PERMANÊNCIA';obra=atual.ponto.tipo==='OBRA'?atual.ponto.nome:(atual.ponto.tipo==='EMPRESA'?'EMPRESA':'NÃO APROPRIADO');
+          }else{
+            natureza='DESLOCAMENTO';obra=obraDoTrecho(arr,i);
+            const dist=await distanciaRota(atual.coord,prox.coord,modo);km=dist.km;minRota=dist.min;fonte=dist.fonte;
+          }
+        }
+        const horasMao=obra!=='NÃO APROPRIADO'&&obra!=='EMPRESA'?durH:0;
+        const custoMao=horasMao*colab.valorHora;
+        const litros=consumo>0?km/consumo:0, custoComb=litros*preco;
+        linha.push({
+          Data:data,Placa:placa,Responsavel:colab.responsavel,'Valor hora':colab.valorHora,'Observação cadastro':colab.observacao,
+          'Hora inicial':horaBR(atual.dt),'Hora final':prox?horaBR(prox.dt):'',Natureza:natureza,'Evento inicial':atual.evento,'Evento final':prox?.evento||'',
+          'Ponto inicial':atual.ponto.nome,'Ponto final':prox?.ponto.nome||'',Obra_apropriada:obra,'Endereço inicial':atual.endereco,'Endereço final':prox?.endereco||'',
+          'Tempo horas':durH,'Distância km':km,'Duração rota min':minRota,'Fonte distância':fonte,'Litros estimados':litros,
+          'Custo combustível':custoComb,'Horas mão de obra':horasMao,'Custo mão de obra':custoMao,'Custo total':custoMao+custoComb
+        });
+        if(obra!=='NÃO APROPRIADO'&&obra!=='EMPRESA'){
+          const rk=`${data}|${placa}|${colab.responsavel}|${obra}`;
+          if(!resumoMap.has(rk))resumoMap.set(rk,{Data:data,Placa:placa,Responsavel:colab.responsavel,Obra:obra,'Valor hora':colab.valorHora,'Tempo total horas':0,'Tempo permanência horas':0,'Tempo deslocamento horas':0,'Distância km':0,'Litros estimados':0,'Custo combustível':0,'Custo mão de obra':0,'Custo total':0});
+          const z=resumoMap.get(rk);z['Tempo total horas']+=horasMao;if(natureza==='PERMANÊNCIA')z['Tempo permanência horas']+=horasMao;if(natureza==='DESLOCAMENTO')z['Tempo deslocamento horas']+=horasMao;z['Distância km']+=km;z['Litros estimados']+=litros;z['Custo combustível']+=custoComb;z['Custo mão de obra']+=custoMao;z['Custo total']+=custoMao+custoComb;
+        }
+      }
+      status(`Calculando placas/dias: ${nGrupo}/${grupos.size}`);
+    }
+
+    const resumo=[...resumoMap.values()].sort((a,b)=>a.Data.localeCompare(b.Data)||a.Placa.localeCompare(b.Placa)||a.Obra.localeCompare(b.Obra));
+    const geocodificacao=[...obras.map(o=>({Tipo:'OBRA',Nome:o.obra,Endereco:o.endereco,Latitude:o.coord.lat,Longitude:o.coord.lng})),...(empresa?[{Tipo:'EMPRESA',Nome:'EMPRESA',Endereco:empresa.endereco,Latitude:empresa.coord.lat,Longitude:empresa.coord.lng}]:[])];
+    const resumoDia=[...grupos.entries()].map(([k,a])=>{let hObra=0,hEmpresa=0,hNao=0,hMov=0,hPar=0;for(let i=0;i<a.length-1;i++){const h=clipHorasJanela(a[i].dt,a[i+1].dt);if(h<=0)continue;const est=classificarPeriodo(a[i],a[i+1]),ap=obraDoTrecho(a,i);if(est==='MOVIMENTO')hMov+=h;else hPar+=h;if(ap!=='NÃO APROPRIADO')hObra+=h;else if(a[i].ponto.tipo==='EMPRESA'&&a[i+1].ponto.tipo==='EMPRESA')hEmpresa+=h;else hNao+=h;}const observado=hObra+hEmpresa+hNao;hNao+=Math.max(0,12-observado);const [Placa,Data]=k.split('|');return {Data,Placa,'Janela analisada horas':12,'Horas apropriadas a obras':hObra,'Horas na empresa':hEmpresa,'Horas não localizadas':hNao,'Percentual obras':hObra/12,'Percentual empresa':hEmpresa/12,'Percentual não localizado':hNao/12,'Horas em movimento':hMov,'Horas parado':hPar};});
+    resultadoFinal={resumo,resumoDia,linha,geocodificacao,erros,parametros:[{Parametro:'Raio da cerca (m)',Valor:raio},{Parametro:'Consumo médio (km/l)',Valor:consumo},{Parametro:'Preço combustível (R$/l)',Valor:preco},{Parametro:'Modo distância',Valor:modo},{Parametro:'Endereço empresa',Valor:$('empresa').value.trim()},{Parametro:'Janela de análise',Valor:'07:00 às 19:00'}]};
+    $('baixar').disabled=false;status(`Concluído. ${resumo.length} linha(s) no resumo, ${linha.length} evento(s) calculado(s) e ${erros.length} alerta(s). Clique em “Baixar planilha de resultado”.`,'ok');
+    renderPreview(resumo.slice(0,20));
+    const primeira=[...grupos.keys()][0];if(primeira)renderMapaGrupo(primeira);
+  }catch(e){console.error(e);status('Erro: '+e.message,'erro');}
+  finally{$('processar').disabled=false;}
+}
+
+function renderPreview(rows){
+  if(!rows.length){$('preview').innerHTML='<p>Nenhuma obra apropriada foi identificada. Verifique o raio, endereços e endereço da empresa.</p>';return;}
+  const cols=['Data','Placa','Responsavel','Obra','Tempo total horas','Distância km','Custo combustível','Custo mão de obra','Custo total'];
+  $('preview').innerHTML='<h3>Prévia do resultado</h3><table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${typeof r[c]==='number'?r[c].toFixed(2):r[c]}</td>`).join('')+'</tr>').join('')+'</tbody></table><div class="small">Prévia limitada às primeiras 20 linhas.</div>';
+}
+function larguraAutomatica(ws,rows){
+  if(!rows.length)return;const keys=Object.keys(rows[0]);ws['!cols']=keys.map(k=>({wch:Math.min(42,Math.max(10,k.length+2,...rows.slice(0,200).map(r=>String(r[k]??'').length+2)))}));
+}
+function exportar(){
+  if(!resultadoFinal)return;
+  const wb=XLSX.utils.book_new();
+  const add=(nome,rows)=>{const dados=rows.length?rows:[{Mensagem:'Sem registros'}];const ws=XLSX.utils.json_to_sheet(dados);larguraAutomatica(ws,dados);ws['!autofilter']={ref:ws['!ref']};XLSX.utils.book_append_sheet(wb,ws,nome);};
+  add('Resumo_por_Obra',resultadoFinal.resumo);add('Resumo_do_Dia',resultadoFinal.resumoDia);add('Linha_do_Tempo',resultadoFinal.linha);add('Geocodificacao',resultadoFinal.geocodificacao);add('Parametros',resultadoFinal.parametros);add('Alertas',resultadoFinal.erros);
+  XLSX.writeFile(wb,`resultado_gps_obras_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+let animacaoLinha=null;
+function minutoDia(dt){return dt.getHours()*60+dt.getMinutes()+dt.getSeconds()/60;}
+function pctLinha(dt){return Math.max(0,Math.min(100,(minutoDia(dt)-420)/720*100));}
+function tipoVisual(p){return p?.tipo==='OBRA'?'obra':p?.tipo==='EMPRESA'?'empresa':'outro';}
+function nomeVisual(e){return e?.ponto?.tipo==='OBRA'?e.ponto.nome:e?.ponto?.tipo==='EMPRESA'?'EMPRESA':(e?.endereco||'LOCAL NÃO IDENTIFICADO');}
+function detectarParadas(arr,minutos){
+  const stops=[];
+  for(let i=0;i<arr.length-1;i++){
+    const a=arr[i],b=arr[i+1];
+    const mins=(b.dt-a.dt)/60000;
+    if(mins<minutos)continue;
+    if(classificarPeriodo(a,b)!=='PARADO')continue;
+    stops.push({inicio:a.dt,fim:b.dt,minutos:mins,event:a,tipo:tipoVisual(a.ponto),nome:nomeVisual(a),endereco:a.endereco});
+  }
+  // Consolida paradas consecutivas no mesmo local/categoria.
+  const out=[];
+  for(const st of stops){
+    const last=out[out.length-1];
+    if(last && last.tipo===st.tipo && normaliza(last.nome)===normaliza(st.nome) && (st.inicio-last.fim)<=15*60000){last.fim=st.fim;last.minutos=(last.fim-last.inicio)/60000;}
+    else out.push({...st});
+  }
+  return out;
+}
+function montarBlocosLinha(arr,minutos){
+  const ini=new Date(arr[0].dt);ini.setHours(7,0,0,0);const fim=new Date(arr[0].dt);fim.setHours(19,0,0,0);
+  const stops=detectarParadas(arr,minutos);
+  const blocos=[];let cursor=ini;
+  for(const st of stops){
+    const a=new Date(Math.max(st.inicio,ini)),b=new Date(Math.min(st.fim,fim));if(b<=a)continue;
+    if(a>cursor)blocos.push({tipo:'movimento',inicio:cursor,fim:a,nome:'DESLOCAMENTO / SEM PARADA RELEVANTE'});
+    blocos.push({...st,inicio:a,fim:b});cursor=b;
+  }
+  if(cursor<fim)blocos.push({tipo:'gap',inicio:cursor,fim:fim,nome:'SEM PARADA RELEVANTE OU SEM COBERTURA'});
+  return {stops,blocos,ini,fim};
+}
+function renderLinhaOperacional(arr){
+  const min=Math.max(5,numero($('minParada')?.value,20));
+  const {stops,blocos}=montarBlocosLinha(arr,min);
+  let stage='<div class="linear-axis"></div>';
+  for(let h=7;h<=19;h++){const p=(h-7)/12*100;stage+=`<div class="linear-hour" style="left:${p}%"><span>${String(h).padStart(2,'0')}:00</span></div>`;}
+  for(const b of blocos){const left=pctLinha(b.inicio),right=pctLinha(b.fim),w=Math.max(.45,right-left);stage+=`<div class="linear-block ${b.tipo}" style="left:${left}%;width:${w}%" title="${horaBR(b.inicio)}–${horaBR(b.fim)} • ${b.nome}"></div>`;}
+  stops.forEach((st,i)=>{const mid=(pctLinha(st.inicio)+pctLinha(st.fim))/2;stage+=`<div class="linear-label" style="left:${mid}%;top:${132+(i%2)*48}px"><b>${st.tipo==='obra'?st.nome:st.tipo==='empresa'?'EMPRESA':'PARADA NÃO IDENTIFICADA'}</b><small>${horaBR(st.inicio)}–${horaBR(st.fim)} • ${Math.round(st.minutos)} min${st.tipo==='outro'?`<br>${st.endereco}`:''}</small></div>`;});
+  stage+='<div class="linear-dot" id="linearDot"></div>';
+  $('linearStage').innerHTML=stage;
+  $('linearList').innerHTML=stops.length?stops.map(st=>`<div class="linear-stop-row ${st.tipo}"><b>${horaBR(st.inicio)}–${horaBR(st.fim)}</b><span class="linear-badge ${st.tipo}">${st.tipo==='obra'?'OBRA':st.tipo==='empresa'?'EMPRESA':'NÃO IDENTIFICADO'}</span><span><b>${st.tipo==='obra'?st.nome:st.tipo==='empresa'?'Empresa':st.endereco}</b><br>${st.tipo==='outro'?'Sem obra ou empresa dentro do raio configurado.':'Parada reconhecida automaticamente.'}</span><b>${formatHoras(st.minutos/60)}</b></div>`).join(''):'<div class="small">Nenhuma parada acima do limite informado foi encontrada.</div>';
+}
+function pararLinha(){if(animacaoLinha){cancelAnimationFrame(animacaoLinha);animacaoLinha=null;}const d=$('linearDot');if(d)d.classList.remove('on');}
+function animarLinhaAtual(){
+  const arr=gruposMapa.get($('grupoMapa').value);if(!arr?.length)return;pararLinha();renderLinhaOperacional(arr);const dot=$('linearDot');if(!dot)return;dot.classList.add('on');
+  const dur=18000,start=performance.now();
+  function frame(now){const frac=Math.min(1,(now-start)/dur);dot.style.left=`${frac*100}%`;const alvo=420+frac*720;let idx=0,best=Infinity;arr.forEach((e,i)=>{const d=Math.abs(minutoDia(e.dt)-alvo);if(d<best){best=d;idx=i;}});dot.title=`${horaBR(arr[idx].dt)} • ${nomeVisual(arr[idx])}`;if(frac<1)animacaoLinha=requestAnimationFrame(frame);else animacaoLinha=null;}
+  animacaoLinha=requestAnimationFrame(frame);
+}
+const __renderMapaGrupo=renderMapaGrupo;
+renderMapaGrupo=function(chave){__renderMapaGrupo(chave);const arr=gruposMapa.get(chave);if(arr?.length)renderLinhaOperacional(arr);};
+
+$('processar').addEventListener('click',processar);$('baixar').addEventListener('click',exportar);$('mostrarMapa').addEventListener('click',()=>renderMapaGrupo($('grupoMapa').value));$('animarRota').addEventListener('click',()=>animarGrupo($('grupoMapa').value));$('pararAnimacao').addEventListener('click',pararAnimacao);$('grupoMapa').addEventListener('change',()=>{pararAnimacao();renderMapaGrupo($('grupoMapa').value)});
+$('atualizarLinha').addEventListener('click',()=>{const a=gruposMapa.get($('grupoMapa').value);if(a)renderLinhaOperacional(a)});$('animarLinha').addEventListener('click',animarLinhaAtual);$('pararLinha').addEventListener('click',pararLinha);
+$('apiKey').value=localStorage.getItem('MOTOR_GPS_GOOGLE_KEY')||'';
+</script>
+</body>
+</html>
