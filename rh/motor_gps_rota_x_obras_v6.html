@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP ÍMPAR — Rota GPS × Obras</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--azul:#123f72;--azul2:#1767d2;--verde:#1f9d55;--vermelho:#d92d20;--cinza:#64748b;--bg:#eef3f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Arial,sans-serif;color:#142033}main{max-width:1440px;margin:auto;padding:20px}
+.hero{background:linear-gradient(135deg,#0d2d54,#1767d2);color:#fff;padding:22px;border-radius:18px;box-shadow:0 12px 35px #0d2d5430}.hero h1{margin:0;font-size:27px}.hero p{margin:8px 0 0;color:#dfeeff}
+.panel{background:#fff;border:1px solid #d8e1ea;border-radius:15px;padding:16px;margin-top:14px;box-shadow:0 8px 24px #123f7210}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.full{grid-column:1/-1}.span2{grid-column:span 2}
+label{display:block;font-size:11px;font-weight:900;color:#526176;margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em}input,select{width:100%;height:42px;border:1px solid #cbd5e1;border-radius:9px;padding:0 11px;background:#fff;color:#162033}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}button{border:0;border-radius:9px;padding:11px 16px;font-weight:900;cursor:pointer;background:var(--azul2);color:#fff}button.secondary{background:#475569}button.green{background:var(--verde)}button:disabled{opacity:.45;cursor:not-allowed}
+.notice{margin-top:12px;padding:11px;border-radius:10px;background:#fff7db;color:#775900;font-size:12px}.status{margin-top:12px;padding:12px;border-radius:10px;background:#edf3f9;white-space:pre-wrap;font-size:13px}.status.ok{background:#e9f8ee;color:#176b36}.status.erro{background:#feecec;color:#9b1c1c}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}.kpi{padding:12px;border:1px solid #dce4ec;border-radius:12px;background:#f9fbfd}.kpi small{display:block;color:#64748b;font-weight:800}.kpi b{font-size:22px;display:block;margin-top:5px;color:#0d2d54}
+.map-tools{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}.map-actions{display:flex;gap:8px;flex-wrap:wrap}.map{height:600px;border-radius:14px;border:1px solid #cbd5e1;margin-top:12px;overflow:hidden;background:#e5ebf0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px}.legend span{display:flex;align-items:center;gap:6px}.sw{width:26px;height:7px;border-radius:999px;display:inline-block}
+.table-wrap{overflow:auto;margin-top:12px}table{width:100%;border-collapse:collapse;font-size:12px;min-width:920px}th,td{padding:9px;border-bottom:1px solid #e3e8ee;text-align:left}th{background:#edf3f8;color:#334155;position:sticky;top:0}.hit{color:#176b36;font-weight:900}.nohit{color:#9b1c1c;font-weight:900}.chip{display:inline-flex;padding:4px 7px;border-radius:999px;background:#eaf2ff;color:#174ea6;font-size:10px;font-weight:900;margin:2px}
+.result-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.result-head h2{margin:0}.small{font-size:11px;color:#64748b}
+@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.span2{grid-column:span 2}.kpis{grid-template-columns:1fr 1fr}.map-tools{grid-template-columns:1fr}.map{height:480px}}@media(max-width:560px){main{padding:10px}.grid{grid-template-columns:1fr}.full,.span2{grid-column:auto}.kpis{grid-template-columns:1fr}.hero h1{font-size:22px}}
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <h1>Rota completa dos carros × Obras</h1>
+    <p>O motor lê todos os deslocamentos do período, desenha as rotas e identifica quais veículos cruzaram o raio de cada obra.</p>
+  </section>
+
+  <section class="panel">
+    <div class="grid">
+      <div class="span2"><label>Planilha GPS (.xlsx)</label><input id="gpsFile" type="file" accept=".xlsx,.xls"></div>
+      <div class="span2"><label>Cadastro de obras (.xlsx) — opcional se estiver no mesmo arquivo</label><input id="obrasFile" type="file" accept=".xlsx,.xls"></div>
+      <div class="span2"><label>Chave Google Maps</label><input id="apiKey" type="password" placeholder="Cole a chave usada na RP"></div>
+      <div><label>Raio de cruzamento (metros)</label><input id="raio" type="number" value="2000" min="50" step="50"></div>
+      <div><label>Sufixo dos endereços</label><input id="sufixo" value="Santa Catarina, Brasil"></div>
+      <div><label>Data inicial</label><input id="dataIni" type="date" value="2026-07-16"></div>
+      <div><label>Data final</label><input id="dataFim" type="date" value="2026-07-17"></div>
+      <div class="span2"><label>Aba GPS (automático)</label><select id="abaGps"><option value="">Carregue a planilha</option></select></div>
+      <div class="span2"><label>Aba Obras (automático)</label><select id="abaObras"><option value="">Carregue o cadastro</option></select></div>
+    </div>
+    <div class="notice">A planilha GPS pode ter as colunas <b>Data/Hora</b>, <b>Rastreável/Placas</b> e <b>Endereço</b>. O cadastro de obras precisa de <b>Obra</b> e <b>Endereço</b>. Não existe cruzamento com atividade do dia, equipe ou cadastro carro × colaborador.</div>
+    <div class="actions"><button id="processar">Processar rotas e cruzamentos</button><button id="exportar" class="secondary" disabled>Baixar resultado</button></div>
+    <div id="status" class="status">Aguardando os arquivos.</div>
+  </section>
+
+  <section id="resultado" hidden>
+    <section class="panel"><div id="kpis" class="kpis"></div></section>
+    <section class="panel">
+      <div class="result-head"><div><h2>Mapa das rotas e obras</h2><div class="small">Selecione um carro/dia ou mostre todas as rotas do período.</div></div></div>
+      <div class="map-tools">
+        <div><label>Carro / dia</label><select id="grupo"></select></div>
+        <div><label>Filtrar obra</label><select id="filtroObra"><option value="">Todas as obras</option></select></div>
+        <div class="map-actions"><button id="mostrar" class="green">Mostrar selecionado</button><button id="mostrarTodos" class="secondary">Mostrar todas as rotas</button></div>
+      </div>
+      <div id="map" class="map"></div>
+      <div class="legend"><span><i class="sw" style="background:#1767d2"></i>Rota do carro</span><span><i class="sw" style="background:#1f9d55;height:14px"></i>Obra cruzada</span><span><i class="sw" style="background:#d92d20;height:14px"></i>Obra não cruzada</span><span><i class="sw" style="background:#f59e0b"></i>Trecho dentro do raio</span></div>
+    </section>
+    <section class="panel"><div class="result-head"><h2>Carros encontrados por obra</h2></div><div id="tabelaObras" class="table-wrap"></div></section>
+    <section class="panel"><div class="result-head"><h2>Cruzamentos detalhados</h2></div><div id="tabelaCruzamentos" class="table-wrap"></div></section>
+  </section>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let wbGps=null,wbObras=null,googleReady=false,mapa=null,overlays=[],resultado=null,geoCache=new Map();
+const cores=['#1767d2','#7c3aed','#ea580c','#0891b2','#be123c','#16a34a','#4f46e5','#a16207'];
+function setStatus(msg,t=''){$('status').textContent=msg;$('status').className='status '+t;}
+function txt(v){return String(v??'').trim();}
+function norm(v){return txt(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();}
+function placa(v){const m=txt(v).toUpperCase().match(/[A-Z]{3}[- ]?\d[A-Z0-9]\d{2}|[A-Z]{3}[- ]?\d{4}/);return m?m[0].replace(/[^A-Z0-9]/g,''):norm(v).replace(/ /g,'');}
+function excelDate(v){if(v instanceof Date)return v;if(typeof v==='number')return new Date(Math.round((v-25569)*86400000));const s=txt(v);let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);if(m)return new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0),+(m[6]||0));const d=new Date(v);return isNaN(d)?null:d;}
+function iso(d){return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
+function brDate(d){return d?d.toLocaleDateString('pt-BR'):'';}function brTime(d){return d?d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';}
+function readRows(wb,sheet){return XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,raw:true});}
+function findCol(row,cands){const keys=Object.keys(row||{});return keys.find(k=>cands.some(c=>norm(k)===norm(c)))||keys.find(k=>cands.some(c=>norm(k).includes(norm(c))));}
+function chooseSheet(wb,type){let best='',score=-1;for(const n of wb.SheetNames){const rows=readRows(wb,n);const r=rows[0]||{};let s=0;if(type==='gps'){if(findCol(r,['Data/Hora','Data Hora']))s+=3;if(findCol(r,['Rastreável','Placas','Placa','Veículo']))s+=3;if(findCol(r,['Endereço','Endereco']))s+=3;}else{if(findCol(r,['Obra','Nome da Obra','Projeto']))s+=4;if(findCol(r,['Endereço','Endereco','Local']))s+=4;}if(s>score){score=s;best=n;}}return best;}
+function fillSheets(sel,wb,preferred){sel.innerHTML=wb.SheetNames.map(n=>`<option value="${escapeHtml(n)}" ${n===preferred?'selected':''}>${escapeHtml(n)}</option>`).join('');}
+function escapeHtml(s){return txt(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+async function loadWorkbook(file){return XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});}
+$('gpsFile').addEventListener('change',async()=>{const f=$('gpsFile').files[0];if(!f)return;wbGps=await loadWorkbook(f);fillSheets($('abaGps'),wbGps,chooseSheet(wbGps,'gps'));if(!wbObras){const s=chooseSheet(wbGps,'obras');if(s){wbObras=wbGps;fillSheets($('abaObras'),wbGps,s);}}});
+$('obrasFile').addEventListener('change',async()=>{const f=$('obrasFile').files[0];if(!f)return;wbObras=await loadWorkbook(f);fillSheets($('abaObras'),wbObras,chooseSheet(wbObras,'obras'));});
+function loadGoogle(key){return new Promise((res,rej)=>{if(window.google?.maps){googleReady=true;return res();}if(!key)return rej(new Error('Informe a chave do Google Maps.'));window.__gmLoaded=()=>{googleReady=true;res();};const s=document.createElement('script');s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=geometry&callback=__gmLoaded`;s.async=true;s.defer=true;s.onerror=()=>rej(new Error('Não foi possível carregar o Google Maps.'));document.head.appendChild(s);});}
+function addressFull(a,suf){return norm(a).includes('BRASIL')?a:`${a}, ${suf}`;}
+async function geocode(address,suffix){const k=norm(address);if(geoCache.has(k))return geoCache.get(k);const saved=localStorage.getItem('GPS_GEO_'+k);if(saved){try{const o=JSON.parse(saved);geoCache.set(k,o);return o;}catch{}}const geocoder=new google.maps.Geocoder();const r=await new Promise((res,rej)=>geocoder.geocode({address:addressFull(address,suffix)},(x,st)=>st==='OK'&&x[0]?res(x[0]):rej(new Error(`${address} (${st})`))));const o={lat:r.geometry.location.lat(),lng:r.geometry.location.lng(),formatted:r.formatted_address};geoCache.set(k,o);try{localStorage.setItem('GPS_GEO_'+k,JSON.stringify(o));}catch{}await new Promise(r=>setTimeout(r,70));return o;}
+function meters(a,b){return google.maps.geometry.spherical.computeDistanceBetween(new google.maps.LatLng(a.lat,a.lng),new google.maps.LatLng(b.lat,b.lng));}
+function pointSegmentMeters(p,a,b){
+  const lat0=(p.lat+a.lat+b.lat)/3*Math.PI/180,R=6371000;
+  const xy=q=>({x:q.lng*Math.PI/180*R*Math.cos(lat0),y:q.lat*Math.PI/180*R});
+  const P=xy(p),A=xy(a),B=xy(b),dx=B.x-A.x,dy=B.y-A.y,l2=dx*dx+dy*dy;
+  if(!l2)return Math.hypot(P.x-A.x,P.y-A.y);
+  const t=Math.max(0,Math.min(1,((P.x-A.x)*dx+(P.y-A.y)*dy)/l2));return Math.hypot(P.x-(A.x+t*dx),P.y-(A.y+t*dy));
+}
+function parseGps(rows,ini,fim){if(!rows.length)throw new Error('A aba GPS está vazia.');const cData=findCol(rows[0],['Data/Hora','Data Hora','Data']),cCar=findCol(rows[0],['Rastreável','Placas','Placa','Veículo']),cEnd=findCol(rows[0],['Endereço','Endereco','Local']);if(!cData||!cCar||!cEnd)throw new Error('Não encontrei as colunas Data/Hora, Rastreável/Placa e Endereço.');return rows.map(r=>({dt:excelDate(r[cData]),car:placa(r[cCar]),address:txt(r[cEnd]),type:txt(r[findCol(r,['Tipo','Evento'])]||'')})).filter(x=>x.dt&&x.car&&x.address&&iso(x.dt)>=ini&&iso(x.dt)<=fim).sort((a,b)=>a.car.localeCompare(b.car)||a.dt-b.dt);}
+function parseObras(rows){if(!rows.length)throw new Error('A aba de obras está vazia.');const cNome=findCol(rows[0],['Obra','Nome da Obra','Projeto']),cEnd=findCol(rows[0],['Endereço','Endereco','Local']);if(!cNome||!cEnd)throw new Error('Não encontrei as colunas Obra e Endereço no cadastro.');return rows.map(r=>({name:txt(r[cNome]),address:txt(r[cEnd])})).filter(x=>x.name&&x.address);}
+function groupRoutes(events){const m=new Map();for(const e of events){const k=`${e.car}|${iso(e.dt)}`;if(!m.has(k))m.set(k,[]);m.get(k).push(e);}for(const [k,a] of [...m]){a.sort((x,y)=>x.dt-y.dt);const ded=[];for(const e of a){const last=ded[ded.length-1];if(!last||norm(last.address)!==norm(e.address)||Math.abs(e.dt-last.dt)>30000)ded.push(e);}if(ded.length<2)m.delete(k);else m.set(k,ded);}return m;}
+function crossingForRoute(key,arr,works,radius){const [car,date]=key.split('|'),hits=[];for(const w of works){let min=Infinity,first=null,last=null,segments=[];for(let i=0;i<arr.length-1;i++){const d=pointSegmentMeters(w.coord,arr[i].coord,arr[i+1].coord);if(d<min)min=d;if(d<=radius){segments.push(i);if(!first)first=arr[i].dt;last=arr[i+1].dt;}}if(min<=radius)hits.push({car,date,work:w.name,workAddress:w.address,minDistance:min,first,last,segments,key});}return hits;}
+async function process(){const gpsF=$('gpsFile').files[0];if(!gpsF)return setStatus('Selecione a planilha GPS.','erro');if(!wbGps)wbGps=await loadWorkbook(gpsF);if(!wbObras){const of=$('obrasFile').files[0];if(of)wbObras=await loadWorkbook(of);else wbObras=wbGps;}const gpsSheet=$('abaGps').value||chooseSheet(wbGps,'gps'),obraSheet=$('abaObras').value||chooseSheet(wbObras,'obras');if(!obraSheet)return setStatus('Não encontrei um cadastro de obras. Inclua uma aba com Obra e Endereço ou selecione um arquivo separado.','erro');$('processar').disabled=true;$('exportar').disabled=true;$('resultado').hidden=true;try{
+ localStorage.setItem('GPS_MAPS_KEY',$('apiKey').value);await loadGoogle($('apiKey').value.trim());const ini=$('dataIni').value,fim=$('dataFim').value;if(!ini||!fim||fim<ini)throw new Error('Informe um período válido.');const radius=Number($('raio').value)||2000,suffix=$('sufixo').value.trim();
+ setStatus('Lendo GPS e cadastro de obras...');const events=parseGps(readRows(wbGps,gpsSheet),ini,fim),works=parseObras(readRows(wbObras,obraSheet));if(!events.length)throw new Error('Nenhum registro GPS encontrado no período selecionado.');
+ const uniqueAddr=[...new Set(events.map(x=>x.address))];for(let i=0;i<uniqueAddr.length;i++){setStatus(`Geocodificando pontos GPS: ${i+1}/${uniqueAddr.length}`);try{const c=await geocode(uniqueAddr[i],suffix);for(const e of events)if(norm(e.address)===norm(uniqueAddr[i]))e.coord=c;}catch(e){for(const x of events)if(norm(x.address)===norm(uniqueAddr[i]))x.geoError=e.message;}}
+ const validEvents=events.filter(x=>x.coord);for(let i=0;i<works.length;i++){setStatus(`Geocodificando obras: ${i+1}/${works.length}`);try{works[i].coord=await geocode(works[i].address,suffix);}catch(e){works[i].geoError=e.message;}}const validWorks=works.filter(x=>x.coord);if(!validWorks.length)throw new Error('Nenhuma obra pôde ser localizada no mapa.');
+ const routes=groupRoutes(validEvents);if(!routes.size)throw new Error('Não há rotas com pelo menos dois pontos no período.');let crossings=[];for(const [k,a] of routes)crossings.push(...crossingForRoute(k,a,validWorks,radius));const byWork=validWorks.map(w=>{const h=crossings.filter(x=>norm(x.work)===norm(w.name));return {...w,cars:[...new Set(h.map(x=>x.car))],days:[...new Set(h.map(x=>x.date))],hits:h};});
+ resultado={routes,works:validWorks,crossings,byWork,radius,period:{ini,fim},warnings:[...events.filter(x=>x.geoError),...works.filter(x=>x.geoError)]};renderResult();setStatus(`Concluído: ${routes.size} rota(s), ${validWorks.length} obra(s) e ${crossings.length} cruzamento(s) encontrados.`, 'ok');$('exportar').disabled=false;
+ }catch(e){console.error(e);setStatus('Erro: '+e.message,'erro');}finally{$('processar').disabled=false;}}
+function clearMap(){for(const o of overlays){if(o.setMap)o.setMap(null);}overlays=[];}function add(o){overlays.push(o);return o;}
+function initMap(center){mapa=mapa||new google.maps.Map($('map'),{center:center||{lat:-27.6,lng:-48.7},zoom:9,mapTypeId:'roadmap'});}
+function routeHits(key){return resultado.crossings.filter(x=>x.key===key);}
+function drawWorks(bounds,filter='',activeHits=[]){for(const w of resultado.works){if(filter&&norm(w.name)!==norm(filter))continue;const hit=activeHits.some(h=>norm(h.work)===norm(w.name)),color=hit?'#1f9d55':'#d92d20';bounds.extend(w.coord);add(new google.maps.Circle({map:mapa,center:w.coord,radius:resultado.radius,strokeColor:color,strokeOpacity:.85,strokeWeight:2,fillColor:color,fillOpacity:.10}));const mk=add(new google.maps.Marker({map:mapa,position:w.coord,title:w.name,label:{text:'O',color:'#fff',fontWeight:'bold'},icon:{path:google.maps.SymbolPath.CIRCLE,scale:12,fillColor:color,fillOpacity:1,strokeColor:'#fff',strokeWeight:2}}));const cars=resultado.byWork.find(x=>norm(x.name)===norm(w.name))?.cars||[];const info=new google.maps.InfoWindow({content:`<b>${escapeHtml(w.name)}</b><br>${escapeHtml(w.address)}<br>Raio: ${resultado.radius.toLocaleString('pt-BR')} m<br>Carros encontrados: ${cars.length?cars.join(', '):'nenhum'}`});mk.addListener('click',()=>info.open(mapa,mk));}}
+function drawRoute(key,color='#1767d2',fit=true){const arr=resultado.routes.get(key);if(!arr)return;clearMap();initMap(arr[0].coord);const bounds=new google.maps.LatLngBounds(),path=arr.map(x=>x.coord);path.forEach(p=>bounds.extend(p));const hits=routeHits(key),filter=$('filtroObra').value;drawWorks(bounds,filter,hits);add(new google.maps.Polyline({map:mapa,path,strokeColor:color,strokeOpacity:.95,strokeWeight:5,geodesic:true}));for(const h of hits){if(filter&&norm(h.work)!==norm(filter))continue;for(const i of h.segments){add(new google.maps.Polyline({map:mapa,path:[arr[i].coord,arr[i+1].coord],strokeColor:'#f59e0b',strokeOpacity:1,strokeWeight:8,geodesic:true,zIndex:5}));}}
+ [arr[0],arr[arr.length-1]].forEach((e,i)=>add(new google.maps.Marker({map:mapa,position:e.coord,label:i?'F':'I',title:`${i?'Fim':'Início'} ${brTime(e.dt)} — ${e.address}`})));if(fit)mapa.fitBounds(bounds,45);}
+function drawAll(){clearMap();const first=[...resultado.routes.values()][0]?.[0]?.coord;initMap(first);const bounds=new google.maps.LatLngBounds(),filter=$('filtroObra').value;drawWorks(bounds,filter,resultado.crossings);let ix=0;for(const [k,arr] of resultado.routes){const path=arr.map(x=>x.coord);path.forEach(p=>bounds.extend(p));add(new google.maps.Polyline({map:mapa,path,strokeColor:cores[ix++%cores.length],strokeOpacity:.82,strokeWeight:4,geodesic:true}));}mapa.fitBounds(bounds,40);}
+function renderResult(){const r=resultado;const cars=[...new Set([...r.routes.keys()].map(k=>k.split('|')[0]))],worksHit=r.byWork.filter(x=>x.cars.length),dates=[...new Set([...r.routes.keys()].map(k=>k.split('|')[1]))];$('kpis').innerHTML=`<div class="kpi"><small>Período</small><b>${brDate(new Date(r.period.ini+'T12:00:00'))}–${brDate(new Date(r.period.fim+'T12:00:00'))}</b></div><div class="kpi"><small>Carros analisados</small><b>${cars.length}</b></div><div class="kpi"><small>Rotas carro/dia</small><b>${r.routes.size}</b></div><div class="kpi"><small>Obras cruzadas</small><b>${worksHit.length}/${r.works.length}</b></div><div class="kpi"><small>Cruzamentos</small><b>${r.crossings.length}</b></div>`;
+ $('grupo').innerHTML=[...r.routes.keys()].map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k.replace('|',' • '))}</option>`).join('');$('filtroObra').innerHTML='<option value="">Todas as obras</option>'+r.works.map(w=>`<option value="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join('');
+ $('tabelaObras').innerHTML=`<table><thead><tr><th>Obra</th><th>Endereço</th><th>Situação</th><th>Carros que cruzaram</th><th>Dias</th><th>Menor distância</th></tr></thead><tbody>${r.byWork.map(w=>{const md=w.hits.length?Math.min(...w.hits.map(h=>h.minDistance)):null;return `<tr><td><b>${escapeHtml(w.name)}</b></td><td>${escapeHtml(w.address)}</td><td class="${w.cars.length?'hit':'nohit'}">${w.cars.length?'CRUZADA':'NÃO CRUZADA'}</td><td>${w.cars.map(c=>`<span class="chip">${c}</span>`).join('')||'—'}</td><td>${w.days.map(d=>`<span class="chip">${brDate(new Date(d+'T12:00:00'))}</span>`).join('')||'—'}</td><td>${md==null?'—':Math.round(md)+' m'}</td></tr>`}).join('')}</tbody></table>`;
+ $('tabelaCruzamentos').innerHTML=`<table><thead><tr><th>Data</th><th>Carro</th><th>Obra</th><th>Menor distância</th><th>Primeiro trecho próximo</th><th>Último trecho próximo</th><th>Trechos no raio</th></tr></thead><tbody>${r.crossings.sort((a,b)=>a.date.localeCompare(b.date)||a.car.localeCompare(b.car)||a.work.localeCompare(b.work)).map(h=>`<tr><td>${brDate(new Date(h.date+'T12:00:00'))}</td><td><b>${h.car}</b></td><td>${escapeHtml(h.work)}</td><td>${Math.round(h.minDistance)} m</td><td>${brTime(h.first)}</td><td>${brTime(h.last)}</td><td>${h.segments.length}</td></tr>`).join('')||'<tr><td colspan="7">Nenhum cruzamento encontrado.</td></tr>'}</tbody></table>`;
+ $('resultado').hidden=false;const first=[...r.routes.keys()][0];if(first)drawRoute(first);}
+function exportResult(){if(!resultado)return;const wb=XLSX.utils.book_new();const crossings=resultado.crossings.map(h=>({Data:h.date,Carro:h.car,Obra:h.work,'Endereço da obra':h.workAddress,'Menor distância (m)':Math.round(h.minDistance),'Primeiro trecho próximo':brTime(h.first),'Último trecho próximo':brTime(h.last),'Quantidade de trechos no raio':h.segments.length}));const byWork=resultado.byWork.map(w=>({Obra:w.name,Endereço:w.address,Situação:w.cars.length?'CRUZADA':'NÃO CRUZADA','Carros encontrados':w.cars.join(' | '),Dias:w.days.join(' | '),'Menor distância (m)':w.hits.length?Math.round(Math.min(...w.hits.map(h=>h.minDistance))):''}));const routes=[...resultado.routes.entries()].flatMap(([k,a])=>a.map((e,i)=>({Data:k.split('|')[1],Carro:k.split('|')[0],Sequência:i+1,'Data/Hora':e.dt,Evento:e.type,Endereço:e.address,Latitude:e.coord.lat,Longitude:e.coord.lng})));for(const [name,data] of [['Obras_x_Carros',byWork],['Cruzamentos',crossings],['Rotas_GPS',routes]]){const ws=XLSX.utils.json_to_sheet(data.length?data:[{Mensagem:'Sem registros'}]);ws['!autofilter']={ref:ws['!ref']};XLSX.utils.book_append_sheet(wb,ws,name);}XLSX.writeFile(wb,`resultado_rota_x_obras_${resultado.period.ini}_${resultado.period.fim}.xlsx`);}
+$('processar').addEventListener('click',process);$('exportar').addEventListener('click',exportResult);$('mostrar').addEventListener('click',()=>drawRoute($('grupo').value));$('mostrarTodos').addEventListener('click',drawAll);$('grupo').addEventListener('change',()=>drawRoute($('grupo').value));$('filtroObra').addEventListener('change',()=>drawRoute($('grupo').value));$('apiKey').value=localStorage.getItem('GPS_MAPS_KEY')||'';
+</script>
+</body>
+</html>
