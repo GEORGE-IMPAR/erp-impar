@@ -1,37 +1,123 @@
-AUDITORIA DE TRAJETOS GPS — MOTOR V4.0
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Auditoria de Trajetos GPS — Motor V4.0</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/gps-v4.css">
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <div class="eyebrow">ERP ÍMPAR • MOTOR GPS</div>
+    <h1>Auditoria de Trajetos GPS</h1>
+    <p>V4.0.1 — pré-processamento, máquina de estados, ciclos, trechos e trilha completa de auditoria.</p>
+  </div>
+  <div class="version">PACOTE 4.0.1</div>
+</header>
 
-ENTREGA
-- index.html
-- css/gps-v4.css
-- js/core.js
-- js/importador.js
-- js/motor.js
-- js/ui.js
-- js/app.js
+<main>
+  <section class="card controls">
+    <div class="grid-controls">
+      <div class="arquivo">
+        <label for="arquivo">Arquivo GPS (.xlsx, .xls, .csv ou .txt)</label>
+        <input type="file" id="arquivo" accept=".xlsx,.xls,.csv,.txt">
+      </div>
+      <div>
+        <label for="placa">Placa</label>
+        <select id="placa" disabled><option value="">Todas</option></select>
+      </div>
+      <div>
+        <label for="inicio">Data inicial</label>
+        <input type="date" id="inicio" disabled>
+      </div>
+      <div>
+        <label for="fim">Data final</label>
+        <input type="date" id="fim" disabled>
+      </div>
+      <div class="actions">
+        <button id="processar" disabled>Processar</button>
+        <button id="limpar" class="secondary" disabled>Limpar</button>
+      </div>
+    </div>
 
-COMO TESTAR
-1. Extraia todo o ZIP mantendo as pastas css e js.
-2. Abra index.html no navegador.
-3. Importe o arquivo GPS em XLSX, XLS, CSV ou TXT.
+    <div class="toolbar">
+      <div class="chips">
+        <button class="chip active" data-mode="todos">Todos</button>
+        <button class="chip" data-mode="sabado">Sábados</button>
+        <button class="chip" data-mode="domingo">Domingos</button>
+        <button class="chip" data-mode="fora">Fora do expediente</button>
+      </div>
+      <label class="check"><input type="checkbox" id="mostrarTecnicos"> Mostrar eventos técnicos</label>
+    </div>
 
-NOVIDADES DA V4.0
-- Pré-processamento cronológico.
-- Remoção de duplicatas exatas.
-- Máquina de estados por placa e dia.
-- Ciclo iniciado no primeiro Ligou.
-- Ligou no mesmo endereço substituído pelo mais recente.
-- Ligou em novo endereço mantido como ponto intermediário.
-- Desligou consecutivo consolidado no último registro.
-- Ciclo finalizado no último Desligou antes do próximo Ligou.
-- Geração separada de ciclos e trechos.
-- Auditoria completa de cada evento.
-- Exportação da auditoria em CSV.
-- Estrutura pronta para Google Maps no próximo pacote.
+    <div id="status" class="status">Selecione o arquivo exportado pelo sistema de GPS.</div>
+  </section>
 
-OBSERVAÇÃO
-A biblioteca XLSX é carregada por CDN. Para importar Excel, o navegador precisa ter acesso à internet. CSV/TXT funcionam sem a biblioteca XLSX.
+  <section class="card">
+    <div class="summary">
+      <div class="kpi"><div class="n" id="kRecebidos">0</div><div class="l">Eventos recebidos</div></div>
+      <div class="kpi"><div class="n" id="kValidos">0</div><div class="l">Eventos válidos</div></div>
+      <div class="kpi"><div class="n" id="kDescartados">0</div><div class="l">Eventos descartados</div></div>
+      <div class="kpi"><div class="n" id="kCiclos">0</div><div class="l">Ciclos</div></div>
+      <div class="kpi"><div class="n" id="kTrechos">0</div><div class="l">Trechos</div></div>
+      <div class="kpi"><div class="n" id="kIncompletos">0</div><div class="l">Ciclos incompletos</div></div>
+    </div>
+  </section>
 
-CORREÇÃO V4.0.1
-- Processamento separado por placa e por dia.
-- Eventos de outra placa intercalados no horário não encerram nem dividem o ciclo atual.
-- Ciclos e auditoria continuam exibidos em ordem cronológica geral.
+  <section class="tabs card">
+    <div class="tab-buttons">
+      <button class="tab active" data-tab="timeline">Timeline</button>
+      <button class="tab" data-tab="trechos">Trechos</button>
+      <button class="tab" data-tab="ciclos">Ciclos</button>
+      <button class="tab" data-tab="auditoria">Auditoria dos eventos</button>
+    </div>
+
+    <div class="tab-panel active" id="panel-timeline">
+      <div id="timeline" class="timeline"><div class="empty">Nenhum trajeto processado.</div></div>
+    </div>
+
+    <div class="tab-panel" id="panel-trechos">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Ciclo</th><th>Data</th><th>Saída</th><th>Origem</th><th>Chegada</th><th>Destino</th><th>Tempo</th><th>KM</th></tr></thead>
+          <tbody id="tbodyTrechos"><tr><td colspan="9" class="empty">Nenhum trecho identificado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-ciclos">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Placa</th><th>Data</th><th>Início</th><th>Fim</th><th>Duração</th><th>Pontos</th><th>Recebidos</th><th>Descartados</th><th>Status</th></tr></thead>
+          <tbody id="tbodyCiclos"><tr><td colspan="10" class="empty">Nenhum ciclo identificado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-auditoria">
+      <div class="audit-tools">
+        <div>
+          <label for="auditStatus">Status da auditoria</label>
+          <select id="auditStatus"><option value="">Todos</option></select>
+        </div>
+        <button id="exportarAuditoria" class="secondary" disabled>Exportar CSV</button>
+      </div>
+      <div class="table-wrap audit-table">
+        <table>
+          <thead><tr><th>#</th><th>Data/Hora</th><th>Placa</th><th>Evento</th><th>Endereço</th><th>Status</th><th>Motivo</th><th>Ciclo</th></tr></thead>
+          <tbody id="tbodyAuditoria"><tr><td colspan="8" class="empty">Nenhum evento auditado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="js/core.js"></script>
+<script src="js/importador.js"></script>
+<script src="js/motor.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
