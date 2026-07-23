@@ -24,33 +24,102 @@
   }
 
   function buildCycles(events,initialAudit=[]){
-    const cycles=[],auditTrail=[...initialAudit];let current=null,pendingOff=null,sequence=0;
-    function newCycle(event){sequence++;const id=`C${String(sequence).padStart(4,'0')}`;current={id,plate:event.plate,date:event.dt,start:event,end:null,points:[event],rawEvents:1,discarded:0,incomplete:true};auditTrail.push(audit(event,AuditStatus.START,'Primeiro Ligou do ciclo.',id));pendingOff=null}
-    function closeCurrent(incomplete){
-      if(!current)return;
-      if(pendingOff){current.points.push(pendingOff);current.end=pendingOff;current.incomplete=false;auditTrail.push(audit(pendingOff,AuditStatus.END,'Último Desligou utilizado para encerrar o ciclo.',current.id))}
-      else{current.end=current.points[current.points.length-1];current.incomplete=!!incomplete}
-      cycles.push(current);current=null;pendingOff=null;
-    }
+    const cycles=[];
+    const auditTrail=[...initialAudit];
+    let sequence=0;
+
+    // Regra estrutural V4.0.1:
+    // cada placa é processada em uma linha do tempo independente por dia.
+    // Assim, eventos de outro veículo intercalados cronologicamente nunca
+    // encerram, dividem ou contaminam o ciclo da placa que estava em análise.
+    const streams=new Map();
     for(const event of events){
-      if(current&&(current.plate!==event.plate||Core.iso(current.date)!==Core.iso(event.dt)))closeCurrent(!pendingOff);
-      if(!current){if(isOn(event.type))newCycle(event);else auditTrail.push(audit(event,AuditStatus.NO_START,'Desligou encontrado sem Ligou anterior.'));continue}
-      current.rawEvents++;
-      if(isOn(event.type)){
-        if(pendingOff){closeCurrent(false);newCycle(event);continue}
-        const last=current.points[current.points.length-1];
-        if(last&&isOn(last.type)&&Core.norm(last.address)===Core.norm(event.address)){
-          current.points[current.points.length-1]=event;current.discarded++;auditTrail.push(audit(last,AuditStatus.REPLACED_ON,'Ligou anterior no mesmo endereço foi substituído pelo registro mais recente.',current.id));auditTrail.push(audit(event,AuditStatus.INTERMEDIATE,'Ligou mais recente mantido no mesmo endereço.',current.id));
-        }else{current.points.push(event);auditTrail.push(audit(event,AuditStatus.INTERMEDIATE,'Ligou com mudança de endereço mantido como ponto intermediário.',current.id))}
-        continue;
-      }
-      if(isOff(event.type)){
-        if(pendingOff){current.discarded++;auditTrail.push(audit(pendingOff,AuditStatus.REPLACED_OFF,'Desligou anterior substituído pelo desligamento mais recente.',current.id))}
-        pendingOff=event;continue;
-      }
-      auditTrail.push(audit(event,AuditStatus.USED,'Evento técnico preservado para auditoria, sem alterar o estado do ciclo.',current.id));
+      const key=`${event.plate}|${Core.iso(event.dt)}`;
+      if(!streams.has(key))streams.set(key,[]);
+      streams.get(key).push(event);
     }
-    if(current)closeCurrent(!pendingOff);
+
+    const orderedStreams=[...streams.values()].sort((a,b)=>{
+      const da=a[0]?.dt?.getTime?.()||0;
+      const db=b[0]?.dt?.getTime?.()||0;
+      if(da!==db)return da-db;
+      return String(a[0]?.plate||'').localeCompare(String(b[0]?.plate||''),'pt-BR');
+    });
+
+    for(const stream of orderedStreams){
+      stream.sort((a,b)=>(a.dt-b.dt)||(a.rawIndex-b.rawIndex));
+      let current=null;
+      let pendingOff=null;
+
+      function newCycle(event){
+        sequence++;
+        const id=`C${String(sequence).padStart(4,'0')}`;
+        current={id,plate:event.plate,date:event.dt,start:event,end:null,points:[event],rawEvents:1,discarded:0,incomplete:true};
+        auditTrail.push(audit(event,AuditStatus.START,'Primeiro Ligou do ciclo.',id));
+        pendingOff=null;
+      }
+
+      function closeCurrent(incomplete){
+        if(!current)return;
+        if(pendingOff){
+          current.points.push(pendingOff);
+          current.end=pendingOff;
+          current.incomplete=false;
+          auditTrail.push(audit(pendingOff,AuditStatus.END,'Último Desligou utilizado para encerrar o ciclo.',current.id));
+        }else{
+          current.end=current.points[current.points.length-1];
+          current.incomplete=!!incomplete;
+        }
+        cycles.push(current);
+        current=null;
+        pendingOff=null;
+      }
+
+      for(const event of stream){
+        if(!current){
+          if(isOn(event.type))newCycle(event);
+          else auditTrail.push(audit(event,AuditStatus.NO_START,'Desligou encontrado sem Ligou anterior.'));
+          continue;
+        }
+
+        current.rawEvents++;
+
+        if(isOn(event.type)){
+          if(pendingOff){
+            closeCurrent(false);
+            newCycle(event);
+            continue;
+          }
+          const last=current.points[current.points.length-1];
+          if(last&&isOn(last.type)&&Core.norm(last.address)===Core.norm(event.address)){
+            current.points[current.points.length-1]=event;
+            current.discarded++;
+            auditTrail.push(audit(last,AuditStatus.REPLACED_ON,'Ligou anterior no mesmo endereço foi substituído pelo registro mais recente.',current.id));
+            auditTrail.push(audit(event,AuditStatus.INTERMEDIATE,'Ligou mais recente mantido no mesmo endereço.',current.id));
+          }else{
+            current.points.push(event);
+            auditTrail.push(audit(event,AuditStatus.INTERMEDIATE,'Ligou com mudança de endereço mantido como ponto intermediário.',current.id));
+          }
+          continue;
+        }
+
+        if(isOff(event.type)){
+          if(pendingOff){
+            current.discarded++;
+            auditTrail.push(audit(pendingOff,AuditStatus.REPLACED_OFF,'Desligou anterior substituído pelo desligamento mais recente.',current.id));
+          }
+          pendingOff=event;
+          continue;
+        }
+
+        auditTrail.push(audit(event,AuditStatus.USED,'Evento técnico preservado para auditoria, sem alterar o estado do ciclo.',current.id));
+      }
+
+      if(current)closeCurrent(!pendingOff);
+    }
+
+    cycles.sort((a,b)=>(a.start.dt-b.start.dt)||a.plate.localeCompare(b.plate,'pt-BR'));
+    auditTrail.sort((a,b)=>(a.dt-b.dt)||(a.rawIndex-b.rawIndex));
     return {cycles,auditTrail};
   }
 
