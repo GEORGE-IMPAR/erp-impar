@@ -14,10 +14,16 @@
   function run(rows){
     const rejeitados=[];
     const eventos=rows.map((row,index)=>{
-      const dt=Core.parseDateTime(field(row,['Data/Hora','Data Hora','Data e Hora','Data']));
-      const tracker=String(field(row,['Rastreável','Rastreavel','Veículo','Veiculo','Placa','Placas'])||'').trim();
-      const plate=Core.plate(tracker),type=String(field(row,['Tipo','Evento'])||'').trim();
-      const address=String(field(row,['Endereço','Endereco','Local'])||'').trim();
+      const dt=Core.parseDateTime(field(row,['Data/Hora Evento','Data/Hora','Data Hora','Data e Hora','Data']));
+      const tracker=String(field(row,['Rastreável','Rastreavel','Veículo','Veiculo','Placa','Placas','__rastreavelRelatorio'])||'').trim();
+      const plate=Core.plate(tracker),type=String(field(row,['Tipo','Evento','Informação','Informacao'])||'').trim();
+      const address=String(field(row,['Endereço','Endereco','Local','Localização','Localizacao'])||'').trim();
+      const number=value=>{const n=Number(String(value??'').replace(',','.'));return Number.isFinite(n)?n:null};
+      const bool=value=>value===true||['true','1','sim','ligado'].includes(Core.norm(value));
+      const latitude=number(field(row,['Latitude','Lat']));
+      const longitude=number(field(row,['Longitude','Lng','Lon']));
+      const odometro=number(field(row,['Odometro (KM)','Odômetro (KM)','Odometro','Odômetro']));
+      const velocidade=number(field(row,['Velocidade (KM/H)','Velocidade','Km/h']))||0;
       const rawIndex=Number(row.__linhaOrigem)||index+2;
       if(!dt||!tracker){rejeitados.push({linha:rawIndex,motivo:!dt?'DATA_HORA_INVALIDA':'RASTREAVEL_AUSENTE'});return null}
       const idEvento=stableId('EV',[plate,dt.getTime(),Core.norm(type),Core.norm(address),rawIndex]);
@@ -26,6 +32,10 @@
         driver:String(field(row,['Motorista','Condutor'])||'').trim(),
         type,tipo:type,status:String(field(row,['Status'])||'').trim(),
         address,endereco:address,reference:String(field(row,['Referencia','Referência'])||'').trim(),
+        latitude,longitude,odometro,velocidade,
+        ignicao:bool(field(row,['Ignição','Ignicao'])),
+        idDispositivo:String(field(row,['Id Dispositivo','Dispositivo'])||'').trim(),
+        tempoReal:bool(field(row,['Tempo Real'])),
         statusAuditoria:'PENDENTE',motivoAuditoria:'',idCiclo:null
       });
     }).filter(Boolean);

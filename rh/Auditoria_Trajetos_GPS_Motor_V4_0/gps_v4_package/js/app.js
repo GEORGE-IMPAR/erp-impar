@@ -9,4 +9,6 @@
   document.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>{mode=chip.dataset.mode;document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));chip.classList.add('active');process()}));
   document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active'));tab.classList.add('active');$(`panel-${tab.dataset.tab}`).classList.add('active')}));
   $('auditStatus').addEventListener('change',()=>lastResult&&UI.renderAuditRows(lastResult.auditTrail));$('exportarAuditoria').addEventListener('click',()=>lastResult&&UI.exportAudit(lastResult.auditTrail));
+  $('animarRota').addEventListener('click',()=>global.GPSV4.MapUI?.play());
+  $('pararRota').addEventListener('click',()=>global.GPSV4.MapUI?.stop());
 })(window);
