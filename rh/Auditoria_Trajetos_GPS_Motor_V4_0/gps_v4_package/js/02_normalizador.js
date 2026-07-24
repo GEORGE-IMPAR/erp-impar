@@ -2,7 +2,12 @@
   'use strict';
   const {Core}=global.GPSV4;
   const DEVICE_PLATE_MAP={
-    '357789644126671':'RXO-8A58'
+    '354522183818959':'RXL-6H17',
+    '357789644126671':'RXO-8A58',
+    '357789644658434':'QHQ-8009',
+    '357789649384341':'QII-5E96',
+    '869731054278080':'IZH-2A86',
+    '869731057063703':'QIQ-3921'
   };
   function field(row,names){
     const keys={};Object.keys(row).forEach(key=>keys[Core.norm(key)]=key);

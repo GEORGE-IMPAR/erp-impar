@@ -33,11 +33,21 @@
         const pesquisa=XLSX.utils.sheet_to_json(wb.Sheets.Pesquisa,{defval:'',raw:true});
         tracker=String(pesquisa[0]?.Rastreavel||pesquisa[0]?.Rastreável||'').trim();
       }
-      const devicePlateMap={'357789644126671':'RXO-8A58'};
-      return XLSX.utils.sheet_to_json(ws,{defval:'',raw:true}).map((row,index)=>{
+      const devicePlateMap={
+        '354522183818959':'RXL-6H17',
+        '357789644126671':'RXO-8A58',
+        '357789644658434':'QHQ-8009',
+        '357789649384341':'QII-5E96',
+        '869731054278080':'IZH-2A86',
+        '869731057063703':'QIQ-3921'
+      };
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+      const devices=new Set(rows.map(row=>String(row['Id Dispositivo']||row.Dispositivo||'').trim()).filter(Boolean));
+      const trackerRelatorioUnico=devices.size===1?tracker:'';
+      return rows.map((row,index)=>{
         const device=String(row['Id Dispositivo']||row.Dispositivo||'').trim();
         const plateLike=/^[A-Z]{3}[- ]?\d[A-Z0-9]\d{2}$/i.test(device)?device:'';
-        return {...row,__linhaOrigem:index+2,__rastreavelRelatorio:tracker||devicePlateMap[device]||plateLike};
+        return {...row,__linhaOrigem:index+2,__rastreavelRelatorio:devicePlateMap[device]||plateLike||trackerRelatorioUnico};
       });
     }
     return parseText(await file.text());
