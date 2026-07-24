@@ -1,23 +1,60 @@
 (function(global){
   'use strict';
-  const Core={};
-  Core.norm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
-  Core.escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  Core.iso=d=>{const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`};
-  Core.formatDate=d=>d.toLocaleDateString('pt-BR');
-  Core.formatTime=d=>d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  Core.dayName=d=>d.toLocaleDateString('pt-BR',{weekday:'long'}).replace(/^./,c=>c.toUpperCase());
-  Core.duration=ms=>{let m=Math.max(0,Math.round(ms/60000));const h=Math.floor(m/60);m%=60;return h?`${h}h ${m}min`:`${m} min`};
-  Core.outsideWork=d=>{const h=d.getHours()+d.getMinutes()/60;return [0,6].includes(d.getDay())||h<7||h>=18};
-  Core.plate=s=>{const t=String(s||'').trim();const m=t.match(/[A-Z]{3}[- ]?\d[A-Z0-9]\d{2}/i)||t.match(/[A-Z]{3}[- ]?\d{4}/i);return m?m[0].toUpperCase().replace(/([A-Z]{3})[- ]?([A-Z0-9]{4})/,'$1-$2'):t};
-  Core.parseDateTime=v=>{
-    if(v instanceof Date&&!isNaN(v))return v;
-    if(typeof v==='number'&&global.XLSX){const p=XLSX.SSF.parse_date_code(v);if(p)return new Date(p.y,p.m-1,p.d,p.H||0,p.M||0,p.S||0)}
-    const s=String(v??'').trim();let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if(m){let y=+m[3];if(y<100)y+=2000;return new Date(y,+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0))}
-    m=s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
-    if(m)return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));
-    const d=new Date(s);return isNaN(d)?null:d;
+  const MapUI={};let map,routeLayers=[],locationLayers=[],marker,timer,animationPoints=[],animationIndex=0,lastResult=null;
+  function fitOverview(){
+    ensure();if(!map)return;
+    const layers=[...routeLayers,...locationLayers];
+    if(layers.length)map.fitBounds(L.featureGroup(layers).getBounds(),{padding:[35,35],maxZoom:14});
+    setTimeout(()=>map.invalidateSize(),50);
+  }
+  function ensure(){
+    if(map||!global.L)return;
+    map=L.map('mapa').setView([-27.59,-48.61],10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  }
+  MapUI.render=result=>{
+    ensure();if(!map)return;lastResult=result;
+    routeLayers.forEach(layer=>map.removeLayer(layer));routeLayers=[];animationPoints=[];
+    const colors=['#6d28d9','#0891b2','#16a34a','#ea580c','#dc2626','#2563eb'];
+    (result.rotas||[]).forEach((route,i)=>{
+      const pts=route.positions.map(p=>[p.latitude,p.longitude]);
+      if(pts.length<2)return;
+      const line=L.polyline(pts,{color:colors[i%colors.length],weight:5,opacity:.85}).addTo(map);
+      line.bindPopup(`<strong>${route.plate}</strong><br>${route.date.toLocaleDateString('pt-BR')}<br>${route.km.toFixed(2).replace('.',',')} km`);
+      line.bindTooltip(`${route.plate} • ${route.date.toLocaleDateString('pt-BR')}`,{sticky:true});
+      routeLayers.push(line);animationPoints.push(...route.positions);
+    });
+    if(routeLayers.length)map.fitBounds(L.featureGroup(routeLayers).getBounds(),{padding:[20,20],maxZoom:15});
+    document.getElementById('mapInfo').textContent=`${(result.rotas||[]).length} rota(s) • ${result.dashboard.totalKm.toFixed(2).replace('.',',')} km`;
+    setTimeout(()=>map.invalidateSize(),50);
   };
-  global.GPSV4=global.GPSV4||{};global.GPSV4.Core=Core;
+  MapUI.renderLocations=(metadata,radius)=>{
+    ensure();if(!map)return;
+    locationLayers.forEach(layer=>map.removeLayer(layer));locationLayers=[];
+    const locations=[...(metadata.cadastroObras||[]).map(x=>({...x,tipo:'Obra'})),...(metadata.sede?[{...metadata.sede,tipo:'Empresa'}]:[])];
+    locations.forEach(x=>{
+      if(!Number.isFinite(x.latitude)||!Number.isFinite(x.longitude))return;
+      const color=x.tipo==='Empresa'?'#0f4c81':'#15a06f';
+      const circle=L.circle([x.latitude,x.longitude],{radius:Number(radius)||500,color,fillColor:color,fillOpacity:.12,weight:2}).addTo(map);
+      circle.bindPopup(`<strong>${x.tipo}: ${x.nome||'Sede'}</strong><br>${x.endereco||''}<br>Raio: ${Number(radius)||500} m`);
+      const point=L.circleMarker([x.latitude,x.longitude],{radius:x.tipo==='Empresa'?9:7,color:'#fff',weight:2,fillColor:color,fillOpacity:1}).addTo(map);
+      point.bindTooltip(`${x.tipo==='Empresa'?'EMPRESA':'OBRA'} • ${x.nome||'Sede'}`,{permanent:true,direction:'top',className:`location-label ${x.tipo==='Empresa'?'company':'work'}`});
+      point.bindPopup(`<strong>${x.tipo}: ${x.nome||'Sede'}</strong><br>${x.endereco||''}`);
+      locationLayers.push(circle,point);
+    });
+  };
+  MapUI.fitOverview=fitOverview;
+  function stop(){clearInterval(timer);timer=null;if(marker&&map){map.removeLayer(marker);marker=null}animationIndex=0}
+  MapUI.play=()=>{
+    ensure();stop();if(!animationPoints.length)return;
+    marker=L.circleMarker([animationPoints[0].latitude,animationPoints[0].longitude],{radius:9,color:'#fff',weight:3,fillColor:'#ef4444',fillOpacity:1}).addTo(map);
+    timer=setInterval(()=>{
+      if(animationIndex>=animationPoints.length){stop();return}
+      const p=animationPoints[animationIndex++];
+      marker.setLatLng([p.latitude,p.longitude]);map.panTo(marker.getLatLng(),{animate:true,duration:.2});
+      document.getElementById('mapInfo').textContent=`${p.plate} • ${p.dt.toLocaleString('pt-BR')} • ${p.velocidade} km/h • ${p.address||''}`;
+    },180);
+  };
+  MapUI.stop=stop;
+  global.GPSV4.MapUI=MapUI;
 })(window);
