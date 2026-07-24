@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const MapUI={};let map,routeLayers=[],marker,timer,animationPoints=[],animationIndex=0;
+  const MapUI={};let map,routeLayers=[],locationLayers=[],marker,timer,animationPoints=[],animationIndex=0;
   function ensure(){
     if(map||!global.L)return;
     map=L.map('mapa').setView([-27.59,-48.61],10);
@@ -20,6 +20,18 @@
     if(routeLayers.length)map.fitBounds(L.featureGroup(routeLayers).getBounds(),{padding:[20,20]});
     document.getElementById('mapInfo').textContent=`${(result.rotas||[]).length} rota(s) • ${result.dashboard.totalKm.toFixed(2).replace('.',',')} km`;
     setTimeout(()=>map.invalidateSize(),50);
+  };
+  MapUI.renderLocations=(metadata,radius)=>{
+    ensure();if(!map)return;
+    locationLayers.forEach(layer=>map.removeLayer(layer));locationLayers=[];
+    const locations=[...(metadata.cadastroObras||[]).map(x=>({...x,tipo:'Obra'})),...(metadata.sede?[{...metadata.sede,tipo:'Empresa'}]:[])];
+    locations.forEach(x=>{
+      if(!Number.isFinite(x.latitude)||!Number.isFinite(x.longitude))return;
+      const color=x.tipo==='Empresa'?'#0f4c81':'#15a06f';
+      const circle=L.circle([x.latitude,x.longitude],{radius:Number(radius)||500,color,fillColor:color,fillOpacity:.12,weight:2}).addTo(map);
+      circle.bindPopup(`<strong>${x.tipo}: ${x.nome||'Sede'}</strong><br>${x.endereco||''}<br>Raio: ${Number(radius)||500} m`);
+      locationLayers.push(circle);
+    });
   };
   function stop(){clearInterval(timer);timer=null;if(marker&&map){map.removeLayer(marker);marker=null}animationIndex=0}
   MapUI.play=()=>{

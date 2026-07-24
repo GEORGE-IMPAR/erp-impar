@@ -28,6 +28,25 @@
   function renderCycles(list){$('tbodyCiclos').innerHTML=list.length?list.map(c=>`<tr><td>${c.id}</td><td>${Core.escape(c.plate)}</td><td>${Core.formatDate(c.date)}</td><td>${Core.formatTime(c.start.dt)}</td><td>${Core.formatTime(c.end.dt)}</td><td>${Core.duration(c.end.dt-c.start.dt)}</td><td>${c.points.length}</td><td>${c.rawEvents}</td><td>${c.discarded}</td><td><span class="badge ${c.incomplete?'warn':'ok'}">${c.incomplete?'Incompleto':'Fechado'}</span></td></tr>`).join(''):'<tr><td colspan="10" class="empty">Nenhum ciclo identificado.</td></tr>'}
   function renderAudit(list){const select=$('auditStatus');const current=select.value;const statuses=[...new Set(list.map(x=>x.auditStatus))].sort();select.innerHTML='<option value="">Todos</option>'+statuses.map(s=>`<option ${s===current?'selected':''}>${s}</option>`).join('');UI.renderAuditRows(list)}
   UI.renderAuditRows=list=>{const filter=$('auditStatus').value;const rows=filter?list.filter(x=>x.auditStatus===filter):list;$('tbodyAuditoria').innerHTML=rows.length?rows.map((x,i)=>`<tr><td>${i+1}</td><td>${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}</td><td>${Core.escape(x.plate)}</td><td>${Core.escape(x.type)}</td><td>${Core.escape(x.address)}</td><td><span class="badge ${x.auditStatus.startsWith('DESCARTADO')?'bad':x.auditStatus.startsWith('SUBSTITUIDO')?'warn':'info'}">${x.auditStatus}</span></td><td>${Core.escape(x.auditReason)}</td><td>${Core.escape(x.cycleId||'—')}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">Nenhum evento para o filtro selecionado.</td></tr>'};
+  UI.renderCadastros=metadata=>{
+    const carros=metadata?.cadastroCarros||[],obras=metadata?.cadastroObras||[];
+    $('tbodyCarros').innerHTML=carros.length?carros.map(x=>`<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${Core.escape((x.equipe||[]).map(p=>p.nome).join(', ')||'—')}</td><td>R$ ${Number(x.valorHora||0).toFixed(2).replace('.',',')}</td><td>${Number(x.horasDia||0).toLocaleString('pt-BR')}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">A aba Cadastro_Carros_Valor_h_h não foi encontrada.</td></tr>';
+    $('tbodyObras').innerHTML=obras.length?obras.map(x=>`<tr><td>${Core.escape(x.idObra)}</td><td>${Core.escape(x.nome)}</td><td>${Core.escape(x.endereco||'—')}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">A aba Cadastro_Obras não foi encontrada.</td></tr>';
+    $('cadastroResumo').textContent=`${carros.length} veículo(s) e ${obras.length} obra(s) carregados da planilha.`;
+  };
+  UI.renderFinanceiro=data=>{
+    const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),km=n=>`${Number(n||0).toFixed(2).replace('.',',')} km`;
+    const s=data.summary;
+    $('fTotal').textContent=money(s.totalCusto);$('fTotalKm').textContent=km(s.totalKm);
+    $('fObras').textContent=money(s.obra.custo);$('fObrasKm').textContent=km(s.obra.km);
+    $('fEmpresa').textContent=money(s.empresa.custo);$('fEmpresaKm').textContent=km(s.empresa.km);
+    $('fParticular').textContent=money(s.particular.custo);$('fParticularKm').textContent=km(s.particular.km);
+    $('fPercentual').textContent=`${(s.totalKm?s.particular.km/s.totalKm*100:0).toFixed(1).replace('.',',')}%`;
+    $('tbodyFinanceiroObras').innerHTML=data.obras.length?data.obras.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nenhum ciclo alcançou o raio de uma obra.</td></tr>';
+    $('tbodyFinanceiroCarros').innerHTML=data.carros.length?data.carros.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nenhum uso particular classificado.</td></tr>';
+    $('financeiroAviso').textContent=`Cálculo: ${s.kmLitro.toLocaleString('pt-BR')} km/L • ${money(s.precoLitro)}/L • raio ${s.raio.toLocaleString('pt-BR')} m.`;
+    $('financeiroAviso').className='status ok';
+  };
   UI.exportAudit=list=>{const sep=';';const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;const header=['ID Evento','Data/Hora','Placa','Evento','Endereço','Status','Motivo','Ciclo'];const lines=[header.map(q).join(sep),...list.map(x=>[x.idEvento,`${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}`,x.plate,x.type,x.address,x.auditStatus,x.auditReason,x.cycleId].map(q).join(sep))];const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`auditoria_mrt_v5_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href)};
   global.GPSV4.UI=UI;
 })(window);
