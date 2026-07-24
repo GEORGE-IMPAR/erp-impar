@@ -1,14 +1,210 @@
-(function(global){
-  'use strict';
-  function run(estruturas){
-    const descartados=estruturas.auditoria.filter(item=>item.statusAuditoria.startsWith('DESCARTADO')).length;
-    return {dashboard:Object.freeze({
-      eventosRecebidos:estruturas.eventos.length,eventosValidos:estruturas.eventosConsolidados.length,
-      eventosDescartados:descartados,ciclos:estruturas.ciclos.length,
-      ciclosIncompletos:estruturas.ciclos.filter(c=>c.incompleto).length,
-      trechos:estruturas.trechos.length,permanencias:estruturas.permanencias.length,
-      obras:estruturas.obras.length,custos:estruturas.custos.length
-    })};
-  }
-  global.GPSV4.Dashboard={run};
-})(window);
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Auditoria de Trajetos — MRT V5.4.2</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="css/gps-v4.css">
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <div class="eyebrow">ERP ÍMPAR • MRT</div>
+    <h1>Auditoria de Trajetos GPS</h1>
+    <p>V5.4.2 — Âncora noturna operacional após excluir permanências na empresa.</p>
+  </div>
+  <div class="version">PACOTE MRT 5.4.2</div>
+</header>
+
+<main>
+  <section class="card controls">
+    <div class="grid-controls">
+      <div class="arquivo">
+        <label for="arquivo">Arquivo GPS (.xlsx, .xls, .csv ou .txt)</label>
+        <input type="file" id="arquivo" accept=".xlsx,.xls,.csv,.txt">
+      </div>
+      <div>
+        <label for="placa">Placa</label>
+        <select id="placa" disabled><option value="">Todas</option></select>
+      </div>
+      <div>
+        <label for="inicio">Data inicial</label>
+        <input type="date" id="inicio" disabled>
+      </div>
+      <div>
+        <label for="fim">Data final</label>
+        <input type="date" id="fim" disabled>
+      </div>
+      <div class="actions">
+        <button id="processar" disabled>Processar</button>
+        <button id="limpar" class="secondary" disabled>Limpar</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="chips">
+        <button class="chip active" data-mode="todos">Todos</button>
+        <button class="chip" data-mode="sabado">Sábados</button>
+        <button class="chip" data-mode="domingo">Domingos</button>
+        <button class="chip" data-mode="fora">Fora do expediente</button>
+      </div>
+      <label class="check"><input type="checkbox" id="mostrarTecnicos"> Mostrar eventos técnicos</label>
+    </div>
+    <div class="finance-params">
+      <div><label for="kmLitro">Consumo médio (km/L)</label><input id="kmLitro" type="number" min="0.1" step="0.1" value="10"></div>
+      <div><label for="precoLitro">Preço do combustível (R$/L)</label><input id="precoLitro" type="number" min="0" step="0.01" value="6"></div>
+      <div><label for="raio">Raio sede/obras (metros)</label><input id="raio" type="number" min="10" step="10" value="500"></div>
+      <div class="sede-field"><label for="enderecoSede">Endereço da empresa</label><input id="enderecoSede" value="Rua São Ludgero, 1006, Barreiros, São José, SC, 88117-270"></div>
+      <button id="localizarPontos" class="secondary" disabled>Atualizar endereços e locais</button>
+      <button id="atualizarFinanceiro" disabled>Atualizar custos</button>
+    </div>
+
+    <div id="status" class="status">Selecione o arquivo exportado pelo sistema de GPS.</div>
+  </section>
+
+  <section class="card">
+    <div class="summary">
+      <div class="kpi"><div class="n" id="kRecebidos">0</div><div class="l">Posições recebidas</div></div>
+      <div class="kpi"><div class="n" id="kValidos">0</div><div class="l">Posições utilizadas</div></div>
+      <div class="kpi"><div class="n" id="kDescartados">0 km</div><div class="l">Distância do hodômetro</div></div>
+      <div class="kpi"><div class="n" id="kCiclos">0</div><div class="l">Ciclos</div></div>
+      <div class="kpi"><div class="n" id="kTrechos">0</div><div class="l">Pontos em movimento</div></div>
+      <div class="kpi"><div class="n" id="kIncompletos">0</div><div class="l">Velocidade máxima</div></div>
+    </div>
+  </section>
+
+  <section class="tabs card">
+    <div class="tab-buttons">
+      <button class="tab active" data-tab="mapa">Mapa do trajeto</button>
+      <button class="tab" data-tab="timeline">Timeline</button>
+      <button class="tab" data-tab="trechos">Trechos</button>
+      <button class="tab" data-tab="ciclos">Ciclos</button>
+      <button class="tab" data-tab="auditoria">Auditoria dos eventos</button>
+      <button class="tab" data-tab="cadastros">Placas, equipes e obras</button>
+      <button class="tab" data-tab="financeiro">Dashboard financeiro</button>
+    </div>
+
+    <div class="tab-panel active" id="panel-mapa">
+      <div class="map-toolbar">
+        <button id="animarRota">▶ Reproduzir trajeto</button>
+        <button id="pararRota" class="secondary">Parar</button>
+        <button id="visaoGeral" class="secondary">◎ Visão geral: rota + locais</button>
+        <span id="mapInfo">Importe um Histórico Posições.</span>
+      </div>
+      <div class="map-legend">
+        <span><i class="legend-route"></i> Rota selecionada</span>
+        <span><i class="legend-company"></i> Empresa e raio</span>
+        <span><i class="legend-work"></i> Obras e raios</span>
+        <span><i class="legend-home"></i> Residências operacionais</span>
+      </div>
+      <div id="mapa"></div>
+    </div>
+
+    <div class="tab-panel" id="panel-timeline">
+      <div id="timeline" class="timeline"><div class="empty">Nenhum trajeto processado.</div></div>
+    </div>
+
+    <div class="tab-panel" id="panel-trechos">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Ciclo</th><th>Data</th><th>Saída</th><th>Origem</th><th>Chegada</th><th>Destino</th><th>Tempo</th><th>KM</th></tr></thead>
+          <tbody id="tbodyTrechos"><tr><td colspan="9" class="empty">Nenhum trecho identificado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-ciclos">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Placa</th><th>Data</th><th>Início</th><th>Fim</th><th>Duração</th><th>Pontos</th><th>Recebidos</th><th>Descartados</th><th>Status</th></tr></thead>
+          <tbody id="tbodyCiclos"><tr><td colspan="10" class="empty">Nenhum ciclo identificado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-auditoria">
+      <div class="audit-tools">
+        <div>
+          <label for="auditStatus">Status da auditoria</label>
+          <select id="auditStatus"><option value="">Todos</option></select>
+        </div>
+        <button id="exportarAuditoria" class="secondary" disabled>Exportar CSV</button>
+      </div>
+      <div class="table-wrap audit-table">
+        <table>
+          <thead><tr><th>#</th><th>Data/Hora</th><th>Placa</th><th>Evento</th><th>Endereço</th><th>Status</th><th>Motivo</th><th>Ciclo</th></tr></thead>
+          <tbody id="tbodyAuditoria"><tr><td colspan="8" class="empty">Nenhum evento auditado.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-cadastros">
+      <div id="cadastroResumo" class="status">Os cadastros serão exibidos após a importação.</div>
+      <h3>Vínculo de placas e colaboradores</h3>
+      <div class="table-wrap cadastro-table">
+        <table>
+          <thead><tr><th>Placa</th><th>Responsável/equipe</th><th>Colaboradores vinculados</th><th>Valor h/h</th><th>Horas/dia</th><th>Residência operacional</th><th>Status</th></tr></thead>
+          <tbody id="tbodyCarros"><tr><td colspan="7" class="empty">Nenhum cadastro carregado.</td></tr></tbody>
+        </table>
+      </div>
+      <h3>Cadastro de obras</h3>
+      <div class="table-wrap cadastro-table">
+        <table>
+          <thead><tr><th>ID</th><th>Obra</th><th>Endereço editável</th><th>Status</th></tr></thead>
+          <tbody id="tbodyObras"><tr><td colspan="4" class="empty">Nenhuma obra carregada.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-financeiro">
+      <div id="financeiroAviso" class="status">Importe a planilha e localize a sede e as obras.</div>
+      <div class="finance-cards">
+        <div class="kpi"><div class="n" id="fTotal">R$ 0,00</div><div class="l">Combustível total</div><div id="fTotalKm" class="meta">0 km</div></div>
+        <div class="kpi"><div class="n" id="fObras">R$ 0,00</div><div class="l">Vinculado às obras</div><div id="fObrasKm" class="meta">0 km</div></div>
+        <div class="kpi"><div class="n" id="fEmpresa">R$ 0,00</div><div class="l">Vinculado à empresa</div><div id="fEmpresaKm" class="meta">0 km</div></div>
+        <div class="kpi destaque"><div class="n" id="fParticular">R$ 0,00</div><div class="l">Uso particular</div><div id="fParticularKm" class="meta">0 km</div></div>
+        <div class="kpi destaque"><div class="n" id="fPercentual">0%</div><div class="l">Participação particular</div></div>
+        <div class="kpi"><div class="n" id="fMaoObraObras">R$ 0,00</div><div class="l">Mão de obra nas obras</div><div id="fHorasObras" class="meta">0 h</div></div>
+        <div class="kpi destaque"><div class="n" id="fMaoObraEmpresa">R$ 0,00</div><div class="l">Mão de obra na empresa</div><div id="fHorasEmpresa" class="meta">0 h não alocadas a obra</div></div>
+        <div class="kpi"><div class="n" id="fTotalGeral">R$ 0,00</div><div class="l">Combustível + mão de obra</div></div>
+      </div>
+      <h3>Combustível por obra</h3>
+      <div class="table-wrap cadastro-table"><table><thead><tr><th>Obra</th><th>KM</th><th>Litros</th><th>Combustível</th><th>Horas no raio</th><th>Mão de obra</th><th>Total da obra</th></tr></thead><tbody id="tbodyFinanceiroObras"><tr><td colspan="7" class="empty">Sem classificação.</td></tr></tbody></table></div>
+      <h3>Ranking de uso particular por veículo</h3>
+      <div class="table-wrap cadastro-table"><table><thead><tr><th>Placa</th><th>Responsável</th><th>KM particular</th><th>Litros</th><th>Custo</th></tr></thead><tbody id="tbodyFinanceiroCarros"><tr><td colspan="5" class="empty">Sem classificação.</td></tr></tbody></table></div>
+      <h3>Deslocamento residencial e fora do horário</h3>
+      <div class="finance-cards deslocamento-cards">
+        <div class="kpi"><div class="n" id="dComute">0 km</div><div class="l">Residência ↔ empresa</div><div id="dComuteCusto" class="meta">R$ 0,00</div></div>
+        <div class="kpi"><div class="n" id="dFimSemana">0 km</div><div class="l">Sábados e domingos</div><div id="dFimSemanaCusto" class="meta">R$ 0,00</div></div>
+        <div class="kpi"><div class="n" id="dForaHorario">0 km</div><div class="l">Fora do horário, sem duplicidade</div><div id="dForaHorarioCusto" class="meta">R$ 0,00</div></div>
+        <div class="kpi destaque"><div class="n" id="dCombinado">0%</div><div class="l">Estimativa combinada atual</div><div id="dCombinadoCusto" class="meta">R$ 0,00</div></div>
+        <div class="kpi"><div class="n" id="dNaoClassificado">0 km</div><div class="l">Diferença não classificada</div></div>
+      </div>
+      <div class="table-wrap cadastro-table"><table><thead><tr><th>Placa</th><th>Responsável</th><th>Residência ↔ empresa</th><th>Fim de semana</th><th>Fora do horário</th><th>Total combinado</th><th>Custo</th></tr></thead><tbody id="tbodyDeslocamentos"></tbody></table></div>
+    </div>
+  </section>
+</main>
+
+<script src="js/core.js?v=5.4.2"></script>
+<script src="js/01_importador.js?v=5.4.2"></script>
+<script src="js/02_normalizador.js?v=5.4.2"></script>
+<script src="js/03_agrupador.js?v=5.4.2"></script>
+<script src="js/04_consolidador.js?v=5.4.2"></script>
+<script src="js/05_maquina_estados.js?v=5.4.2"></script>
+<script src="js/06_ciclos.js?v=5.4.2"></script>
+<script src="js/07_trechos.js?v=5.4.2"></script>
+<script src="js/08_permanencias.js?v=5.4.2"></script>
+<script src="js/09_google_maps.js?v=5.4.2"></script>
+<script src="js/10_obras.js?v=5.4.2"></script>
+<script src="js/11_custos.js?v=5.4.2"></script>
+<script src="js/12_dashboard.js?v=5.4.2"></script>
+<script src="js/13_financeiro.js?v=5.4.2"></script>
+<script src="js/mrt.js?v=5.4.2"></script>
+<script src="js/mapa.js?v=5.4.2"></script>
+<script src="js/ui.js?v=5.4.2"></script>
+<script src="js/app.js?v=5.4.2"></script>
+</body>
+</html>
