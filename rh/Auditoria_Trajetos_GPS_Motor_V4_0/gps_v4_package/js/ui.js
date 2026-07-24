@@ -47,6 +47,7 @@
     $('fObras').textContent=money(s.obra.custo);$('fObrasKm').textContent=km(s.obra.km);
     $('fEmpresa').textContent=money(s.empresa.custo);$('fEmpresaKm').textContent=km(s.empresa.km);
     $('fParticular').textContent=money(s.particular.custo);$('fParticularKm').textContent=km(s.particular.km);
+    $('fNaoClassificado').textContent=money(s.nao_classificado.custo);$('fNaoClassificadoKm').textContent=km(s.nao_classificado.km);
     $('fPercentual').textContent=`${(s.totalKm?s.particular.km/s.totalKm*100:0).toFixed(1).replace('.',',')}%`;
     $('fMaoObraObras').textContent=money(s.obra.maoObra);$('fHorasObras').textContent=`${s.obra.horas.toFixed(2).replace('.',',')} h`;
     $('fMaoObraEmpresa').textContent=money(s.empresa.maoObra);$('fHorasEmpresa').textContent=`${s.empresa.horas.toFixed(2).replace('.',',')} h não alocadas a obra`;
@@ -59,8 +60,8 @@
   };
   UI.financePending=message=>{
     const el=$('financeiroAviso');el.textContent=message;el.className='status warn';
-    ['fTotal','fObras','fEmpresa','fParticular','fMaoObraObras','fMaoObraEmpresa','fTotalGeral'].forEach(id=>$(id).textContent='—');
-    $('fPercentual').textContent='—';['fTotalKm','fObrasKm','fEmpresaKm','fParticularKm','fHorasObras','fHorasEmpresa'].forEach(id=>$(id).textContent='Aguardando localização');
+    ['fTotal','fObras','fEmpresa','fParticular','fNaoClassificado','fMaoObraObras','fMaoObraEmpresa','fTotalGeral'].forEach(id=>$(id).textContent='—');
+    $('fPercentual').textContent='—';['fTotalKm','fObrasKm','fEmpresaKm','fParticularKm','fNaoClassificadoKm','fHorasObras','fHorasEmpresa'].forEach(id=>$(id).textContent='Aguardando localização');
     ['dComute','dFimSemana','dForaHorario','dCombinado','dNaoClassificado'].forEach(id=>$(id).textContent='—');
     ['dComuteCusto','dFimSemanaCusto','dForaHorarioCusto','dCombinadoCusto'].forEach(id=>$(id).textContent='Aguardando localização');
     $('tbodyFinanceiroObras').innerHTML='<tr><td colspan="7" class="empty">Aguardando a localização automática da sede e das obras.</td></tr>';
@@ -78,5 +79,14 @@
     $('tbodyDeslocamentos').innerHTML=data.porPlaca.length?data.porPlaca.map(x=>`<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td><strong>${km(x.commuteKm)}</strong></td><td>${Number(x.commuteLitros||0).toFixed(2).replace('.',',')} L</td><td><strong>${money(x.commuteCusto)}</strong></td><td>${km(x.weekendKm)}</td><td>${km(x.offhoursKm)}</td><td>${km(x.totalKm)}</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">Nenhum deslocamento classificado. Confira os endereços residenciais e clique em Salvar cadastro e recalcular.</td></tr>';
   };
   UI.exportAudit=list=>{const sep=';';const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;const header=['ID Evento','Data/Hora','Placa','Evento','Endereço','Status','Motivo','Ciclo'];const lines=[header.map(q).join(sep),...list.map(x=>[x.idEvento,`${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}`,x.plate,x.type,x.address,x.auditStatus,x.auditReason,x.cycleId].map(q).join(sep))];const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`auditoria_mrt_v5_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href)};
+  UI.exportFinanceiro=data=>{
+    const sep=';',q=value=>`"${String(value??'').replace(/"/g,'""')}"`,decimal=value=>Number(value||0).toFixed(4).replace('.',',');
+    const header=['Linha','Ciclo','Data','Início','Fim','Placa','Responsável','Origem','Destino','Categoria','Destino financeiro','Regra aplicada','KM','KM/L','Litros','Preço/L','Custo combustível'];
+    const rows=data.items.map((x,index)=>[index+1,x.ciclo,x.inicio?Core.formatDate(x.inicio):'',x.inicio?Core.formatTime(x.inicio):'',x.fim?Core.formatTime(x.fim):'',x.placa,x.responsavel,x.origem,x.destino,x.categoria,x.nome,x.motivo,decimal(x.km),decimal(data.summary.kmLitro),decimal(x.litros),decimal(data.summary.precoLitro),decimal(x.custo)]);
+    const totalKm=data.items.reduce((sum,x)=>sum+x.km,0),totalCusto=data.items.reduce((sum,x)=>sum+x.custo,0);
+    rows.push(['TOTAL','','','','','','','','','conciliação','Total das linhas','Deve coincidir com o combustível total',decimal(totalKm),decimal(data.summary.kmLitro),decimal(totalKm/data.summary.kmLitro),decimal(data.summary.precoLitro),decimal(totalCusto)]);
+    const blob=new Blob(['\uFEFF'+[header,...rows].map(row=>row.map(q).join(sep)).join('\r\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`memoria_calculo_financeiro_mrt_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);
+  };
   global.GPSV4.UI=UI;
 })(window);

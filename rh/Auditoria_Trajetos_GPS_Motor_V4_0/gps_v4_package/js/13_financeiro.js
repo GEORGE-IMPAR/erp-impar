@@ -36,15 +36,16 @@
     const items=(result.cycles||[]).map(cycle=>{
       const km=cycleKm(cycle),obra=nearest(cycle.points,obras,raio),empresa=nearest(cycle.points,sede,raio);
       const dt=cycle.start.dt,particular=[0,6].includes(dt.getDay())||dt.getHours()<6||dt.getHours()>=20;
-      const categoria=obra?'obra':empresa?'empresa':particular?'particular':'empresa';
-      const nome=categoria==='obra'?obra.location.nome:categoria==='particular'?'Uso particular':'Empresa';
+      const categoria=obra?'obra':empresa?'empresa':particular?'particular':'nao_classificado';
+      const nome=categoria==='obra'?obra.location.nome:categoria==='particular'?'Uso particular':categoria==='empresa'?'Empresa':'Não classificado';
+      const motivo=obra?`Ciclo com posição dentro do raio da obra ${obra.location.nome}.`:empresa?'Ciclo com posição dentro do raio da sede.':particular?([0,6].includes(dt.getDay())?'Ciclo iniciado em sábado ou domingo.':'Ciclo iniciado antes das 06:00 ou após as 20:00.'):'Sem obra ou sede no raio e dentro do horário padrão.';
       const carro=carros.find(x=>x.placa===cycle.plate);
-      return {ciclo:cycle.id,placa:cycle.plate,responsavel:carro?.responsavel||'',inicio:dt,categoria,nome,km,litros:km/kmLitro,custo:km/kmLitro*precoLitro};
+      return {ciclo:cycle.id,placa:cycle.plate,responsavel:carro?.responsavel||'',inicio:dt,fim:cycle.end?.dt||null,origem:cycle.points?.[0]?.address||'',destino:cycle.points?.at(-1)?.address||'',categoria,nome,motivo,km,litros:km/kmLitro,custo:km/kmLitro*precoLitro};
     });
     const classified=items.reduce((s,x)=>s+x.km,0),total=result.dashboard?.totalKm||classified;
     if(total>classified+.001){
       const km=total-classified;
-      items.push({ciclo:'AJUSTE',placa:'—',responsavel:'',inicio:null,categoria:'empresa',nome:'Empresa — posições fora de ciclos',km,litros:km/kmLitro,custo:km/kmLitro*precoLitro});
+      items.push({ciclo:'AJUSTE',placa:'—',responsavel:'',inicio:null,fim:null,origem:'',destino:'',categoria:'nao_classificado',nome:'Posições fora de ciclos',motivo:'Diferença entre o hodômetro total e os ciclos reconstruídos.',km,litros:km/kmLitro,custo:km/kmLitro*precoLitro});
     }
     const permanencias=[];
     const pointLocation=point=>{
@@ -63,7 +64,7 @@
       });
     });
     const summary={totalKm:total,totalLitros:total/kmLitro,totalCustoCombustivel:total/kmLitro*precoLitro,kmLitro,precoLitro,raio};
-    ['obra','empresa','particular'].forEach(cat=>{
+    ['obra','empresa','particular','nao_classificado'].forEach(cat=>{
       const group=items.filter(x=>x.categoria===cat);
       summary[cat]={km:group.reduce((s,x)=>s+x.km,0),litros:group.reduce((s,x)=>s+x.litros,0),custo:group.reduce((s,x)=>s+x.custo,0)};
     });

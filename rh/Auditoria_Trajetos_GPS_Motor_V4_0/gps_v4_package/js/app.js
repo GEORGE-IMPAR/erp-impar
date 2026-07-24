@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const {Core,Importer,Normalizer,Engine,UI,Financeiro}=global.GPSV4;const $=id=>document.getElementById(id);let base=[],lastResult=null,mode='todos',metadata={cadastroCarros:[],cadastroObras:[],sede:null},locationsReady=false,locating=false;
+  const {Core,Importer,Normalizer,Engine,UI,Financeiro}=global.GPSV4;const $=id=>document.getElementById(id);let base=[],lastResult=null,lastFinance=null,mode='todos',metadata={cadastroCarros:[],cadastroObras:[],sede:null},locationsReady=false,locating=false;
   const STORAGE_KEY='ERPIMPAR_MRT_RESIDENCIAS_V1';
   const confirmedDefaults=[
     {placa:'IZH-2A86',endereco:'Rua Antônio de Paula Xavier, Prado de Baixo, Biguaçu, SC',confirmado:true,origem:'Cadastro confirmado'},
@@ -34,7 +34,7 @@
   }
   function filteredEvents(){const plate=$('placa').value;const start=$('inicio').value?new Date($('inicio').value+'T00:00:00'):null;const end=$('fim').value?new Date($('fim').value+'T23:59:59'):null;return base.filter(x=>(!plate||x.plate===plate)&&(!start||x.dt>=start)&&(!end||x.dt<=end)).filter(x=>mode==='sabado'?x.dt.getDay()===6:mode==='domingo'?x.dt.getDay()===0:mode==='fora'?Core.outsideWork(x.dt):true)}
   function params(){return {kmLitro:$('kmLitro').value,precoLitro:$('precoLitro').value,raio:$('raio').value}}
-  function updateFinance(){if(!lastResult)return;if(!locationsReady){UI.financePending('Localizando sede e obras antes de calcular os custos...');return}UI.renderFinanceiro(Financeiro.run(lastResult,metadata,params()));global.GPSV4.MapUI?.renderLocations(metadata,$('raio').value)}
+  function updateFinance(){if(!lastResult)return;if(!locationsReady){lastFinance=null;UI.financePending('Localizando sede e obras antes de calcular os custos...');return}lastFinance=Financeiro.run(lastResult,metadata,params());UI.renderFinanceiro(lastFinance);$('exportarFinanceiro').disabled=false;global.GPSV4.MapUI?.renderLocations(metadata,$('raio').value)}
   function process(){lastResult=Engine.run(filteredEvents(),{showTechnical:$('mostrarTecnicos').checked});UI.render(lastResult);UI.renderCadastros(metadata);updateFinance();const discarded=lastResult.auditTrail.filter(x=>x.auditStatus.startsWith('DESCARTADO')||x.auditStatus.startsWith('SUBSTITUIDO')).length;UI.status(`Filtro ativo: ${modeLabel()} • ${lastResult.cycles.length} ciclo(s), ${lastResult.segments.length} trecho(s) e ${discarded} evento(s) descartado(s) ou substituído(s).`,'ok')}
   $('arquivo').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;UI.status('Lendo e normalizando arquivo...');try{const imported=await Importer.readFile(file);const importedMetadata=Importer.readFile.lastMetadata||{cadastroCarros:[],cadastroObras:[]};metadata={...importedMetadata,sede:null,residencias:mergeHomes(importedMetadata.cadastroCarros||[])};locationsReady=false;base=Normalizer.run(imported).eventos;inferNightAnchors(base,metadata.residencias);if(!base.length)throw new Error('Não encontrei registros válidos. Confirme os cabeçalhos Data/Hora e Rastreável.');mode='todos';document.querySelectorAll('.chip').forEach(chip=>chip.classList.toggle('active',chip.dataset.mode==='todos'));UI.fillFilters(base);$('localizarPontos').disabled=false;$('atualizarFinanceiro').disabled=false;$('salvarResidencias').disabled=false;process();await locatePoints(true)}catch(error){console.error(error);UI.status(error.message||'Falha ao ler o arquivo.','error')}});
   $('processar').addEventListener('click',process);$('mostrarTecnicos').addEventListener('change',process);
@@ -46,6 +46,7 @@
   $('pararRota').addEventListener('click',()=>global.GPSV4.MapUI?.stop());
   $('visaoGeral').addEventListener('click',()=>global.GPSV4.MapUI?.fitOverview());
   $('atualizarFinanceiro').addEventListener('click',updateFinance);
+  $('exportarFinanceiro').addEventListener('click',()=>lastFinance&&UI.exportFinanceiro(lastFinance));
   $('salvarResidencias').addEventListener('click',async()=>{UI.readCadastroEdits(metadata);(metadata.residencias||[]).filter(x=>x.endereco).forEach(x=>{x.confirmado=true;x.origem='Cadastro salvo'});const saved=saveHomes();await locatePoints(false);UI.status(saved?'Cadastro residencial salvo e custos recalculados.':'Endereços aplicados nesta análise, mas o navegador bloqueou a gravação permanente.',saved?'ok':'error')});
   async function locatePoints(automatic=false){
     if(locating)return;locating=true;
