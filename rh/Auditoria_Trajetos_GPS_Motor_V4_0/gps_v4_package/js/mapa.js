@@ -31,14 +31,14 @@
   MapUI.renderLocations=(metadata,radius)=>{
     ensure();if(!map)return;
     locationLayers.forEach(layer=>map.removeLayer(layer));locationLayers=[];
-    const locations=[...(metadata.cadastroObras||[]).map(x=>({...x,tipo:'Obra'})),...(metadata.sede?[{...metadata.sede,tipo:'Empresa'}]:[])];
+    const locations=[...(metadata.cadastroObras||[]).map(x=>({...x,tipo:'Obra'})),...(metadata.sede?[{...metadata.sede,tipo:'Empresa'}]:[]),...(metadata.residencias||[]).map(x=>({...x,nome:`Residência operacional ${x.placa}`,tipo:'Residência'}))];
     locations.forEach(x=>{
       if(!Number.isFinite(x.latitude)||!Number.isFinite(x.longitude))return;
-      const color=x.tipo==='Empresa'?'#0f4c81':'#15a06f';
+      const color=x.tipo==='Empresa'?'#0f4c81':x.tipo==='Residência'?'#f2a43b':'#15a06f';
       const circle=L.circle([x.latitude,x.longitude],{radius:Number(radius)||500,color,fillColor:color,fillOpacity:.12,weight:2}).addTo(map);
       circle.bindPopup(`<strong>${x.tipo}: ${x.nome||'Sede'}</strong><br>${x.endereco||''}<br>Raio: ${Number(radius)||500} m`);
       const point=L.circleMarker([x.latitude,x.longitude],{radius:x.tipo==='Empresa'?9:7,color:'#fff',weight:2,fillColor:color,fillOpacity:1}).addTo(map);
-      point.bindTooltip(`${x.tipo==='Empresa'?'EMPRESA':'OBRA'} • ${x.nome||'Sede'}`,{permanent:true,direction:'top',className:`location-label ${x.tipo==='Empresa'?'company':'work'}`});
+      point.bindTooltip(`${x.tipo.toUpperCase()} • ${x.nome||'Sede'}`,{permanent:true,direction:'top',className:`location-label ${x.tipo==='Empresa'?'company':x.tipo==='Residência'?'home':'work'}`});
       point.bindPopup(`<strong>${x.tipo}: ${x.nome||'Sede'}</strong><br>${x.endereco||''}`);
       locationLayers.push(circle,point);
     });

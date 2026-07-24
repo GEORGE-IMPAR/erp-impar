@@ -46,6 +46,9 @@
       const cadastroCarros=[],cadastroObras=[];
       if(wb.Sheets.Cadastro_Carros_Valor_h_h){
         const matrix=XLSX.utils.sheet_to_json(wb.Sheets.Cadastro_Carros_Valor_h_h,{header:1,defval:'',raw:true});
+        const norm=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+        const headers=(matrix[0]||[]).map(norm);
+        const enderecoIndex=headers.findIndex(header=>['ENDERECO RESIDENCIAL','ENDERECO DA RESIDENCIA','RESIDENCIA','ENDERECO COLABORADOR'].includes(header));
         const equipes={};
         matrix.slice(1).forEach(row=>{
           const placa=String(row[6]||'').trim().toUpperCase(),nome=String(row[7]||'').trim();
@@ -56,7 +59,7 @@
           if(placa){
             const equipe=equipes[placa]||[];
             const valorInformado=Number(row[2]);
-            cadastroCarros.push({placa,responsavel:String(row[1]||'').trim(),valorHora:Number.isFinite(valorInformado)?valorInformado:equipe.reduce((total,item)=>total+item.valorHora,0),horasDia:Number(row[3])||0,equipe});
+            cadastroCarros.push({placa,responsavel:String(row[1]||'').trim(),valorHora:Number.isFinite(valorInformado)?valorInformado:equipe.reduce((total,item)=>total+item.valorHora,0),horasDia:Number(row[3])||0,equipe,enderecoResidencial:enderecoIndex>=0?String(row[enderecoIndex]||'').trim():''});
           }
         });
       }
