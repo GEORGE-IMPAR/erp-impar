@@ -33,7 +33,12 @@
         const pesquisa=XLSX.utils.sheet_to_json(wb.Sheets.Pesquisa,{defval:'',raw:true});
         tracker=String(pesquisa[0]?.Rastreavel||pesquisa[0]?.Rastreável||'').trim();
       }
-      return XLSX.utils.sheet_to_json(ws,{defval:'',raw:true}).map((row,index)=>({...row,__linhaOrigem:index+2,__rastreavelRelatorio:tracker}));
+      const devicePlateMap={'357789644126671':'RXO-8A58'};
+      return XLSX.utils.sheet_to_json(ws,{defval:'',raw:true}).map((row,index)=>{
+        const device=String(row['Id Dispositivo']||row.Dispositivo||'').trim();
+        const plateLike=/^[A-Z]{3}[- ]?\d[A-Z0-9]\d{2}$/i.test(device)?device:'';
+        return {...row,__linhaOrigem:index+2,__rastreavelRelatorio:tracker||devicePlateMap[device]||plateLike};
+      });
     }
     return parseText(await file.text());
   }
