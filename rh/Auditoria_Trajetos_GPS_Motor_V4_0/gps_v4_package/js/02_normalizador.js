@@ -1,6 +1,9 @@
 (function(global){
   'use strict';
   const {Core}=global.GPSV4;
+  const DEVICE_PLATE_MAP={
+    '357789644126671':'RXO-8A58'
+  };
   function field(row,names){
     const keys={};Object.keys(row).forEach(key=>keys[Core.norm(key)]=key);
     for(const name of names){const key=keys[Core.norm(name)];if(key!==undefined)return row[key]}
@@ -15,7 +18,9 @@
     const rejeitados=[];
     const eventos=rows.map((row,index)=>{
       const dt=Core.parseDateTime(field(row,['Data/Hora Evento','Data/Hora','Data Hora','Data e Hora','Data']));
-      const tracker=String(field(row,['Rastreável','Rastreavel','Veículo','Veiculo','Placa','Placas','__rastreavelRelatorio'])||'').trim();
+      const idDispositivo=String(field(row,['Id Dispositivo','Dispositivo'])||'').trim();
+      let tracker=String(field(row,['Rastreável','Rastreavel','Veículo','Veiculo','Placa','Placas','__rastreavelRelatorio'])||'').trim();
+      if(!tracker)tracker=DEVICE_PLATE_MAP[idDispositivo]||(/^[A-Z]{3}[- ]?\d[A-Z0-9]\d{2}$/i.test(idDispositivo)?idDispositivo:'');
       const plate=Core.plate(tracker),type=String(field(row,['Tipo','Evento','Informação','Informacao'])||'').trim();
       const address=String(field(row,['Endereço','Endereco','Local','Localização','Localizacao'])||'').trim();
       const number=value=>{const n=Number(String(value??'').replace(',','.'));return Number.isFinite(n)?n:null};
@@ -34,12 +39,12 @@
         address,endereco:address,reference:String(field(row,['Referencia','Referência'])||'').trim(),
         latitude,longitude,odometro,velocidade,
         ignicao:bool(field(row,['Ignição','Ignicao'])),
-        idDispositivo:String(field(row,['Id Dispositivo','Dispositivo'])||'').trim(),
+        idDispositivo,
         tempoReal:bool(field(row,['Tempo Real'])),
         statusAuditoria:'PENDENTE',motivoAuditoria:'',idCiclo:null
       });
     }).filter(Boolean);
     return {eventos,rejeitados};
   }
-  global.GPSV4.Normalizer={run,stableId};
+  global.GPSV4.Normalizer={run,stableId,DEVICE_PLATE_MAP};
 })(window);

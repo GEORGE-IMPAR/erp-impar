@@ -3,7 +3,7 @@
   const {Core}=global.GPSV4;
   const UI={};const $=id=>document.getElementById(id);
   UI.status=(message,type='')=>{const el=$('status');el.textContent=message;el.className='status'+(type?` ${type}`:'')};
-  UI.fillFilters=events=>{const plates=[...new Set(events.map(x=>x.plate).filter(Boolean))].sort();$('placa').innerHTML='<option value="">Todas</option>'+plates.map(p=>`<option>${Core.escape(p)}</option>`).join('');const dates=events.map(x=>x.dt).sort((a,b)=>a-b);if(dates.length){$('inicio').value=Core.iso(dates[0]);$('fim').value=Core.iso(dates[dates.length-1])}['placa','inicio','fim','processar','limpar'].forEach(id=>$(id).disabled=false)};
+  UI.fillFilters=events=>{const plates=[...new Set(events.map(x=>x.plate).filter(Boolean))].sort();$('placa').innerHTML='<option value="">Todas</option>'+plates.map(p=>`<option>${Core.escape(p)}</option>`).join('');const dates=events.map(x=>x.dt).filter(d=>d instanceof Date&&!isNaN(d.getTime())).sort((a,b)=>a-b);if(!dates.length)throw new Error('Nenhuma data válida foi encontrada no arquivo.');$('inicio').value=Core.iso(dates[0]);$('fim').value=Core.iso(dates[dates.length-1]);['placa','inicio','fim','processar','limpar'].forEach(id=>$(id).disabled=false)};
   UI.render=result=>{
     if(result.positionMode){
       $('kRecebidos').textContent=result.received.length.toLocaleString('pt-BR');
