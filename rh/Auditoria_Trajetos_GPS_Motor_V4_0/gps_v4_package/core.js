@@ -30,22 +30,51 @@
   UI.renderAuditRows=list=>{const filter=$('auditStatus').value;const rows=filter?list.filter(x=>x.auditStatus===filter):list;$('tbodyAuditoria').innerHTML=rows.length?rows.map((x,i)=>`<tr><td>${i+1}</td><td>${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}</td><td>${Core.escape(x.plate)}</td><td>${Core.escape(x.type)}</td><td>${Core.escape(x.address)}</td><td><span class="badge ${x.auditStatus.startsWith('DESCARTADO')?'bad':x.auditStatus.startsWith('SUBSTITUIDO')?'warn':'info'}">${x.auditStatus}</span></td><td>${Core.escape(x.auditReason)}</td><td>${Core.escape(x.cycleId||'—')}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">Nenhum evento para o filtro selecionado.</td></tr>'};
   UI.renderCadastros=metadata=>{
     const carros=metadata?.cadastroCarros||[],obras=metadata?.cadastroObras||[];
-    $('tbodyCarros').innerHTML=carros.length?carros.map(x=>`<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${Core.escape((x.equipe||[]).map(p=>p.nome).join(', ')||'—')}</td><td>R$ ${Number(x.valorHora||0).toFixed(2).replace('.',',')}</td><td>${Number(x.horasDia||0).toLocaleString('pt-BR')}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">A aba Cadastro_Carros_Valor_h_h não foi encontrada.</td></tr>';
-    $('tbodyObras').innerHTML=obras.length?obras.map(x=>`<tr><td>${Core.escape(x.idObra)}</td><td>${Core.escape(x.nome)}</td><td>${Core.escape(x.endereco||'—')}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">A aba Cadastro_Obras não foi encontrada.</td></tr>';
+    const residencias=metadata.residencias||[];
+    $('tbodyCarros').innerHTML=carros.length?carros.map(x=>{const r=residencias.find(item=>item.placa===x.placa)||{};return `<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${Core.escape((x.equipe||[]).map(p=>p.nome).join(', ')||'—')}</td><td>R$ ${Number(x.valorHora||0).toFixed(2).replace('.',',')}</td><td>${Number(x.horasDia||0).toLocaleString('pt-BR')}</td><td><input class="residencia-endereco" data-placa="${Core.escape(x.placa)}" value="${Core.escape(r.endereco||'')}" placeholder="Endereço residencial operacional"></td><td>${Number.isFinite(r.latitude)?'<span class="badge ok">Localizado</span>':'<span class="badge warn">Pendente</span>'}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">A aba Cadastro_Carros_Valor_h_h não foi encontrada.</td></tr>';
+    $('tbodyObras').innerHTML=obras.length?obras.map((x,i)=>`<tr><td>${Core.escape(x.idObra)}</td><td>${Core.escape(x.nome)}</td><td><input class="obra-endereco" data-index="${i}" value="${Core.escape(x.endereco||'')}" placeholder="Endereço completo da obra"></td><td>${Number.isFinite(x.latitude)?'<span class="badge ok">Localizada</span>':'<span class="badge warn">Pendente</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">A aba Cadastro_Obras não foi encontrada.</td></tr>';
     $('cadastroResumo').textContent=`${carros.length} veículo(s) e ${obras.length} obra(s) carregados da planilha.`;
+  };
+  UI.readCadastroEdits=metadata=>{
+    document.querySelectorAll('.obra-endereco').forEach(input=>{const item=metadata.cadastroObras[Number(input.dataset.index)];if(item&&item.endereco!==input.value.trim()){item.endereco=input.value.trim();delete item.latitude;delete item.longitude}});
+    document.querySelectorAll('.residencia-endereco').forEach(input=>{let item=metadata.residencias.find(x=>x.placa===input.dataset.placa);if(!item){item={placa:input.dataset.placa};metadata.residencias.push(item)}if(item.endereco!==input.value.trim()){item.endereco=input.value.trim();delete item.latitude;delete item.longitude}});
   };
   UI.renderFinanceiro=data=>{
     const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),km=n=>`${Number(n||0).toFixed(2).replace('.',',')} km`;
     const s=data.summary;
-    $('fTotal').textContent=money(s.totalCusto);$('fTotalKm').textContent=km(s.totalKm);
+    $('fTotal').textContent=money(s.totalCustoCombustivel);$('fTotalKm').textContent=km(s.totalKm);
     $('fObras').textContent=money(s.obra.custo);$('fObrasKm').textContent=km(s.obra.km);
     $('fEmpresa').textContent=money(s.empresa.custo);$('fEmpresaKm').textContent=km(s.empresa.km);
     $('fParticular').textContent=money(s.particular.custo);$('fParticularKm').textContent=km(s.particular.km);
     $('fPercentual').textContent=`${(s.totalKm?s.particular.km/s.totalKm*100:0).toFixed(1).replace('.',',')}%`;
-    $('tbodyFinanceiroObras').innerHTML=data.obras.length?data.obras.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nenhum ciclo alcançou o raio de uma obra.</td></tr>';
+    $('fMaoObraObras').textContent=money(s.obra.maoObra);$('fHorasObras').textContent=`${s.obra.horas.toFixed(2).replace('.',',')} h`;
+    $('fMaoObraEmpresa').textContent=money(s.empresa.maoObra);$('fHorasEmpresa').textContent=`${s.empresa.horas.toFixed(2).replace('.',',')} h não alocadas a obra`;
+    $('fTotalGeral').textContent=money(s.totalGeral);
+    $('tbodyFinanceiroObras').innerHTML=data.obras.length?data.obras.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td><td>${Number(x.horas||0).toFixed(2).replace('.',',')} h</td><td>${money(x.maoObra)}</td><td><strong>${money(x.total)}</strong></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma permanência ou deslocamento associado a obra.</td></tr>';
     $('tbodyFinanceiroCarros').innerHTML=data.carros.length?data.carros.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nenhum uso particular classificado.</td></tr>';
     $('financeiroAviso').textContent=`Cálculo: ${s.kmLitro.toLocaleString('pt-BR')} km/L • ${money(s.precoLitro)}/L • raio ${s.raio.toLocaleString('pt-BR')} m.`;
     $('financeiroAviso').className='status ok';
+    UI.renderDeslocamentos(data.deslocamentos);
+  };
+  UI.financePending=message=>{
+    const el=$('financeiroAviso');el.textContent=message;el.className='status warn';
+    ['fTotal','fObras','fEmpresa','fParticular','fMaoObraObras','fMaoObraEmpresa','fTotalGeral'].forEach(id=>$(id).textContent='—');
+    $('fPercentual').textContent='—';['fTotalKm','fObrasKm','fEmpresaKm','fParticularKm','fHorasObras','fHorasEmpresa'].forEach(id=>$(id).textContent='Aguardando localização');
+    ['dComute','dFimSemana','dForaHorario','dCombinado','dNaoClassificado'].forEach(id=>$(id).textContent='—');
+    ['dComuteCusto','dFimSemanaCusto','dForaHorarioCusto','dCombinadoCusto'].forEach(id=>$(id).textContent='Aguardando localização');
+    $('tbodyFinanceiroObras').innerHTML='<tr><td colspan="7" class="empty">Aguardando a localização automática da sede e das obras.</td></tr>';
+    $('tbodyFinanceiroCarros').innerHTML='<tr><td colspan="5" class="empty">Aguardando classificação.</td></tr>';
+    $('tbodyDeslocamentos').innerHTML='<tr><td colspan="7" class="empty">Aguardando classificação.</td></tr>';
+  };
+  UI.financeWarning=message=>{const el=$('financeiroAviso');el.textContent=message;el.className='status error'};
+  UI.renderDeslocamentos=data=>{
+    const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),km=n=>`${Number(n||0).toFixed(2).replace('.',',')} km`;
+    $('dComute').textContent=km(data.commute.km);$('dComuteCusto').textContent=money(data.commute.custo);
+    $('dFimSemana').textContent=km(data.weekend.km);$('dFimSemanaCusto').textContent=money(data.weekend.custo);
+    $('dForaHorario').textContent=km(data.offhours.km);$('dForaHorarioCusto').textContent=money(data.offhours.custo);
+    $('dCombinado').textContent=`${data.percentual.toFixed(1).replace('.',',')}%`;$('dCombinadoCusto').textContent=money(data.custo);
+    $('dNaoClassificado').textContent=km(data.naoClassificadoKm);
+    $('tbodyDeslocamentos').innerHTML=data.porPlaca.map(x=>`<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${km(x.commuteKm)}</td><td>${km(x.weekendKm)}</td><td>${km(x.offhoursKm)}</td><td>${km(x.totalKm)}</td><td>${money(x.custo)}</td></tr>`).join('');
   };
   UI.exportAudit=list=>{const sep=';';const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;const header=['ID Evento','Data/Hora','Placa','Evento','Endereço','Status','Motivo','Ciclo'];const lines=[header.map(q).join(sep),...list.map(x=>[x.idEvento,`${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}`,x.plate,x.type,x.address,x.auditStatus,x.auditReason,x.cycleId].map(q).join(sep))];const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`auditoria_mrt_v5_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href)};
   global.GPSV4.UI=UI;
