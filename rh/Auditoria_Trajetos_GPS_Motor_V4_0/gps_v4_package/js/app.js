@@ -14,6 +14,7 @@
   $('auditStatus').addEventListener('change',()=>lastResult&&UI.renderAuditRows(lastResult.auditTrail));$('exportarAuditoria').addEventListener('click',()=>lastResult&&UI.exportAudit(lastResult.auditTrail));
   $('animarRota').addEventListener('click',()=>global.GPSV4.MapUI?.play());
   $('pararRota').addEventListener('click',()=>global.GPSV4.MapUI?.stop());
+  $('visaoGeral').addEventListener('click',()=>global.GPSV4.MapUI?.fitOverview());
   $('atualizarFinanceiro').addEventListener('click',updateFinance);
   $('localizarPontos').addEventListener('click',async()=>{
     const button=$('localizarPontos');button.disabled=true;
@@ -26,7 +27,7 @@
         if(point){found++;if(target.tipo==='sede')metadata.sede={nome:'Sede ÍMPAR',endereco:target.endereco,...point};else Object.assign(target.ref,point)}
         if(i<targets.length-1)await new Promise(resolve=>setTimeout(resolve,1050));
       }
-      updateFinance();UI.status(`${found} de ${targets.length} locais encontrados. Raio ativo: ${$('raio').value} m.`,'ok');
+      updateFinance();global.GPSV4.MapUI?.fitOverview();UI.status(`${found} de ${targets.length} locais encontrados. Raio ativo: ${$('raio').value} m.`,'ok');
     }catch(error){console.error(error);UI.status(`${error.message}. Você pode tentar novamente.`,'error')}finally{button.disabled=false}
   });
 })(window);

@@ -46,11 +46,34 @@
       const km=total-classified;
       items.push({ciclo:'AJUSTE',placa:'—',responsavel:'',inicio:null,categoria:'empresa',nome:'Empresa — posições fora de ciclos',km,litros:km/kmLitro,custo:km/kmLitro*precoLitro});
     }
-    const summary={totalKm:total,totalLitros:total/kmLitro,totalCusto:total/kmLitro*precoLitro,kmLitro,precoLitro,raio};
+    const permanencias=[];
+    const pointLocation=point=>{
+      const obra=nearest([point],obras,raio);
+      if(obra)return {tipo:'obra',nome:obra.location.nome};
+      const empresa=nearest([point],sede,raio);
+      return empresa?{tipo:'empresa',nome:'Empresa'}:null;
+    };
+    (result.rotas||[]).forEach(route=>{
+      const carro=carros.find(x=>x.placa===route.plate),valorHora=Number(carro?.valorHora)||0;
+      route.positions.slice(1).forEach((point,index)=>{
+        const anterior=route.positions[index],a=pointLocation(anterior),b=pointLocation(point);
+        const horas=(point.dt-anterior.dt)/3600000;
+        if(!a||!b||a.tipo!==b.tipo||a.nome!==b.nome||horas<=0||horas>12)return;
+        permanencias.push({placa:route.plate,responsavel:carro?.responsavel||'',tipo:a.tipo,nome:a.nome,horas,valorHora,custoMaoObra:horas*valorHora});
+      });
+    });
+    const summary={totalKm:total,totalLitros:total/kmLitro,totalCustoCombustivel:total/kmLitro*precoLitro,kmLitro,precoLitro,raio};
     ['obra','empresa','particular'].forEach(cat=>{
       const group=items.filter(x=>x.categoria===cat);
       summary[cat]={km:group.reduce((s,x)=>s+x.km,0),litros:group.reduce((s,x)=>s+x.litros,0),custo:group.reduce((s,x)=>s+x.custo,0)};
     });
+    const permanenciaObras=permanencias.filter(x=>x.tipo==='obra'),permanenciaEmpresa=permanencias.filter(x=>x.tipo==='empresa');
+    summary.obra.horas=permanenciaObras.reduce((s,x)=>s+x.horas,0);
+    summary.obra.maoObra=permanenciaObras.reduce((s,x)=>s+x.custoMaoObra,0);
+    summary.empresa.horas=permanenciaEmpresa.reduce((s,x)=>s+x.horas,0);
+    summary.empresa.maoObra=permanenciaEmpresa.reduce((s,x)=>s+x.custoMaoObra,0);
+    summary.maoObraTotal=summary.obra.maoObra+summary.empresa.maoObra;
+    summary.totalGeral=summary.totalCustoCombustivel+summary.maoObraTotal;
     const groupBy=(key,filter)=>{
       const map=new Map();
       items.filter(filter).forEach(x=>{
@@ -59,7 +82,15 @@
       });
       return [...map.values()].sort((a,b)=>b.km-a.km);
     };
-    return {summary,items,obras:groupBy('nome',x=>x.categoria==='obra'),carros:groupBy('placa',x=>x.categoria==='particular')};
+    const obrasResumo=groupBy('nome',x=>x.categoria==='obra');
+    permanenciaObras.forEach(p=>{
+      let row=obrasResumo.find(x=>x.nome===p.nome);
+      if(!row){row={nome:p.nome,km:0,litros:0,custo:0,responsavel:''};obrasResumo.push(row)}
+      row.horas=(row.horas||0)+p.horas;row.maoObra=(row.maoObra||0)+p.custoMaoObra;
+    });
+    obrasResumo.forEach(row=>row.total=(row.custo||0)+(row.maoObra||0));
+    obrasResumo.sort((a,b)=>b.total-a.total);
+    return {summary,items,permanencias,obras:obrasResumo,carros:groupBy('placa',x=>x.categoria==='particular')};
   };
   F.geocode=async address=>{
     const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&q=${encodeURIComponent(address)}`;

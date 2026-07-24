@@ -37,12 +37,15 @@
   UI.renderFinanceiro=data=>{
     const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),km=n=>`${Number(n||0).toFixed(2).replace('.',',')} km`;
     const s=data.summary;
-    $('fTotal').textContent=money(s.totalCusto);$('fTotalKm').textContent=km(s.totalKm);
+    $('fTotal').textContent=money(s.totalCustoCombustivel);$('fTotalKm').textContent=km(s.totalKm);
     $('fObras').textContent=money(s.obra.custo);$('fObrasKm').textContent=km(s.obra.km);
     $('fEmpresa').textContent=money(s.empresa.custo);$('fEmpresaKm').textContent=km(s.empresa.km);
     $('fParticular').textContent=money(s.particular.custo);$('fParticularKm').textContent=km(s.particular.km);
     $('fPercentual').textContent=`${(s.totalKm?s.particular.km/s.totalKm*100:0).toFixed(1).replace('.',',')}%`;
-    $('tbodyFinanceiroObras').innerHTML=data.obras.length?data.obras.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nenhum ciclo alcançou o raio de uma obra.</td></tr>';
+    $('fMaoObraObras').textContent=money(s.obra.maoObra);$('fHorasObras').textContent=`${s.obra.horas.toFixed(2).replace('.',',')} h`;
+    $('fMaoObraEmpresa').textContent=money(s.empresa.maoObra);$('fHorasEmpresa').textContent=`${s.empresa.horas.toFixed(2).replace('.',',')} h não alocadas a obra`;
+    $('fTotalGeral').textContent=money(s.totalGeral);
+    $('tbodyFinanceiroObras').innerHTML=data.obras.length?data.obras.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td><td>${Number(x.horas||0).toFixed(2).replace('.',',')} h</td><td>${money(x.maoObra)}</td><td><strong>${money(x.total)}</strong></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma permanência ou deslocamento associado a obra.</td></tr>';
     $('tbodyFinanceiroCarros').innerHTML=data.carros.length?data.carros.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nenhum uso particular classificado.</td></tr>';
     $('financeiroAviso').textContent=`Cálculo: ${s.kmLitro.toLocaleString('pt-BR')} km/L • ${money(s.precoLitro)}/L • raio ${s.raio.toLocaleString('pt-BR')} m.`;
     $('financeiroAviso').className='status ok';
