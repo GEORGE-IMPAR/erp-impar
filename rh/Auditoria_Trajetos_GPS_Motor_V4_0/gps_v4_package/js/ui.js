@@ -2,6 +2,19 @@
   'use strict';
   const {Core}=global.GPSV4;
   const UI={};const $=id=>document.getElementById(id);
+  const classificationMeta={
+    obra:{label:'1.1 Obra',className:'obra'},
+    empresa:{label:'1.2 Empresa',className:'empresa'},
+    residencia_empresa:{label:'1.3 Residência → empresa',className:'ida'},
+    empresa_residencia:{label:'1.4 Empresa → residência',className:'volta'},
+    fim_semana:{label:'1.5 Sábado e domingo',className:'fim-semana'},
+    fora_horario:{label:'1.6 Fora do horário',className:'fora-horario'},
+    nao_classificado:{label:'1.7 Não classificado',className:'nao-classificado'}
+  };
+  const classificationStamp=category=>{
+    const meta=classificationMeta[category]||{label:'Aguardando classificação',className:'ajuste'};
+    return `<span class="stamp stamp-${meta.className}">${Core.escape(meta.label)}</span>`;
+  };
   UI.status=(message,type='')=>{const el=$('status');el.textContent=message;el.className='status'+(type?` ${type}`:'')};
   UI.fillFilters=events=>{const plates=[...new Set(events.map(x=>x.plate).filter(Boolean))].sort();$('placa').innerHTML='<option value="">Todas</option>'+plates.map(p=>`<option>${Core.escape(p)}</option>`).join('');const dates=events.map(x=>x.dt).filter(d=>d instanceof Date&&!isNaN(d.getTime())).sort((a,b)=>a-b);if(!dates.length)throw new Error('Nenhuma data válida foi encontrada no arquivo.');$('inicio').value=Core.iso(dates[0]);$('fim').value=Core.iso(dates[dates.length-1]);['placa','inicio','fim','processar','limpar'].forEach(id=>$(id).disabled=false)};
   UI.render=result=>{
@@ -24,8 +37,33 @@
     el.innerHTML=(result.rotas||[]).map(route=>`<div class="day"><h3><span>${Core.formatDate(route.date)} — ${Core.dayName(route.date)}</span><span>${route.km.toFixed(2).replace('.',',')} km</span></h3><div class="cycle"><div class="cycle-top"><div><div class="time">${Core.escape(route.plate)} • ${route.positions.length} posições</div><div class="address">${Core.escape(route.positions[0]?.address||'')} → ${Core.escape(route.positions.at(-1)?.address||'')}</div></div><span class="badge ok">Hodômetro</span></div><div class="meta">${route.movingMinutes.toFixed(0)} min em movimento • máxima ${route.maxSpeed} km/h</div><span class="rule">GPS: ${route.kmGps.toFixed(2).replace('.',',')} km • Hodômetro: ${route.kmHodometro.toFixed(2).replace('.',',')} km</span></div></div>`).join('')||'<div class="empty">Nenhuma rota encontrada.</div>';
   }
   function renderTimeline(result){const el=$('timeline');if(!result.cycles.length){el.innerHTML='<div class="empty">Nenhum ciclo iniciado por Ligou ignição foi encontrado.</div>';return}const groups={};result.cycles.forEach(c=>(groups[Core.iso(c.date)]??=[]).push(c));el.innerHTML=Object.entries(groups).map(([key,cycles])=>{const d=cycles[0].date;let html='';cycles.forEach((c,index)=>{html+=`<div class="cycle"><div class="cycle-top"><div><div class="time">${c.id} • ${Core.formatTime(c.start.dt)} → ${Core.formatTime(c.end.dt)}</div><div class="address">${Core.escape(c.start.address||'Endereço não informado')}</div></div><span class="badge ${c.incomplete?'warn':'ok'}">${c.incomplete?'Incompleto':'Fechado'}</span></div><div class="meta">${Core.escape(c.plate)} • ${c.rawEvents} evento(s) recebido(s) • ${c.discarded} substituído(s)</div><span class="rule">Duração: ${Core.duration(c.end.dt-c.start.dt)} • ${c.points.length} ponto(s) válido(s)</span></div>`;c.points.forEach((p,i)=>{const next=c.points[i+1];if(!next)return;if(Core.norm(p.address)!==Core.norm(next.address))html+=`<div class="segment"><strong>${Core.formatTime(p.dt)} → ${Core.formatTime(next.dt)}</strong><br>${Core.escape(p.address)} → ${Core.escape(next.address)}<br>Tempo: <strong>${Core.duration(next.dt-p.dt)}</strong> • KM: <strong>pendente Google Maps</strong></div>`});const nextCycle=cycles[index+1];if(nextCycle)html+=`<div class="stop">Permanência entre ciclos: <strong>${Core.formatTime(c.end.dt)} → ${Core.formatTime(nextCycle.start.dt)}</strong> (${Core.duration(nextCycle.start.dt-c.end.dt)})<br>${Core.escape(c.end.address||'Endereço não informado')}</div>`});return `<div class="day"><h3 class="${[0,6].includes(d.getDay())?'weekend':''}"><span>${Core.formatDate(d)} — ${Core.dayName(d)}</span><span>${cycles.length} ciclo(s)</span></h3>${html}</div>`}).join('')}
-  function renderSegments(list){$('tbodyTrechos').innerHTML=list.length?list.map((x,i)=>`<tr class="${[0,6].includes(x.date.getDay())?'weekend-row':''}"><td>${i+1}</td><td>${x.cycleId}</td><td>${Core.formatDate(x.date)}</td><td>${Core.formatTime(x.departure)}</td><td>${Core.escape(x.origin)}</td><td>${Core.formatTime(x.arrival)}</td><td>${Core.escape(x.destination)}</td><td>${Core.duration(x.duration)}</td><td>${Number(x.km||0).toFixed(3).replace('.',',')}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">Nenhum trecho identificado.</td></tr>'}
-  function renderCycles(list){$('tbodyCiclos').innerHTML=list.length?list.map(c=>`<tr><td>${c.id}</td><td>${Core.escape(c.plate)}</td><td>${Core.formatDate(c.date)}</td><td>${Core.formatTime(c.start.dt)}</td><td>${Core.formatTime(c.end.dt)}</td><td>${Core.duration(c.end.dt-c.start.dt)}</td><td>${c.points.length}</td><td>${c.rawEvents}</td><td>${c.discarded}</td><td><span class="badge ${c.incomplete?'warn':'ok'}">${c.incomplete?'Incompleto':'Fechado'}</span></td></tr>`).join(''):'<tr><td colspan="10" class="empty">Nenhum ciclo identificado.</td></tr>'}
+  function renderSegments(list){
+    $('tbodyTrechos').innerHTML=list.length?list.map((x,i)=>`<tr class="${[0,6].includes(x.date.getDay())?'weekend-row':''}"><td>${i+1}</td><td>${Core.escape(x.id||x.idTrecho||x.cycleId||'—')}</td><td>${Core.escape(x.plate||x.placa||'—')}</td><td>${Core.formatDate(x.date)}</td><td>${Core.formatTime(x.departure)}</td><td>${Core.escape(x.origin)}</td><td>${Core.formatTime(x.arrival)}</td><td>${Core.escape(x.destination)}</td><td>${Number(x.km||0).toFixed(3).replace('.',',')}</td><td>${classificationStamp('')}</td><td>—</td><td class="classification-reason">Aguardando localização e cálculo financeiro.</td></tr>`).join(''):'<tr><td colspan="12" class="empty">Nenhum trecho identificado.</td></tr>';
+  }
+  function renderCycles(list){
+    $('tbodyCiclos').innerHTML=list.length?list.map(c=>`<tr><td>${c.id}</td><td>${Core.escape(c.plate)}</td><td>${Core.formatDate(c.date)}</td><td>${Core.formatTime(c.start.dt)}</td><td>${Core.formatTime(c.end.dt)}</td><td>${Core.duration(c.end.dt-c.start.dt)}</td><td>${c.points.length}</td><td>${c.rawEvents}</td><td>${c.discarded}</td><td><span class="badge ${c.incomplete?'warn':'ok'}">${c.incomplete?'Incompleto':'Fechado'}</span></td><td>${classificationStamp('')}</td><td>—</td></tr>`).join(''):'<tr><td colspan="12" class="empty">Nenhum ciclo identificado.</td></tr>';
+  }
+  UI.renderClassifications=(data,result)=>{
+    const items=data?.items||[];
+    $('tbodyTrechos').innerHTML=items.length?items.map((x,index)=>{
+      const adjustment=x.ciclo==='AJUSTE',weekend=x.inicio&&[0,6].includes(x.inicio.getDay());
+      return `<tr class="${weekend?'weekend-row':''}"><td>${index+1}</td><td>${Core.escape(x.id||'—')}</td><td>${Core.escape(x.placa||'—')}</td><td>${x.inicio?Core.formatDate(x.inicio):'—'}</td><td>${x.inicio?Core.formatTime(x.inicio):'—'}</td><td>${Core.escape(x.origem||'—')}</td><td>${x.fim?Core.formatTime(x.fim):'—'}</td><td>${Core.escape(x.destino||'—')}</td><td>${Number(x.km||0).toFixed(3).replace('.',',')}</td><td>${adjustment?'<span class="stamp stamp-ajuste">Ajuste de fechamento</span>':classificationStamp(x.categoria)}</td><td class="classification-reference">${Core.escape(x.nome||'—')}</td><td class="classification-reason">${Core.escape(x.motivo||'—')}</td></tr>`;
+    }).join(''):'<tr><td colspan="12" class="empty">Nenhum trecho classificado.</td></tr>';
+    const byPlate=new Map();
+    items.filter(x=>x.ciclo!=='AJUSTE'&&x.inicio&&x.fim).forEach(item=>{
+      if(!byPlate.has(item.placa))byPlate.set(item.placa,[]);
+      byPlate.get(item.placa).push(item);
+    });
+    const cycles=result?.cycles||[];
+    $('tbodyCiclos').innerHTML=cycles.length?cycles.map(c=>{
+      const rows=(byPlate.get(c.plate)||[]).filter(x=>x.inicio>=c.start.dt&&x.fim<=c.end.dt);
+      const totals={};rows.forEach(x=>totals[x.categoria]=(totals[x.categoria]||0)+Number(x.km||0));
+      const categories=Object.keys(totals);
+      const stamps=categories.length?categories.map(classificationStamp).join(' '):'<span class="stamp stamp-nao-classificado">Sem KM classificável</span>';
+      const kmSummary=categories.length?categories.map(key=>`${Core.escape(classificationMeta[key]?.label||key)}: <strong>${totals[key].toFixed(2).replace('.',',')} km</strong>`).join('<br>'):'0,00 km';
+      return `<tr><td>${c.id}</td><td>${Core.escape(c.plate)}</td><td>${Core.formatDate(c.date)}</td><td>${Core.formatTime(c.start.dt)}</td><td>${Core.formatTime(c.end.dt)}</td><td>${Core.duration(c.end.dt-c.start.dt)}</td><td>${c.points.length}</td><td>${c.rawEvents}</td><td>${c.discarded}</td><td><span class="badge ${c.incomplete?'warn':'ok'}">${c.incomplete?'Incompleto':'Fechado'}</span></td><td>${stamps}</td><td>${kmSummary}</td></tr>`;
+    }).join(''):'<tr><td colspan="12" class="empty">Nenhum ciclo identificado.</td></tr>';
+  };
   function renderAudit(list){const select=$('auditStatus');const current=select.value;const statuses=[...new Set(list.map(x=>x.auditStatus))].sort();select.innerHTML='<option value="">Todos</option>'+statuses.map(s=>`<option ${s===current?'selected':''}>${s}</option>`).join('');UI.renderAuditRows(list)}
   UI.renderAuditRows=list=>{const filter=$('auditStatus').value;const rows=filter?list.filter(x=>x.auditStatus===filter):list;$('tbodyAuditoria').innerHTML=rows.length?rows.map((x,i)=>`<tr><td>${i+1}</td><td>${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}</td><td>${Core.escape(x.plate)}</td><td>${Core.escape(x.type)}</td><td>${Core.escape(x.address)}</td><td><span class="badge ${x.auditStatus.startsWith('DESCARTADO')?'bad':x.auditStatus.startsWith('SUBSTITUIDO')?'warn':'info'}">${x.auditStatus}</span></td><td>${Core.escape(x.auditReason)}</td><td>${Core.escape(x.cycleId||'—')}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">Nenhum evento para o filtro selecionado.</td></tr>'};
   UI.renderCadastros=metadata=>{
