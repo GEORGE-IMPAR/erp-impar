@@ -7,133 +7,192 @@
     const q=Math.sin(dLat/2)**2+Math.cos(toRad(a.latitude))*Math.cos(toRad(b.latitude))*Math.sin(dLon/2)**2;
     return 2*r*Math.asin(Math.sqrt(q));
   };
-  const cycleKm=cycle=>{
-    const pts=cycle.points||[],odos=pts.filter(p=>Number.isFinite(p.odometro));
-    if(odos.length>1){
-      const delta=odos.at(-1).odometro-odos[0].odometro;
-      if(delta>=0&&delta<1000)return delta;
-    }
-    return pts.slice(1).reduce((sum,p,i)=>{
-      const prev=pts[i],km=distance(prev,p)/1000;
-      return sum+(km<5?km:0);
-    },0);
-  };
-  function nearest(points,locations,radius){
+  const validPoint=point=>Number.isFinite(point?.latitude)&&Number.isFinite(point?.longitude);
+  function nearest(point,locations,radius){
+    if(!validPoint(point))return null;
     let best=null;
     (locations||[]).forEach(location=>{
-      if(!Number.isFinite(location.latitude)||!Number.isFinite(location.longitude))return;
-      points.forEach(point=>{
-        if(!Number.isFinite(point.latitude)||!Number.isFinite(point.longitude))return;
-        const meters=distance(point,location);
-        if(meters<=radius&&(!best||meters<best.meters))best={location,meters};
-      });
+      if(!validPoint(location))return;
+      const meters=distance(point,location);
+      if(meters<=radius&&(!best||meters<best.meters))best={location,meters};
     });
     return best;
   }
+  const isWeekend=date=>[0,6].includes(date.getDay());
+  const isOffhours=date=>{
+    const hour=date.getHours()+date.getMinutes()/60;
+    return hour<6||hour>=20;
+  };
+  function rawSegments(route){
+    const positions=(route.positions||[]).slice().sort((a,b)=>a.dt-b.dt);
+    const segments=new Array(Math.max(0,positions.length-1)).fill(null);
+    positions.slice(1).forEach((point,index)=>{
+      const prev=positions[index];
+      if(point.dt.toDateString()!==prev.dt.toDateString())return;
+      const delta=Number.isFinite(point.odometro)&&Number.isFinite(prev.odometro)?point.odometro-prev.odometro:distance(prev,point)/1000;
+      if(!Number.isFinite(delta)||delta<0||delta>=100)return;
+      segments[index]={index,plate:route.plate,date:route.date,prev,point,km:delta,categoria:null,obraNome:'',motivo:''};
+    });
+    return {positions,segments};
+  }
+  function workVisits(pointZones){
+    const visits=[];
+    pointZones.forEach((zone,index)=>{
+      if(zone?.tipo!=='obra')return;
+      const previous=visits.at(-1);
+      if(previous&&previous.nome===zone.nome&&index<=previous.end+1){previous.end=index;previous.center=(previous.start+previous.end)/2}
+      else visits.push({nome:zone.nome,start:index,end:index,center:index});
+    });
+    return visits;
+  }
+  function classifyRoute(route,metadata,params){
+    const raio=params.raio,obras=metadata.cadastroObras||[],sede=metadata.sede?[metadata.sede]:[];
+    const homes=(metadata.residencias||[]).filter(x=>x.placa===route.plate&&validPoint(x));
+    const {positions,segments}=rawSegments(route);
+    if(!segments.length)return [];
+    const pointZones=positions.map(point=>{
+      const obra=nearest(point,obras,raio);
+      if(obra)return {tipo:'obra',nome:obra.location.nome,ref:obra.location};
+      const empresa=nearest(point,sede,raio);
+      if(empresa)return {tipo:'empresa',nome:'Empresa',ref:empresa.location};
+      const home=nearest(point,homes,raio);
+      return home?{tipo:'residencia',nome:home.location.nome||home.location.placa,ref:home.location}:null;
+    });
+    const visits=workVisits(pointZones);
+    visits.forEach((visit,visitIndex)=>{
+      const previous=visits[visitIndex-1],next=visits[visitIndex+1];
+      let previousAnchor=-1,nextAnchor=positions.length-1;
+      for(let i=visit.start-1;i>=0;i--){
+        if(['empresa','residencia'].includes(pointZones[i]?.tipo)){previousAnchor=i;break}
+      }
+      for(let i=visit.end+1;i<positions.length;i++){
+        if(['empresa','residencia'].includes(pointZones[i]?.tipo)){nextAnchor=i;break}
+      }
+      /*
+       * Uma passagem pela empresa encerra o translado residencial.
+       * Ex.: casa → empresa → obra:
+       *   casa → empresa = residencia_empresa
+       *   empresa → obra = obra
+       * Se não houver empresa no caminho, casa → obra permanece integralmente na obra.
+       * Entre duas obras sem sede/residência intermediária, o ponto médio separa as visitas.
+       */
+      const previousWorkBoundary=previous?Math.floor((previous.center+visit.center)/2)+1:0;
+      const nextWorkBoundary=next?Math.floor((visit.center+next.center)/2):positions.length-1;
+      const left=previous&&previous.end>previousAnchor?previousWorkBoundary:Math.max(0,previousAnchor);
+      const right=next&&next.start<nextAnchor?nextWorkBoundary:nextAnchor;
+      for(let i=Math.max(0,left);i<Math.min(segments.length,right);i++){
+        const current=segments[i];
+        if(!current||current.categoria)continue;
+        current.categoria='obra';current.obraNome=visit.nome;
+        current.motivo=`Trajeto de ida/retorno vinculado à visita da obra ${visit.nome}.`;
+      }
+    });
+    segments.forEach((segment,index)=>{
+      if(!segment||segment.categoria)return;
+      if(pointZones[index]?.tipo==='empresa'&&pointZones[index+1]?.tipo==='empresa'){
+        segment.categoria='empresa';segment.motivo='Trecho integralmente dentro do raio da empresa.';
+      }
+    });
+    const companyIndexes=pointZones.map((zone,index)=>zone?.tipo==='empresa'?index:-1).filter(index=>index>=0);
+    if(companyIndexes.length){
+      const firstCompany=companyIndexes[0],lastCompany=companyIndexes.at(-1);
+      let idaStart=-1;
+      for(let i=firstCompany-1;i>=0;i--){
+        if(segments[i]?.categoria==='obra')break;
+        if(pointZones[i]?.tipo==='residencia')idaStart=i;
+      }
+      if(idaStart>=0)for(let i=idaStart;i<firstCompany&&i<segments.length;i++){
+        if(segments[i]&&!segments[i].categoria){segments[i].categoria='residencia_empresa';segments[i].motivo='Translado de residência(s) até a empresa, incluindo coleta de colegas.'}
+      }
+      let voltaEnd=-1;
+      for(let i=lastCompany+1;i<pointZones.length;i++){
+        if(segments[i-1]?.categoria==='obra')break;
+        if(pointZones[i]?.tipo==='residencia')voltaEnd=i;
+      }
+      if(voltaEnd>=0)for(let i=lastCompany;i<voltaEnd&&i<segments.length;i++){
+        if(segments[i]&&!segments[i].categoria){segments[i].categoria='empresa_residencia';segments[i].motivo='Translado da empresa até residência(s), incluindo entrega de colegas.'}
+      }
+    }
+    segments.forEach(segment=>{
+      if(!segment||segment.categoria)return;
+      if(isWeekend(segment.prev.dt)){segment.categoria='fim_semana';segment.motivo='Trecho em sábado ou domingo ainda não vinculado às categorias anteriores.';return}
+      if(isOffhours(segment.prev.dt)){segment.categoria='fora_horario';segment.motivo='Trecho antes das 06:00 ou após as 20:00 ainda não vinculado às categorias anteriores.';return}
+      segment.categoria='nao_classificado';segment.motivo='Trecho sem vínculo com obra, empresa, translado, fim de semana ou fora do horário.';
+    });
+    return segments.filter(Boolean);
+  }
+  function pointLocation(point,metadata,raio){
+    const obra=nearest(point,metadata.cadastroObras||[],raio);
+    if(obra)return {tipo:'obra',nome:obra.location.nome};
+    const empresa=nearest(point,metadata.sede?[metadata.sede]:[],raio);
+    return empresa?{tipo:'empresa',nome:'Empresa'}:null;
+  }
   F.run=(result,metadata,params)=>{
     const kmLitro=Math.max(.1,Number(params.kmLitro)||10),precoLitro=Math.max(0,Number(params.precoLitro)||0),raio=Math.max(10,Number(params.raio)||500);
-    const sede=metadata.sede?[metadata.sede]:[],obras=metadata.cadastroObras||[],carros=metadata.cadastroCarros||[];
-    const items=(result.cycles||[]).map(cycle=>{
-      const km=cycleKm(cycle),obra=nearest(cycle.points,obras,raio),empresa=nearest(cycle.points,sede,raio);
-      const dt=cycle.start.dt,particular=[0,6].includes(dt.getDay())||dt.getHours()<6||dt.getHours()>=20;
-      const categoria=obra?'obra':empresa?'empresa':particular?'particular':'nao_classificado';
-      const nome=categoria==='obra'?obra.location.nome:categoria==='particular'?'Uso particular':categoria==='empresa'?'Empresa':'Não classificado';
-      const motivo=obra?`Ciclo com posição dentro do raio da obra ${obra.location.nome}.`:empresa?'Ciclo com posição dentro do raio da sede.':particular?([0,6].includes(dt.getDay())?'Ciclo iniciado em sábado ou domingo.':'Ciclo iniciado antes das 06:00 ou após as 20:00.'):'Sem obra ou sede no raio e dentro do horário padrão.';
-      const carro=carros.find(x=>x.placa===cycle.plate);
-      return {ciclo:cycle.id,placa:cycle.plate,responsavel:carro?.responsavel||'',inicio:dt,fim:cycle.end?.dt||null,origem:cycle.points?.[0]?.address||'',destino:cycle.points?.at(-1)?.address||'',categoria,nome,motivo,km,litros:km/kmLitro,custo:km/kmLitro*precoLitro};
+    const carros=metadata.cadastroCarros||[];
+    let ledger=[];
+    (result.rotas||[]).forEach(route=>ledger.push(...classifyRoute(route,metadata,{raio})));
+    ledger=ledger.map((segment,index)=>{
+      const carro=carros.find(x=>x.placa===segment.plate),litros=segment.km/kmLitro;
+      return {id:`KM-${String(index+1).padStart(6,'0')}`,ciclo:'SEGMENTO',placa:segment.plate,responsavel:carro?.responsavel||'',inicio:segment.prev.dt,fim:segment.point.dt,origem:segment.prev.address||'',destino:segment.point.address||'',categoria:segment.categoria,nome:segment.obraNome||'',motivo:segment.motivo,km:segment.km,litros,custo:litros*precoLitro};
     });
-    const classified=items.reduce((s,x)=>s+x.km,0),total=result.dashboard?.totalKm||classified;
-    if(total>classified+.001){
-      const km=total-classified;
-      items.push({ciclo:'AJUSTE',placa:'—',responsavel:'',inicio:null,fim:null,origem:'',destino:'',categoria:'nao_classificado',nome:'Posições fora de ciclos',motivo:'Diferença entre o hodômetro total e os ciclos reconstruídos.',km,litros:km/kmLitro,custo:km/kmLitro*precoLitro});
+    const segmentedKm=ledger.reduce((sum,x)=>sum+x.km,0),dashboardKm=Number(result.dashboard?.totalKm);
+    const total=Number.isFinite(dashboardKm)&&dashboardKm>=segmentedKm-.01?dashboardKm:segmentedKm;
+    if(total>segmentedKm+.001){
+      const km=total-segmentedKm;
+      ledger.push({id:'KM-AJUSTE',ciclo:'AJUSTE',placa:'—',responsavel:'',inicio:null,fim:null,origem:'',destino:'',categoria:'nao_classificado',nome:'',motivo:'Diferença de fechamento entre o hodômetro total e os segmentos válidos.',km,litros:km/kmLitro,custo:km/kmLitro*precoLitro});
+    }
+    const categories=['obra','empresa','residencia_empresa','empresa_residencia','fim_semana','fora_horario','nao_classificado'];
+    const summary={totalKm:total,totalLitros:total/kmLitro,totalCustoCombustivel:total/kmLitro*precoLitro,kmLitro,precoLitro,raio};
+    categories.forEach(category=>{
+      const rows=ledger.filter(x=>x.categoria===category);
+      summary[category]={km:rows.reduce((sum,x)=>sum+x.km,0),litros:rows.reduce((sum,x)=>sum+x.litros,0),custo:rows.reduce((sum,x)=>sum+x.custo,0)};
+    });
+    const classified=categories.filter(x=>x!=='nao_classificado').reduce((sum,key)=>sum+summary[key].km,0);
+    summary.nao_classificado.km=Math.max(0,total-classified);
+    summary.nao_classificado.litros=summary.nao_classificado.km/kmLitro;
+    summary.nao_classificado.custo=summary.nao_classificado.litros*precoLitro;
+    const nonRows=ledger.filter(x=>x.categoria==='nao_classificado'),nonRaw=nonRows.reduce((sum,x)=>sum+x.km,0);
+    if(nonRows.length&&Math.abs(nonRaw-summary.nao_classificado.km)>.001){
+      const factor=nonRaw?summary.nao_classificado.km/nonRaw:0;
+      nonRows.forEach(x=>{x.km*=factor;x.litros=x.km/kmLitro;x.custo=x.litros*precoLitro});
     }
     const permanencias=[];
-    const pointLocation=point=>{
-      const obra=nearest([point],obras,raio);
-      if(obra)return {tipo:'obra',nome:obra.location.nome};
-      const empresa=nearest([point],sede,raio);
-      return empresa?{tipo:'empresa',nome:'Empresa'}:null;
-    };
     (result.rotas||[]).forEach(route=>{
       const carro=carros.find(x=>x.placa===route.plate),valorHora=Number(carro?.valorHora)||0;
       route.positions.slice(1).forEach((point,index)=>{
-        const anterior=route.positions[index],a=pointLocation(anterior),b=pointLocation(point);
-        const horas=(point.dt-anterior.dt)/3600000;
+        const anterior=route.positions[index],a=pointLocation(anterior,metadata,raio),b=pointLocation(point,metadata,raio),horas=(point.dt-anterior.dt)/3600000;
         if(!a||!b||a.tipo!==b.tipo||a.nome!==b.nome||horas<=0||horas>12)return;
         permanencias.push({placa:route.plate,responsavel:carro?.responsavel||'',tipo:a.tipo,nome:a.nome,horas,valorHora,custoMaoObra:horas*valorHora});
       });
     });
-    const summary={totalKm:total,totalLitros:total/kmLitro,totalCustoCombustivel:total/kmLitro*precoLitro,kmLitro,precoLitro,raio};
-    ['obra','empresa','particular','nao_classificado'].forEach(cat=>{
-      const group=items.filter(x=>x.categoria===cat);
-      summary[cat]={km:group.reduce((s,x)=>s+x.km,0),litros:group.reduce((s,x)=>s+x.litros,0),custo:group.reduce((s,x)=>s+x.custo,0)};
+    const obrasMap=new Map();
+    ledger.filter(x=>x.categoria==='obra').forEach(x=>{
+      const key=x.nome||'Obra não identificada',row=obrasMap.get(key)||{nome:key,km:0,litros:0,custo:0,horas:0,maoObra:0,total:0};
+      row.km+=x.km;row.litros+=x.litros;row.custo+=x.custo;obrasMap.set(key,row);
     });
-    const permanenciaObras=permanencias.filter(x=>x.tipo==='obra'),permanenciaEmpresa=permanencias.filter(x=>x.tipo==='empresa');
-    summary.obra.horas=permanenciaObras.reduce((s,x)=>s+x.horas,0);
-    summary.obra.maoObra=permanenciaObras.reduce((s,x)=>s+x.custoMaoObra,0);
-    summary.empresa.horas=permanenciaEmpresa.reduce((s,x)=>s+x.horas,0);
-    summary.empresa.maoObra=permanenciaEmpresa.reduce((s,x)=>s+x.custoMaoObra,0);
+    permanencias.filter(x=>x.tipo==='obra').forEach(p=>{
+      const row=obrasMap.get(p.nome)||{nome:p.nome,km:0,litros:0,custo:0,horas:0,maoObra:0,total:0};
+      row.horas+=p.horas;row.maoObra+=p.custoMaoObra;obrasMap.set(p.nome,row);
+    });
+    const obras=[...obrasMap.values()].map(x=>({...x,total:x.custo+x.maoObra})).sort((a,b)=>b.total-a.total);
+    summary.obra.horas=obras.reduce((sum,x)=>sum+x.horas,0);
+    summary.obra.maoObra=obras.reduce((sum,x)=>sum+x.maoObra,0);
+    const empresaPermanencias=permanencias.filter(x=>x.tipo==='empresa');
+    summary.empresa.horas=empresaPermanencias.reduce((sum,x)=>sum+x.horas,0);
+    summary.empresa.maoObra=empresaPermanencias.reduce((sum,x)=>sum+x.custoMaoObra,0);
     summary.maoObraTotal=summary.obra.maoObra+summary.empresa.maoObra;
     summary.totalGeral=summary.totalCustoCombustivel+summary.maoObraTotal;
-    const groupBy=(key,filter)=>{
-      const map=new Map();
-      items.filter(filter).forEach(x=>{
-        const id=x[key]||'Não identificado',row=map.get(id)||{nome:id,km:0,litros:0,custo:0,responsavel:x.responsavel||''};
-        row.km+=x.km;row.litros+=x.litros;row.custo+=x.custo;map.set(id,row);
-      });
-      return [...map.values()].sort((a,b)=>b.km-a.km);
-    };
-    const obrasResumo=groupBy('nome',x=>x.categoria==='obra');
-    permanenciaObras.forEach(p=>{
-      let row=obrasResumo.find(x=>x.nome===p.nome);
-      if(!row){row={nome:p.nome,km:0,litros:0,custo:0,responsavel:''};obrasResumo.push(row)}
-      row.horas=(row.horas||0)+p.horas;row.maoObra=(row.maoObra||0)+p.custoMaoObra;
+    const porPlacaMap=new Map();
+    ledger.forEach(x=>{
+      if(x.placa==='—')return;
+      const row=porPlacaMap.get(x.placa)||{placa:x.placa,responsavel:x.responsavel,km:0,custo:0};
+      row.km+=x.km;row.custo+=x.custo;porPlacaMap.set(x.placa,row);
     });
-    obrasResumo.forEach(row=>row.total=(row.custo||0)+(row.maoObra||0));
-    obrasResumo.sort((a,b)=>b.total-a.total);
-    const deslocamentos=F.deslocamentos(result,metadata,{kmLitro,precoLitro,raio});
-    return {summary,items,permanencias,obras:obrasResumo,carros:groupBy('placa',x=>x.categoria==='particular'),deslocamentos};
-  };
-  F.deslocamentos=(result,metadata,params)=>{
-    const kmLitro=Math.max(.1,Number(params.kmLitro)||10),precoLitro=Math.max(0,Number(params.precoLitro)||0),raio=Math.max(10,Number(params.raio)||500);
-    const residencias=metadata.residencias||[],sede=metadata.sede,carros=metadata.cadastroCarros||[];
-    const segments=[],byKey=new Map();
-    (result.rotas||[]).forEach(route=>route.positions.slice(1).forEach((point,index)=>{
-      const prev=route.positions[index],delta=Number.isFinite(point.odometro)&&Number.isFinite(prev.odometro)?point.odometro-prev.odometro:distance(prev,point)/1000;
-      if(point.dt.toDateString()!==prev.dt.toDateString()||delta<0||delta>=100)return;
-      const key=`${route.plate}|${prev.dt.getTime()}|${point.dt.getTime()}`,seg={key,placa:route.plate,prev,point,km:delta,commute:false};
-      segments.push(seg);byKey.set(key,seg);
-    }));
-    (result.cycles||[]).forEach(cycle=>{
-      const home=residencias.find(x=>x.placa===cycle.plate&&Number.isFinite(x.latitude)&&Number.isFinite(x.longitude));
-      if(!home||!sede||!Number.isFinite(sede.latitude))return;
-      const start=cycle.points[0],end=cycle.points.at(-1);
-      const h2e=distance(start,home)<=raio&&distance(end,sede)<=raio,e2h=distance(start,sede)<=raio&&distance(end,home)<=raio;
-      if(!h2e&&!e2h)return;
-      segments.forEach(seg=>{if(seg.placa===cycle.plate&&seg.prev.dt>=start.dt&&seg.point.dt<=end.dt)seg.commute=true});
-    });
-    const rows=new Map(),totalSegmentado=segments.reduce((s,x)=>s+x.km,0);
-    segments.forEach(seg=>{
-      const day=seg.prev.dt.getDay(),hour=seg.prev.dt.getHours()+seg.prev.dt.getMinutes()/60;
-      const categoria=seg.commute?'commute':[0,6].includes(day)?'weekend':(hour<6||hour>=20)?'offhours':'operacional';
-      let row=rows.get(seg.placa);
-      if(!row){const carro=carros.find(x=>x.placa===seg.placa);row={placa:seg.placa,responsavel:carro?.responsavel||'',commuteKm:0,weekendKm:0,offhoursKm:0,totalKm:0,custo:0};rows.set(seg.placa,row)}
-      if(categoria==='commute')row.commuteKm+=seg.km;
-      if(categoria==='weekend')row.weekendKm+=seg.km;
-      if(categoria==='offhours')row.offhoursKm+=seg.km;
-    });
-    const porPlaca=[...rows.values()].map(row=>{row.commuteLitros=row.commuteKm/kmLitro;row.commuteCusto=row.commuteLitros*precoLitro;row.totalKm=row.commuteKm+row.weekendKm+row.offhoursKm;row.custo=row.totalKm/kmLitro*precoLitro;return row}).sort((a,b)=>b.totalKm-a.totalKm);
-    const sum=field=>porPlaca.reduce((s,x)=>s+x[field],0),total=result.dashboard?.totalKm||totalSegmentado,combined=sum('totalKm');
-    return {
-      commute:{km:sum('commuteKm'),custo:sum('commuteKm')/kmLitro*precoLitro},
-      weekend:{km:sum('weekendKm'),custo:sum('weekendKm')/kmLitro*precoLitro},
-      offhours:{km:sum('offhoursKm'),custo:sum('offhoursKm')/kmLitro*precoLitro},
-      km:combined,custo:combined/kmLitro*precoLitro,percentual:total?combined/total*100:0,
-      naoClassificadoKm:Math.max(0,total-totalSegmentado),porPlaca
-    };
+    return {summary,items:ledger,ledger,permanencias,obras,porPlaca:[...porPlacaMap.values()].sort((a,b)=>b.km-a.km)};
   };
   F.geocode=async address=>{
-    const cleaned=String(address||'').replace(/\\bCNO\\s*:[\\s\\S]*$/i,'').replace(/\\s+/g,' ').trim();
+    const cleaned=String(address||'').replace(/\bCNO\s*:[\s\S]*$/i,'').replace(/\s+/g,' ').trim();
     const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&q=${encodeURIComponent(cleaned)}`;
     const response=await fetch(url,{headers:{'Accept':'application/json'}});
     if(!response.ok)throw new Error(`Falha ao localizar: ${address}`);

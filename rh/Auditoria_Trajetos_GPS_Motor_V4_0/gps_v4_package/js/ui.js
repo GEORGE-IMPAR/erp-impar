@@ -31,58 +31,56 @@
   UI.renderCadastros=metadata=>{
     const carros=metadata?.cadastroCarros||[],obras=metadata?.cadastroObras||[];
     const residencias=metadata.residencias||[];
-    $('tbodyCarros').innerHTML=carros.length?carros.map(x=>{const r=residencias.find(item=>item.placa===x.placa)||{};const status=r.confirmado&&Number.isFinite(r.latitude)?'<span class="badge ok">Salvo e localizado</span>':r.confirmado?'<span class="badge info">Salvo • localizar</span>':r.regraUsuario?`<span class="badge warn">Ponto noturno • ${r.noites} noite(s)</span>`:'<span class="badge bad">Endereço pendente</span>';const origem=r.origem||(r.regraUsuario?'Inferência GPS':'Não informado');return `<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${Core.escape((x.equipe||[]).map(p=>p.nome).join(', ')||'—')}</td><td>R$ ${Number(x.valorHora||0).toFixed(2).replace('.',',')}</td><td>${Number(x.horasDia||0).toLocaleString('pt-BR')}</td><td><input class="residencia-endereco" data-placa="${Core.escape(x.placa)}" value="${Core.escape(r.endereco||'')}" placeholder="Rua, número, bairro, cidade e UF"></td><td>${Core.escape(origem)}</td><td>${status}</td></tr>`}).join(''):'<tr><td colspan="8" class="empty">A aba Cadastro_Carros_Valor_h_h não foi encontrada.</td></tr>';
+    const cadastroRows=[];
+    carros.forEach(carro=>{
+      const homes=residencias.filter(item=>item.placa===carro.placa);
+      (homes.length?homes:[{}]).forEach(r=>{
+        const status=r.confirmado&&Number.isFinite(r.latitude)?'<span class="badge ok">Confirmado e localizado</span>':r.confirmado?'<span class="badge info">Confirmado • localizar</span>':r.regraUsuario?`<span class="badge warn">Ponto noturno • ${r.noites} noite(s)</span>`:'<span class="badge bad">Endereço pendente</span>';
+        const origem=r.origem||(r.regraUsuario?'Inferência GPS':'Não informado'),nome=r.nome||carro.responsavel||'';
+        cadastroRows.push(`<tr><td>${Core.escape(carro.placa)}</td><td>${Core.escape(carro.responsavel||'—')}</td><td>${Core.escape(nome||'—')}${r.principal?' <span class="badge info">Condutor principal</span>':''}</td><td>R$ ${Number(carro.valorHora||0).toFixed(2).replace('.',',')}</td><td>${Number(carro.horasDia||0).toLocaleString('pt-BR')}</td><td><input class="residencia-endereco" data-placa="${Core.escape(carro.placa)}" data-nome="${Core.escape(nome)}" value="${Core.escape(r.endereco||'')}" placeholder="Rua, número, bairro, cidade e UF"></td><td>${Core.escape(origem)}</td><td>${status}</td></tr>`);
+      });
+    });
+    $('tbodyCarros').innerHTML=cadastroRows.length?cadastroRows.join(''):'<tr><td colspan="8" class="empty">A aba Cadastro_Carros_Valor_h_h não foi encontrada.</td></tr>';
     $('tbodyObras').innerHTML=obras.length?obras.map((x,i)=>`<tr><td>${Core.escape(x.idObra)}</td><td>${Core.escape(x.nome)}</td><td><input class="obra-endereco" data-index="${i}" value="${Core.escape(x.endereco||'')}" placeholder="Endereço completo da obra"></td><td>${Number.isFinite(x.latitude)?'<span class="badge ok">Localizada</span>':'<span class="badge warn">Pendente</span>'}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">A aba Cadastro_Obras não foi encontrada.</td></tr>';
     const cadastradas=carros.filter(x=>residencias.some(r=>r.placa===x.placa&&r.endereco)).length;
     $('cadastroResumo').textContent=`${carros.length} veículo(s), ${cadastradas} residência(s) preenchida(s) e ${obras.length} obra(s). Endereços pendentes deixam o cálculo casa ↔ empresa zerado para a respectiva placa.`;
   };
   UI.readCadastroEdits=metadata=>{
     document.querySelectorAll('.obra-endereco').forEach(input=>{const item=metadata.cadastroObras[Number(input.dataset.index)];if(item&&item.endereco!==input.value.trim()){item.endereco=input.value.trim();delete item.latitude;delete item.longitude}});
-    document.querySelectorAll('.residencia-endereco').forEach(input=>{let item=metadata.residencias.find(x=>x.placa===input.dataset.placa);if(!item){item={placa:input.dataset.placa};metadata.residencias.push(item)}const value=input.value.trim();if(!value&&item.regraUsuario)return;if(item.endereco!==value){item.endereco=value;item.confirmado=Boolean(value);item.origem=value?'Cadastro digitado':'Não informado';item.regraUsuario=false;delete item.latitude;delete item.longitude}});
+    document.querySelectorAll('.residencia-endereco').forEach(input=>{let item=metadata.residencias.find(x=>x.placa===input.dataset.placa&&Core.norm(x.nome||'')===Core.norm(input.dataset.nome||''));if(!item){item={placa:input.dataset.placa,nome:input.dataset.nome||''};metadata.residencias.push(item)}const value=input.value.trim();if(!value&&item.regraUsuario)return;if(item.endereco!==value){item.endereco=value;item.confirmado=Boolean(value);item.origem=value?'Cadastro digitado':'Não informado';item.regraUsuario=false;delete item.latitude;delete item.longitude}});
   };
   UI.renderFinanceiro=data=>{
     const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),km=n=>`${Number(n||0).toFixed(2).replace('.',',')} km`;
     const s=data.summary;
-    $('fTotal').textContent=money(s.totalCustoCombustivel);$('fTotalKm').textContent=km(s.totalKm);
-    $('fObras').textContent=money(s.obra.custo);$('fObrasKm').textContent=km(s.obra.km);
-    $('fEmpresa').textContent=money(s.empresa.custo);$('fEmpresaKm').textContent=km(s.empresa.km);
-    $('fParticular').textContent=money(s.particular.custo);$('fParticularKm').textContent=km(s.particular.km);
-    $('fNaoClassificado').textContent=money(s.nao_classificado.custo);$('fNaoClassificadoKm').textContent=km(s.nao_classificado.km);
-    $('fPercentual').textContent=`${(s.totalKm?s.particular.km/s.totalKm*100:0).toFixed(1).replace('.',',')}%`;
-    $('fMaoObraObras').textContent=money(s.obra.maoObra);$('fHorasObras').textContent=`${s.obra.horas.toFixed(2).replace('.',',')} h`;
-    $('fMaoObraEmpresa').textContent=money(s.empresa.maoObra);$('fHorasEmpresa').textContent=`${s.empresa.horas.toFixed(2).replace('.',',')} h não alocadas a obra`;
-    $('fTotalGeral').textContent=money(s.totalGeral);
+    const bind=(kmId,costId,row)=>{$(kmId).textContent=km(row.km);$(costId).textContent=money(row.custo)};
+    $('fTotal').textContent=km(s.totalKm);$('fTotalCusto').textContent=money(s.totalCustoCombustivel);
+    bind('fObras','fObrasCusto',s.obra);bind('fEmpresa','fEmpresaCusto',s.empresa);
+    bind('fIda','fIdaCusto',s.residencia_empresa);bind('fVolta','fVoltaCusto',s.empresa_residencia);
+    bind('fFimSemana','fFimSemanaCusto',s.fim_semana);bind('fForaHorario','fForaHorarioCusto',s.fora_horario);
+    bind('fNaoClassificado','fNaoClassificadoCusto',s.nao_classificado);
+    const labels={obra:'1.1. Obra',empresa:'1.2. Empresa',residencia_empresa:'1.3. Residência → empresa',empresa_residencia:'1.4. Empresa → residência',fim_semana:'1.5. Sábado e domingo',fora_horario:'1.6. Fora do horário',nao_classificado:'1.7. Não classificado'};
+    const categories=['obra','empresa','residencia_empresa','empresa_residencia','fim_semana','fora_horario','nao_classificado'];
+    $('tbodyCategorias').innerHTML=categories.map(key=>`<tr><td>${labels[key]}</td><td>${km(s[key].km)}</td><td>${s[key].litros.toFixed(2).replace('.',',')} L</td><td>${money(s[key].custo)}</td><td>${(s.totalKm?s[key].km/s.totalKm*100:0).toFixed(1).replace('.',',')}%</td></tr>`).join('');
+    const categoryKm=categories.reduce((sum,key)=>sum+s[key].km,0),difference=s.totalKm-categoryKm,reconciliationOk=Math.abs(difference)<.01;
+    const reconciliation=$('conciliacaoFinanceira');reconciliation.textContent=`${reconciliationOk?'CONCILIAÇÃO OK':'REVISAR CONCILIAÇÃO'} • Total: ${km(s.totalKm)} • Categorias: ${km(categoryKm)} • Diferença: ${km(difference)}`;reconciliation.className=`status ${reconciliationOk?'ok':'error'}`;
     $('tbodyFinanceiroObras').innerHTML=data.obras.length?data.obras.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td><td>${Number(x.horas||0).toFixed(2).replace('.',',')} h</td><td>${money(x.maoObra)}</td><td><strong>${money(x.total)}</strong></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhuma permanência ou deslocamento associado a obra.</td></tr>';
-    $('tbodyFinanceiroCarros').innerHTML=data.carros.length?data.carros.map(x=>`<tr><td>${Core.escape(x.nome)}</td><td>${Core.escape(x.responsavel||'—')}</td><td>${km(x.km)}</td><td>${x.litros.toFixed(2).replace('.',',')} L</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nenhum uso particular classificado.</td></tr>';
-    $('financeiroAviso').textContent=`Cálculo: ${s.kmLitro.toLocaleString('pt-BR')} km/L • ${money(s.precoLitro)}/L • raio ${s.raio.toLocaleString('pt-BR')} m.`;
+    $('financeiroAviso').textContent=`Cálculo: ${s.kmLitro.toLocaleString('pt-BR')} km/L • ${money(s.precoLitro)}/L • raio ${s.raio.toLocaleString('pt-BR')} m. Cada KM pertence a somente uma categoria.`;
     $('financeiroAviso').className='status ok';
-    UI.renderDeslocamentos(data.deslocamentos);
   };
   UI.financePending=message=>{
     const el=$('financeiroAviso');el.textContent=message;el.className='status warn';
-    ['fTotal','fObras','fEmpresa','fParticular','fNaoClassificado','fMaoObraObras','fMaoObraEmpresa','fTotalGeral'].forEach(id=>$(id).textContent='—');
-    $('fPercentual').textContent='—';['fTotalKm','fObrasKm','fEmpresaKm','fParticularKm','fNaoClassificadoKm','fHorasObras','fHorasEmpresa'].forEach(id=>$(id).textContent='Aguardando localização');
-    ['dComute','dFimSemana','dForaHorario','dCombinado','dNaoClassificado'].forEach(id=>$(id).textContent='—');
-    ['dComuteCusto','dFimSemanaCusto','dForaHorarioCusto','dCombinadoCusto'].forEach(id=>$(id).textContent='Aguardando localização');
+    ['fTotal','fObras','fEmpresa','fIda','fVolta','fFimSemana','fForaHorario','fNaoClassificado'].forEach(id=>$(id).textContent='—');
+    ['fTotalCusto','fObrasCusto','fEmpresaCusto','fIdaCusto','fVoltaCusto','fFimSemanaCusto','fForaHorarioCusto','fNaoClassificadoCusto'].forEach(id=>$(id).textContent='Aguardando localização');
     $('tbodyFinanceiroObras').innerHTML='<tr><td colspan="7" class="empty">Aguardando a localização automática da sede e das obras.</td></tr>';
-    $('tbodyFinanceiroCarros').innerHTML='<tr><td colspan="5" class="empty">Aguardando classificação.</td></tr>';
-    $('tbodyDeslocamentos').innerHTML='<tr><td colspan="9" class="empty">Aguardando classificação.</td></tr>';
+    $('tbodyCategorias').innerHTML='<tr><td colspan="5" class="empty">Aguardando classificação.</td></tr>';
+    $('conciliacaoFinanceira').textContent='Aguardando cálculo.';$('conciliacaoFinanceira').className='status warn';
   };
   UI.financeWarning=message=>{const el=$('financeiroAviso');el.textContent=message;el.className='status error'};
-  UI.renderDeslocamentos=data=>{
-    const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),km=n=>`${Number(n||0).toFixed(2).replace('.',',')} km`;
-    $('dComute').textContent=km(data.commute.km);$('dComuteCusto').textContent=money(data.commute.custo);
-    $('dFimSemana').textContent=km(data.weekend.km);$('dFimSemanaCusto').textContent=money(data.weekend.custo);
-    $('dForaHorario').textContent=km(data.offhours.km);$('dForaHorarioCusto').textContent=money(data.offhours.custo);
-    $('dCombinado').textContent=`${data.percentual.toFixed(1).replace('.',',')}%`;$('dCombinadoCusto').textContent=money(data.custo);
-    $('dNaoClassificado').textContent=km(data.naoClassificadoKm);
-    $('tbodyDeslocamentos').innerHTML=data.porPlaca.length?data.porPlaca.map(x=>`<tr><td>${Core.escape(x.placa)}</td><td>${Core.escape(x.responsavel||'—')}</td><td><strong>${km(x.commuteKm)}</strong></td><td>${Number(x.commuteLitros||0).toFixed(2).replace('.',',')} L</td><td><strong>${money(x.commuteCusto)}</strong></td><td>${km(x.weekendKm)}</td><td>${km(x.offhoursKm)}</td><td>${km(x.totalKm)}</td><td>${money(x.custo)}</td></tr>`).join(''):'<tr><td colspan="9" class="empty">Nenhum deslocamento classificado. Confira os endereços residenciais e clique em Salvar cadastro e recalcular.</td></tr>';
-  };
   UI.exportAudit=list=>{const sep=';';const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;const header=['ID Evento','Data/Hora','Placa','Evento','Endereço','Status','Motivo','Ciclo'];const lines=[header.map(q).join(sep),...list.map(x=>[x.idEvento,`${Core.formatDate(x.dt)} ${Core.formatTime(x.dt)}`,x.plate,x.type,x.address,x.auditStatus,x.auditReason,x.cycleId].map(q).join(sep))];const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`auditoria_mrt_v5_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href)};
   UI.exportFinanceiro=data=>{
     const sep=';',q=value=>`"${String(value??'').replace(/"/g,'""')}"`,decimal=value=>Number(value||0).toFixed(4).replace('.',',');
-    const header=['Linha','Ciclo','Data','Início','Fim','Placa','Responsável','Origem','Destino','Categoria','Destino financeiro','Regra aplicada','KM','KM/L','Litros','Preço/L','Custo combustível'];
-    const rows=data.items.map((x,index)=>[index+1,x.ciclo,x.inicio?Core.formatDate(x.inicio):'',x.inicio?Core.formatTime(x.inicio):'',x.fim?Core.formatTime(x.fim):'',x.placa,x.responsavel,x.origem,x.destino,x.categoria,x.nome,x.motivo,decimal(x.km),decimal(data.summary.kmLitro),decimal(x.litros),decimal(data.summary.precoLitro),decimal(x.custo)]);
+    const header=['Linha','ID trecho','Data','Início','Fim','Placa','Responsável','Origem','Destino','Categoria exclusiva','Obra','Regra aplicada','KM','KM/L','Litros','Preço/L','Custo combustível'];
+    const rows=data.items.map((x,index)=>[index+1,x.id,x.inicio?Core.formatDate(x.inicio):'',x.inicio?Core.formatTime(x.inicio):'',x.fim?Core.formatTime(x.fim):'',x.placa,x.responsavel,x.origem,x.destino,x.categoria,x.nome,x.motivo,decimal(x.km),decimal(data.summary.kmLitro),decimal(x.litros),decimal(data.summary.precoLitro),decimal(x.custo)]);
     const totalKm=data.items.reduce((sum,x)=>sum+x.km,0),totalCusto=data.items.reduce((sum,x)=>sum+x.custo,0);
     rows.push(['TOTAL','','','','','','','','','conciliação','Total das linhas','Deve coincidir com o combustível total',decimal(totalKm),decimal(data.summary.kmLitro),decimal(totalKm/data.summary.kmLitro),decimal(data.summary.precoLitro),decimal(totalCusto)]);
     const blob=new Blob(['\uFEFF'+[header,...rows].map(row=>row.map(q).join(sep)).join('\r\n')],{type:'text/csv;charset=utf-8'});

@@ -1,21 +1,40 @@
 (function(global){
   'use strict';
   const {Core,Importer,Normalizer,Engine,UI,Financeiro}=global.GPSV4;const $=id=>document.getElementById(id);let base=[],lastResult=null,lastFinance=null,mode='todos',metadata={cadastroCarros:[],cadastroObras:[],sede:null},locationsReady=false,locating=false;
-  const STORAGE_KEY='ERPIMPAR_MRT_RESIDENCIAS_V1';
-  const confirmedDefaults=[
-    {placa:'IZH-2A86',endereco:'Rua Antônio de Paula Xavier, Prado de Baixo, Biguaçu, SC',confirmado:true,origem:'Cadastro confirmado'},
-    {placa:'RXO-8A58',endereco:'Rua Irineu Pavan, Barreiros, São José, SC',confirmado:true,origem:'Cadastro confirmado'}
+  const STORAGE_KEY='ERPIMPAR_MRT_RESIDENCIAS_V2';
+  const employeeHomes=[
+    {nome:'FABIO',endereco:'Rua Antônio de Paula Xavier, 242, Prado de Baixo, Biguaçu, SC, 88160-024'},
+    {nome:'LEANDRO',endereco:'Rua Zita Althoff Koerich, 1658, Casa 2, Colônia Santana, São José, SC, 88123-100'},
+    {nome:'NERI',endereco:'Rua Florianópolis, 270, Prado, Biguaçu, SC, 88165-064'},
+    {nome:'VALDECI',endereco:'Rua Maria Gama de Jesus, 217, Prado, Biguaçu, SC, 88165-060'},
+    {nome:'IBRAIS',endereco:'Rua Cônego Rodolfo Machado, 1527, Rio Caveiras, Biguaçu, SC, 88161-740'},
+    {nome:'NICOLAS',endereco:'Rua Manoel Rosa, 116, Bloco 28, Apartamento 203, Areias, São José, SC, 88113-835'},
+    {nome:'PABLO',endereco:'Rua Irineu Pavan, 580, Bloco 5, Apartamento 402, Serraria, São José, SC, 88115-535'},
+    {nome:'HENRIQUE',endereco:'Rua Vitorino José Luiz, 205, Bloco 3, Apartamento 301, Forquilhinha, São José, SC, 88106-516'}
   ];
+  const driverByPlate={'IZH-2A86':'FABIO','RXO-8A58':'PABLO','QHQ-8009':'SELO','QII-5E96':'VALDECI','QIQ-3921':'NICOLAS','RXL-6H17':'NICOLAS'};
+  const normName=value=>Core.norm(value).replace(/[^a-z0-9 ]/g,' ');
   function loadSavedHomes(){try{const value=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');return Array.isArray(value)?value:[]}catch(error){console.warn('Cadastro residencial local indisponível.',error);return []}}
   function saveHomes(){
-    const data=(metadata.residencias||[]).filter(x=>x.endereco).map(x=>({placa:x.placa,endereco:x.endereco,confirmado:true,origem:'Cadastro salvo'}));
+    const data=(metadata.residencias||[]).filter(x=>x.endereco).map(x=>({placa:x.placa,nome:x.nome||'',endereco:x.endereco,confirmado:true,principal:Boolean(x.principal),origem:'Cadastro salvo'}));
     try{localStorage.setItem(STORAGE_KEY,JSON.stringify(data));return true}catch(error){console.warn('Não foi possível salvar o cadastro residencial.',error);return false}
   }
   function mergeHomes(cars){
-    const byPlate=new Map(confirmedDefaults.map(x=>[x.placa,{...x}]));
-    cars.forEach(car=>{if(car.enderecoResidencial)byPlate.set(car.placa,{placa:car.placa,endereco:car.enderecoResidencial,confirmado:true,origem:'Planilha'})});
-    loadSavedHomes().forEach(item=>{if(item.placa&&item.endereco)byPlate.set(item.placa,{...item,confirmado:true,origem:'Cadastro salvo'})});
-    return [...byPlate.values()];
+    const items=[];
+    cars.forEach(car=>{
+      const linked=normName(`${car.responsavel||''} ${(car.equipe||[]).map(x=>x.nome).join(' ')}`);
+      employeeHomes.forEach(home=>{
+        if(linked.includes(normName(home.nome)))items.push({placa:car.placa,nome:home.nome,endereco:home.endereco,confirmado:true,principal:driverByPlate[car.placa]===home.nome,origem:'Cadastro RH'});
+      });
+      if(car.enderecoResidencial&&!items.some(x=>x.placa===car.placa&&x.endereco===car.enderecoResidencial))items.push({placa:car.placa,nome:car.responsavel||'',endereco:car.enderecoResidencial,confirmado:true,principal:true,origem:'Planilha'});
+    });
+    loadSavedHomes().forEach(item=>{
+      if(!item.placa||!item.endereco)return;
+      const index=items.findIndex(x=>x.placa===item.placa&&normName(x.nome)===normName(item.nome));
+      if(index>=0)items[index]={...items[index],...item,confirmado:true,origem:'Cadastro salvo'};
+      else items.push({...item,confirmado:true,origem:'Cadastro salvo'});
+    });
+    return items;
   }
   const modeLabel=()=>({todos:'Todos os dias',sabado:'Somente sábados',domingo:'Somente domingos',fora:'Fora do expediente'}[mode]||'Todos os dias');
   const meters=(a,b)=>{const r=6371000,rad=x=>x*Math.PI/180,dLat=rad(b.latitude-a.latitude),dLon=rad(b.longitude-a.longitude),q=Math.sin(dLat/2)**2+Math.cos(rad(a.latitude))*Math.cos(rad(b.latitude))*Math.sin(dLon/2)**2;return 2*r*Math.asin(Math.sqrt(q))};
@@ -24,12 +43,12 @@
     const companyPoints=events.filter(e=>Core.norm(e.address).includes('rua sao ludgero'));
     const company=companyPoints.length?{latitude:companyPoints.reduce((s,x)=>s+x.latitude,0)/companyPoints.length,longitude:companyPoints.reduce((s,x)=>s+x.longitude,0)/companyPoints.length}:null;
     byPlate.forEach((days,plate)=>{
-      if(residencias.some(x=>x.placa===plate&&x.confirmado))return;
+      if(residencias.some(x=>x.placa===plate&&x.principal&&x.confirmado))return;
       const keys=[...days.keys()].sort(),nights=[];
       keys.forEach((key,i)=>{const next=keys[i+1];if(!next)return;const d=new Date(`${key}T12:00:00`),expected=new Date(d);expected.setDate(d.getDate()+1);if(Core.iso(expected)!==next)return;const a=days.get(key).sort((x,y)=>x.dt-y.dt).at(-1),b=days.get(next).sort((x,y)=>x.dt-y.dt)[0];if(a.dt.getHours()<17||b.dt.getHours()>8||meters(a,b)>500)return;const point={latitude:(a.latitude+b.latitude)/2,longitude:(a.longitude+b.longitude)/2};if(company&&meters(point,company)<=500)return;nights.push(point)});
       const clusters=[];nights.forEach(point=>{let cluster=clusters.find(c=>meters(c.center,point)<=500);if(!cluster){cluster={center:{...point},points:[]};clusters.push(cluster)}cluster.points.push(point);cluster.center={latitude:cluster.points.reduce((s,x)=>s+x.latitude,0)/cluster.points.length,longitude:cluster.points.reduce((s,x)=>s+x.longitude,0)/cluster.points.length}});
       clusters.sort((a,b)=>b.points.length-a.points.length);const best=clusters[0],confidence=best&&nights.length?best.points.length/nights.length:0;
-      if(best&&best.points.length>=2){const current=residencias.find(x=>x.placa===plate);const values={...best.center,regraUsuario:true,confianca:confidence,noites:best.points.length,noitesForaEmpresa:nights.length};if(current)Object.assign(current,values);else residencias.push({placa:plate,...values})}
+      if(best&&best.points.length>=2){const current=residencias.find(x=>x.placa===plate&&x.principal);const values={...best.center,nome:driverByPlate[plate]||'CONDUTOR',principal:true,regraUsuario:true,confianca:confidence,noites:best.points.length,noitesForaEmpresa:nights.length};if(current)Object.assign(current,values);else residencias.push({placa:plate,...values})}
     });
   }
   function filteredEvents(){const plate=$('placa').value;const start=$('inicio').value?new Date($('inicio').value+'T00:00:00'):null;const end=$('fim').value?new Date($('fim').value+'T23:59:59'):null;return base.filter(x=>(!plate||x.plate===plate)&&(!start||x.dt>=start)&&(!end||x.dt<=end)).filter(x=>mode==='sabado'?x.dt.getDay()===6:mode==='domingo'?x.dt.getDay()===0:mode==='fora'?Core.outsideWork(x.dt):true)}
