@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Auditoria de Trajetos — MRT V5.1</title>
+  <title>Auditoria de Trajetos — MRT V5.3.1</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -14,9 +14,9 @@
   <div>
     <div class="eyebrow">ERP ÍMPAR • MRT</div>
     <h1>Auditoria de Trajetos GPS</h1>
-    <p>V5.1 — Reconstrução por posições, coordenadas e hodômetro real do rastreador.</p>
+    <p>V5.3.1 — Localização automática e bloqueio de cálculos incompletos.</p>
   </div>
-  <div class="version">PACOTE MRT 5.1</div>
+  <div class="version">PACOTE MRT 5.3.1</div>
 </header>
 
 <main>
@@ -53,6 +53,14 @@
       </div>
       <label class="check"><input type="checkbox" id="mostrarTecnicos"> Mostrar eventos técnicos</label>
     </div>
+    <div class="finance-params">
+      <div><label for="kmLitro">Consumo médio (km/L)</label><input id="kmLitro" type="number" min="0.1" step="0.1" value="10"></div>
+      <div><label for="precoLitro">Preço do combustível (R$/L)</label><input id="precoLitro" type="number" min="0" step="0.01" value="6"></div>
+      <div><label for="raio">Raio sede/obras (metros)</label><input id="raio" type="number" min="10" step="10" value="500"></div>
+      <div class="sede-field"><label for="enderecoSede">Endereço da empresa</label><input id="enderecoSede" value="Rua São Ludgero, 1006, Barreiros, São José, SC, 88117-270"></div>
+      <button id="localizarPontos" class="secondary" disabled>Localizar sede e obras</button>
+      <button id="atualizarFinanceiro" disabled>Atualizar custos</button>
+    </div>
 
     <div id="status" class="status">Selecione o arquivo exportado pelo sistema de GPS.</div>
   </section>
@@ -75,13 +83,21 @@
       <button class="tab" data-tab="trechos">Trechos</button>
       <button class="tab" data-tab="ciclos">Ciclos</button>
       <button class="tab" data-tab="auditoria">Auditoria dos eventos</button>
+      <button class="tab" data-tab="cadastros">Placas, equipes e obras</button>
+      <button class="tab" data-tab="financeiro">Dashboard financeiro</button>
     </div>
 
     <div class="tab-panel active" id="panel-mapa">
       <div class="map-toolbar">
         <button id="animarRota">▶ Reproduzir trajeto</button>
         <button id="pararRota" class="secondary">Parar</button>
+        <button id="visaoGeral" class="secondary">◎ Visão geral: rota + locais</button>
         <span id="mapInfo">Importe um Histórico Posições.</span>
+      </div>
+      <div class="map-legend">
+        <span><i class="legend-route"></i> Rota selecionada</span>
+        <span><i class="legend-company"></i> Empresa e raio</span>
+        <span><i class="legend-work"></i> Obras e raios</span>
       </div>
       <div id="mapa"></div>
     </div>
@@ -123,25 +139,62 @@
         </table>
       </div>
     </div>
+
+    <div class="tab-panel" id="panel-cadastros">
+      <div id="cadastroResumo" class="status">Os cadastros serão exibidos após a importação.</div>
+      <h3>Vínculo de placas e colaboradores</h3>
+      <div class="table-wrap cadastro-table">
+        <table>
+          <thead><tr><th>Placa</th><th>Responsável/equipe</th><th>Colaboradores vinculados</th><th>Valor h/h</th><th>Horas/dia</th></tr></thead>
+          <tbody id="tbodyCarros"><tr><td colspan="5" class="empty">Nenhum cadastro carregado.</td></tr></tbody>
+        </table>
+      </div>
+      <h3>Cadastro de obras</h3>
+      <div class="table-wrap cadastro-table">
+        <table>
+          <thead><tr><th>ID</th><th>Obra</th><th>Endereço</th></tr></thead>
+          <tbody id="tbodyObras"><tr><td colspan="3" class="empty">Nenhuma obra carregada.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-financeiro">
+      <div id="financeiroAviso" class="status">Importe a planilha e localize a sede e as obras.</div>
+      <div class="finance-cards">
+        <div class="kpi"><div class="n" id="fTotal">R$ 0,00</div><div class="l">Combustível total</div><div id="fTotalKm" class="meta">0 km</div></div>
+        <div class="kpi"><div class="n" id="fObras">R$ 0,00</div><div class="l">Vinculado às obras</div><div id="fObrasKm" class="meta">0 km</div></div>
+        <div class="kpi"><div class="n" id="fEmpresa">R$ 0,00</div><div class="l">Vinculado à empresa</div><div id="fEmpresaKm" class="meta">0 km</div></div>
+        <div class="kpi destaque"><div class="n" id="fParticular">R$ 0,00</div><div class="l">Uso particular</div><div id="fParticularKm" class="meta">0 km</div></div>
+        <div class="kpi destaque"><div class="n" id="fPercentual">0%</div><div class="l">Participação particular</div></div>
+        <div class="kpi"><div class="n" id="fMaoObraObras">R$ 0,00</div><div class="l">Mão de obra nas obras</div><div id="fHorasObras" class="meta">0 h</div></div>
+        <div class="kpi destaque"><div class="n" id="fMaoObraEmpresa">R$ 0,00</div><div class="l">Mão de obra na empresa</div><div id="fHorasEmpresa" class="meta">0 h não alocadas a obra</div></div>
+        <div class="kpi"><div class="n" id="fTotalGeral">R$ 0,00</div><div class="l">Combustível + mão de obra</div></div>
+      </div>
+      <h3>Combustível por obra</h3>
+      <div class="table-wrap cadastro-table"><table><thead><tr><th>Obra</th><th>KM</th><th>Litros</th><th>Combustível</th><th>Horas no raio</th><th>Mão de obra</th><th>Total da obra</th></tr></thead><tbody id="tbodyFinanceiroObras"><tr><td colspan="7" class="empty">Sem classificação.</td></tr></tbody></table></div>
+      <h3>Ranking de uso particular por veículo</h3>
+      <div class="table-wrap cadastro-table"><table><thead><tr><th>Placa</th><th>Responsável</th><th>KM particular</th><th>Litros</th><th>Custo</th></tr></thead><tbody id="tbodyFinanceiroCarros"><tr><td colspan="5" class="empty">Sem classificação.</td></tr></tbody></table></div>
+    </div>
   </section>
 </main>
 
-<script src="js/core.js"></script>
-<script src="js/01_importador.js"></script>
-<script src="js/02_normalizador.js"></script>
-<script src="js/03_agrupador.js"></script>
-<script src="js/04_consolidador.js"></script>
-<script src="js/05_maquina_estados.js"></script>
-<script src="js/06_ciclos.js"></script>
-<script src="js/07_trechos.js"></script>
-<script src="js/08_permanencias.js"></script>
-<script src="js/09_google_maps.js"></script>
-<script src="js/10_obras.js"></script>
-<script src="js/11_custos.js"></script>
-<script src="js/12_dashboard.js"></script>
-<script src="js/mrt.js"></script>
-<script src="js/mapa.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/app.js"></script>
+<script src="js/core.js?v=5.3.1"></script>
+<script src="js/01_importador.js?v=5.3.1"></script>
+<script src="js/02_normalizador.js?v=5.3.1"></script>
+<script src="js/03_agrupador.js?v=5.3.1"></script>
+<script src="js/04_consolidador.js?v=5.3.1"></script>
+<script src="js/05_maquina_estados.js?v=5.3.1"></script>
+<script src="js/06_ciclos.js?v=5.3.1"></script>
+<script src="js/07_trechos.js?v=5.3.1"></script>
+<script src="js/08_permanencias.js?v=5.3.1"></script>
+<script src="js/09_google_maps.js?v=5.3.1"></script>
+<script src="js/10_obras.js?v=5.3.1"></script>
+<script src="js/11_custos.js?v=5.3.1"></script>
+<script src="js/12_dashboard.js?v=5.3.1"></script>
+<script src="js/13_financeiro.js?v=5.3.1"></script>
+<script src="js/mrt.js?v=5.3.1"></script>
+<script src="js/mapa.js?v=5.3.1"></script>
+<script src="js/ui.js?v=5.3.1"></script>
+<script src="js/app.js?v=5.3.1"></script>
 </body>
 </html>
