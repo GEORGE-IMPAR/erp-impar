@@ -58,6 +58,17 @@
       const home=nearest(point,homes,raio);
       return home?{tipo:'residencia',nome:home.location.nome||home.location.placa,ref:home.location}:null;
     });
+    /*
+     * Regra temporal absoluta: todo KM de sábado ou domingo pertence ao item 1.5.
+     * Essa marcação acontece antes das regras espaciais para que o KM do fim de
+     * semana não desapareça dentro de obra, empresa ou translado.
+     */
+    segments.forEach(segment=>{
+      if(segment&&isWeekend(segment.prev.dt)){
+        segment.categoria='fim_semana';
+        segment.motivo='Trecho realizado em sábado ou domingo.';
+      }
+    });
     const visits=workVisits(pointZones);
     visits.forEach((visit,visitIndex)=>{
       const previous=visits[visitIndex-1],next=visits[visitIndex+1];
@@ -115,7 +126,6 @@
     }
     segments.forEach(segment=>{
       if(!segment||segment.categoria)return;
-      if(isWeekend(segment.prev.dt)){segment.categoria='fim_semana';segment.motivo='Trecho em sábado ou domingo ainda não vinculado às categorias anteriores.';return}
       if(isOffhours(segment.prev.dt)){segment.categoria='fora_horario';segment.motivo='Trecho antes das 06:00 ou após as 20:00 ainda não vinculado às categorias anteriores.';return}
       segment.categoria='nao_classificado';segment.motivo='Trecho sem vínculo com obra, empresa, translado, fim de semana ou fora do horário.';
     });
