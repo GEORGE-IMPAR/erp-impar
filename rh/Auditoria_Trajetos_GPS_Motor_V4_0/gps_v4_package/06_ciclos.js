@@ -1,23 +1,26 @@
 (function(global){
   'use strict';
-  const Core={};
-  Core.norm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
-  Core.escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  Core.iso=d=>{const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`};
-  Core.formatDate=d=>d.toLocaleDateString('pt-BR');
-  Core.formatTime=d=>d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  Core.dayName=d=>d.toLocaleDateString('pt-BR',{weekday:'long'}).replace(/^./,c=>c.toUpperCase());
-  Core.duration=ms=>{let m=Math.max(0,Math.round(ms/60000));const h=Math.floor(m/60);m%=60;return h?`${h}h ${m}min`:`${m} min`};
-  Core.outsideWork=d=>{const h=d.getHours()+d.getMinutes()/60;return [0,6].includes(d.getDay())||h<7||h>=18};
-  Core.plate=s=>{const t=String(s||'').trim();const m=t.match(/[A-Z]{3}[- ]?\d[A-Z0-9]\d{2}/i)||t.match(/[A-Z]{3}[- ]?\d{4}/i);return m?m[0].toUpperCase().replace(/([A-Z]{3})[- ]?([A-Z0-9]{4})/,'$1-$2'):t};
-  Core.parseDateTime=v=>{
-    if(v instanceof Date&&!isNaN(v))return v;
-    if(typeof v==='number'&&global.XLSX){const p=XLSX.SSF.parse_date_code(v);if(p)return new Date(p.y,p.m-1,p.d,p.H||0,p.M||0,p.S||0)}
-    const s=String(v??'').trim();let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if(m){let y=+m[3];if(y<100)y+=2000;return new Date(y,+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0))}
-    m=s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
-    if(m)return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));
-    const d=new Date(s);return isNaN(d)?null:d;
-  };
-  global.GPSV4=global.GPSV4||{};global.GPSV4.Core=Core;
+  const {Core}=global.GPSV4;
+  const TECHNICAL=['off line','offline','aceleracao','frenagem','movimento indevido','fonte de energia','dispositivo violado','removendo fonte'];
+  const isOn=event=>{const n=Core.norm(event.tipo);return n.includes('ligou ignicao')&&!n.includes('desligou ignicao')};
+  const isOff=event=>Core.norm(event.tipo).includes('desligou ignicao');
+  const isTechnical=event=>TECHNICAL.some(term=>Core.norm(event.tipo).includes(term));
+  const audit=(event,status,motivo,idCiclo=null)=>({...event,statusAuditoria:status,motivoAuditoria:motivo,auditStatus:status,auditReason:motivo,cycleId:idCiclo||''});
+  function run(grupos,{showTechnical=false}={}){
+    const auditoria=[],consolidados=[];
+    grupos.forEach(grupo=>{
+      const vistos=new Set(),eventos=[];
+      grupo.eventos.forEach(evento=>{
+        const chave=[evento.placa,evento.dataHora.getTime(),Core.norm(evento.endereco),Core.norm(evento.tipo)].join('|');
+        if(vistos.has(chave)){auditoria.push(audit(evento,'DESCARTADO_DUPLICADO','Desligou/Ligou duplicado: placa, data/hora, endereço e tipo idênticos.'));return}
+        vistos.add(chave);
+        if(!showTechnical&&isTechnical(evento)){auditoria.push(audit(evento,'DESCARTADO_TECNICO','Evento técnico ocultado pela configuração.'));return}
+        if(!showTechnical&&!isOn(evento)&&!isOff(evento)){auditoria.push(audit(evento,'DESCARTADO_NAO_IGNICAO','Evento não pertence à reconstrução de ignição.'));return}
+        eventos.push(evento);
+      });
+      consolidados.push({...grupo,eventos});
+    });
+    return {grupos:consolidados,auditoria};
+  }
+  global.GPSV4.Consolidator={run,isOn,isOff,isTechnical,audit};
 })(window);
