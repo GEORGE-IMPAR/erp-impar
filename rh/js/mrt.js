@@ -17,6 +17,10 @@
       if(!Number.isFinite(e.latitude)||!Number.isFinite(e.longitude)){
         auditTrail.push({...e,auditStatus:'DESCARTADO_SEM_COORDENADA',auditReason:'Posição sem latitude/longitude válida.',cycleId:''});return;
       }
+      const dentroBrasil=e.latitude>=-34&&e.latitude<=6&&e.longitude>=-74&&e.longitude<=-34;
+      if(!dentroBrasil){
+        auditTrail.push({...e,auditStatus:'DESCARTADO_COORDENADA_IMPOSSIVEL',auditReason:`Coordenada fora da área geográfica válida: ${e.latitude}, ${e.longitude}.`,cycleId:''});return;
+      }
       valid.push(e);
       auditTrail.push({...e,auditStatus:'POSICAO_UTILIZADA_TRAJETORIA',auditReason:'Posição preservada na reconstrução cronológica.',cycleId:''});
     });
