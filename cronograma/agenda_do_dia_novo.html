@@ -8000,36 +8000,11 @@ renderAll();
         cancelled,
         status:cancelled ? "cancelado" : "",
         motivoCancelamento:row?.motivoCancelamento || row?.motivo || "",
-        importedFromFrozenWeek:row?.importedFromFrozenWeek!==false,
-        replanejado:Boolean(row?.replanejado),
-        auditStatus:cancelled
-          ? "cancelled"
-          : (row?.auditStatus || row?.statusVisual || (row?.replanejado ? "replanned" : "planned")),
-        semCronogramaAtivo:Boolean(row?.semCronogramaAtivo),
-        /*
-         * Preserva a referência semanal gravada no draft.
-         * Essa chave não pode ser descartada ao reabrir o arquivo.
-         */
-        __originalComparisonKey:
-          row?.__originalComparisonKey ||
-          row?.chaveOriginal ||
-          null,
-        __currentComparisonKey:
-          row?.__currentComparisonKey ||
-          row?.chaveAtual ||
-          row?.chaveFinal ||
-          null,
-        obraOriginal:
-          row?.obraOriginal ??
-          planned?.obra ??
-          null,
-        atividadeOriginal:
-          row?.atividadeOriginal ??
-          planned?.atividade ??
-          null,
-        viagemOriginal:
-          row?.viagemOriginal ??
-          planned?.viagem
+        importedFromFrozenWeek:true,
+        replanejado:false,
+        auditStatus:cancelled ? "cancelled" : "planned",
+        semCronogramaAtivo:false,
+        __originalComparisonKey:null
       });
     });
     return result;
@@ -8051,23 +8026,6 @@ renderAll();
   function assignOriginalKeys(record){
     const available = new Map(originalWeeklyCounts);
 
-    function canonicalizePersistedKey(rawKey,dateKey){
-      const parts=String(rawKey||"").split("|");
-      if(parts.length!==4) return null;
-
-      /*
-       * A data autoritativa é sempre a data do draft aberto.
-       * Isso impede que uma chave criada na sexta-feira continue com a
-       * sexta como data depois que o draft operacional virou para segunda.
-       */
-      return keyOf(
-        dateKey,
-        parts[1],
-        parts[2],
-        parts[3]
-      );
-    }
-
     Object.entries(record.schedule||{}).forEach(([scheduleKey,items])=>{
       const personId = String(scheduleKey).replace(/_0$/,"");
       const person = (record.people||[]).find(row=>String(row.id)===personId);
@@ -8075,67 +8033,18 @@ renderAll();
 
       (items||[]).forEach(item=>{
         if(item.cancelado===true || item.status==="cancelado"){
-          /*
-           * Cancelamento mantém a origem para permitir auditoria e eventual
-           * restauração, mas o status principal continua cancelado.
-           */
-          const persisted=canonicalizePersistedKey(
-            item.__originalComparisonKey,
-            record.date
-          );
-          if(persisted) item.__originalComparisonKey=persisted;
+          item.__originalComparisonKey = null;
           return;
         }
 
-        /*
-         * Primeiro utiliza a chave original já gravada no draft.
-         * Ela representa a Agenda Semanal que deu origem à atividade.
-         */
-        const persisted=canonicalizePersistedKey(
-          item.__originalComparisonKey,
-          record.date
-        );
-
-        if(persisted){
-          item.__originalComparisonKey=persisted;
-          const count=available.get(persisted)||0;
-          if(count>0) available.set(persisted,count-1);
-          return;
-        }
-
-        /*
-         * Drafts antigos podem não possuir chaveOriginal. Nesse caso,
-         * reconstrói a origem usando os campos planejados preservados.
-         * Só na ausência deles usa os campos atuais.
-         */
-        const originalWork=
-          item.obraOriginal ??
-          item.planejado?.obra ??
-          item.obra;
-
-        const originalTravel=
-          item.viagemOriginal ??
-          item.planejado?.viagem ??
-          item.viagem;
-
-        const originalKey=keyOf(
-          record.date,
-          personName,
-          originalWork,
-          originalTravel
-        );
-
-        const count=available.get(originalKey)||0;
+        const key = keyOf(record.date,personName,item.obra,item.viagem);
+        const count = available.get(key)||0;
 
         if(count>0){
-          item.__originalComparisonKey=originalKey;
-          available.set(originalKey,count-1);
+          item.__originalComparisonKey = key;
+          available.set(key,count-1);
         }else{
-          /*
-           * Sem correspondência semanal: permanece sem origem.
-           * A validação normal classificará como replanejada.
-           */
-          item.__originalComparisonKey=null;
+          item.__originalComparisonKey = null;
         }
       });
     });
@@ -10636,7 +10545,474 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
         });
       })();
       <\/script>
-    </body></html>`;
+    
+<style id="agendaDiaConsistenciaFinalClassificacaoCss">
+/*
+ * ÚLTIMA CAMADA VISUAL AUTORITATIVA
+ * O status principal é definido somente pelas classes audit-*.
+ */
+.activity-card.audit-planned .obra{
+  color:#7dff9d!important;
+  text-decoration:none!important;
+}
+.activity-card.audit-replanned .obra{
+  color:#d78cff!important;
+  text-decoration:none!important;
+}
+.activity-card.audit-cancelled .obra{
+  color:#fb7185!important;
+  text-decoration:line-through!important;
+}
+.activity-card.audit-no-cronograma .obra{
+  color:#fb923c!important;
+  text-decoration:none!important;
+}
+</style>
+
+<script id="agendaDiaConsistenciaFinalClassificacaoV1">
+(function(){
+  "use strict";
+
+  if(window.__AGENDA_DIA_CONSISTENCIA_FINAL_V1__) return;
+  window.__AGENDA_DIA_CONSISTENCIA_FINAL_V1__=true;
+
+  const state={
+    weekly:"pending", // pending | ok | failed
+    draftRows:[],
+    draftDate:"",
+    timer:null,
+    applying:false,
+    fetchInstalled:false
+  };
+
+  function norm(value){
+    return String(value??"")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"")
+      .trim()
+      .replace(/\s+/g," ")
+      .toUpperCase();
+  }
+
+  function travel(value){
+    const text=norm(value);
+    return /^(SIM|S|YES|TRUE|1)$/.test(text) ? "Sim" : "Não";
+  }
+
+  function currentDate(){
+    return String(
+      window.__AGENDA_DIA_CURRENT_DATE__ ||
+      document.getElementById("weekPickerDate")?.value ||
+      state.draftDate ||
+      ""
+    ).slice(0,10);
+  }
+
+  function makeKey(date,person,work,trip){
+    if(window.AgendaDiaV315?.montarChave){
+      try{
+        return window.AgendaDiaV315.montarChave(
+          date,
+          person,
+          work,
+          travel(trip)
+        );
+      }catch(_){}
+    }
+    return [
+      String(date||"").slice(0,10),
+      norm(person),
+      norm(work),
+      travel(trip)
+    ].join("|");
+  }
+
+  function unwrapActivities(value,depth){
+    if(depth>10 || value==null) return null;
+
+    if(typeof value==="string"){
+      try{return unwrapActivities(JSON.parse(value),depth+1);}
+      catch(_){return null;}
+    }
+
+    if(Array.isArray(value)){
+      return value;
+    }
+
+    if(typeof value!=="object") return null;
+
+    if(Array.isArray(value.atividades)){
+      return value.atividades;
+    }
+
+    const keys=[
+      "conteudo","content","draft","payload","data",
+      "resultado","result","arquivo","json"
+    ];
+
+    for(const key of keys){
+      if(value[key]===undefined || value[key]===value) continue;
+      const found=unwrapActivities(value[key],depth+1);
+      if(found) return found;
+    }
+
+    return null;
+  }
+
+  function findDraftDate(value,depth){
+    if(depth>10 || value==null) return "";
+
+    if(typeof value==="string"){
+      try{return findDraftDate(JSON.parse(value),depth+1);}
+      catch(_){return "";}
+    }
+
+    if(typeof value!=="object") return "";
+
+    const candidate=
+      value.dataDraft ||
+      value.data_draft ||
+      value.data ||
+      value.date ||
+      "";
+
+    if(/^\d{4}-\d{2}-\d{2}$/.test(String(candidate))){
+      return String(candidate);
+    }
+
+    for(const key of ["conteudo","content","draft","payload","resultado","result","arquivo","json"]){
+      if(value[key]===undefined || value[key]===value) continue;
+      const found=findDraftDate(value[key],depth+1);
+      if(found) return found;
+    }
+
+    return "";
+  }
+
+  function draftRowStatus(row){
+    if(
+      row?.cancelado===true ||
+      row?.cancelled===true ||
+      norm(row?.status)==="CANCELADO" ||
+      norm(row?.auditStatus)==="CANCELLED" ||
+      norm(row?.statusVisual)==="CANCELLED"
+    ) return "cancelled";
+
+    if(
+      row?.replanejado===true ||
+      norm(row?.auditStatus)==="REPLANNED" ||
+      norm(row?.statusVisual)==="REPLANNED"
+    ) return "replanned";
+
+    return "planned";
+  }
+
+  function rowPerson(row){
+    return norm(row?.colaborador || row?.nome || row?.pessoa);
+  }
+
+  function rowWork(row){
+    return String(
+      row?.obra ??
+      row?.executado?.obra ??
+      row?.execucoes?.[0]?.obra ??
+      row?.planejado?.obra ??
+      ""
+    ).trim();
+  }
+
+  function rowActivity(row){
+    return String(
+      row?.atividade ??
+      row?.executado?.atividade ??
+      row?.execucoes?.[0]?.atividade ??
+      row?.planejado?.atividade ??
+      ""
+    ).trim();
+  }
+
+  function rowTrip(row){
+    return travel(
+      row?.viagem ??
+      row?.executado?.viagem ??
+      row?.execucoes?.[0]?.viagem ??
+      row?.planejado?.viagem
+    );
+  }
+
+  function draftMatch(item,personName){
+    const itemId=String(item?.id??"");
+    if(itemId){
+      const byId=state.draftRows.find(row=>String(row?.id??"")===itemId);
+      if(byId) return byId;
+    }
+
+    const person=norm(personName);
+    const work=norm(item?.obra);
+    const activity=norm(item?.atividade);
+    const trip=travel(item?.viagem);
+
+    return state.draftRows.find(row=>
+      rowPerson(row)===person &&
+      norm(rowWork(row))===work &&
+      norm(rowActivity(row))===activity &&
+      rowTrip(row)===trip
+    ) || null;
+  }
+
+  function canonicalOriginalKey(rawKey,date){
+    const parts=String(rawKey||"").split("|");
+    if(parts.length!==4) return "";
+    return makeKey(date,parts[1],parts[2],parts[3]);
+  }
+
+  function classify(item,personName,date){
+    const cancelled=Boolean(
+      item?.cancelado===true ||
+      item?.cancelled===true ||
+      norm(item?.status)==="CANCELADO" ||
+      norm(item?.auditStatus)==="CANCELLED"
+    );
+
+    if(cancelled) return "cancelled";
+
+    const draftRow=draftMatch(item,personName);
+
+    /*
+     * Recupera a origem persistida no draft quando o motor anterior
+     * descartou __originalComparisonKey durante o carregamento.
+     */
+    const persistedOriginal=
+      item?.__originalComparisonKey ||
+      draftRow?.__originalComparisonKey ||
+      draftRow?.chaveOriginal ||
+      "";
+
+    const originalKey=canonicalOriginalKey(persistedOriginal,date);
+
+    if(originalKey){
+      item.__originalComparisonKey=originalKey;
+      const currentKey=makeKey(date,personName,item?.obra,item?.viagem);
+      item.__currentComparisonKey=currentKey;
+      return currentKey===originalKey ? "planned" : "replanned";
+    }
+
+    /*
+     * Se a Agenda Semanal respondeu corretamente, a ausência de origem
+     * significa que o item não foi localizado no planejamento semanal.
+     */
+    if(state.weekly==="ok"){
+      return "replanned";
+    }
+
+    /*
+     * Se a consulta semanal falhou, está pendente ou retornou 503,
+     * não cria replanejamento artificial. Preserva o status do draft.
+     */
+    if(draftRow){
+      return draftRowStatus(draftRow);
+    }
+
+    /*
+     * Primeiro carregamento sem evidência de alteração:
+     * mantém como planejada. "Sem cronograma" continua independente.
+     */
+    return "planned";
+  }
+
+  function paintCard(card,item,status){
+    card.classList.remove(
+      "audit-planned",
+      "audit-replanned",
+      "audit-cancelled",
+      "audit-no-cronograma"
+    );
+
+    const noSchedule=item?.semCronogramaAtivo===true;
+
+    if(status==="cancelled"){
+      card.classList.add("audit-cancelled");
+    }else if(status==="replanned"){
+      card.classList.add("audit-replanned");
+    }else if(noSchedule){
+      card.classList.add("audit-no-cronograma","work-inactive");
+    }else{
+      card.classList.add("audit-planned");
+    }
+
+    card.dataset.finalStatus=status;
+  }
+
+  function applyFinalConsistency(reason){
+    if(state.applying) return;
+
+    const agendaSchedule=window.schedule;
+    const agendaPeople=window.people;
+
+    if(!agendaSchedule || !agendaPeople) return;
+
+    state.applying=true;
+
+    try{
+      const date=currentDate();
+      let planned=0;
+      let replanned=0;
+      let cancelled=0;
+
+      Object.entries(agendaSchedule).forEach(([scheduleKey,items])=>{
+        const personId=String(scheduleKey).replace(/_0$/,"");
+        const person=(agendaPeople||[]).find(row=>String(row?.id)===personId);
+        const personName=person?.name || person?.nome || "";
+
+        (items||[]).forEach(item=>{
+          const status=classify(item,personName,date);
+
+          item.cancelado=status==="cancelled";
+          item.cancelled=status==="cancelled";
+          item.status=status==="cancelled" ? "cancelado" : "";
+          item.replanejado=status==="replanned";
+          item.auditStatus=status;
+
+          if(status==="cancelled") cancelled++;
+          else if(status==="replanned") replanned++;
+          else planned++;
+
+          const selector=
+            '.activity-card[data-person-id="'+CSS.escape(personId)+'"]'+
+            '[data-item-id="'+CSS.escape(String(item?.id))+'"]';
+
+          const card=document.querySelector(selector);
+          if(card) paintCard(card,item,status);
+        });
+      });
+
+      window.__AGENDA_DIA_CONSISTENCIA_FINAL_STATUS__={
+        reason:String(reason||"manual"),
+        weekly:state.weekly,
+        date,
+        planned,
+        replanned,
+        cancelled,
+        draftRows:state.draftRows.length,
+        at:new Date().toISOString()
+      };
+
+      console.info(
+        "[Agenda do Dia] Consistência final aplicada:",
+        window.__AGENDA_DIA_CONSISTENCIA_FINAL_STATUS__
+      );
+    }finally{
+      state.applying=false;
+    }
+  }
+
+  function scheduleConsistency(reason,delay){
+    clearTimeout(state.timer);
+    state.timer=setTimeout(
+      ()=>applyFinalConsistency(reason),
+      Number(delay)||60
+    );
+  }
+
+  function inspectResponse(url,response){
+    const address=String(url||"");
+
+    if(/carregar_agenda_novo\.php/i.test(address)){
+      state.weekly=response?.ok ? "ok" : "failed";
+      scheduleConsistency("retorno-agenda-semanal",80);
+      return;
+    }
+
+    if(!/atividade_dia_estado_novo\.php/i.test(address)) return;
+    if(!response?.ok) return;
+
+    response.clone().json().then(data=>{
+      const rows=unwrapActivities(data,0);
+      if(Array.isArray(rows)) state.draftRows=rows;
+
+      const date=findDraftDate(data,0);
+      if(date) state.draftDate=date;
+
+      scheduleConsistency("retorno-draft",100);
+    }).catch(()=>{});
+  }
+
+  function installFetchInspection(){
+    if(state.fetchInstalled || typeof window.fetch!=="function") return;
+    state.fetchInstalled=true;
+
+    const nativeFetch=window.fetch.bind(window);
+
+    window.fetch=async function(input,init){
+      const url=typeof input==="string" ? input : input?.url;
+
+      try{
+        const response=await nativeFetch(input,init);
+        inspectResponse(url,response);
+        return response;
+      }catch(error){
+        if(/carregar_agenda_novo\.php/i.test(String(url||""))){
+          state.weekly="failed";
+          scheduleConsistency("falha-agenda-semanal",80);
+        }
+        throw error;
+      }
+    };
+  }
+
+  installFetchInspection();
+
+  /*
+   * Executa depois de qualquer renderização ou pintura feita pelos motores
+   * antigos. O debounce evita ciclos e garante que esta seja a última regra.
+   */
+  const observer=new MutationObserver(mutations=>{
+    if(state.applying) return;
+
+    const relevant=mutations.some(mutation=>
+      mutation.type==="childList" ||
+      (
+        mutation.type==="attributes" &&
+        mutation.attributeName==="class" &&
+        mutation.target?.classList?.contains("activity-card")
+      )
+    );
+
+    if(relevant) scheduleConsistency("apos-renderizacao",90);
+  });
+
+  function start(){
+    observer.observe(document.body,{
+      subtree:true,
+      childList:true,
+      attributes:true,
+      attributeFilter:["class"]
+    });
+
+    scheduleConsistency("inicializacao",350);
+    setTimeout(()=>scheduleConsistency("estabilizacao-1",0),900);
+    setTimeout(()=>scheduleConsistency("estabilizacao-2",0),1800);
+  }
+
+  window.AgendaDiaConsistenciaFinalV1={
+    apply:()=>applyFinalConsistency("manual"),
+    status:()=>({
+      weekly:state.weekly,
+      draftRows:state.draftRows.length,
+      draftDate:state.draftDate,
+      last:window.__AGENDA_DIA_CONSISTENCIA_FINAL_STATUS__||null
+    })
+  };
+
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",start,{once:true});
+  }else{
+    start();
+  }
+})();
+</script>
+
+</body></html>`;
   }
 
   async function preparePdfForPopup(popup){
