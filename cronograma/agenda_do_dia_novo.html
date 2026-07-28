@@ -10326,7 +10326,91 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
         });
       })();
       <\/script>
-    </body></html>`;
+    
+<script id="erpImparShellBridgeV1">
+(function(){
+  "use strict";
+
+  if(window.__ERPIMPAR_SHELL_BRIDGE_V1__) return;
+  window.__ERPIMPAR_SHELL_BRIDGE_V1__=true;
+
+  const insideShell=window.parent&&window.parent!==window;
+
+  function post(action,payload){
+    if(!insideShell) return false;
+    try{
+      window.parent.postMessage({
+        source:"ERPIMPAR_MODULE",
+        action:action,
+        payload:payload||{}
+      },"*");
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
+
+  function classify(message){
+    const normalized=String(message||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+    if(/implantacao|construcao|em breve|proxima versao/.test(normalized)) return "construction";
+    if(/erro|falha|inconsistente|nao foi possivel|nao encontrada|invalida|invalido|nenhum item|bloquead/.test(normalized)) return "error";
+    if(/salvo|salva|sucesso|atualizado|atualizada|importad|concluid|gravado|carregado|finalizado/.test(normalized)) return "success";
+    if(/atencao|aviso|obrigatorio|selecione|informe|confirme|pendente/.test(normalized)) return "warning";
+    return "info";
+  }
+
+  const nativeAlert=window.alert.bind(window);
+  window.alert=function(message){
+    if(!insideShell) return nativeAlert(message);
+    post("notify",{
+      type:classify(message),
+      title:classify(message)==="error"?"Atenção":(classify(message)==="success"?"Sucesso":"Informação"),
+      message:String(message??"")
+    });
+  };
+
+  /*
+   * Se o módulo já possuir showToast, apenas redireciona a apresentação
+   * quando estiver no Shell. Aberto sozinho, continua usando o componente
+   * original do próprio módulo.
+   */
+  const originalShowToast=typeof window.showToast==="function"?window.showToast.bind(window):null;
+  window.showToast=function(type,title,message,duration){
+    if(!insideShell&&originalShowToast){
+      return originalShowToast(type,title,message,duration);
+    }
+    if(!insideShell) return;
+    post("notify",{
+      type:type||classify(message||title),
+      title:title||"ERP ÍMPAR",
+      message:String(message??title??""),
+      duration:duration
+    });
+  };
+
+  window.ERPIMPAR={
+    notify:function(type,title,message,duration){
+      if(typeof type==="object") return post("notify",type);
+      return post("notify",{type,title,message,duration});
+    },
+    construction:function(feature){
+      return post("construction",{feature:feature});
+    },
+    ready:function(name){
+      return post("module-ready",{name:name||document.title});
+    },
+    setTitle:function(title){
+      return post("set-title",{title:title});
+    }
+  };
+
+  window.addEventListener("load",function(){
+    post("module-ready",{name:document.title});
+  },{once:true});
+})();
+</script>
+
+</body></html>`;
   }
 
   async function preparePdfForPopup(popup){
