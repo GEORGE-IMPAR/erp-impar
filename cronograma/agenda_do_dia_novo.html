@@ -10545,7 +10545,61 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
         });
       })();
       <\/script>
-    
+    </body></html>`;
+  }
+
+  async function preparePdfForPopup(popup){
+    try{
+      const builder=window.AgendaDiaPackage77?.buildPdf;
+      if(typeof builder!=='function') throw new Error('Gerador de PDF indisponível.');
+      const blob=await builder();
+      if(!blob || blob.size<500) throw new Error('PDF vazio.');
+      const date=window.__AGENDA_DIA_CURRENT_DATE__||'sem_data';
+      if(!popup.closed && typeof popup.__ERP_SET_PDF==='function') popup.__ERP_SET_PDF(blob,'agenda_do_dia_'+date+'.pdf');
+    }catch(error){
+      console.error(error);
+      if(!popup.closed){
+        const b=popup.document.getElementById('popupShare');
+        if(b){b.disabled=true;b.textContent='PDF indisponível';}
+      }
+      toast('error','Falha ao preparar PDF',error?.message||'Não foi possível preparar o arquivo.');
+    }
+  }
+
+  function openReportPreview(){
+    const source=renderReport();
+    if(!source){toast('error','Relatório indisponível','Não foi possível montar o relatório da Agenda do Dia.');return;}
+    const popup=window.open('',POPUP_NAME,'width=1280,height=860');
+    if(!popup){toast('warning','Pop-up bloqueado','Libere pop-ups para abrir o relatório.');return;}
+    popup.document.open();popup.document.write(reportHtml(source));popup.document.close();
+    try{document.getElementById('dailyReportModal')?.classList.remove('open');}catch(_){}
+    const waitReady=setInterval(()=>{
+      if(popup.closed){clearInterval(waitReady);return;}
+      if(typeof popup.__ERP_SET_PDF==='function'){clearInterval(waitReady);preparePdfForPopup(popup);}
+    },50);
+  }
+
+  function installReportButton(){
+    const old=document.getElementById('reportBtn');
+    if(!old||old.dataset.v210==='1')return;
+    const btn=old.cloneNode(true);btn.dataset.v210='1';old.replaceWith(btn);
+    btn.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();openReportPreview();},true);
+  }
+  function fixHoursButton(){
+    const modal=document.getElementById('hoursConsultModal');if(!modal)return;
+    [...modal.querySelectorAll('button')].forEach(btn=>{
+      const t=(btn.textContent||'').trim();
+      if(!t&&!btn.id){btn.textContent='Carregar todo o período';btn.classList.add('hours-load-period');}
+      if(/carregar.*per[ií]odo/i.test(t))btn.classList.add('hours-load-period');
+    });
+  }
+  function install(){installReportButton();fixHoursButton();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(install,120),{once:true});else setTimeout(install,120);
+  new MutationObserver(install).observe(document.documentElement,{childList:true,subtree:true});
+  window.AgendaDiaPrintV210={open:openReportPreview};
+})();
+</script>
+
 <style id="agendaDiaConsistenciaFinalClassificacaoCss">
 /*
  * ÚLTIMA CAMADA VISUAL AUTORITATIVA
@@ -11009,61 +11063,6 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
   }else{
     start();
   }
-})();
-</script>
-
-</body></html>`;
-  }
-
-  async function preparePdfForPopup(popup){
-    try{
-      const builder=window.AgendaDiaPackage77?.buildPdf;
-      if(typeof builder!=='function') throw new Error('Gerador de PDF indisponível.');
-      const blob=await builder();
-      if(!blob || blob.size<500) throw new Error('PDF vazio.');
-      const date=window.__AGENDA_DIA_CURRENT_DATE__||'sem_data';
-      if(!popup.closed && typeof popup.__ERP_SET_PDF==='function') popup.__ERP_SET_PDF(blob,'agenda_do_dia_'+date+'.pdf');
-    }catch(error){
-      console.error(error);
-      if(!popup.closed){
-        const b=popup.document.getElementById('popupShare');
-        if(b){b.disabled=true;b.textContent='PDF indisponível';}
-      }
-      toast('error','Falha ao preparar PDF',error?.message||'Não foi possível preparar o arquivo.');
-    }
-  }
-
-  function openReportPreview(){
-    const source=renderReport();
-    if(!source){toast('error','Relatório indisponível','Não foi possível montar o relatório da Agenda do Dia.');return;}
-    const popup=window.open('',POPUP_NAME,'width=1280,height=860');
-    if(!popup){toast('warning','Pop-up bloqueado','Libere pop-ups para abrir o relatório.');return;}
-    popup.document.open();popup.document.write(reportHtml(source));popup.document.close();
-    try{document.getElementById('dailyReportModal')?.classList.remove('open');}catch(_){}
-    const waitReady=setInterval(()=>{
-      if(popup.closed){clearInterval(waitReady);return;}
-      if(typeof popup.__ERP_SET_PDF==='function'){clearInterval(waitReady);preparePdfForPopup(popup);}
-    },50);
-  }
-
-  function installReportButton(){
-    const old=document.getElementById('reportBtn');
-    if(!old||old.dataset.v210==='1')return;
-    const btn=old.cloneNode(true);btn.dataset.v210='1';old.replaceWith(btn);
-    btn.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();openReportPreview();},true);
-  }
-  function fixHoursButton(){
-    const modal=document.getElementById('hoursConsultModal');if(!modal)return;
-    [...modal.querySelectorAll('button')].forEach(btn=>{
-      const t=(btn.textContent||'').trim();
-      if(!t&&!btn.id){btn.textContent='Carregar todo o período';btn.classList.add('hours-load-period');}
-      if(/carregar.*per[ií]odo/i.test(t))btn.classList.add('hours-load-period');
-    });
-  }
-  function install(){installReportButton();fixHoursButton();}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(install,120),{once:true});else setTimeout(install,120);
-  new MutationObserver(install).observe(document.documentElement,{childList:true,subtree:true});
-  window.AgendaDiaPrintV210={open:openReportPreview};
 })();
 </script>
 </body></html>
