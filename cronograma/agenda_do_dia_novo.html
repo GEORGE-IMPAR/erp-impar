@@ -1960,32 +1960,6 @@ body{background:var(--clean-bg)!important}
 }
 </style>
 
-
-<style id="agendaDiaFechamentoSemCronogramaSecundario">
-.day-close-secondary-flags{
-  display:flex;
-  align-items:center;
-  gap:7px;
-  flex-wrap:wrap;
-  margin-top:8px;
-}
-.day-close-no-schedule{
-  display:inline-flex;
-  align-items:center;
-  width:max-content;
-  padding:5px 9px;
-  border-radius:999px;
-  border:1px solid rgba(245,160,75,.34);
-  background:#fff3df;
-  color:#a45e16;
-  font-size:10px;
-  line-height:1;
-  font-weight:950;
-  letter-spacing:.06em;
-  box-shadow:0 5px 12px rgba(164,94,22,.08);
-}
-</style>
-
 </head>
 
 
@@ -8026,11 +8000,36 @@ renderAll();
         cancelled,
         status:cancelled ? "cancelado" : "",
         motivoCancelamento:row?.motivoCancelamento || row?.motivo || "",
-        importedFromFrozenWeek:true,
-        replanejado:false,
-        auditStatus:cancelled ? "cancelled" : "planned",
-        semCronogramaAtivo:false,
-        __originalComparisonKey:null
+        importedFromFrozenWeek:row?.importedFromFrozenWeek!==false,
+        replanejado:Boolean(row?.replanejado),
+        auditStatus:cancelled
+          ? "cancelled"
+          : (row?.auditStatus || row?.statusVisual || (row?.replanejado ? "replanned" : "planned")),
+        semCronogramaAtivo:Boolean(row?.semCronogramaAtivo),
+        /*
+         * Preserva a referência semanal gravada no draft.
+         * Essa chave não pode ser descartada ao reabrir o arquivo.
+         */
+        __originalComparisonKey:
+          row?.__originalComparisonKey ||
+          row?.chaveOriginal ||
+          null,
+        __currentComparisonKey:
+          row?.__currentComparisonKey ||
+          row?.chaveAtual ||
+          row?.chaveFinal ||
+          null,
+        obraOriginal:
+          row?.obraOriginal ??
+          planned?.obra ??
+          null,
+        atividadeOriginal:
+          row?.atividadeOriginal ??
+          planned?.atividade ??
+          null,
+        viagemOriginal:
+          row?.viagemOriginal ??
+          planned?.viagem
       });
     });
     return result;
@@ -8052,6 +8051,23 @@ renderAll();
   function assignOriginalKeys(record){
     const available = new Map(originalWeeklyCounts);
 
+    function canonicalizePersistedKey(rawKey,dateKey){
+      const parts=String(rawKey||"").split("|");
+      if(parts.length!==4) return null;
+
+      /*
+       * A data autoritativa é sempre a data do draft aberto.
+       * Isso impede que uma chave criada na sexta-feira continue com a
+       * sexta como data depois que o draft operacional virou para segunda.
+       */
+      return keyOf(
+        dateKey,
+        parts[1],
+        parts[2],
+        parts[3]
+      );
+    }
+
     Object.entries(record.schedule||{}).forEach(([scheduleKey,items])=>{
       const personId = String(scheduleKey).replace(/_0$/,"");
       const person = (record.people||[]).find(row=>String(row.id)===personId);
@@ -8059,18 +8075,67 @@ renderAll();
 
       (items||[]).forEach(item=>{
         if(item.cancelado===true || item.status==="cancelado"){
-          item.__originalComparisonKey = null;
+          /*
+           * Cancelamento mantém a origem para permitir auditoria e eventual
+           * restauração, mas o status principal continua cancelado.
+           */
+          const persisted=canonicalizePersistedKey(
+            item.__originalComparisonKey,
+            record.date
+          );
+          if(persisted) item.__originalComparisonKey=persisted;
           return;
         }
 
-        const key = keyOf(record.date,personName,item.obra,item.viagem);
-        const count = available.get(key)||0;
+        /*
+         * Primeiro utiliza a chave original já gravada no draft.
+         * Ela representa a Agenda Semanal que deu origem à atividade.
+         */
+        const persisted=canonicalizePersistedKey(
+          item.__originalComparisonKey,
+          record.date
+        );
+
+        if(persisted){
+          item.__originalComparisonKey=persisted;
+          const count=available.get(persisted)||0;
+          if(count>0) available.set(persisted,count-1);
+          return;
+        }
+
+        /*
+         * Drafts antigos podem não possuir chaveOriginal. Nesse caso,
+         * reconstrói a origem usando os campos planejados preservados.
+         * Só na ausência deles usa os campos atuais.
+         */
+        const originalWork=
+          item.obraOriginal ??
+          item.planejado?.obra ??
+          item.obra;
+
+        const originalTravel=
+          item.viagemOriginal ??
+          item.planejado?.viagem ??
+          item.viagem;
+
+        const originalKey=keyOf(
+          record.date,
+          personName,
+          originalWork,
+          originalTravel
+        );
+
+        const count=available.get(originalKey)||0;
 
         if(count>0){
-          item.__originalComparisonKey = key;
-          available.set(key,count-1);
+          item.__originalComparisonKey=originalKey;
+          available.set(originalKey,count-1);
         }else{
-          item.__originalComparisonKey = null;
+          /*
+           * Sem correspondência semanal: permanece sem origem.
+           * A validação normal classificará como replanejada.
+           */
+          item.__originalComparisonKey=null;
         }
       });
     });
@@ -8974,21 +9039,10 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
   }
 
   function stateOf(item){
-    /*
-     * Classificação principal do fechamento:
-     * CANCELADA > REPLANEJADA > PLANEJADA.
-     * "Sem cronograma" é uma informação secundária e independente.
-     */
     if(isCancelled(item)) return "cancelled";
-    if(item?.auditStatus==="replanned" || item?.replanejado===true) return "replanned";
+    if(item?.auditStatus==="replanned" || item?.replanejado) return "replanned";
+    if(item?.semCronogramaAtivo) return "no-schedule";
     return "planned";
-  }
-
-  function isNoSchedule(item){
-    return Boolean(
-      item?.semCronogramaAtivo===true ||
-      item?.auditStatus==="no-schedule"
-    );
   }
 
   function personFromKey(scheduleKey){
@@ -9021,41 +9075,15 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
           item={id:itemId};
         }
 
-        /*
-         * O status principal usa exclusivamente a classificação final audit-*.
-         * "Sem cronograma" não substitui cancelada, replanejada ou planejada.
-         */
-        if(card.classList.contains("audit-cancelled")){
+        // O estado visual final tem precedência sobre qualquer snapshot antigo.
+        if(card.classList.contains("audit-cancelled") || card.classList.contains("activity-cancelled")){
           item.cancelado=true;
           item.cancelled=true;
           item.status="cancelado";
           item.auditStatus="cancelled";
-          item.replanejado=false;
-        }else if(card.classList.contains("audit-replanned")){
-          item.cancelado=false;
-          item.cancelled=false;
-          item.semCronogramaAtivo=item.semCronogramaAtivo===true;
+        }else if(card.classList.contains("audit-replanned") || card.classList.contains("activity-replanned")){
           item.replanejado=true;
           item.auditStatus="replanned";
-        }else if(card.classList.contains("audit-planned")){
-          item.cancelado=false;
-          item.cancelled=false;
-          item.replanejado=false;
-          item.auditStatus="planned";
-        }else if(card.classList.contains("audit-no-cronograma")){
-          /*
-           * Nos cards legados, audit-no-cronograma representa uma atividade
-           * planejada que também está sem cronograma.
-           */
-          item.cancelado=false;
-          item.cancelled=false;
-          item.replanejado=false;
-          item.auditStatus="planned";
-          item.semCronogramaAtivo=true;
-        }
-
-        if(card.classList.contains("work-inactive")){
-          item.semCronogramaAtivo=true;
         }
 
         result.push({
@@ -9119,7 +9147,6 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
       const state=stateOf(item);
       const cancelled=state==="cancelled";
       const replanned=state==="replanned";
-      const noSchedule=isNoSchedule(item);
 
       const currentExecuted=item.executada===true ? "sim" :
         item.executada===false ? "nao" : "";
@@ -9137,11 +9164,6 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
           <div>
             <div class="day-close-title">${esc(row.personName)} — ${esc(item.obra||"Sem obra")}</div>
             <div class="day-close-sub">${esc(item.atividade||"Sem descrição")}</div>
-            ${noSchedule ? `
-              <div class="day-close-secondary-flags">
-                <span class="day-close-no-schedule">SEM CRONOGRAMA</span>
-              </div>
-            ` : ""}
           </div>
           <div class="day-close-badges">
             <span class="day-close-status ${state}">${statusText(state)}</span>
