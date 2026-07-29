@@ -8838,19 +8838,9 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
       const cancelled=state==="cancelled";
       const replanned=state==="replanned";
 
+      const currentExecuted=item.executada===true ? "sim" :
+        item.executada===false ? "nao" : "";
       const currentPercent=item.percentualExecutado ?? item.percentual ?? "";
-      const currentPercentNumber=Number(currentPercent);
-      const currentExecuted=item.executada===true
-        ? (
-            Number.isFinite(currentPercentNumber) &&
-            currentPercentNumber>=0 &&
-            currentPercentNumber<100
-              ? "incompleto"
-              : "sim"
-          )
-        : item.executada===false
-          ? "nao"
-          : "";
       const replanReason=item.motivoReplanejamento || item.motivoReplan || "";
       const executionReason=item.motivoExecucao || item.motivoNaoExecucao || "";
       const cancelReason=item.motivoCancelamento || item.motivo || "";
@@ -8901,7 +8891,6 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
                 <select data-field="executed">
                   <option value="">Selecione</option>
                   <option value="sim" ${currentExecuted==="sim"?"selected":""}>Sim</option>
-                  <option value="incompleto" ${currentExecuted==="incompleto"?"selected":""}>Incompleto</option>
                   <option value="nao" ${currentExecuted==="nao"?"selected":""}>Não</option>
                 </select>
               </label>
@@ -8931,54 +8920,26 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
   }
 
   function bindConditionalFields(){
-    const cards=[...body.querySelectorAll(".day-close-item:not(.cancelled)")];
-
-    function focusNextCard(currentCard){
-      const index=cards.indexOf(currentCard);
-      const nextCard=cards[index+1];
-      if(!nextCard) return;
-
-      nextCard.scrollIntoView({behavior:"smooth",block:"center"});
-      setTimeout(()=>{
-        nextCard.querySelector('[data-field="executed"]')?.focus();
-      },220);
-    }
-
-    cards.forEach(card=>{
+    body.querySelectorAll(".day-close-item:not(.cancelled)").forEach(card=>{
       const executed=card.querySelector('[data-field="executed"]');
       const percent=card.querySelector('[data-field="percent"]');
       const percentField=card.querySelector('[data-role="percent-field"]');
       const reasonField=card.querySelector('[data-role="execution-reason-field"]');
-      const reason=reasonField.querySelector("textarea");
 
       function update(){
         const value=executed.value;
+        const pct=Number(percent.value);
 
-        if(value==="sim"){
-          percent.value="100";
-          percent.disabled=true;
-          percentField.hidden=true;
-          reasonField.hidden=true;
-        }else if(value==="nao"){
+        if(value==="nao"){
           percent.value="0";
           percent.disabled=true;
           percentField.hidden=true;
           reasonField.hidden=false;
-        }else if(value==="incompleto"){
+        }else if(value==="sim"){
           percent.disabled=false;
           percentField.hidden=false;
-
-          const pct=Number(percent.value);
-          if(
-            percent.value==="" ||
-            !Number.isFinite(pct) ||
-            pct<=0 ||
-            pct>=100
-          ){
-            percent.value="";
-          }
-
-          reasonField.hidden=false;
+          if(percent.value==="") percent.value="100";
+          reasonField.hidden=Number(percent.value)>=100;
         }else{
           percent.disabled=false;
           percentField.hidden=false;
@@ -8988,26 +8949,16 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
 
       executed.addEventListener("change",()=>{
         update();
-
-        if(executed.value==="sim"){
-          focusNextCard(card);
-        }else if(executed.value==="nao"){
-          reason.focus();
-        }else if(executed.value==="incompleto"){
-          percent.focus();
-        }
+        if(executed.value==="sim") percent.focus();
+        else if(executed.value==="nao") reasonField.querySelector("textarea")?.focus();
       });
 
       percent.addEventListener("focus",()=>percent.select());
       percent.addEventListener("input",update);
       percent.addEventListener("blur",()=>{
-        if(executed.value!=="incompleto") return;
-
-        let value=Math.max(1,Math.min(99,Number(percent.value||0)));
-        percent.value=Number.isFinite(value) && value>0 ? String(value) : "";
+        let value=Math.max(0,Math.min(100,Number(percent.value||0)));
+        percent.value=String(value);
         update();
-
-        if(percent.value!=="") reason.focus();
       });
 
       update();
@@ -9333,41 +9284,21 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
 
       const invalidReplan=state==="replanned" && !replanReason;
       const invalidExecuted=!executed;
-
-      const invalidIncompletePercent=executed==="incompleto" && (
-        percentRaw==="" ||
-        !Number.isFinite(percent) ||
-        percent<=0 ||
-        percent>=100
+      const invalidPercent=executed==="sim" && (
+        percentRaw==="" || !Number.isFinite(percent) || percent<0 || percent>100
       );
+      const needsExecutionReason=executed==="nao" || (executed==="sim" && percent<100);
+      const invalidExecutionReason=needsExecutionReason && !executionReason;
 
-      const needsExecutionReason=
-        executed==="nao" ||
-        executed==="incompleto";
-
-      const invalidExecutionReason=
-        needsExecutionReason &&
-        !executionReason;
-
-      if(
-        invalidReplan ||
-        invalidExecuted ||
-        invalidIncompletePercent ||
-        invalidExecutionReason
-      ){
+      if(invalidReplan || invalidExecuted || invalidPercent || invalidExecutionReason){
         card.classList.add("invalid");
         valid=false;
         return;
       }
 
-      item.executada=executed!=="nao";
-      item.percentualExecutado=
-        executed==="sim"
-          ? 100
-          : executed==="incompleto"
-            ? percent
-            : 0;
-      item.motivoExecucao=executed==="sim" ? "" : executionReason;
+      item.executada=executed==="sim";
+      item.percentualExecutado=executed==="sim" ? percent : 0;
+      item.motivoExecucao=executionReason;
       item.motivoReplanejamento=replanReason;
       item.fechamentoPreenchido=true;
     });
@@ -10449,4 +10380,767 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
   window.AgendaDiaPrintV210={open:openReportPreview};
 })();
 </script>
+
+<!-- ERP ÍMPAR — Camada final do Finalizar Dia V2 -->
+<style id="erpImparFinalizarDiaV2Css">
+
+/* ============================================================
+   FASE 2 — FECHAMENTO DA AGENDA DO DIA
+   Ajuste exclusivamente visual. Nenhuma regra foi alterada.
+   ============================================================ */
+.day-close-modal{
+  padding:18px!important;
+  background:rgba(20,45,60,.32)!important;
+  backdrop-filter:blur(12px)!important;
+}
+.day-close-panel{
+  width:min(1180px,97vw)!important;
+  max-height:94vh!important;
+  border:1px solid rgba(12,43,60,.12)!important;
+  border-radius:24px!important;
+  background:#f5f9fa!important;
+  box-shadow:0 32px 90px rgba(14,48,68,.25)!important;
+}
+.day-close-header{
+  padding:20px 22px!important;
+  border-bottom:1px solid rgba(12,43,60,.10)!important;
+  background:
+    radial-gradient(circle at 0 0,rgba(47,196,216,.10),transparent 34%),
+    linear-gradient(135deg,#ffffff,#f3faf8)!important;
+}
+.day-close-icon{
+  width:46px!important;
+  height:46px!important;
+  border-radius:14px!important;
+  background:linear-gradient(135deg,#d9f8e9,#ddf3fb)!important;
+  border:1px solid rgba(20,184,120,.28)!important;
+  color:#0d805c!important;
+  box-shadow:0 10px 24px rgba(20,184,120,.12)!important;
+}
+.day-close-header h2{
+  color:#173247!important;
+  font-size:22px!important;
+  font-weight:950!important;
+}
+.day-close-header p{color:#6d8190!important}
+.day-close-x{
+  border:1px solid rgba(12,43,60,.12)!important;
+  background:#fff!important;
+  color:#31556d!important;
+  box-shadow:0 8px 18px rgba(17,52,72,.07)!important;
+}
+.day-close-x:hover{
+  transform:translateY(-1px);
+  border-color:rgba(20,184,120,.35)!important;
+  background:#f1faf7!important;
+}
+.day-close-summary{
+  gap:10px!important;
+  padding:14px 18px!important;
+  border-bottom:1px solid rgba(12,43,60,.08)!important;
+  background:#eef5f6!important;
+}
+.day-close-stat{
+  border:1px solid rgba(12,43,60,.10)!important;
+  border-radius:16px!important;
+  padding:12px 14px!important;
+  background:#fff!important;
+  box-shadow:0 8px 20px rgba(14,48,68,.05)!important;
+}
+.day-close-stat strong{color:#173247!important;font-size:21px!important}
+.day-close-stat span{color:#718795!important;font-weight:850!important}
+.day-close-body{
+  padding:16px 18px 20px!important;
+  background:#f5f9fa!important;
+  scrollbar-color:rgba(20,184,120,.30) transparent!important;
+}
+.day-close-item{
+  border:1px solid rgba(12,43,60,.11)!important;
+  border-radius:18px!important;
+  padding:16px!important;
+  background:#fff!important;
+  box-shadow:0 10px 28px rgba(14,48,68,.06)!important;
+}
+.day-close-item:hover{
+  transform:translateY(-1px)!important;
+  border-color:rgba(20,184,120,.25)!important;
+  box-shadow:0 14px 32px rgba(14,48,68,.09)!important;
+}
+.day-close-item.planned{border-left:5px solid #14b878!important}
+.day-close-item.replanned{
+  border-left:5px solid #8558e8!important;
+  background:linear-gradient(90deg,rgba(133,88,232,.06),#fff 22%)!important;
+}
+.day-close-item.no-schedule{
+  border-left:5px solid #f5a04b!important;
+  background:linear-gradient(90deg,rgba(245,160,75,.07),#fff 22%)!important;
+}
+.day-close-item.cancelled{
+  border-left:5px solid #ef5e6b!important;
+  background:linear-gradient(90deg,rgba(239,94,107,.06),#fff 22%)!important;
+}
+.day-close-title{color:#173247!important;font-size:15px!important}
+.day-close-sub{color:#6d8190!important}
+.day-close-section{
+  border-top:1px solid rgba(12,43,60,.08)!important;
+}
+.day-close-section-title{color:#31556d!important}
+.day-close-field span{color:#607887!important}
+.day-close-fields select,
+.day-close-fields input,
+.day-close-fields textarea{
+  border:1px solid #cfdde4!important;
+  border-radius:13px!important;
+  background:#f8fbfc!important;
+  color:#173247!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.85)!important;
+}
+.day-close-fields select:focus,
+.day-close-fields input:focus,
+.day-close-fields textarea:focus{
+  border-color:#14b878!important;
+  box-shadow:0 0 0 3px rgba(20,184,120,.13)!important;
+  background:#fff!important;
+}
+.day-close-fields input:disabled,
+.day-close-fields select:disabled,
+.day-close-fields textarea:disabled{
+  background:#edf2f4!important;
+  color:#78909e!important;
+  opacity:1!important;
+}
+.day-close-control-wrap.percent::after{color:#738896!important}
+.day-close-help{color:#8296a3!important}
+.day-close-status{
+  border:1px solid rgba(12,43,60,.12)!important;
+  background:#f2f7f8!important;
+  color:#31556d!important;
+}
+.day-close-status.planned{
+  color:#087451!important;
+  border-color:rgba(20,184,120,.28)!important;
+  background:#eaf8f2!important;
+}
+.day-close-status.replanned{
+  color:#6845bd!important;
+  border-color:rgba(133,88,232,.25)!important;
+  background:#f1edff!important;
+}
+.day-close-status.no-schedule{
+  color:#a45e16!important;
+  border-color:rgba(245,160,75,.30)!important;
+  background:#fff6e9!important;
+}
+.day-close-status.cancelled{
+  color:#b43e4a!important;
+  border-color:rgba(239,94,107,.28)!important;
+  background:#fff1f3!important;
+}
+.day-close-footer{
+  padding:14px 20px!important;
+  border-top:1px solid rgba(12,43,60,.10)!important;
+  background:#fff!important;
+}
+.day-close-footer-note{color:#718795!important}
+.day-close-btn{
+  border:1px solid #d4e0e6!important;
+  border-radius:14px!important;
+  background:#fff!important;
+  color:#31556d!important;
+  padding:11px 18px!important;
+  box-shadow:0 8px 18px rgba(17,52,72,.06)!important;
+}
+.day-close-btn:hover{
+  transform:translateY(-1px);
+  border-color:rgba(20,184,120,.35)!important;
+}
+.day-close-btn.primary{
+  border-color:transparent!important;
+  background:linear-gradient(135deg,#14b878,#2fc4d8)!important;
+  color:#063126!important;
+  box-shadow:0 12px 28px rgba(20,184,120,.22)!important;
+}
+.day-close-btn.primary:hover{
+  filter:brightness(1.03);
+  box-shadow:0 16px 32px rgba(20,184,120,.28)!important;
+}
+.day-close-btn,
+.day-close-x,
+.day-close-fields select,
+.day-close-fields input,
+.day-close-fields textarea{
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease!important;
+}
+@media(max-width:840px){
+  .day-close-panel{border-radius:19px!important}
+  .day-close-header{padding:16px!important}
+  .day-close-summary{padding:12px!important}
+  .day-close-body{padding:12px!important}
+  .day-close-footer{align-items:stretch!important;flex-direction:column!important}
+  .day-close-actions{width:100%!important}
+  .day-close-btn{flex:1!important}
+}
+
+/* Estrutura final e rodapé sempre visível */
+#dayCloseModal.day-close-modal{position:fixed!important;inset:0!important;z-index:99999!important;display:none!important;align-items:center!important;justify-content:center!important;padding:18px!important}
+#dayCloseModal.day-close-modal.open{display:flex!important}
+#dayCloseModal .day-close-panel{display:flex!important;flex-direction:column!important;overflow:hidden!important;height:min(820px,92vh)!important;max-height:92vh!important}
+#dayCloseModal .day-close-header,#dayCloseModal .day-close-summary,#dayCloseModal .day-close-footer{flex:0 0 auto!important}
+#dayCloseModal .day-close-body{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-y:auto!important}
+
+</style>
+<script id="erpImparFinalizarDiaV2Script">
+
+(function(){
+  "use strict";
+  if(window.__ERPIMPAR_FINALIZAR_DIA_V2__) return;
+  window.__ERPIMPAR_FINALIZAR_DIA_V2__=true;
+
+  const modal=document.getElementById("dayCloseModal");
+  if(!modal) return;
+
+  const cards=()=>[...modal.querySelectorAll(".day-close-item:not(.cancelled)")];
+  const get=card=>({
+    select:card.querySelector('[data-field="executed"]'),
+    percent:card.querySelector('[data-field="percent"]'),
+    percentField:card.querySelector('[data-role="percent-field"]'),
+    reason:card.querySelector('[data-field="execution-reason"]'),
+    reasonField:card.querySelector('[data-role="execution-reason-field"]')
+  });
+  const visible=(el,on)=>{if(el) el.hidden=!on;};
+  const clear=card=>card?.classList.remove("invalid");
+
+  function addIncomplete(select){
+    if(!select || select.querySelector('option[value="incompleto"]')) return;
+    const option=document.createElement("option");
+    option.value="incompleto";
+    option.textContent="Incompleto";
+    select.insertBefore(option,select.querySelector('option[value="nao"]'));
+  }
+
+  function normalize(card,advance){
+    const {select,percent,percentField,reason,reasonField}=get(card);
+    if(!select || !percent) return;
+    addIncomplete(select);
+
+    if(select.value==="sim"){
+      percent.value="100";
+      percent.disabled=true;
+      visible(percentField,false);
+      if(reason) reason.value="";
+      visible(reasonField,false);
+      clear(card);
+      if(advance){
+        const list=cards(), next=list[list.indexOf(card)+1];
+        if(next){
+          next.scrollIntoView({behavior:"smooth",block:"center"});
+          setTimeout(()=>next.querySelector('[data-field="executed"]')?.focus(),220);
+        }
+      }
+      return;
+    }
+
+    if(select.value==="incompleto"){
+      percent.disabled=false;
+      visible(percentField,true);
+      visible(reasonField,true);
+      const pct=Number(percent.value);
+      if(percent.value==="" || !Number.isFinite(pct) || pct<=0 || pct>=100) percent.value="";
+      return;
+    }
+
+    if(select.value==="nao"){
+      percent.value="0";
+      percent.disabled=true;
+      visible(percentField,false);
+      visible(reasonField,true);
+      return;
+    }
+
+    percent.disabled=false;
+    visible(percentField,true);
+    visible(reasonField,false);
+  }
+
+  function enhance(){
+    cards().forEach(card=>{
+      const {select,percent}=get(card);
+      if(!select || !percent) return;
+      addIncomplete(select);
+      if(select.value==="sim" && percent.value!=="" && Number(percent.value)>=0 && Number(percent.value)<100) select.value="incompleto";
+      normalize(card,false);
+    });
+  }
+
+  const observer=new MutationObserver(()=>{
+    if(modal.classList.contains("open")) queueMicrotask(enhance);
+  });
+  observer.observe(modal,{subtree:true,childList:true});
+
+  modal.addEventListener("change",event=>{
+    const select=event.target.closest?.('[data-field="executed"]');
+    if(!select) return;
+    const card=select.closest(".day-close-item");
+    setTimeout(()=>{
+      normalize(card,select.value==="sim");
+      const {percent,reason}=get(card);
+      if(select.value==="incompleto") percent?.focus();
+      if(select.value==="nao") reason?.focus();
+    },0);
+  });
+
+  modal.addEventListener("input",event=>clear(event.target.closest?.(".day-close-item")));
+
+  document.addEventListener("click",event=>{
+    if(!event.target.closest?.("#dayCloseConfirm")) return;
+    let valid=true;
+    const restore=[];
+
+    cards().forEach(card=>{
+      clear(card);
+      const {select,percent,reason}=get(card);
+      if(!select || !percent) return;
+
+      if(select.value==="sim"){
+        percent.value="100";
+        if(reason) reason.value="";
+      }else if(select.value==="incompleto"){
+        const pct=Number(percent.value), reasonText=String(reason?.value||"").trim();
+        if(percent.value==="" || !Number.isFinite(pct) || pct<=0 || pct>=100 || !reasonText){
+          card.classList.add("invalid");
+          valid=false;
+        }else{
+          restore.push(select);
+          select.value="sim";
+        }
+      }
+    });
+
+    if(!valid){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if(typeof window.showToast==="function") window.showToast("warning","Preenchimento incompleto","Para atividades incompletas, informe percentual entre 1% e 99% e a justificativa.");
+      modal.querySelector(".day-close-item.invalid select, .day-close-item.invalid input, .day-close-item.invalid textarea")?.focus();
+      return;
+    }
+
+    setTimeout(()=>restore.forEach(select=>{
+      if(modal.classList.contains("open")){
+        select.value="incompleto";
+        normalize(select.closest(".day-close-item"),false);
+      }
+    }),0);
+  },true);
+
+  function close(){
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden","true");
+  }
+  document.addEventListener("click",event=>{
+    if(event.target.closest?.("#dayCloseCancel") || event.target.closest?.("#dayCloseX")) close();
+  },true);
+
+  if(modal.classList.contains("open")) enhance();
+})();
+
+</script>
+
+
+<!-- =========================================================
+ ERP ÍMPAR — DRAFT CONGELADO
+ Regra final autoritativa:
+ - Agenda Semanal serve apenas para criar o dia quando não há draft.
+ - Depois de carregado, o draft/card é a única fonte do dia.
+ - Finalizar Dia não reclassifica comparando novamente com a semanal.
+========================================================== -->
+<script id="erpImparDraftCongeladoFinal">
+(function(){
+  "use strict";
+
+  if(window.__ERPIMPAR_DRAFT_CONGELADO_FINAL__) return;
+  window.__ERPIMPAR_DRAFT_CONGELADO_FINAL__=true;
+
+  const state={
+    draftRows:[],
+    hasDraft:false,
+    applying:false,
+    timer:null
+  };
+
+  function norm(value){
+    return String(value??"")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"")
+      .trim()
+      .replace(/\s+/g," ")
+      .toUpperCase();
+  }
+
+  function unwrap(value,depth){
+    if(depth>10 || value==null) return null;
+
+    if(typeof value==="string"){
+      try{return unwrap(JSON.parse(value),depth+1);}
+      catch(_){return null;}
+    }
+
+    if(Array.isArray(value)) return value;
+    if(typeof value!=="object") return null;
+
+    if(Array.isArray(value.atividades)) return value.atividades;
+
+    for(const key of [
+      "conteudo","content","draft","payload","data",
+      "resultado","result","arquivo","json"
+    ]){
+      if(value[key]===undefined || value[key]===value) continue;
+      const found=unwrap(value[key],depth+1);
+      if(found) return found;
+    }
+
+    return null;
+  }
+
+  function capturePayload(payload){
+    const rows=unwrap(payload,0);
+    if(!Array.isArray(rows)) return;
+
+    state.draftRows=rows;
+    state.hasDraft=true;
+    scheduleApply("draft-capturado",80);
+  }
+
+  /*
+   * Captura o draft retornado pelo servidor antes de o motor antigo
+   * tentar compará-lo novamente com a Agenda Semanal.
+   */
+  if(typeof window.fetch==="function"){
+    const nativeFetch=window.fetch.bind(window);
+
+    window.fetch=async function(input,init){
+      const url=typeof input==="string" ? input : input?.url;
+      const response=await nativeFetch(input,init);
+
+      if(
+        response?.ok &&
+        /atividade_dia_estado_novo\.php|atividade_dia_get\.php|carregar_atividade_dia\.php/i
+          .test(String(url||""))
+      ){
+        response.clone().json()
+          .then(capturePayload)
+          .catch(()=>{});
+      }
+
+      return response;
+    };
+  }
+
+  function scheduleSource(){
+    if(window.schedule && typeof window.schedule==="object"){
+      return window.schedule;
+    }
+
+    try{
+      if(typeof schedule!=="undefined" && schedule && typeof schedule==="object"){
+        return schedule;
+      }
+    }catch(_){}
+
+    return {};
+  }
+
+  function peopleSource(){
+    if(Array.isArray(window.people)) return window.people;
+
+    try{
+      if(typeof people!=="undefined" && Array.isArray(people)) return people;
+    }catch(_){}
+
+    return [];
+  }
+
+  function personNameById(personId){
+    const person=peopleSource().find(row=>String(row?.id)===String(personId));
+    return norm(person?.name || person?.nome);
+  }
+
+  function rowPerson(row){
+    return norm(row?.colaborador || row?.nome || row?.pessoa);
+  }
+
+  function rowWork(row){
+    return norm(
+      row?.obra ??
+      row?.executado?.obra ??
+      row?.execucoes?.[0]?.obra ??
+      row?.planejado?.obra
+    );
+  }
+
+  function rowActivity(row){
+    return norm(
+      row?.atividade ??
+      row?.executado?.atividade ??
+      row?.execucoes?.[0]?.atividade ??
+      row?.planejado?.atividade
+    );
+  }
+
+  function findDraftRow(item,personId){
+    const itemId=String(item?.id??"");
+
+    if(itemId){
+      const exact=state.draftRows.find(row=>String(row?.id??"")===itemId);
+      if(exact) return exact;
+    }
+
+    const person=personNameById(personId);
+    const work=norm(item?.obra);
+    const activity=norm(item?.atividade);
+
+    return state.draftRows.find(row=>
+      rowPerson(row)===person &&
+      rowWork(row)===work &&
+      rowActivity(row)===activity
+    ) || null;
+  }
+
+  function cancelled(value){
+    return Boolean(
+      value?.cancelado===true ||
+      value?.cancelled===true ||
+      norm(value?.status)==="CANCELADO" ||
+      norm(value?.auditStatus)==="CANCELLED" ||
+      norm(value?.statusVisual)==="CANCELLED"
+    );
+  }
+
+  function replanned(value){
+    return Boolean(
+      value?.replanejado===true ||
+      norm(value?.auditStatus)==="REPLANNED" ||
+      norm(value?.statusVisual)==="REPLANNED"
+    );
+  }
+
+  function noSchedule(value){
+    return Boolean(
+      value?.semCronogramaAtivo===true ||
+      value?.semCronograma===true ||
+      norm(value?.auditStatus)==="NO-SCHEDULE" ||
+      norm(value?.statusVisual)==="NO-SCHEDULE"
+    );
+  }
+
+  function frozenStatus(item,row){
+    /*
+     * Se há draft, seus campos persistidos são autoritativos.
+     * Se ainda não há draft, a fotografia recém-criada da semanal
+     * nasce planejada, salvo cancelamento explícito.
+     */
+    const source=row || item;
+
+    if(cancelled(source)) return "cancelled";
+    if(replanned(source)) return "replanned";
+    return "planned";
+  }
+
+  function setCardStatus(card,item,row){
+    const status=frozenStatus(item,row);
+    const withoutSchedule=noSchedule(row) || noSchedule(item) ||
+      card.classList.contains("work-inactive") ||
+      card.classList.contains("audit-no-cronograma");
+
+    item.cancelado=status==="cancelled";
+    item.cancelled=status==="cancelled";
+    item.status=status==="cancelled" ? "cancelado" : "";
+    item.replanejado=status==="replanned";
+    item.auditStatus=status;
+    item.semCronogramaAtivo=withoutSchedule;
+
+    card.classList.remove(
+      "audit-planned",
+      "audit-replanned",
+      "audit-cancelled",
+      "audit-no-cronograma",
+      "activity-planned",
+      "activity-replanned",
+      "activity-cancelled",
+      "activity-unplanned"
+    );
+
+    if(status==="cancelled"){
+      card.classList.add("audit-cancelled");
+    }else if(status==="replanned"){
+      card.classList.add("audit-replanned");
+    }else if(withoutSchedule){
+      card.classList.add("audit-no-cronograma");
+    }else{
+      card.classList.add("audit-planned");
+    }
+
+    card.classList.toggle("work-inactive",withoutSchedule);
+    card.dataset.frozenStatus=status;
+    card.dataset.frozenNoSchedule=withoutSchedule ? "1" : "0";
+  }
+
+  function applyFrozenDraft(reason){
+    if(state.applying) return;
+
+    const agenda=scheduleSource();
+    const cards=[
+      ...document.querySelectorAll(
+        ".activity-card[data-person-id][data-item-id]"
+      )
+    ];
+
+    if(!cards.length) return;
+
+    state.applying=true;
+
+    try{
+      let planned=0;
+      let replannedCount=0;
+      let cancelledCount=0;
+
+      cards.forEach(card=>{
+        const personId=String(card.dataset.personId||"");
+        const itemId=String(card.dataset.itemId||"");
+        const item=(agenda[personId+"_0"]||[])
+          .find(row=>String(row?.id)===itemId);
+
+        if(!item) return;
+
+        const draftRow=findDraftRow(item,personId);
+        setCardStatus(card,item,draftRow);
+
+        if(item.auditStatus==="cancelled") cancelledCount++;
+        else if(item.auditStatus==="replanned") replannedCount++;
+        else planned++;
+      });
+
+      window.__AGENDA_DIA_DRAFT_CONGELADO_STATUS__={
+        reason:String(reason||"manual"),
+        hasDraft:state.hasDraft,
+        draftRows:state.draftRows.length,
+        planned,
+        replanned:replannedCount,
+        cancelled:cancelledCount,
+        at:new Date().toISOString()
+      };
+
+      /*
+       * Impede chamadas externas posteriores de reabrirem a comparação
+       * com a Agenda Semanal. A classificação passa a vir do draft vivo.
+       */
+      if(window.AgendaDiaV315){
+        window.AgendaDiaV315.validateAllItems=
+          ()=>applyFrozenDraft("validateAllItems-interceptado");
+
+        window.AgendaDiaV315.validateCardById=
+          (personId,itemId)=>{
+            const card=document.querySelector(
+              '.activity-card[data-person-id="'+CSS.escape(String(personId))+'"]'+
+              '[data-item-id="'+CSS.escape(String(itemId))+'"]'
+            );
+            if(!card) return false;
+
+            const item=(scheduleSource()[String(personId)+"_0"]||[])
+              .find(row=>String(row?.id)===String(itemId));
+
+            if(!item) return false;
+
+            setCardStatus(card,item,findDraftRow(item,personId));
+            return item.auditStatus==="planned";
+          };
+      }
+
+      console.info(
+        "[Agenda do Dia] Draft congelado aplicado:",
+        window.__AGENDA_DIA_DRAFT_CONGELADO_STATUS__
+      );
+    }finally{
+      state.applying=false;
+    }
+  }
+
+  function scheduleApply(reason,delay){
+    clearTimeout(state.timer);
+    state.timer=setTimeout(
+      ()=>applyFrozenDraft(reason),
+      Number(delay)||60
+    );
+  }
+
+  /*
+   * Sempre que os motores antigos renderizarem ou repintarem os cards,
+   * esta regra roda por último e restaura o estado congelado do draft.
+   */
+  const observer=new MutationObserver(mutations=>{
+    if(state.applying) return;
+
+    const relevant=mutations.some(mutation=>
+      mutation.type==="childList" ||
+      (
+        mutation.type==="attributes" &&
+        mutation.attributeName==="class" &&
+        mutation.target?.classList?.contains("activity-card")
+      )
+    );
+
+    if(relevant) scheduleApply("apos-renderizacao",90);
+  });
+
+  function installFinalizationButton(){
+    const oldButton=document.getElementById("freezeWeekBtn");
+    if(!oldButton || oldButton.dataset.draftFrozenButton==="1") return;
+
+    const button=oldButton.cloneNode(true);
+    button.dataset.draftFrozenButton="1";
+    oldButton.replaceWith(button);
+
+    button.addEventListener("click",event=>{
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      /*
+       * Última fotografia antes do fechamento:
+       * apenas o draft/card atual, sem qualquer consulta ou comparação semanal.
+       */
+      applyFrozenDraft("antes-de-finalizar");
+      window.AgendaDiaV3113?.abrirFinalizacao?.();
+    },true);
+  }
+
+  function start(){
+    observer.observe(document.body,{
+      subtree:true,
+      childList:true,
+      attributes:true,
+      attributeFilter:["class"]
+    });
+
+    installFinalizationButton();
+    scheduleApply("inicializacao",350);
+    setTimeout(()=>scheduleApply("estabilizacao-1",0),900);
+    setTimeout(()=>scheduleApply("estabilizacao-2",0),1700);
+  }
+
+  window.AgendaDiaDraftCongelado={
+    apply:()=>applyFrozenDraft("manual"),
+    status:()=>({
+      hasDraft:state.hasDraft,
+      draftRows:state.draftRows.length,
+      last:window.__AGENDA_DIA_DRAFT_CONGELADO_STATUS__||null
+    })
+  };
+
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",start,{once:true});
+  }else{
+    start();
+  }
+})();
+</script>
+
 </body></html>
