@@ -3828,305 +3828,108 @@ $('agendaSel').addEventListener('change',carregarSemana); lerUsuario(); listar()
 </script>
 
 
+<style id="erp-collapse-addon">
+.panel{padding-right:60px!important;position:relative!important}
+.erp-toggle{position:absolute;top:14px;right:14px;width:36px;height:36px;border:1px solid #d7e2e8;border-radius:10px;background:#f5f8fa;cursor:pointer;font-weight:bold}
+.panel.erp-collapsed .muted,.panel.erp-collapsed .toolbar{display:none!important}
+</style>
 
-<!-- =========================================================
- ERP ÍMPAR — REGRA FINAL DE PERNOITE
- - 2 dias consecutivos = 1 diária;
- - 3 dias consecutivos = 2 diárias;
- - a diária é lançada no primeiro dia de cada pernoite;
- - o último dia da sequência fica zerado;
- - diária do colaborador e hotel seguem a mesma quantidade;
- - relatório e KPIs usam a mesma memória de cálculo.
-========================================================== -->
-<script id="erpImparRegraPernoiteRelatorioFinal">
+<script id="erp-collapse-addon-js">
+(function(){
+function init(){
+ const p=document.querySelector('.panel');
+ if(!p||p.querySelector('.erp-toggle'))return;
+ const b=document.createElement('button');
+ b.className='erp-toggle';
+ b.textContent='▴';
+ b.onclick=function(){
+   const c=p.classList.toggle('erp-collapsed');
+   b.textContent=c?'▾':'▴';
+   b.title=c?'Expandir':'Recolher';
+ };
+ p.appendChild(b);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+</script>
+
+
+
+<script id="erpImparRegraDiariasMenosUm">
 (function(){
   "use strict";
 
-  if(window.__ERPIMPAR_REGRA_PERNOITE_RELATORIO_FINAL__) return;
-  window.__ERPIMPAR_REGRA_PERNOITE_RELATORIO_FINAL__=true;
+  if(window.__ERPIMPAR_REGRA_DIARIAS_MENOS_UM__) return;
+  window.__ERPIMPAR_REGRA_DIARIAS_MENOS_UM__=true;
 
-  const DIA_INDEX={seg:0,ter:1,qua:2,qui:3,sex:4};
-
-  function norm(value){
+  function normalizar(value){
     return String(value||"").trim().toUpperCase();
   }
 
-  function rowsGroup(colab,obra){
-    const c=norm(colab);
-    const o=norm(obra);
+  function diasAtivosDoGrupo(colab,obra){
+    const colaborador=normalizar(colab);
+    const obraNormalizada=normalizar(obra);
 
-    return viagens
-      .map((v,i)=>({...v,_i:i}))
-      .filter(v=>
-        !v.cancelado &&
-        norm(v.colaborador)===c &&
-        norm(v.obra)===o &&
-        Object.prototype.hasOwnProperty.call(DIA_INDEX,v.dia)
-      )
-      .sort((a,b)=>DIA_INDEX[a.dia]-DIA_INDEX[b.dia]);
+    return [...new Set(
+      viagens
+        .filter(v=>
+          !v.cancelado &&
+          normalizar(v.colaborador)===colaborador &&
+          normalizar(v.obra)===obraNormalizada &&
+          DIAS.includes(v.dia)
+        )
+        .map(v=>v.dia)
+    )];
   }
 
-  function uniqueDays(colab,obra){
-    return [...new Set(rowsGroup(colab,obra).map(v=>v.dia))]
-      .sort((a,b)=>DIA_INDEX[a]-DIA_INDEX[b]);
-  }
-
-  function isNightStart(colab,obra,dia){
-    const days=uniqueDays(colab,obra);
-    const index=days.indexOf(dia);
-    if(index<0 || index===days.length-1) return false;
-
-    return DIA_INDEX[days[index+1]]===DIA_INDEX[dia]+1;
-  }
-
-  function countNights(colab,obra){
-    return uniqueDays(colab,obra)
-      .filter(day=>isNightStart(colab,obra,day))
-      .length;
-  }
-
-  function dailyRate(colab,obra){
-    const row=rowsGroup(colab,obra).find(v=>
-      v.diaria!==undefined &&
-      v.diaria!==null &&
-      Number.isFinite(Number(v.diaria))
-    );
-
-    return row ? Number(row.diaria) : 0;
-  }
-
-  function hotelRate(colab,obra){
-    const base=baseHotelGrupo(colab,obra)||{};
-    const value=Number(base.hotelValor);
-    return Number.isFinite(value) ? value : 0;
-  }
-
-  function isHotelPayer(colab,obra){
-    const base=baseHotelGrupo(colab,obra)||{};
-    return base.hospedagemCompartilhada!==true;
-  }
-
+  /*
+   * Regra oficial:
+   * 1 card/dia = 0 diária
+   * 2 cards/dias = 1 diária
+   * 3 cards/dias = 2 diárias
+   * Sempre: quantidade de dias ativos - 1
+   */
   window.qtdHospedagens=function(colab,obra){
-    return countNights(colab,obra);
+    return Math.max(0,diasAtivosDoGrupo(colab,obra).length-1);
   };
 
-  window.valorDiariaGrupo=function(colab,obra){
-    return dailyRate(colab,obra);
-  };
-
+  /*
+   * A diária do colaborador usa exatamente a mesma quantidade.
+   */
   window.diariasColabGrupo=function(colab,obra){
-    return countNights(colab,obra)*dailyRate(colab,obra);
+    return window.qtdHospedagens(colab,obra) *
+      window.valorDiariaGrupo(colab,obra);
   };
 
+  /*
+   * O hotel também usa a mesma quantidade de diárias.
+   * Mantém a regra já existente de não duplicar hotel
+   * no colaborador marcado como hospedagem compartilhada.
+   */
   window.hotelTotalGrupo=function(colab,obra){
-    if(!isHotelPayer(colab,obra)) return 0;
-    return countNights(colab,obra)*hotelRate(colab,obra);
+    const quantidade=window.qtdHospedagens(colab,obra);
+    if(quantidade<=0) return 0;
+
+    const base=baseHotelGrupo(colab,obra)||{};
+    if(base.hospedagemCompartilhada===true) return 0;
+
+    return quantidade*Number(base.hotelValor||0);
   };
 
-  window.diariaColaboradorNoDia=function(colab,obra,dia){
-    return isNightStart(colab,obra,dia)
-      ? dailyRate(colab,obra)
-      : 0;
-  };
-
-  window.hotelNoDia=function(colab,obra,dia){
-    if(!isHotelPayer(colab,obra)) return 0;
-    return isNightStart(colab,obra,dia)
-      ? hotelRate(colab,obra)
-      : 0;
-  };
-
-  function uniqueGroups(){
-    const groups=new Map();
-
-    viagens
-      .filter(v=>!v.cancelado)
-      .forEach(v=>{
-        const key=[norm(v.colaborador),norm(v.obra)].join("|");
-        if(!groups.has(key)) groups.set(key,v);
-      });
-
-    return groups;
-  }
-
-  window.resumo=function(){
-    const ativas=viagens.filter(v=>!v.cancelado);
-    const groups=uniqueGroups();
-
-    let diarias=0;
-    let hotel=0;
-    let pend=0;
-
-    groups.forEach(v=>{
-      diarias+=diariasColabGrupo(v.colaborador,v.obra);
-      hotel+=hotelTotalGrupo(v.colaborador,v.obra);
-      if(!grupoCompleto(v.colaborador,v.obra)) pend++;
-    });
-
-    $("kViagens").textContent=ativas.length;
-    $("kDiarias").textContent=brl(diarias);
-    $("kHotel").textContent=brl(hotel);
-    $("kTotal").textContent=brl(diarias+hotel);
-    $("kPend").textContent=pend;
-    $("kOrigem").textContent=
-      origem==="draft" ? "Rascunho interno" : "Histórico";
-  };
-
-  function updateVisibleCards(){
-    document.querySelectorAll(".trip[data-trip-key]").forEach(card=>{
-      const parts=String(card.dataset.tripKey||"").split("|");
-      if(parts.length<3) return;
-
-      const colab=parts[0];
-      const dia=parts[1];
-      const obra=parts.slice(2).join("|");
-      const pills=card.querySelectorAll(".pill");
-
-      if(pills[0]){
-        pills[0].textContent=
-          `${isNightStart(colab,obra,dia) ? 1 : 0} diária(s)`;
-      }
-      if(pills[1]){
-        pills[1].textContent=
-          `Alim. ${brl(diariaColaboradorNoDia(colab,obra,dia))}`;
-      }
-      if(pills[2]){
-        pills[2].textContent=
-          `Hotel ${brl(hotelNoDia(colab,obra,dia))}`;
-      }
-    });
-  }
-
-  const previousRender=window.render;
-  window.render=function(){
-    previousRender();
-    updateVisibleCards();
-    window.resumo();
-  };
-
-  window.abrirRelatorio=function(){
-    const active=viagens
-      .filter(v=>!v.cancelado && Object.hasOwn(DIA_INDEX,v.dia))
-      .sort((a,b)=>
-        norm(a.colaborador).localeCompare(norm(b.colaborador)) ||
-        DIA_INDEX[a.dia]-DIA_INDEX[b.dia] ||
-        norm(a.obra).localeCompare(norm(b.obra))
-      );
-
-    const seen=new Set();
-    const rows=[];
-    let totalDiarias=0;
-    let totalHotel=0;
-
-    active.forEach(v=>{
-      const key=[
-        norm(v.colaborador),
-        v.dia,
-        norm(v.obra)
-      ].join("|");
-
-      if(seen.has(key)) return;
-      seen.add(key);
-
-      const diariaDia=diariaColaboradorNoDia(
-        v.colaborador,v.obra,v.dia
-      );
-      const hotelDia=hotelNoDia(
-        v.colaborador,v.obra,v.dia
-      );
-      const base=baseHotelGrupo(v.colaborador,v.obra)||{};
-      const total=diariaDia+hotelDia;
-
-      totalDiarias+=diariaDia;
-      totalHotel+=hotelDia;
-
-      rows.push(`
-        <tr>
-          <td>${esc(norm(v.colaborador))}</td>
-          <td>${esc(DIA_LABEL[v.dia]||v.dia)}</td>
-          <td>${esc(v.obra)}</td>
-          <td>${brl(diariaDia)}</td>
-          <td>${esc(base.hotel||"—")}</td>
-          <td>${esc(base.quarto||"—")}</td>
-          <td>${isNightStart(v.colaborador,v.obra,v.dia) ? 1 : 0}</td>
-          <td>${brl(hotelDia)}</td>
-          <td class="report-total">${brl(total)}</td>
-          <td>${grupoCompleto(v.colaborador,v.obra) ? "ok" : "pendente"}</td>
-        </tr>
-      `);
-    });
-
-    $("reportSub").textContent=
-      `Semana ${semana?.data||""} • `+
-      `Diárias colaborador ${brl(totalDiarias)} • `+
-      `Hospedagem ${brl(totalHotel)} • `+
-      `Total geral ${brl(totalDiarias+totalHotel)}`;
-
-    $("reportSummary").innerHTML=`
-      <div class="report-kpi"><small>Viagens</small><b>${seen.size}</b></div>
-      <div class="report-kpi"><small>Total diária colaborador</small><b>${brl(totalDiarias)}</b></div>
-      <div class="report-kpi"><small>Total hospedagem</small><b>${brl(totalHotel)}</b></div>
-      <div class="report-kpi"><small>Total geral</small><b>${brl(totalDiarias+totalHotel)}</b></div>
-    `;
-
-    $("reportBody").innerHTML=rows.join("");
-    $("mainPage").classList.add("hide-main");
-    $("reportPage").classList.add("open");
-  };
-
-  window.exportarExcel=function(){
-    const active=viagens
-      .filter(v=>!v.cancelado && Object.hasOwn(DIA_INDEX,v.dia))
-      .sort((a,b)=>
-        norm(a.colaborador).localeCompare(norm(b.colaborador)) ||
-        DIA_INDEX[a.dia]-DIA_INDEX[b.dia]
-      );
-
-    const seen=new Set();
-    const rows=[[
-      "Colaborador","Dia","Obra","Diária colaborador",
-      "Hotel","Quarto","Pernoite","Diária hotel","Total","Status"
-    ]];
-
-    active.forEach(v=>{
-      const key=[norm(v.colaborador),v.dia,norm(v.obra)].join("|");
-      if(seen.has(key)) return;
-      seen.add(key);
-
-      const diariaDia=diariaColaboradorNoDia(v.colaborador,v.obra,v.dia);
-      const hotelDia=hotelNoDia(v.colaborador,v.obra,v.dia);
-      const base=baseHotelGrupo(v.colaborador,v.obra)||{};
-
-      rows.push([
-        norm(v.colaborador),
-        DIA_LABEL[v.dia]||v.dia,
-        v.obra,
-        diariaDia,
-        base.hotel||"",
-        base.quarto||"",
-        isNightStart(v.colaborador,v.obra,v.dia) ? 1 : 0,
-        hotelDia,
-        diariaDia+hotelDia,
-        grupoCompleto(v.colaborador,v.obra) ? "ok" : "pendente"
-      ]);
-    });
-
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,"Viagens");
-    XLSX.writeFile(
-      wb,
-      `viagens_${semana?.data||"semana"}.xlsx`
-    );
-  };
-
-  if(semana || viagens.length){
-    window.render();
+  /*
+   * Recalcula somente a apresentação já existente.
+   * Relatório, KPIs, cards e Excel continuam usando
+   * as funções originais, agora com esta regra central.
+   */
+  if(typeof render==="function"){
+    render();
+  }else if(typeof resumo==="function"){
+    resumo();
   }
 
   console.info(
-    "[Viagens] Regra final de pernoite aplicada:",
-    "cada transição entre dias consecutivos gera uma diária; o último dia fica zerado."
+    "[Viagens] Regra aplicada:",
+    "quantidade de dias ativos menos um, para colaborador e hotel."
   );
 })();
 </script>
