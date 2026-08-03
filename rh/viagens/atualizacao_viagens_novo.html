@@ -4468,23 +4468,40 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 </script>
 
 
-<script id="erpImparV6UltimoDiaZero">
+<script id="erpImparV7SnapshotViagensFinal">
 (function(){
   "use strict";
-  if(window.__ERPIMPAR_V6_ULTIMO_DIA_ZERO__) return;
-  window.__ERPIMPAR_V6_ULTIMO_DIA_ZERO__=true;
+  if(window.__ERPIMPAR_V7_SNAPSHOT_VIAGENS_FINAL__) return;
+  window.__ERPIMPAR_V7_SNAPSHOT_VIAGENS_FINAL__=true;
 
-  const norm=v=>String(v||"").trim().toUpperCase();
+  const norm=value=>String(value||"").trim().toUpperCase();
 
-  function linhasGrupoOrdenadas(colab,obra){
-    const c=norm(colab), o=norm(obra);
+  function gruposDaCarga(){
+    const grupos=new Map();
+
+    viagens
+      .filter(v=>!v.cancelado && DIAS.includes(v.dia))
+      .forEach(v=>{
+        const key=`${norm(v.colaborador)}|${norm(v.obra)}`;
+        if(!grupos.has(key)){
+          grupos.set(key,{
+            colaborador:norm(v.colaborador),
+            obra:norm(v.obra)
+          });
+        }
+      });
+
+    return [...grupos.values()];
+  }
+
+  function linhasUnicasOrdenadas(colab,obra){
     const porDia=new Map();
 
     viagens.forEach((v,i)=>{
       if(
         !v.cancelado &&
-        norm(v.colaborador)===c &&
-        norm(v.obra)===o &&
+        norm(v.colaborador)===norm(colab) &&
+        norm(v.obra)===norm(obra) &&
         DIAS.includes(v.dia) &&
         !porDia.has(v.dia)
       ){
@@ -4496,125 +4513,118 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       .sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia));
   }
 
-  function sequenciasDoGrupo(colab,obra){
-    const rows=linhasGrupoOrdenadas(colab,obra);
-    const sequencias=[];
+  function sequencias(colab,obra){
+    const rows=linhasUnicasOrdenadas(colab,obra);
+    const result=[];
     let atual=[];
 
     rows.forEach(row=>{
-      if(
+      const consecutivo=
         !atual.length ||
-        DIAS.indexOf(row.dia)===DIAS.indexOf(atual[atual.length-1].dia)+1
-      ){
+        DIAS.indexOf(row.dia)===DIAS.indexOf(atual[atual.length-1].dia)+1;
+
+      if(consecutivo){
         atual.push(row);
       }else{
-        sequencias.push(atual);
+        result.push(atual);
         atual=[row];
       }
     });
 
-    if(atual.length) sequencias.push(atual);
-    return sequencias;
-  }
-
-  function ultimoDiaDaSequencia(colab,obra,dia){
-    return sequenciasDoGrupo(colab,obra).some(seq=>
-      seq.length>0 && seq[seq.length-1].dia===dia
-    );
+    if(atual.length) result.push(atual);
+    return result;
   }
 
   /*
-   * Carga inicial da Agenda Semanal:
-   * - dias anteriores ao retorno: R$ 30,00;
-   * - último dia de cada sequência contínua: R$ 0,00.
+   * Esta regra roda UMA ÚNICA VEZ, somente quando os dados ainda vêm
+   * da Agenda Semanal e antes da criação do primeiro draft:
+   * - R$ 30,00 nos dias anteriores ao retorno;
+   * - R$ 0,00 no último dia de cada sequência contínua.
    *
-   * Registros já alterados manualmente são preservados, com exceção do
-   * último dia, que permanece obrigatoriamente zerado pela regra do RH.
+   * Depois que origem === "draft", nenhum valor é recalculado,
+   * normalizado ou comparado novamente com a Agenda Semanal.
    */
-  function aplicarPadraoInicial(){
-    const grupos=new Map();
-
-    viagens
-      .filter(v=>!v.cancelado && DIAS.includes(v.dia))
-      .forEach(v=>{
-        const key=`${norm(v.colaborador)}|${norm(v.obra)}`;
-        if(!grupos.has(key)) grupos.set(key,[v.colaborador,v.obra]);
-      });
-
-    grupos.forEach(([colab,obra])=>{
-      sequenciasDoGrupo(colab,obra).forEach(seq=>{
+  function criarFotografiaInicial(){
+    gruposDaCarga().forEach(({colaborador,obra})=>{
+      sequencias(colaborador,obra).forEach(seq=>{
         seq.forEach((row,index)=>{
-          const original=viagens[row._i];
-          const ultimo=index===seq.length-1;
+          const valorInicial=index===seq.length-1 ? 0 : 30;
 
-          if(ultimo){
-            original.diaria=0;
-          }else if(
-            original.diaria===undefined ||
-            original.diaria===null ||
-            original.diaria==="" ||
-            (!original.atualizado && Number(original.diaria)===0)
-          ){
-            original.diaria=30;
-          }
+          viagens.forEach(item=>{
+            if(
+              !item.cancelado &&
+              norm(item.colaborador)===colaborador &&
+              norm(item.obra)===obra &&
+              item.dia===row.dia
+            ){
+              item.diaria=valorInicial;
+            }
+          });
         });
       });
     });
+
+    origem="draft";
   }
 
   const carregarOriginal=window.carregarSemana;
+
   if(typeof carregarOriginal==="function"){
     window.carregarSemana=async function(){
       const resultado=await carregarOriginal.apply(this,arguments);
-      aplicarPadraoInicial();
+
+      /*
+       * Havendo draft, ele é a verdade absoluta.
+       * Não toca em diária, hotel, card ou qualquer outro dado.
+       */
+      if(origem==="draft"){
+        if(typeof render==="function") render();
+        return resultado;
+      }
+
+      /*
+       * Sem draft: cria a fotografia inicial uma única vez e já grava.
+       */
+      criarFotografiaInicial();
+
       if(typeof render==="function") render();
+
+      try{
+        await salvarDraft(true);
+        setStatus(
+          "Rascunho de viagens criado. A partir de agora, as manutenções são independentes da Agenda Semanal."
+        );
+      }catch(error){
+        setStatus(
+          "A fotografia inicial foi montada, mas não foi possível salvar o rascunho: "+error.message,
+          true
+        );
+      }
+
       return resultado;
     };
   }
 
   /*
-   * O último dia não pode receber valor manual.
-   * Antes de gravar, força R$ 0,00 somente para o card selecionado.
+   * O salvar/finalizar usa somente o array viagens atual.
+   * Não reaplica padrão, não zera o último dia e não consulta a semanal.
    */
-  const aplicarOriginal=window.aplicarModal;
-  if(typeof aplicarOriginal==="function"){
-    window.aplicarModal=async function(){
-      const alvo=window.__EDIT_GROUP;
-      const dia=alvo?.dia || document.getElementById("mDia")?.value;
-      const colab=alvo?.colab || document.getElementById("mColab")?.value;
-      const obra=alvo?.obra || document.getElementById("mObra")?.value;
-
-      if(dia && ultimoDiaDaSequencia(colab,obra,dia)){
-        const campo=document.getElementById("mDiaria");
-        if(campo) campo.value="0";
-      }
-
-      return await aplicarOriginal.apply(this,arguments);
+  const salvarOriginal=window.salvarDraft;
+  if(typeof salvarOriginal==="function"){
+    window.salvarDraft=async function(){
+      return await salvarOriginal.apply(this,arguments);
     };
   }
 
-  /*
-   * Ao abrir o card do último dia, apresenta imediatamente R$ 0,00.
-   */
-  const editarOriginal=window.editarGrupoHospedagem;
-  if(typeof editarOriginal==="function"){
-    window.editarGrupoHospedagem=function(colab,obra,dia){
-      const retorno=editarOriginal.apply(this,arguments);
-      if(dia && ultimoDiaDaSequencia(colab,obra,dia)){
-        setTimeout(()=>{
-          const campo=document.getElementById("mDiaria");
-          if(campo) campo.value="R$ 0,00";
-        },0);
-      }
-      return retorno;
+  const finalizarOriginal=window.finalizarCustos;
+  if(typeof finalizarOriginal==="function"){
+    window.finalizarCustos=async function(){
+      return await finalizarOriginal.apply(this,arguments);
     };
   }
-
-  aplicarPadraoInicial();
-  if(typeof render==="function") render();
 
   console.info(
-    "[Viagens V6] Padrão aplicado: R$ 30,00 nos dias pagáveis e R$ 0,00 no último dia."
+    "[Viagens V7] Agenda Semanal somente na carga inicial; draft autoritativo após criação."
   );
 })();
 </script>
