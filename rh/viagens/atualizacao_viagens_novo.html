@@ -971,7 +971,7 @@ function setStatus(t,err=false){$('status').textContent=t;$('status').classList.
 function lerUsuario(){let u=null;try{u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||sessionStorage.getItem('ERPIMPAR_USER')||'null')}catch{};let n=u?.nome||u?.Nome||u?.name||u?.displayName||'Usuário RP', e=u?.email||u?.Email||u?.mail||'sessão local';$('userName').textContent=n;$('userEmail').textContent=e;$('avatar').textContent=(n||'U')[0].toUpperCase();return u||{nome:n,email:e}}
 async function api(action,body={}){let r=await fetch(API+'?action='+encodeURIComponent(action)+'&_='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});let t=await r.text();try{return JSON.parse(t)}catch(e){throw new Error(t.slice(0,220)||e.message)}}
 async function listar(){try{let j=await api('list');let opts=(j.agendas||[]).map(a=>`<option value="${a.id}">${a.label||a.id}</option>`).join('');$('agendaSel').innerHTML='<option value="">Selecione...</option>'+opts;setStatus('Selecione uma agenda histórica congelada.')}catch(e){$('agendaSel').innerHTML='<option value="">Erro ao listar</option>';setStatus('Erro ao listar agendas: '+e.message,true)}}
-async function carregarSemana(){let id=$('agendaSel').value;if(!id){resetTela();return;}try{setStatus('Carregando...');let j=await api('load',{id});if(!j.ok)throw new Error(j.erro||'Falha ao carregar');semana=j.semana;viagens=(j.viagens||[]).map(v=>({...v, diaria:Number(v.diaria||30), hotelValor:Number(v.hotelValor||0), quarto:v.quarto||'Simples', disponibilidade:v.disponibilidade||'consultar'}));origem=j.origem||'';['btnSalvar','btnFinalizar','btnNova','btnRel','btnExcel'].forEach(id=>$(id).disabled=false);render();setStatus(`Agenda histórica carregada • ${viagens.filter(v=>!v.cancelado).length} viagem(ns). Alterações serão gravadas como rascunho interno de custos.`)}catch(e){setStatus(e.message,true)}}
+async function carregarSemana(){let id=$('agendaSel').value;if(!id){resetTela();return;}try{setStatus('Carregando...');let j=await api('load',{id});if(!j.ok)throw new Error(j.erro||'Falha ao carregar');semana=j.semana;viagens=(j.viagens||[]).map(v=>({...v, diaria:(v.diaria===undefined||v.diaria===null||v.diaria==='')?30:Number(v.diaria), hotelValor:Number(v.hotelValor||0), quarto:v.quarto||'Simples', disponibilidade:v.disponibilidade||'consultar'}));origem=j.origem||'';['btnSalvar','btnFinalizar','btnNova','btnRel','btnExcel'].forEach(id=>$(id).disabled=false);render();setStatus(`Agenda histórica carregada • ${viagens.filter(v=>!v.cancelado).length} viagem(ns). Alterações serão gravadas como rascunho interno de custos.`)}catch(e){setStatus(e.message,true)}}
 function resetTela(){semana=null;viagens=[];origem='';['btnSalvar','btnFinalizar','btnNova','btnRel','btnExcel'].forEach(id=>$(id).disabled=true);$('matrix').innerHTML='<div class="empty">Escolha uma agenda para começar.</div>';resumo();}
 function statusTrip(v){if(v.cancelado||v.status==='cancelado')return 'cancel';if(!v.hotel || !Number(v.hotelValor||0) || v.disponibilidade==='consultar')return 'warn';if(v.atualizado||v.status==='ok')return 'ok';return ''}
 function render(){let by={};viagens.forEach((v,i)=>{if(v.cancelado)return;let c=(v.colaborador||'SEM NOME').toUpperCase();by[c]=by[c]||{};DIAS.forEach(d=>by[c][d]=by[c][d]||[]);if(DIAS.includes(v.dia)){let key=(v.obra||'').trim().toUpperCase();let exists=by[c][v.dia].find(x=>(x.obra||'').trim().toUpperCase()===key); if(!exists)by[c][v.dia].push({...v,_idxs:[i]}); else exists._idxs.push(i);}});let cols=DIAS.map(d=>`<div class="hcell">${DIA_LABEL[d]}<span>${(semana?.datas?.[d]||'')}</span></div>`).join('');let html=`<div class="head"><div class="hcell">Colaborador</div>${cols}</div>`;Object.keys(by).sort().forEach(c=>{html+=`<div class="row"><div class="name" onclick="abrirColaborador('${escAttr(c)}')">${esc(c)}<span class="mini">${Object.values(by[c]).flat().length} local/dia</span></div>`;DIAS.forEach(d=>{html+=`<div class="day" data-colab="${escAttr(c)}" data-dia="${d}" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="dropTrip(event,this)">`;let arr=by[c][d]||[];html+=arr.map(v=>`<div class="trip ${statusTrip(v)}" draggable="true" ondragstart="dragTrip(event,'${v._idxs.join(',')}')" onclick="abrirGrupo('${escAttr(c)}','${d}','${escAttr(v.obra)}')"><button class="cancel-x" onclick="event.stopPropagation();cancelarGrupo('${escAttr(c)}','${d}','${escAttr(v.obra)}')">×</button><div class="trip-title">${esc(v.obra)}</div><div class="trip-sub">${v.hotel?esc(v.hotel):'Hotel não definido'}</div><div class="trip-foot"><span class="pill">${v._idxs.length} card(s)</span><span class="pill">Hotel ${brl(mediaHotel(v._idxs))}</span></div></div>`).join('')||'<div class="empty">—</div>';html+=`<button class="add" onclick="novaViagem('${escAttr(c)}','${d}')">+ viagem</button></div>`});html+='</div>'});$('matrix').innerHTML=html;resumo()}
@@ -4270,6 +4270,352 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       }
     },900);
   },{once:true});
+})();
+</script>
+
+
+<!-- =========================================================
+ ERP ÍMPAR — PATCH V5
+ Correções:
+ 1. Alimentação usa dias ativos - 1, excluindo o último dia de cada sequência.
+ 2. Cada dia mantém seu próprio valor de diária.
+ 3. A manutenção aberta pelo card altera somente o dia clicado.
+========================================================== -->
+<script id="erpImparViagensV5DiariaPorDia">
+(function(){
+  "use strict";
+  if(window.__ERPIMPAR_VIAGENS_V5_DIARIA_POR_DIA__) return;
+  window.__ERPIMPAR_VIAGENS_V5_DIARIA_POR_DIA__=true;
+
+  const norm=v=>String(v||"").trim().toUpperCase();
+  const moedaNumero=v=>{
+    if(typeof window.erpParseMoeda==="function") return window.erpParseMoeda(v);
+    let s=String(v??"").trim().replace(/\s/g,"").replace(/R\$/gi,"").replace(/[^\d,.-]/g,"");
+    if(s.includes(",")) s=s.replace(/\./g,"").replace(",",".");
+    const n=Number(s);
+    return Number.isFinite(n)?n:0;
+  };
+
+  function linhasGrupo(colab,obra){
+    const c=norm(colab), o=norm(obra);
+    return viagens.map((v,i)=>({...v,_i:i}))
+      .filter(v=>!v.cancelado && norm(v.colaborador)===c && norm(v.obra)===o && DIAS.includes(v.dia))
+      .sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia));
+  }
+
+  function linhasPagaveis(colab,obra){
+    const rows=linhasGrupo(colab,obra);
+    if(!rows.length) return [];
+    const porDia=new Map();
+    rows.forEach(r=>{ if(!porDia.has(r.dia)) porDia.set(r.dia,r); });
+    const unicas=[...porDia.values()].sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia));
+    const seqs=[];
+    let atual=[];
+    unicas.forEach(r=>{
+      if(!atual.length || DIAS.indexOf(r.dia)===DIAS.indexOf(atual[atual.length-1].dia)+1){
+        atual.push(r);
+      }else{
+        seqs.push(atual); atual=[r];
+      }
+    });
+    if(atual.length) seqs.push(atual);
+    return seqs.flatMap(seq=>seq.slice(0,-1));
+  }
+
+  window.qtdHospedagens=function(colab,obra){
+    return linhasPagaveis(colab,obra).length;
+  };
+
+  window.diariasColabGrupo=function(colab,obra){
+    return linhasPagaveis(colab,obra).reduce((total,row)=>{
+      const valor=row.diaria===undefined || row.diaria===null ? 30 : Number(row.diaria);
+      return total + (Number.isFinite(valor)?valor:0);
+    },0);
+  };
+
+  window.valorDiariaGrupo=function(colab,obra){
+    const row=linhasGrupo(colab,obra)[0];
+    if(!row) return 0;
+    const valor=row.diaria===undefined || row.diaria===null ? 30 : Number(row.diaria);
+    return Number.isFinite(valor)?valor:0;
+  };
+
+  function abrirDia(colab,obra,dia){
+    const rows=linhasGrupo(colab,obra).filter(v=>v.dia===dia);
+    if(!rows.length){
+      window.showToast?.("warning","Dia não encontrado","Não foi possível localizar a programação deste dia.");
+      return;
+    }
+    const base=rows.find(v=>v.hotel || v.hotelValor || v.quarto) || rows[0];
+    editing=-1000;
+    window.__EDIT_GROUP={colab:norm(colab),obra:norm(obra),dia,idxs:rows.map(v=>v._i),somenteDia:true};
+
+    $("modalTitle").textContent="Hospedagem e diária do dia";
+    $("modalSub").textContent=`${norm(colab)} • ${norm(obra)} • ${DIA_LABEL[dia]||dia}`;
+    $("mColab").value=norm(colab);
+    $("mObra").value=String(base.obra||obra);
+    $("mDiaria").value=base.diaria===undefined || base.diaria===null ? 30 : Number(base.diaria);
+    $("mHotel").value=String(base.hotel||"");
+    $("mHotelValor").value=base.hotelValor===undefined || base.hotelValor===null ? 0 : Number(base.hotelValor);
+    $("mQuarto").value=base.quarto||"Simples";
+    $("mDisp").value=base.disponibilidade||"consultar";
+    $("mStatus").value=base.cancelado?"cancelado":(base.status||"pendente");
+    $("mObs").value=base.obs||"";
+    $("mDia").innerHTML=`<option value="${dia}" selected>${DIA_LABEL[dia]||dia}</option>`;
+    const diaDiv=$("mDia")?.closest("div"); if(diaDiv) diaDiv.style.display="none";
+    const obsDiv=$("mObs")?.closest("div"); if(obsDiv) obsDiv.style.display="none";
+
+    try{ renderCompanheiros(norm(colab),norm(obra),base); }catch(_){ }
+    $("hotelsBox").innerHTML='<div class="empty">Clique em pesquisar para buscar hotéis próximos.</div>';
+    $("mapBox").innerHTML='Mapa/localização da obra.';
+    const modal=$("modalTrip"); modal.classList.add("open");
+    setTimeout(()=>{ try{modal.scrollTop=0;modal.querySelector(".modal-card")?.scrollTo?.(0,0);}catch(_){ } },30);
+  }
+
+  window.editarGrupoHospedagem=function(colab,obra,dia){
+    if(dia) return abrirDia(colab,obra,dia);
+    const primeiro=linhasGrupo(colab,obra)[0];
+    if(primeiro) return abrirDia(colab,obra,primeiro.dia);
+  };
+
+  window.aplicarModal=async function(){
+    const diaria=moedaNumero($("mDiaria").value);
+    const hotelValor=moedaNumero($("mHotelValor").value);
+    if(!Number.isFinite(diaria) || diaria<0 || !Number.isFinite(hotelValor) || hotelValor<0){
+      window.showToast?.("warning","Valores inválidos","As diárias devem ser valores iguais ou superiores a zero.");
+      return;
+    }
+    const data={
+      colaborador:norm($("mColab").value), obra:$("mObra").value.trim(), dia:$("mDia").value,
+      diaria, hotel:$("mHotel").value.trim(), hotelValor,
+      quarto:$("mQuarto").value, disponibilidade:$("mDisp").value,
+      status:$("mStatus").value, obs:$("mObs").value.trim(), atualizado:true,
+      cancelado:$("mStatus").value==="cancelado"
+    };
+    if(!data.colaborador || !data.obra){
+      window.showToast?.("warning","Preenchimento incompleto","Informe o colaborador e a obra.");
+      return;
+    }
+
+    if(window.__EDIT_GROUP && editing===-1000){
+      const alvo=window.__EDIT_GROUP;
+      alvo.idxs.forEach(i=>{
+        viagens[i]={...viagens[i],...data,dia:viagens[i].dia};
+      });
+    }else if(editing>=0){
+      viagens[editing]={...viagens[editing],...data};
+    }else{
+      viagens.push(data);
+    }
+
+    origem="draft";
+    window.__EDIT_GROUP=null;
+    fecharModal("modalTrip");
+    render();
+    await salvarDraft(true);
+    window.showToast?.("success","Dia atualizado",`${DIA_LABEL[data.dia]||data.dia}: diária do colaborador ${brl(data.diaria)}.`);
+  };
+
+  function renderV5(){
+    let by={};
+    viagens.forEach((v,i)=>{
+      if(v.cancelado) return;
+      const c=norm(v.colaborador||"SEM NOME");
+      by[c]=by[c]||{}; DIAS.forEach(d=>by[c][d]=by[c][d]||[]);
+      if(DIAS.includes(v.dia)){
+        const key=norm(v.obra);
+        const found=by[c][v.dia].find(x=>norm(x.obra)===key);
+        if(!found) by[c][v.dia].push({...v,_idxs:[i]}); else found._idxs.push(i);
+      }
+    });
+
+    const cols=DIAS.map(d=>`<div class="hcell">${DIA_LABEL[d]}<span>${semana?.datas?.[d]||""}</span></div>`).join("");
+    let html=`<div class="head"><div class="hcell">Colaborador</div>${cols}</div>`;
+    Object.keys(by).sort().forEach(c=>{
+      const locais=[...new Set(Object.values(by[c]).flat().map(v=>norm(v.obra)))].length;
+      html+=`<div class="row"><div class="name" onclick="abrirColaborador('${escAttr(c)}')">${esc(c)}<span class="mini">${locais} obra(s) / clique no card do dia para editar</span></div>`;
+      DIAS.forEach(d=>{
+        html+=`<div class="day" data-colab="${escAttr(c)}" data-dia="${d}">`;
+        const arr=by[c][d]||[];
+        html+=arr.map(v=>{
+          const obra=norm(v.obra), hosp=qtdHospedagens(c,obra), totalHotel=hotelTotalGrupo(c,obra), totalDiaria=diariasColabGrupo(c,obra);
+          const completo=grupoCompleto(c,obra), cls=completo?"ok":statusTrip(v), base=baseHotelGrupo(c,obra);
+          const valorDia=(viagens[v._idxs[0]]?.diaria===undefined||viagens[v._idxs[0]]?.diaria===null)?30:Number(viagens[v._idxs[0]].diaria);
+          return `<div class="trip ${cls}" onclick="event.stopPropagation();editarGrupoHospedagem('${escAttr(c)}','${escAttr(obra)}','${d}')" title="Clique para editar somente ${DIA_LABEL[d]}">
+            <button class="cancel-x" onclick="event.stopPropagation();cancelarGrupo('${escAttr(c)}','${d}','${escAttr(obra)}')">×</button>
+            <div class="trip-title">${esc(obra)}</div>
+            <div class="trip-sub">${base.hotel?esc(base.hotel):'Hotel não definido'}</div>
+            <div class="trip-foot"><span class="pill">${hosp} diária(s)</span><span class="pill">Dia ${brl(valorDia)}</span><span class="pill">Alim. ${brl(totalDiaria)}</span><span class="pill">Hotel ${brl(totalHotel)}</span></div>
+          </div>`;
+        }).join("")||'<div class="empty">—</div>';
+        html+='</div>';
+      });
+      html+='</div>';
+    });
+    $("matrix").innerHTML=html||'<div class="empty">Nenhuma viagem encontrada.</div>';
+    resumo();
+  }
+
+  window.render=renderV5;
+  window.abrirColaborador=function(colab){
+    const row=viagens.find(v=>!v.cancelado && norm(v.colaborador)===norm(colab));
+    if(row) abrirDia(colab,row.obra,row.dia);
+  };
+
+  if(semana || viagens.length) renderV5();
+  console.info("[Viagens V5] Alimentação por dia, último dia excluído e edição isolada por card.");
+})();
+</script>
+
+
+<script id="erpImparV6UltimoDiaZero">
+(function(){
+  "use strict";
+  if(window.__ERPIMPAR_V6_ULTIMO_DIA_ZERO__) return;
+  window.__ERPIMPAR_V6_ULTIMO_DIA_ZERO__=true;
+
+  const norm=v=>String(v||"").trim().toUpperCase();
+
+  function linhasGrupoOrdenadas(colab,obra){
+    const c=norm(colab), o=norm(obra);
+    const porDia=new Map();
+
+    viagens.forEach((v,i)=>{
+      if(
+        !v.cancelado &&
+        norm(v.colaborador)===c &&
+        norm(v.obra)===o &&
+        DIAS.includes(v.dia) &&
+        !porDia.has(v.dia)
+      ){
+        porDia.set(v.dia,{...v,_i:i});
+      }
+    });
+
+    return [...porDia.values()]
+      .sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia));
+  }
+
+  function sequenciasDoGrupo(colab,obra){
+    const rows=linhasGrupoOrdenadas(colab,obra);
+    const sequencias=[];
+    let atual=[];
+
+    rows.forEach(row=>{
+      if(
+        !atual.length ||
+        DIAS.indexOf(row.dia)===DIAS.indexOf(atual[atual.length-1].dia)+1
+      ){
+        atual.push(row);
+      }else{
+        sequencias.push(atual);
+        atual=[row];
+      }
+    });
+
+    if(atual.length) sequencias.push(atual);
+    return sequencias;
+  }
+
+  function ultimoDiaDaSequencia(colab,obra,dia){
+    return sequenciasDoGrupo(colab,obra).some(seq=>
+      seq.length>0 && seq[seq.length-1].dia===dia
+    );
+  }
+
+  /*
+   * Carga inicial da Agenda Semanal:
+   * - dias anteriores ao retorno: R$ 30,00;
+   * - último dia de cada sequência contínua: R$ 0,00.
+   *
+   * Registros já alterados manualmente são preservados, com exceção do
+   * último dia, que permanece obrigatoriamente zerado pela regra do RH.
+   */
+  function aplicarPadraoInicial(){
+    const grupos=new Map();
+
+    viagens
+      .filter(v=>!v.cancelado && DIAS.includes(v.dia))
+      .forEach(v=>{
+        const key=`${norm(v.colaborador)}|${norm(v.obra)}`;
+        if(!grupos.has(key)) grupos.set(key,[v.colaborador,v.obra]);
+      });
+
+    grupos.forEach(([colab,obra])=>{
+      sequenciasDoGrupo(colab,obra).forEach(seq=>{
+        seq.forEach((row,index)=>{
+          const original=viagens[row._i];
+          const ultimo=index===seq.length-1;
+
+          if(ultimo){
+            original.diaria=0;
+          }else if(
+            original.diaria===undefined ||
+            original.diaria===null ||
+            original.diaria==="" ||
+            (!original.atualizado && Number(original.diaria)===0)
+          ){
+            original.diaria=30;
+          }
+        });
+      });
+    });
+  }
+
+  const carregarOriginal=window.carregarSemana;
+  if(typeof carregarOriginal==="function"){
+    window.carregarSemana=async function(){
+      const resultado=await carregarOriginal.apply(this,arguments);
+      aplicarPadraoInicial();
+      if(typeof render==="function") render();
+      return resultado;
+    };
+  }
+
+  /*
+   * O último dia não pode receber valor manual.
+   * Antes de gravar, força R$ 0,00 somente para o card selecionado.
+   */
+  const aplicarOriginal=window.aplicarModal;
+  if(typeof aplicarOriginal==="function"){
+    window.aplicarModal=async function(){
+      const alvo=window.__EDIT_GROUP;
+      const dia=alvo?.dia || document.getElementById("mDia")?.value;
+      const colab=alvo?.colab || document.getElementById("mColab")?.value;
+      const obra=alvo?.obra || document.getElementById("mObra")?.value;
+
+      if(dia && ultimoDiaDaSequencia(colab,obra,dia)){
+        const campo=document.getElementById("mDiaria");
+        if(campo) campo.value="0";
+      }
+
+      return await aplicarOriginal.apply(this,arguments);
+    };
+  }
+
+  /*
+   * Ao abrir o card do último dia, apresenta imediatamente R$ 0,00.
+   */
+  const editarOriginal=window.editarGrupoHospedagem;
+  if(typeof editarOriginal==="function"){
+    window.editarGrupoHospedagem=function(colab,obra,dia){
+      const retorno=editarOriginal.apply(this,arguments);
+      if(dia && ultimoDiaDaSequencia(colab,obra,dia)){
+        setTimeout(()=>{
+          const campo=document.getElementById("mDiaria");
+          if(campo) campo.value="R$ 0,00";
+        },0);
+      }
+      return retorno;
+    };
+  }
+
+  aplicarPadraoInicial();
+  if(typeof render==="function") render();
+
+  console.info(
+    "[Viagens V6] Padrão aplicado: R$ 30,00 nos dias pagáveis e R$ 0,00 no último dia."
+  );
 })();
 </script>
 
