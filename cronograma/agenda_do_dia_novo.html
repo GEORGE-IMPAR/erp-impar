@@ -1,33 +1,6 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<script id="erpImparOperationalDateEarlyBootstrap">
-(function(){
-  "use strict";
-  function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
-  function operational(){
-    const d=new Date(); d.setHours(12,0,0,0);
-    const day=d.getDay();
-    if(day===5){
-      // Após a jornada de sexta, a próxima agenda preparada é segunda-feira.
-      // A regra definitiva é reforçada no bootstrap final e pelo draft do servidor.
-      const hour=new Date().getHours();
-      if(hour>=18)d.setDate(d.getDate()+3);
-    }else if(day===6)d.setDate(d.getDate()+2);
-    else if(day===0)d.setDate(d.getDate()+1);
-    return iso(d);
-  }
-  const target=operational();
-  window.__ERPIMPAR_OPERATIONAL_DATE__=target;
-  window.__AGENDA_DIA_CURRENT_DATE__=target;
-  try{sessionStorage.setItem("agenda_dia_operational_date",target);}catch(_){}
-  document.addEventListener("DOMContentLoaded",function(){
-    const input=document.getElementById("weekPickerDate"); if(input)input.value=target;
-    const period=document.getElementById("weekPeriodText"); if(period&&/selecione|18\/07/i.test(period.textContent||"")) period.textContent=target.split("-").reverse().join("/");
-  },{once:true});
-})();
-</script>
-
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
@@ -9423,284 +9396,6 @@ window.__AGENDA_DIA_SEM_FALLBACK_FICTICIO__ = true;
   };
 })();
 </script>
-
-
-
-<script id="agendaDiaV3123ColaboradoresSalvarOficial">
-(function(){
-  "use strict";
-
-  const API_BASE="https://api.erpimpar.com.br/agenda/";
-  const CATALOG_API=API_BASE+"cadastros_agenda_novo.php";
-  const SAVE_API=API_BASE+"salvar_atividade_dia.php";
-
-  function erpUser(){
-    const keys=["ERPIMPAR_USER","erpimpar_user","ERP_USER","usuarioERP"];
-    for(const store of [sessionStorage,localStorage]){
-      for(const key of keys){
-        try{
-          const raw=store.getItem(key);
-          if(!raw) continue;
-          const value=JSON.parse(raw);
-          if(value && typeof value==="object") return value;
-        }catch(_){ }
-      }
-    }
-    return {};
-  }
-
-  function normalizeRole(value,name){
-    const v=String(value||"").toLowerCase();
-    if(v.includes("coord")) return "coordenacao";
-    const n=String(name||"").toUpperCase();
-    return ["PABLO","FABIO","FÁBIO","CRISTIANO","NICOLAS","NICOLAS VAZ"].includes(n)
-      ? "coordenacao" : "execucao";
-  }
-
-  function normalizePerson(p,index){
-    if(typeof p==="string"){
-      return {id:index+1,name:p.trim().toUpperCase(),role:normalizeRole("",p),active:true,car:null};
-    }
-    const name=String(p?.name ?? p?.nome ?? "").trim().toUpperCase();
-    return {
-      id:p?.id ?? index+1,
-      name,
-      role:normalizeRole(p?.role ?? p?.funcao,name),
-      active:p?.active!==false && p?.ativo!==false,
-      car:p?.car ?? p?.veiculo ?? p?.placa ?? null
-    };
-  }
-
-  async function requestJson(url,options={}){
-    const response=await fetch(url,{cache:"no-store",...options});
-    const text=await response.text();
-    let data;
-    try{ data=text.trim()?JSON.parse(text):{}; }
-    catch(_){ throw new Error("O servidor retornou uma resposta inválida."); }
-    if(!response.ok || data?.ok===false){
-      throw new Error(data?.error || data?.mensagem || `HTTP ${response.status}`);
-    }
-    return data;
-  }
-
-  function migrateSchedule(oldPeople,newPeople){
-    const currentSchedule=(typeof schedule!=="undefined" && schedule) ? schedule : (window.schedule||{});
-    const oldById=new Map((oldPeople||[]).map(p=>[String(p.id),String(p.name||p.nome||"").trim().toUpperCase()]));
-    const newByName=new Map((newPeople||[]).map(p=>[String(p.name||"").trim().toUpperCase(),p]));
-    const migrated={};
-    Object.entries(currentSchedule||{}).forEach(([key,items])=>{
-      const match=String(key).match(/^(.*)_([0-4])$/);
-      if(!match){ migrated[key]=items; return; }
-      const oldId=match[1], day=match[2];
-      const name=oldById.get(oldId);
-      const np=name ? newByName.get(name) : null;
-      const targetId=np?.id ?? oldId;
-      migrated[`${targetId}_${day}`]=Array.isArray(items)?items:[];
-    });
-    try{ schedule=migrated; }catch(_){ window.schedule=migrated; }
-    window.schedule=migrated;
-  }
-
-  async function loadCollaboratorsFromServer(){
-    const result=await requestJson(CATALOG_API);
-    const source=Array.isArray(result?.data?.colaboradores) ? result.data.colaboradores : [];
-    const loaded=source.map(normalizePerson).filter(p=>p.name);
-    if(!loaded.length) throw new Error("O cadastro de colaboradores está vazio.");
-
-    const old=(typeof people!=="undefined" && Array.isArray(people)) ? people : (window.people||[]);
-    migrateSchedule(old,loaded);
-    try{ people=loaded; }catch(_){ window.people=loaded; }
-    window.people=loaded;
-    return loaded;
-  }
-
-  function renderPeopleExactly(){
-    const table=document.getElementById("peopleTable");
-    if(!table) throw new Error("Tabela de colaboradores não encontrada.");
-    table.innerHTML="";
-    (window.people||people||[]).forEach(p=>{
-      const row=document.createElement("div");
-      row.className="person-config";
-      row.innerHTML=`<b>${p.name}</b>
-        <select>
-          <option value="execucao" ${p.role==="execucao"?"selected":""}>Execução</option>
-          <option value="coordenacao" ${p.role==="coordenacao"?"selected":""}>Coordenação</option>
-        </select>
-        <button type="button" class="toggle-active ${p.active?"":"off"}">${p.active?"ATIVO":"INATIVO"}</button>`;
-      row.querySelector("select").addEventListener("change",e=>{ p.role=e.target.value; });
-      row.querySelector(".toggle-active").addEventListener("click",e=>{
-        p.active=!p.active;
-        e.currentTarget.textContent=p.active?"ATIVO":"INATIVO";
-        e.currentTarget.classList.toggle("off",!p.active);
-      });
-      table.appendChild(row);
-    });
-  }
-
-  async function openCollaborators(){
-    if(document.body.classList.contains("day-finalized")){
-      showToast?.("warning","Histórico finalizado","Este dia está em histórico e não pode ser alterado.");
-      return;
-    }
-    const button=document.getElementById("openPeople");
-    const original=button?.innerHTML;
-    try{
-      if(button){ button.disabled=true; button.textContent="Carregando..."; }
-      await loadCollaboratorsFromServer();
-      renderPeopleExactly();
-      const modal=document.getElementById("peopleModal");
-      modal?.classList.add("open");
-      modal?.setAttribute("aria-hidden","false");
-    }catch(error){
-      console.error("ERRO_COLABORADORES_AGENDA_DIA",error);
-      showToast?.("error","Colaboradores",error.message||"Não foi possível carregar os colaboradores.");
-    }finally{
-      if(button){ button.disabled=false; button.innerHTML=original||"👥 Colaboradores"; }
-    }
-  }
-
-  function currentDate(){
-    return window.__AGENDA_DIA_CURRENT_DATE__ ||
-      window.__AGENDA_DIA_ACTIVE_RECORD__?.date ||
-      window.__AGENDA_DIA_ACTIVE_RECORD__?.data ||
-      window.currentWeekKey ||
-      (typeof currentWeekKey!=="undefined"?currentWeekKey:"") || "";
-  }
-
-  function personFromKey(key){
-    const id=String(key||"").replace(/_[0-4]$/,"");
-    return (window.people||people||[]).find(p=>String(p.id)===id);
-  }
-
-  function buildDailyDraft(){
-    const active=window.__AGENDA_DIA_ACTIVE_RECORD__||{};
-    const currentSchedule=(typeof schedule!=="undefined"&&schedule)?schedule:(window.schedule||{});
-    const activities=[];
-    Object.entries(currentSchedule||{}).forEach(([key,items])=>{
-      const person=personFromKey(key);
-      const colaborador=person?.name||person?.nome||"";
-      (items||[]).forEach(item=>activities.push({
-        id:item.id,
-        colaborador,
-        funcao:person?.role||person?.funcao||"execucao",
-        obra:item.obra||"",
-        atividade:item.atividade||"",
-        local:item.local||"",
-        horas:Number(item.horas||8)||8,
-        viagem:item.viagem,
-        carro:window.ERPIMPAR_CURRENT_CAR?.(person)||person?.car||null,
-        cancelado:Boolean(item.cancelado===true||item.cancelled===true||item.status==="cancelado"),
-        statusVisual:item.auditStatus||"",
-        replanejado:Boolean(item.replanejado),
-        semCronogramaAtivo:Boolean(item.semCronogramaAtivo),
-        chaveOriginal:item.__originalComparisonKey||null,
-        chaveAtual:item.__currentComparisonKey||null,
-        motivoReplanejamento:item.motivoReplanejamento||"",
-        motivoCancelamento:item.motivoCancelamento||"",
-        executada:item.executada,
-        percentualExecutado:item.percentualExecutado,
-        motivoExecucao:item.motivoExecucao||"",
-        fechamentoPreenchido:Boolean(item.fechamentoPreenchido),
-        planejado:{
-          obra:item.obraOriginal??item.planejado?.obra??item.obra??"",
-          atividade:item.atividadeOriginal??item.planejado?.atividade??item.atividade??"",
-          viagem:item.viagemOriginal??item.planejado?.viagem??item.viagem
-        },
-        executado:{obra:item.obra||"",atividade:item.atividade||"",viagem:item.viagem}
-      }));
-    });
-    return {
-      ...active,
-      data:currentDate(),
-      date:currentDate(),
-      atividades:activities,
-      roomLinks:Array.isArray(window.roomLinks||roomLinks)?JSON.parse(JSON.stringify(window.roomLinks||roomLinks)):[],
-      aplicarCronograma:false,
-      finalizado:false,
-      tipo:"draft",
-      status:"draft",
-      updatedAt:new Date().toISOString(),
-      usuarioAtualizacao:erpUser()
-    };
-  }
-
-  async function saveDailyDraft(silent=false){
-    if(document.body.classList.contains("day-finalized")){
-      showToast?.("warning","Histórico finalizado","Este dia está em histórico e não pode ser alterado.");
-      return false;
-    }
-    const date=currentDate();
-    if(!date) throw new Error("Não existe uma Agenda do Dia carregada.");
-    const draft=buildDailyDraft();
-    await requestJson(SAVE_API,{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({data:date,draft,usuario:erpUser()})
-    });
-    window.__AGENDA_DIA_ACTIVE_RECORD__={...draft,date,data:date};
-    if(!silent) showToast?.("success","Agenda do Dia salva",`O draft de ${date.split("-").reverse().join("/")} foi atualizado.`);
-    return true;
-  }
-
-  async function saveCatalogAndApply(){
-    const button=document.getElementById("applyPeople");
-    const original=button?.textContent||"Aplicar";
-    try{
-      if(button){button.disabled=true;button.textContent="Aplicando...";}
-      const currentPeople=window.people||people||[];
-      const currentActivities=(typeof atividades!=="undefined"&&Array.isArray(atividades))?atividades:[];
-      await requestJson(CATALOG_API,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({colaboradores:currentPeople,atividades:currentActivities,usuario:erpUser()})
-      });
-      if(typeof renderAll==="function") renderAll();
-      document.getElementById("peopleModal")?.classList.remove("open");
-      await saveDailyDraft(true);
-      showToast?.("success","Colaboradores atualizados","Cadastro aplicado e draft diário salvo.");
-    }catch(error){
-      console.error("ERRO_APLICAR_COLABORADORES",error);
-      showToast?.("error","Erro ao aplicar",error.message||"Não foi possível aplicar os colaboradores.");
-    }finally{
-      if(button){button.disabled=false;button.textContent=original;}
-    }
-  }
-
-  async function onSave(){
-    const button=document.getElementById("saveMock");
-    const original=button?.innerHTML;
-    try{
-      if(button){button.disabled=true;button.textContent="Salvando...";}
-      await saveDailyDraft(false);
-    }catch(error){
-      console.error("ERRO_SALVAR_AGENDA_DIA",error);
-      showToast?.("error","Erro ao salvar",error.message||"Não foi possível salvar a Agenda do Dia.");
-    }finally{
-      if(button){button.disabled=false;button.innerHTML=original||"💾 Salvar";}
-    }
-  }
-
-  function replaceButton(id,handler){
-    const old=document.getElementById(id);
-    if(!old) return;
-    const fresh=old.cloneNode(true);
-    old.replaceWith(fresh);
-    fresh.disabled=false;
-    fresh.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();handler();});
-  }
-
-  function install(){
-    replaceButton("openPeople",openCollaborators);
-    replaceButton("saveMock",onSave);
-    replaceButton("applyPeople",saveCatalogAndApply);
-    window.AgendaDiaV3123={abrirColaboradores:openCollaborators,salvar:onSave,aplicarColaboradores:saveCatalogAndApply};
-  }
-
-  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",install,{once:true});
-  else install();
-})();
-</script>
-
 <style id="erpImparPeopleCrudCss">
 .people-crud-bar{display:grid;grid-template-columns:minmax(180px,1fr) 170px auto;gap:8px;align-items:end;margin:0 0 10px;padding:10px;border:1px solid rgba(210,238,245,.18);border-radius:12px;background:rgba(2,15,28,.42)}
 .people-crud-field{display:flex;flex-direction:column;gap:4px}.people-crud-field label{font-size:8px;font-weight:900;letter-spacing:.08em;color:#9fb1c1;text-transform:uppercase}.people-crud-field input,.people-crud-field select{height:34px;border:1px solid rgba(210,238,245,.25);border-radius:9px;background:rgba(2,15,28,.8);color:#f8fafc;padding:0 10px;outline:none}.people-crud-add{height:34px;border:1px solid rgba(87,242,135,.5);border-radius:9px;background:rgba(87,242,135,.16);color:#caffd8;font-weight:900;cursor:pointer}.people-delete-btn{border:1px solid rgba(251,113,133,.42);border-radius:8px;background:rgba(251,113,133,.12);color:#fecdd3;font-weight:900;padding:5px 8px;cursor:pointer;margin-left:6px}.people-delete-btn:hover{background:rgba(251,113,133,.22)}
@@ -9776,86 +9471,6 @@ async function loadHistory(){
 window.addEventListener('DOMContentLoaded',()=>{setupPickers();addFilters();document.getElementById('dailyReportHours')?.addEventListener('click',()=>setTimeout(addFilters,0))});
 })();
 </script>
-
-
-<script id="erpImparV33ProximoDiaUtil">
-(function(){
-'use strict';
-const BASE='https://api.erpimpar.com.br/agenda/';
-const STATE=BASE+'atividade_dia_estado_novo.php';
-const SAVE=BASE+'salvar_atividade_dia.php';
-const WEEK_SOURCE=BASE+'finalizar_atividade_dia.php';
-function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
-function parse(s){const [y,m,d]=String(s).split('-').map(Number);return new Date(y,m-1,d,12,0,0,0)}
-function nextOperationalDate(){
-  if(window.__ERPIMPAR_OPERATIONAL_DATE__) return window.__ERPIMPAR_OPERATIONAL_DATE__;
-  const d=new Date();d.setHours(12,0,0,0);
-  const day=d.getDay();
-  if(day===6)d.setDate(d.getDate()+2);
-  else if(day===0)d.setDate(d.getDate()+1);
-  return iso(d);
-}
-function monday(date){const d=parse(date),day=d.getDay();d.setDate(d.getDate()-(day===0?6:day-1));return iso(d)}
-function dayIndex(date){const n=parse(date).getDay();return n>=1&&n<=5?n-1:-1}
-function auth(){try{return JSON.parse(sessionStorage.getItem('ERPIMPAR_USER')||localStorage.getItem('ERPIMPAR_USER')||'null')||{}}catch(_){return {}}}
-async function req(url,opt){
- const r=await fetch(url,opt);const text=await r.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){throw new Error('Resposta inválida do servidor.');}
- if(!r.ok||data?.ok===false)throw new Error(data?.error||data?.mensagem||('HTTP '+r.status));return data;
-}
-function items(day){if(Array.isArray(day))return day;if(Array.isArray(day?.itens))return day.itens;if(Array.isArray(day?.atividades))return day.atividades;return []}
-async function buildDraft(date){
- const week=monday(date),index=dayIndex(date),activities=[];
- let found=false,sourceFile=null,reason='';
- try{
-  const source=await req(WEEK_SOURCE+'?fonte_semana='+encodeURIComponent(week)+'&t='+Date.now());
-  found=source?.encontrada===true;sourceFile=source?.arquivo||null;reason=source?.motivo||'';
-  if(found&&index>=0){
-   const raw=source?.conteudo||{};
-   const payload=raw?.payload&&typeof raw.payload==='object'?raw.payload:(raw?.data&&typeof raw.data==='object'?raw.data:raw);
-   const agenda=payload?.agenda&&typeof payload.agenda==='object'?payload.agenda:payload;
-   const names=Array.isArray(payload?.colaboradores)&&payload.colaboradores.length?payload.colaboradores:Object.keys(agenda||{});
-   names.forEach(name=>{
-    const person=agenda?.[name]||agenda?.[String(name).toUpperCase()]||{};
-    const days=Array.isArray(person?.dias)?person.dias:[];
-    items(days[index]).forEach((item,i)=>{
-      const obra=String(item?.obra||item?.obraNome||item?.nomeObra||'').trim();if(!obra)return;
-      const atividade=String(item?.atividade||item?.descricao||item?.servico||'').trim();
-      const viagem=item?.viagem===true||item?.viagem===1||['sim','true','1'].includes(String(item?.viagem??'').toLowerCase());
-      activities.push({id:item?.id||('sem_'+date+'_'+activities.length+'_'+i),colaborador:String(name).trim(),funcao:person?.funcao||person?.role||'execucao',obra,atividade,horas:Number(item?.horas||8)||8,viagem,car:item?.car||item?.carro||item?.veiculo||item?.placa||null,carro:item?.carro||item?.car||item?.veiculo||item?.placa||null,cancelado:false,planejado:{obra,atividade,viagem},executado:{obra,atividade,viagem},origemSemanal:true,importedFromFinalizedWeek:true});
-    });
-   });
-  }
- }catch(err){reason=err?.message||'Falha ao carregar a semana finalizada.';}
- return {data:date,semana:week,diaSemana:parse(date).toLocaleDateString('pt-BR',{weekday:'long'}),atividades:activities,aplicarCronograma:false,finalizado:false,tipo:'draft',status:'draft',agendaSemanalEncontrada:found,agendaSemanalFinalizada:found,fonteAgendaSemanalValida:found,fonteAgendaSemanal:found?'historico':'nenhuma',arquivoFonteAgendaSemanal:sourceFile,motivoFonteAgendaSemanal:reason,abertoSemAgendaSemanal:!found,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),usuario:auth()};
-}
-function setPicker(date){const input=document.getElementById('weekPickerDate');if(input)input.value=date;}
-async function ensureOperationalDraft(){
- const target=nextOperationalDate();setPicker(target);
- window.__AGENDA_DIA_CURRENT_DATE__=target;
- try{ selectedWeekStart=parse(target); currentWeekKey=target; }catch(_){}
- const period=document.getElementById('weekPeriodText'); if(period)period.textContent=target.split('-').reverse().join('/');
- let state=null;
- try{state=await req(STATE+'?t='+Date.now())}catch(_){state=null}
- const existing=state?.draft?.data||state?.dataDraft||state?.data_draft||state?.draftData||null;
- if(existing){
-   // Draft aberto sempre prevalece. Se a sexta já foi finalizada, o servidor deve ter criado a segunda.
-   return;
- }
- const draft=await buildDraft(target);
- await req(SAVE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:target,draft,usuario:auth(),origem:'abertura_automatica_proximo_dia_util'})});
- showToast?.('success','Próximo dia útil aberto',`A Agenda do Dia de ${target.split('-').reverse().join('/')} foi criada${draft.agendaSemanalEncontrada?' com as atividades da semana finalizada':' em branco, pois o histórico semanal não foi encontrado'}.`);
- setTimeout(()=>location.reload(),500);
-}
-function installPicker(){
- const btn=document.getElementById('weekPlanBtn');
- if(btn){btn.addEventListener('click',()=>{const input=document.getElementById('weekPickerDate');setPicker(nextOperationalDate());setTimeout(()=>{try{input?.showPicker?.()}catch(_){input?.focus()}},40)},true)}
-}
-window.addEventListener('DOMContentLoaded',()=>{installPicker();setTimeout(()=>ensureOperationalDraft().catch(err=>showToast?.('error','Não foi possível abrir o próximo dia útil',err.message+' — verifique se os três PHPs corrigidos foram publicados na pasta /api/agenda/.')),500)},{once:true});
-})();
-</script>
-
-
-
 <!-- PACOTE 08.0 — RELATÓRIO ANALÍTICO COMPLETO + PLACAS + PDF MÓVEL -->
 <script id="erpImparPacote080AnaliticoPlacasPdf">
 (function(){
@@ -10350,7 +9965,588 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
         });
       })();
       <\/script>
-    </body></html>`;
+    
+<style id="erpImparAgendaDiaMotorUnicoCss">
+  /* Toast sempre acima do modal de fechamento (modal usa 99999). */
+  #systemToastStack,
+  .system-toast-stack,
+  .toast-stack,
+  #toastStack{
+    position:fixed!important;
+    z-index:130000!important;
+  }
+  .system-toast,
+  .toast{
+    z-index:130001!important;
+  }
+</style>
+
+<script id="erpImparAgendaDiaMotorUnicoAutoritativo">
+(function(){
+  "use strict";
+
+  if(window.__ERPIMPAR_AGENDA_DIA_MOTOR_UNICO__) return;
+  window.__ERPIMPAR_AGENDA_DIA_MOTOR_UNICO__=true;
+
+  const API_BASE="https://api.erpimpar.com.br/agenda/";
+  const SAVE_API=API_BASE+"salvar_atividade_dia.php";
+
+  const CATALOG_URLS=[
+    API_BASE+"cadastros_agenda_novo.php",
+    "/api/agenda/cadastros_agenda_novo.php",
+    "https://www.erpimpar.com.br/api/agenda/cadastros_agenda_novo.php"
+  ];
+
+  const clone=value=>JSON.parse(JSON.stringify(value??null));
+
+  function norm(value){
+    return String(value??"")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g," ");
+  }
+
+  function erpUser(){
+    for(const storage of [sessionStorage,localStorage]){
+      for(const key of ["ERPIMPAR_USER","erpimpar_user","ERP_USER","usuarioERP"]){
+        try{
+          const raw=storage.getItem(key);
+          if(!raw) continue;
+          const parsed=JSON.parse(raw);
+          if(parsed && typeof parsed==="object") return parsed;
+        }catch(_){}
+      }
+    }
+    return {};
+  }
+
+  async function requestJson(url,options={},timeout=12000){
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),timeout);
+
+    try{
+      const response=await fetch(url,{
+        cache:"no-store",
+        ...options,
+        signal:controller.signal
+      });
+
+      const raw=await response.text();
+      let data={};
+
+      try{
+        data=raw.trim()?JSON.parse(raw):{};
+      }catch(_){
+        throw new Error("O servidor retornou uma resposta inválida.");
+      }
+
+      if(!response.ok || data?.ok===false){
+        throw new Error(
+          data?.error ||
+          data?.mensagem ||
+          `HTTP ${response.status}`
+        );
+      }
+
+      return data;
+    }finally{
+      clearTimeout(timer);
+    }
+  }
+
+  async function requestCatalog(options={}){
+    const errors=[];
+
+    for(const url of CATALOG_URLS){
+      try{
+        return await requestJson(url,options);
+      }catch(error){
+        errors.push(`${url}: ${error?.message||String(error)}`);
+      }
+    }
+
+    throw new Error(errors.join(" | "));
+  }
+
+  function peopleRef(){
+    try{
+      if(typeof people!=="undefined" && Array.isArray(people)) return people;
+    }catch(_){}
+    return Array.isArray(window.people)?window.people:[];
+  }
+
+  function scheduleRef(){
+    try{
+      if(typeof schedule!=="undefined" && schedule && typeof schedule==="object"){
+        return schedule;
+      }
+    }catch(_){}
+    return window.schedule && typeof window.schedule==="object"
+      ? window.schedule
+      : {};
+  }
+
+  function roomLinksRef(){
+    try{
+      if(typeof roomLinks!=="undefined" && Array.isArray(roomLinks)) return roomLinks;
+    }catch(_){}
+    return Array.isArray(window.roomLinks)?window.roomLinks:[];
+  }
+
+  function assignPeople(value){
+    try{ people=value; }catch(_){}
+    window.people=value;
+  }
+
+  function assignSchedule(value){
+    try{ schedule=value; }catch(_){}
+    window.schedule=value;
+  }
+
+  function activeRecord(){
+    const record=window.__AGENDA_DIA_ACTIVE_RECORD__;
+    return record && typeof record==="object" ? record : null;
+  }
+
+  /*
+   * A DATA OFICIAL vem exclusivamente do registro que foi realmente carregado
+   * pelo motor V315. Não aceita fallback para currentWeekKey, seletor ou data
+   * operacional, pois esses valores podem mudar antes do conteúdo terminar de carregar.
+   */
+  function authoritativeDate(){
+    const record=activeRecord();
+    const date=String(record?.date||record?.data||"").trim();
+
+    if(!date){
+      throw new Error(
+        "Nenhum draft foi carregado. Selecione o dia e aguarde o carregamento antes de salvar."
+      );
+    }
+
+    const screenDate=String(window.__AGENDA_DIA_CURRENT_DATE__||"").trim();
+    const weekDate=String(
+      window.currentWeekKey ||
+      (typeof currentWeekKey!=="undefined"?currentWeekKey:"") ||
+      ""
+    ).trim();
+
+    if(screenDate!==date || weekDate!==date){
+      throw new Error(
+        `Bloqueio de segurança: o draft carregado é ${date}, `+
+        `mas o estado da tela é ${screenDate||weekDate||"indefinido"}. `+
+        "Nada foi salvo."
+      );
+    }
+
+    return date;
+  }
+
+  function personFromScheduleKey(key){
+    const id=String(key||"").replace(/_[0-4]$/,"");
+    return peopleRef().find(person=>String(person.id)===id);
+  }
+
+  function buildDraftFromLoadedRecord(){
+    const date=authoritativeDate();
+    const record=activeRecord();
+    const currentSchedule=clone(scheduleRef())||{};
+    const currentPeople=clone(peopleRef())||[];
+    const currentRoomLinks=clone(roomLinksRef())||[];
+    const activities=[];
+
+    Object.entries(currentSchedule).forEach(([key,items])=>{
+      const person=personFromScheduleKey(key);
+      const collaborator=person?.name||person?.nome||"";
+
+      (Array.isArray(items)?items:[]).forEach(item=>{
+        activities.push({
+          id:item.id,
+          colaborador:collaborator,
+          funcao:person?.role||person?.funcao||"execucao",
+          obra:item.obra||"",
+          atividade:item.atividade||"",
+          local:item.local||"",
+          horas:Number(item.horas||8)||8,
+          viagem:item.viagem,
+          carro:window.ERPIMPAR_CURRENT_CAR?.(person)||person?.car||null,
+          cancelado:Boolean(
+            item.cancelado===true ||
+            item.cancelled===true ||
+            item.status==="cancelado"
+          ),
+          statusVisual:item.auditStatus||"",
+          replanejado:Boolean(item.replanejado),
+          semCronogramaAtivo:Boolean(item.semCronogramaAtivo),
+          chaveOriginal:item.__originalComparisonKey||null,
+          motivoCancelamento:item.motivoCancelamento||"",
+          motivoReplanejamento:item.motivoReplanejamento||"",
+          planejado:clone(item.planejado||null),
+          executado:clone(item.executado||null)
+        });
+      });
+    });
+
+    return {
+      ...clone(record),
+      date,
+      data:date,
+      people:currentPeople,
+      schedule:currentSchedule,
+      roomLinks:currentRoomLinks,
+      atividades:activities,
+      aplicarCronograma:false,
+      finalizado:false,
+      tipo:"draft",
+      status:"draft",
+      updatedAt:new Date().toISOString(),
+      usuarioAtualizacao:erpUser()
+    };
+  }
+
+  async function saveLoadedDay({silent=false}={}){
+    if(document.body.classList.contains("day-finalized")){
+      window.showToast?.(
+        "warning",
+        "Histórico finalizado",
+        "Este dia está em histórico e não pode ser alterado."
+      );
+      return false;
+    }
+
+    const date=authoritativeDate();
+    const draft=buildDraftFromLoadedRecord();
+
+    await requestJson(SAVE_API,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        data:date,
+        draft,
+        usuario:erpUser()
+      })
+    });
+
+    /*
+     * Atualiza a fotografia ativa somente depois da confirmação do servidor.
+     * A data não é recalculada nem herdada de outro estado.
+     */
+    window.__AGENDA_DIA_ACTIVE_RECORD__={
+      ...draft,
+      date,
+      data:date
+    };
+
+    if(!silent){
+      window.showToast?.(
+        "success",
+        "Agenda do Dia salva",
+        `O draft de ${date.split("-").reverse().join("/")} foi atualizado.`
+      );
+    }
+
+    return true;
+  }
+
+  function normalizeRole(value,name){
+    const role=String(value||"").toLowerCase();
+    if(role.includes("coord")) return "coordenacao";
+    return norm(name).includes("PABLO") ? "coordenacao" : "execucao";
+  }
+
+  function normalizePerson(person,index){
+    const name=norm(person?.name??person?.nome??"");
+    return {
+      id:person?.id??index+1,
+      name,
+      role:normalizeRole(person?.role??person?.funcao,name),
+      active:person?.active!==false && person?.ativo!==false,
+      car:person?.car??person?.veiculo??person?.placa??null
+    };
+  }
+
+  function migrateScheduleByName(oldPeople,newPeople){
+    const current=clone(scheduleRef())||{};
+    const oldById=new Map(
+      oldPeople.map(person=>[String(person.id),norm(person.name||person.nome)])
+    );
+    const newByName=new Map(
+      newPeople.map(person=>[norm(person.name||person.nome),person])
+    );
+    const migrated={};
+
+    Object.entries(current).forEach(([key,items])=>{
+      const match=String(key).match(/^(.*)_([0-4])$/);
+
+      if(!match){
+        migrated[key]=items;
+        return;
+      }
+
+      const oldId=match[1];
+      const day=match[2];
+      const name=oldById.get(oldId);
+      const replacement=name ? newByName.get(name) : null;
+      const targetId=replacement?.id??oldId;
+
+      migrated[`${targetId}_${day}`]=Array.isArray(items)?items:[];
+    });
+
+    assignSchedule(migrated);
+  }
+
+  function renderPeopleModalSafe(){
+    if(typeof renderPeopleTable==="function"){
+      renderPeopleTable();
+      return;
+    }
+
+    const table=document.getElementById("peopleTable");
+    if(!table) throw new Error("Tabela de colaboradores não encontrada.");
+
+    table.innerHTML="";
+
+    peopleRef().forEach(person=>{
+      const row=document.createElement("div");
+      row.className="person-config";
+      row.innerHTML=
+        `<b>${String(person.name||person.nome||"")}</b>`+
+        `<small>${String(person.role||person.funcao||"execucao")}</small>`;
+      table.appendChild(row);
+    });
+  }
+
+  async function openCollaborators(){
+    if(document.body.classList.contains("day-finalized")){
+      window.showToast?.(
+        "warning",
+        "Histórico finalizado",
+        "Este dia está em histórico e não pode ser alterado."
+      );
+      return;
+    }
+
+    authoritativeDate();
+
+    const button=document.getElementById("openPeople");
+    const original=button?.innerHTML;
+
+    try{
+      if(button){
+        button.disabled=true;
+        button.textContent="Carregando...";
+      }
+
+      const oldPeople=clone(peopleRef())||[];
+
+      try{
+        const result=await requestCatalog();
+        const source=Array.isArray(result?.data?.colaboradores)
+          ? result.data.colaboradores
+          : [];
+
+        const loaded=source.map(normalizePerson).filter(person=>person.name);
+
+        if(loaded.length){
+          migrateScheduleByName(oldPeople,loaded);
+          assignPeople(loaded);
+        }else if(!oldPeople.length){
+          throw new Error("O cadastro de colaboradores está vazio.");
+        }
+      }catch(error){
+        /*
+         * Falha de catálogo não troca data, não limpa schedule e não busca outro dia.
+         * O modal pode abrir com a fotografia dos colaboradores do próprio draft.
+         */
+        if(!oldPeople.length) throw error;
+
+        window.showToast?.(
+          "warning",
+          "Cadastro compartilhado indisponível",
+          "O modal foi aberto com os colaboradores do draft atual. Nenhuma atividade foi alterada.",
+          7000
+        );
+      }
+
+      renderPeopleModalSafe();
+
+      const modal=document.getElementById("peopleModal");
+      modal?.classList.add("open");
+      modal?.setAttribute("aria-hidden","false");
+    }catch(error){
+      console.error("ERRO_ABRIR_COLABORADORES_MOTOR_UNICO",error);
+      window.showToast?.(
+        "error",
+        "Colaboradores",
+        error?.message||"Não foi possível carregar os colaboradores.",
+        7000
+      );
+    }finally{
+      if(button){
+        button.disabled=false;
+        button.innerHTML=original||"👥 Colaboradores";
+      }
+    }
+  }
+
+  async function saveCatalogAndLoadedDay(){
+    const button=document.getElementById("applyPeople");
+    const original=button?.textContent||"Aplicar";
+
+    try{
+      const date=authoritativeDate();
+
+      if(button){
+        button.disabled=true;
+        button.textContent="Aplicando...";
+      }
+
+      const payload={
+        colaboradores:clone(peopleRef())||[],
+        atividades:(
+          typeof atividades!=="undefined" && Array.isArray(atividades)
+        ) ? clone(atividades) : [],
+        usuario:erpUser()
+      };
+
+      await requestCatalog({
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      });
+
+      if(typeof renderAll==="function") renderAll();
+
+      /*
+       * Salva o mesmo draft que já estava carregado.
+       * Não consulta Agenda Semanal, histórico ou próxima data.
+       */
+      await saveLoadedDay({silent:true});
+
+      document.getElementById("peopleModal")?.classList.remove("open");
+
+      window.showToast?.(
+        "success",
+        "Colaboradores atualizados",
+        `Cadastro aplicado e draft de ${date.split("-").reverse().join("/")} salvo.`
+      );
+    }catch(error){
+      console.error("ERRO_APLICAR_COLABORADORES_MOTOR_UNICO",error);
+      window.showToast?.(
+        "error",
+        "Erro ao aplicar",
+        error?.message||"Não foi possível aplicar os colaboradores.",
+        7000
+      );
+    }finally{
+      if(button){
+        button.disabled=false;
+        button.textContent=original;
+      }
+    }
+  }
+
+  async function onSave(){
+    const button=document.getElementById("saveMock");
+    const original=button?.innerHTML;
+
+    try{
+      authoritativeDate();
+
+      if(button){
+        button.disabled=true;
+        button.textContent="Salvando...";
+      }
+
+      await saveLoadedDay({silent:false});
+    }catch(error){
+      console.error("ERRO_SALVAR_AGENDA_DIA_MOTOR_UNICO",error);
+      window.showToast?.(
+        "error",
+        "Salvamento bloqueado",
+        error?.message||"Não foi possível salvar a Agenda do Dia.",
+        7000
+      );
+    }finally{
+      if(button){
+        button.disabled=false;
+        button.innerHTML=original||"💾 Salvar";
+      }
+    }
+  }
+
+  function replaceButton(id,handler){
+    const old=document.getElementById(id);
+    if(!old) return;
+
+    const fresh=old.cloneNode(true);
+    fresh.disabled=false;
+    fresh.dataset.erpMotorUnico="1";
+    old.replaceWith(fresh);
+
+    fresh.addEventListener("click",event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      handler();
+    },true);
+  }
+
+  function install(){
+    replaceButton("openPeople",openCollaborators);
+    replaceButton("saveMock",onSave);
+    replaceButton("applyPeople",saveCatalogAndLoadedDay);
+
+    window.AgendaDiaMotorUnico={
+      salvar:onSave,
+      salvarDraft:saveLoadedDay,
+      abrirColaboradores:openCollaborators,
+      aplicarColaboradores:saveCatalogAndLoadedDay,
+      data:()=>activeRecord()?.date||activeRecord()?.data||""
+    };
+
+    /* Compatibilidade com chamadas existentes. */
+    window.AgendaDiaV3123={
+      abrirColaboradores:openCollaborators,
+      salvar:onSave,
+      aplicarColaboradores:saveCatalogAndLoadedDay
+    };
+  }
+
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",()=>setTimeout(install,0),{once:true});
+  }else{
+    setTimeout(install,0);
+  }
+
+  /*
+   * Algumas camadas visuais recriam botões. Reinstala o mesmo motor,
+   * sem criar novas regras ou novos estados.
+   */
+  const observer=new MutationObserver(()=>{
+    const save=document.getElementById("saveMock");
+    const open=document.getElementById("openPeople");
+    const apply=document.getElementById("applyPeople");
+
+    if(
+      (save && save.dataset.erpMotorUnico!=="1") ||
+      (open && open.dataset.erpMotorUnico!=="1") ||
+      (apply && apply.dataset.erpMotorUnico!=="1")
+    ){
+      install();
+    }
+  });
+
+  observer.observe(document.documentElement,{subtree:true,childList:true});
+
+  console.info(
+    "[Agenda do Dia] Motor único ativo: data exclusiva do draft carregado; salvar e colaboradores sem troca de dia."
+  );
+})();
+</script>
+
+</body></html>`;
   }
 
   async function preparePdfForPopup(popup){
