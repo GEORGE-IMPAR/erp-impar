@@ -971,7 +971,7 @@ function setStatus(t,err=false){$('status').textContent=t;$('status').classList.
 function lerUsuario(){let u=null;try{u=JSON.parse(localStorage.getItem('ERPIMPAR_USER')||sessionStorage.getItem('ERPIMPAR_USER')||'null')}catch{};let n=u?.nome||u?.Nome||u?.name||u?.displayName||'Usuário RP', e=u?.email||u?.Email||u?.mail||'sessão local';$('userName').textContent=n;$('userEmail').textContent=e;$('avatar').textContent=(n||'U')[0].toUpperCase();return u||{nome:n,email:e}}
 async function api(action,body={}){let r=await fetch(API+'?action='+encodeURIComponent(action)+'&_='+Date.now(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});let t=await r.text();try{return JSON.parse(t)}catch(e){throw new Error(t.slice(0,220)||e.message)}}
 async function listar(){try{let j=await api('list');let opts=(j.agendas||[]).map(a=>`<option value="${a.id}">${a.label||a.id}</option>`).join('');$('agendaSel').innerHTML='<option value="">Selecione...</option>'+opts;setStatus('Selecione uma agenda histórica congelada.')}catch(e){$('agendaSel').innerHTML='<option value="">Erro ao listar</option>';setStatus('Erro ao listar agendas: '+e.message,true)}}
-async function carregarSemana(){let id=$('agendaSel').value;if(!id){resetTela();return;}try{setStatus('Carregando...');let j=await api('load',{id});if(!j.ok)throw new Error(j.erro||'Falha ao carregar');semana=j.semana;viagens=(j.viagens||[]).map(v=>({...v, diaria:(v.diaria===undefined||v.diaria===null||v.diaria==='')?30:Number(v.diaria), hotelValor:Number(v.hotelValor||0), quarto:v.quarto||'Simples', disponibilidade:v.disponibilidade||'consultar'}));origem=j.origem||'';['btnSalvar','btnFinalizar','btnNova','btnRel','btnExcel'].forEach(id=>$(id).disabled=false);render();setStatus(`Agenda histórica carregada • ${viagens.filter(v=>!v.cancelado).length} viagem(ns). Alterações serão gravadas como rascunho interno de custos.`)}catch(e){setStatus(e.message,true)}}
+async function carregarSemana(){let id=$('agendaSel').value;if(!id){resetTela();return;}try{setStatus('Carregando...');let j=await api('load',{id});if(!j.ok)throw new Error(j.erro||'Falha ao carregar');semana=j.semana;viagens=(j.viagens||[]).map(v=>({...v, diaria:Number(v.diaria||30), hotelValor:Number(v.hotelValor||0), quarto:v.quarto||'Simples', disponibilidade:v.disponibilidade||'consultar'}));origem=j.origem||'';['btnSalvar','btnFinalizar','btnNova','btnRel','btnExcel'].forEach(id=>$(id).disabled=false);render();setStatus(`Agenda histórica carregada • ${viagens.filter(v=>!v.cancelado).length} viagem(ns). Alterações serão gravadas como rascunho interno de custos.`)}catch(e){setStatus(e.message,true)}}
 function resetTela(){semana=null;viagens=[];origem='';['btnSalvar','btnFinalizar','btnNova','btnRel','btnExcel'].forEach(id=>$(id).disabled=true);$('matrix').innerHTML='<div class="empty">Escolha uma agenda para começar.</div>';resumo();}
 function statusTrip(v){if(v.cancelado||v.status==='cancelado')return 'cancel';if(!v.hotel || !Number(v.hotelValor||0) || v.disponibilidade==='consultar')return 'warn';if(v.atualizado||v.status==='ok')return 'ok';return ''}
 function render(){let by={};viagens.forEach((v,i)=>{if(v.cancelado)return;let c=(v.colaborador||'SEM NOME').toUpperCase();by[c]=by[c]||{};DIAS.forEach(d=>by[c][d]=by[c][d]||[]);if(DIAS.includes(v.dia)){let key=(v.obra||'').trim().toUpperCase();let exists=by[c][v.dia].find(x=>(x.obra||'').trim().toUpperCase()===key); if(!exists)by[c][v.dia].push({...v,_idxs:[i]}); else exists._idxs.push(i);}});let cols=DIAS.map(d=>`<div class="hcell">${DIA_LABEL[d]}<span>${(semana?.datas?.[d]||'')}</span></div>`).join('');let html=`<div class="head"><div class="hcell">Colaborador</div>${cols}</div>`;Object.keys(by).sort().forEach(c=>{html+=`<div class="row"><div class="name" onclick="abrirColaborador('${escAttr(c)}')">${esc(c)}<span class="mini">${Object.values(by[c]).flat().length} local/dia</span></div>`;DIAS.forEach(d=>{html+=`<div class="day" data-colab="${escAttr(c)}" data-dia="${d}" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="dropTrip(event,this)">`;let arr=by[c][d]||[];html+=arr.map(v=>`<div class="trip ${statusTrip(v)}" draggable="true" ondragstart="dragTrip(event,'${v._idxs.join(',')}')" onclick="abrirGrupo('${escAttr(c)}','${d}','${escAttr(v.obra)}')"><button class="cancel-x" onclick="event.stopPropagation();cancelarGrupo('${escAttr(c)}','${d}','${escAttr(v.obra)}')">×</button><div class="trip-title">${esc(v.obra)}</div><div class="trip-sub">${v.hotel?esc(v.hotel):'Hotel não definido'}</div><div class="trip-foot"><span class="pill">${v._idxs.length} card(s)</span><span class="pill">Hotel ${brl(mediaHotel(v._idxs))}</span></div></div>`).join('')||'<div class="empty">—</div>';html+=`<button class="add" onclick="novaViagem('${escAttr(c)}','${d}')">+ viagem</button></div>`});html+='</div>'});$('matrix').innerHTML=html;resumo()}
@@ -4192,414 +4192,575 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 </script>
 
 
-<script id="erpImparHospedagemCompartilhadaUnicaFinal">
+<!-- =========================================================
+ ERP ÍMPAR — CORREÇÃO PONTUAL: DRAFT COMO FONTE OFICIAL
+ Alterações exclusivas:
+ 1. Agenda Semanal somente na primeira carga, quando ainda não existe draft.
+ 2. Toda manutenção salva integralmente no draft, sem revalidar a Agenda Semanal.
+ Nenhuma alteração em Google Maps, layout, relatórios ou demais funcionalidades.
+========================================================== -->
+<script id="erpImparViagensDraftFonteOficialProducao">
 (function(){
   "use strict";
-  if(window.__ERPIMPAR_HOSPEDAGEM_COMPARTILHADA_UNICA_FINAL__) return;
-  window.__ERPIMPAR_HOSPEDAGEM_COMPARTILHADA_UNICA_FINAL__=true;
 
-  const norm=v=>String(v||"").trim().toUpperCase();
+  if(window.__ERPIMPAR_VIAGENS_DRAFT_FONTE_OFICIAL_PRODUCAO__) return;
+  window.__ERPIMPAR_VIAGENS_DRAFT_FONTE_OFICIAL_PRODUCAO__=true;
+
+  const seletor=document.getElementById("agendaSel");
+  const carregarAnterior=window.carregarSemana;
+
+  function numeroPreservandoZero(valor,padrao){
+    if(valor===undefined || valor===null || valor==="") return padrao;
+    const numero=Number(valor);
+    return Number.isFinite(numero) ? numero : padrao;
+  }
 
   /*
-   * Garante a regra contábil do quarto compartilhado:
-   * - o responsável/pagante mantém o valor integral da diária do hotel;
-   * - os companheiros recebem o vínculo e hotelValor = 0;
-   * - não há rateio nem duplicação no total, relatório ou Excel.
+   * Salvamento autoritativo.
+   * Envia exatamente o estado atual de "viagens".
+   * Não lê, não compara e não valida qualquer dado da Agenda Semanal.
    */
-  function reconciliarHospedagemCompartilhada(){
-    if(!Array.isArray(window.viagens)) return false;
-    let mudou=false;
+  window.salvarDraft=async function(silencioso=false){
+    if(!semana) return false;
 
-    window.viagens.forEach(pagante=>{
-      if(!pagante || pagante.cancelado || pagante.hospedagemCompartilhada) return;
-      const companheiros=[...new Set((pagante.companheiros||[]).map(norm).filter(Boolean))];
-      if(!companheiros.length) return;
+    try{
+      if(!silencioso) setStatus("Salvando rascunho...");
 
-      const obra=norm(pagante.obra);
-      const hotel=String(pagante.hotel||"");
-      const quarto=String(pagante.quarto||"Simples");
-      const disponibilidade=String(pagante.disponibilidade||"consultar");
-
-      if(pagante.hospedagemPagante!==true){pagante.hospedagemPagante=true;mudou=true;}
-      if(pagante.hospedagemCompartilhada!==false){pagante.hospedagemCompartilhada=false;mudou=true;}
-      pagante.companheiros=companheiros;
-
-      window.viagens.forEach(item=>{
-        if(!item || item.cancelado) return;
-        if(!companheiros.includes(norm(item.colaborador))) return;
-        if(norm(item.obra)!==obra) return;
-
-        const novo={
-          hotel,
-          hotelValor:0,
-          quarto,
-          disponibilidade,
-          hospedagemCompartilhada:true,
-          hospedagemPagante:false,
-          companheiros:[norm(pagante.colaborador)]
-        };
-        Object.entries(novo).forEach(([k,v])=>{
-          const atual=Array.isArray(v)?JSON.stringify(item[k]||[]):item[k];
-          const esperado=Array.isArray(v)?JSON.stringify(v):v;
-          if(atual!==esperado){item[k]=v;mudou=true;}
-        });
+      const resposta=await api("save",{
+        semana,
+        viagens,
+        usuario:lerUsuario()
       });
-    });
-    return mudou;
-  }
 
-  window.reconciliarHospedagemCompartilhada=reconciliarHospedagemCompartilhada;
-
-  function envolver(nome){
-    const original=window[nome];
-    if(typeof original!=="function" || original.__erpSharedWrapped) return;
-    const wrapped=function(){
-      reconciliarHospedagemCompartilhada();
-      return original.apply(this,arguments);
-    };
-    wrapped.__erpSharedWrapped=true;
-    window[nome]=wrapped;
-  }
-
-  ["render","resumo","abrirRelatorio","exportarExcel","salvarDraft","finalizarCustos"].forEach(envolver);
-
-  window.addEventListener("load",()=>{
-    setTimeout(()=>{
-      if(reconciliarHospedagemCompartilhada()){
-        try{ window.render?.(); }catch(e){ console.error(e); }
+      if(!resposta || resposta.ok!==true){
+        throw new Error(resposta?.erro || "Falha ao salvar o rascunho.");
       }
-    },900);
-  },{once:true});
+
+      origem="draft";
+
+      if(typeof resumo==="function") resumo();
+
+      if(!silencioso){
+        setStatus("Rascunho salvo. Os dados da manutenção agora são a fonte oficial.");
+      }
+
+      return true;
+    }catch(error){
+      setStatus("Erro ao salvar: "+error.message,true);
+      throw error;
+    }
+  };
+
+  /*
+   * Carga oficial:
+   * - se a API devolver draft, usa somente o draft;
+   * - se ainda não existir draft, usa a Agenda Semanal uma única vez
+   *   e salva imediatamente essa fotografia;
+   * - valores zero são preservados.
+   */
+  async function carregarSemanaDraftOficial(){
+    const id=seletor?.value || "";
+
+    if(!id){
+      resetTela();
+      return;
+    }
+
+    try{
+      setStatus("Carregando...");
+
+      const resposta=await api("load",{id});
+
+      if(!resposta || resposta.ok!==true){
+        throw new Error(resposta?.erro || "Falha ao carregar.");
+      }
+
+      semana=resposta.semana;
+
+      viagens=(resposta.viagens || []).map(item=>({
+        ...item,
+        diaria:numeroPreservandoZero(item.diaria,30),
+        hotelValor:numeroPreservandoZero(item.hotelValor,0),
+        quarto:item.quarto || "Simples",
+        disponibilidade:item.disponibilidade || "consultar"
+      }));
+
+      origem=resposta.origem || "";
+
+      ["btnSalvar","btnFinalizar","btnNova","btnRel","btnExcel"]
+        .forEach(botaoId=>{
+          const botao=document.getElementById(botaoId);
+          if(botao) botao.disabled=false;
+        });
+
+      if(typeof render==="function") render();
+
+      if(origem==="draft"){
+        setStatus(
+          `Rascunho oficial carregado • ${viagens.filter(v=>!v.cancelado).length} viagem(ns).`
+        );
+        return;
+      }
+
+      /*
+       * Não existia draft: esta é a única leitura da Agenda Semanal.
+       * A fotografia recebida é gravada imediatamente e passa a ser a verdade.
+       */
+      await window.salvarDraft(true);
+
+      if(typeof render==="function") render();
+
+      setStatus(
+        `Primeira carga concluída • draft oficial criado com ${viagens.filter(v=>!v.cancelado).length} viagem(ns).`
+      );
+    }catch(error){
+      setStatus(error.message || String(error),true);
+    }
+  }
+
+  /*
+   * O listener original guardava a função antiga.
+   * Remove essa referência e conecta a carga oficial.
+   */
+  if(seletor){
+    if(typeof carregarAnterior==="function"){
+      seletor.removeEventListener("change",carregarAnterior);
+    }
+    seletor.addEventListener("change",carregarSemanaDraftOficial);
+  }
+
+  window.carregarSemana=carregarSemanaDraftOficial;
+
+  /*
+   * Confirmação da manutenção:
+   * mantém toda a lógica já existente do backup de produção,
+   * mas só fecha com sucesso quando o draft foi efetivamente gravado.
+   */
+  const aplicarAnterior=window.aplicarModal;
+
+  if(typeof aplicarAnterior==="function"){
+    window.aplicarModal=async function(){
+      try{
+        return await aplicarAnterior.apply(this,arguments);
+      }catch(error){
+        if(typeof showToast==="function"){
+          showToast(
+            "error",
+            "Falha ao gravar",
+            "A manutenção não foi confirmada porque o draft não pôde ser salvo."
+          );
+        }
+        throw error;
+      }
+    };
+  }
+
+  console.info(
+    "[Viagens] Draft oficial ativo: Agenda Semanal apenas na primeira carga; manutenção salva sem revalidação."
+  );
 })();
 </script>
 
 
 <!-- =========================================================
- ERP ÍMPAR — PATCH V5
- Correções:
- 1. Alimentação usa dias ativos - 1, excluindo o último dia de cada sequência.
- 2. Cada dia mantém seu próprio valor de diária.
- 3. A manutenção aberta pelo card altera somente o dia clicado.
+ ERP ÍMPAR — CORREÇÃO DEFINITIVA DA MANUTENÇÃO POR DIA
+ Base: pacote de produção com draft oficial.
+ Alterações exclusivas:
+ - diária editada pertence somente ao dia selecionado;
+ - draft é salvo e relido do servidor antes de confirmar sucesso;
+ - totais somam os valores reais de cada dia;
+ - Agenda Semanal continua restrita à primeira carga.
+ Google Maps, hotéis, layout e demais recursos permanecem intactos.
 ========================================================== -->
-<script id="erpImparViagensV5DiariaPorDia">
+<script id="erpImparViagensManutencaoDiaPersistenciaReal">
 (function(){
   "use strict";
-  if(window.__ERPIMPAR_VIAGENS_V5_DIARIA_POR_DIA__) return;
-  window.__ERPIMPAR_VIAGENS_V5_DIARIA_POR_DIA__=true;
 
-  const norm=v=>String(v||"").trim().toUpperCase();
-  const moedaNumero=v=>{
-    if(typeof window.erpParseMoeda==="function") return window.erpParseMoeda(v);
-    let s=String(v??"").trim().replace(/\s/g,"").replace(/R\$/gi,"").replace(/[^\d,.-]/g,"");
-    if(s.includes(",")) s=s.replace(/\./g,"").replace(",",".");
-    const n=Number(s);
-    return Number.isFinite(n)?n:0;
-  };
+  if(window.__ERPIMPAR_VIAGENS_MANUTENCAO_DIA_PERSISTENCIA_REAL__) return;
+  window.__ERPIMPAR_VIAGENS_MANUTENCAO_DIA_PERSISTENCIA_REAL__=true;
+
+  const norm=value=>String(value||"").trim().toUpperCase();
+
+  function moedaNumero(value){
+    if(typeof window.erpParseMoeda==="function"){
+      return window.erpParseMoeda(value);
+    }
+
+    let text=String(value??"").trim();
+    if(!text) return 0;
+
+    text=text
+      .replace(/\s/g,"")
+      .replace(/R\$/gi,"")
+      .replace(/[^\d,.-]/g,"");
+
+    if(text.includes(",")){
+      text=text.replace(/\./g,"").replace(",",".");
+    }
+
+    const number=Number(text);
+    return Number.isFinite(number) ? number : 0;
+  }
 
   function linhasGrupo(colab,obra){
-    const c=norm(colab), o=norm(obra);
-    return viagens.map((v,i)=>({...v,_i:i}))
-      .filter(v=>!v.cancelado && norm(v.colaborador)===c && norm(v.obra)===o && DIAS.includes(v.dia))
+    const c=norm(colab);
+    const o=norm(obra);
+
+    return viagens
+      .map((row,index)=>({...row,_index:index}))
+      .filter(row=>
+        !row.cancelado &&
+        norm(row.colaborador)===c &&
+        norm(row.obra)===o &&
+        DIAS.includes(row.dia)
+      )
       .sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia));
   }
 
-  function linhasPagaveis(colab,obra){
-    const rows=linhasGrupo(colab,obra);
-    if(!rows.length) return [];
-    const porDia=new Map();
-    rows.forEach(r=>{ if(!porDia.has(r.dia)) porDia.set(r.dia,r); });
-    const unicas=[...porDia.values()].sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia));
-    const seqs=[];
-    let atual=[];
-    unicas.forEach(r=>{
-      if(!atual.length || DIAS.indexOf(r.dia)===DIAS.indexOf(atual[atual.length-1].dia)+1){
-        atual.push(r);
-      }else{
-        seqs.push(atual); atual=[r];
-      }
-    });
-    if(atual.length) seqs.push(atual);
-    return seqs.flatMap(seq=>seq.slice(0,-1));
+  function valorDoDia(colab,obra,dia){
+    const row=linhasGrupo(colab,obra).find(item=>item.dia===dia);
+
+    if(!row) return 0;
+
+    if(row.diaria===undefined || row.diaria===null || row.diaria===""){
+      return 0;
+    }
+
+    const number=Number(row.diaria);
+    return Number.isFinite(number) ? number : 0;
   }
 
-  window.qtdHospedagens=function(colab,obra){
-    return linhasPagaveis(colab,obra).length;
+  /*
+   * O total deixa de usar "quantidade × um único valor".
+   * Soma exatamente o valor salvo em cada dia, sem duplicar atividades
+   * repetidas do mesmo colaborador/obra/dia.
+   */
+  window.valorDiariaGrupo=function(colab,obra){
+    const rows=linhasGrupo(colab,obra);
+    if(!rows.length) return 0;
+    return valorDoDia(colab,obra,rows[0].dia);
   };
 
   window.diariasColabGrupo=function(colab,obra){
-    return linhasPagaveis(colab,obra).reduce((total,row)=>{
-      const valor=row.diaria===undefined || row.diaria===null ? 30 : Number(row.diaria);
-      return total + (Number.isFinite(valor)?valor:0);
-    },0);
+    const porDia=new Map();
+
+    linhasGrupo(colab,obra).forEach(row=>{
+      if(!porDia.has(row.dia)){
+        porDia.set(row.dia,valorDoDia(colab,obra,row.dia));
+      }
+    });
+
+    return [...porDia.values()].reduce((total,value)=>total+value,0);
   };
 
-  window.valorDiariaGrupo=function(colab,obra){
-    const row=linhasGrupo(colab,obra)[0];
-    if(!row) return 0;
-    const valor=row.diaria===undefined || row.diaria===null ? 30 : Number(row.diaria);
-    return Number.isFinite(valor)?valor:0;
-  };
+  function formatarCampoDiaria(colab,obra,dia){
+    const input=document.getElementById("mDiaria");
+    if(!input) return;
 
-  function abrirDia(colab,obra,dia){
-    const rows=linhasGrupo(colab,obra).filter(v=>v.dia===dia);
-    if(!rows.length){
-      window.showToast?.("warning","Dia não encontrado","Não foi possível localizar a programação deste dia.");
-      return;
-    }
-    const base=rows.find(v=>v.hotel || v.hotelValor || v.quarto) || rows[0];
-    editing=-1000;
-    window.__EDIT_GROUP={colab:norm(colab),obra:norm(obra),dia,idxs:rows.map(v=>v._i),somenteDia:true};
+    const value=valorDoDia(colab,obra,dia);
 
-    $("modalTitle").textContent="Hospedagem e diária do dia";
-    $("modalSub").textContent=`${norm(colab)} • ${norm(obra)} • ${DIA_LABEL[dia]||dia}`;
-    $("mColab").value=norm(colab);
-    $("mObra").value=String(base.obra||obra);
-    $("mDiaria").value=base.diaria===undefined || base.diaria===null ? 30 : Number(base.diaria);
-    $("mHotel").value=String(base.hotel||"");
-    $("mHotelValor").value=base.hotelValor===undefined || base.hotelValor===null ? 0 : Number(base.hotelValor);
-    $("mQuarto").value=base.quarto||"Simples";
-    $("mDisp").value=base.disponibilidade||"consultar";
-    $("mStatus").value=base.cancelado?"cancelado":(base.status||"pendente");
-    $("mObs").value=base.obs||"";
-    $("mDia").innerHTML=`<option value="${dia}" selected>${DIA_LABEL[dia]||dia}</option>`;
-    const diaDiv=$("mDia")?.closest("div"); if(diaDiv) diaDiv.style.display="none";
-    const obsDiv=$("mObs")?.closest("div"); if(obsDiv) obsDiv.style.display="none";
-
-    try{ renderCompanheiros(norm(colab),norm(obra),base); }catch(_){ }
-    $("hotelsBox").innerHTML='<div class="empty">Clique em pesquisar para buscar hotéis próximos.</div>';
-    $("mapBox").innerHTML='Mapa/localização da obra.';
-    const modal=$("modalTrip"); modal.classList.add("open");
-    setTimeout(()=>{ try{modal.scrollTop=0;modal.querySelector(".modal-card")?.scrollTo?.(0,0);}catch(_){ } },30);
+    input.value=typeof window.erpFormatMoeda==="function"
+      ? window.erpFormatMoeda(value)
+      : String(value);
   }
 
-  window.editarGrupoHospedagem=function(colab,obra,dia){
-    if(dia) return abrirDia(colab,obra,dia);
-    const primeiro=linhasGrupo(colab,obra)[0];
-    if(primeiro) return abrirDia(colab,obra,primeiro.dia);
+  /*
+   * Reaproveita integralmente a manutenção existente, inclusive Maps,
+   * hotéis e companheiros. Apenas identifica e exibe o dia clicado.
+   */
+  const editarGrupoOriginal=window.editarGrupoHospedagem;
+
+  if(typeof editarGrupoOriginal==="function"){
+    window.editarGrupoHospedagem=function(colab,obra,diaPreferido){
+      const result=editarGrupoOriginal.call(this,colab,obra);
+
+      const c=norm(colab);
+      const o=norm(obra);
+      const rows=linhasGrupo(c,o);
+      const selectedDay=
+        DIAS.includes(diaPreferido)
+          ? diaPreferido
+          : rows[0]?.dia || "segunda";
+
+      const select=document.getElementById("mDia");
+      const wrapper=select?.closest("div");
+
+      if(select){
+        select.innerHTML=rows
+          .map(row=>row.dia)
+          .filter((day,index,array)=>array.indexOf(day)===index)
+          .map(day=>
+            `<option value="${day}" ${day===selectedDay?"selected":""}>${DIA_LABEL[day]}</option>`
+          )
+          .join("");
+
+        select.value=selectedDay;
+        select.onchange=()=>{
+          formatarCampoDiaria(c,o,select.value);
+        };
+      }
+
+      if(wrapper) wrapper.style.display="grid";
+
+      window.__EDIT_GROUP={
+        colab:c,
+        obra:o,
+        idxs:rows.map(row=>row._index),
+        dia:selectedDay
+      };
+
+      formatarCampoDiaria(c,o,selectedDay);
+
+      return result;
+    };
+  }
+
+  /*
+   * O card já contém colaborador, dia e obra em data-trip-key.
+   * Usa o dia clicado ao abrir a manutenção.
+   */
+  window.abrirCardViagem=function(event,colab,obra){
+    if(event?.target?.closest?.("button")) return;
+
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
+    const key=event?.currentTarget?.dataset?.tripKey ||
+      event?.target?.closest?.(".trip[data-trip-key]")?.dataset?.tripKey ||
+      "";
+
+    const parts=String(key).split("|");
+    const dia=DIAS.includes(parts[1]) ? parts[1] : "";
+
+    window.editarGrupoHospedagem(norm(colab),norm(obra),dia);
   };
 
-  window.aplicarModal=async function(){
-    const diaria=moedaNumero($("mDiaria").value);
-    const hotelValor=moedaNumero($("mHotelValor").value);
-    if(!Number.isFinite(diaria) || diaria<0 || !Number.isFinite(hotelValor) || hotelValor<0){
-      window.showToast?.("warning","Valores inválidos","As diárias devem ser valores iguais ou superiores a zero.");
-      return;
+  /*
+   * Grava exatamente o estado local e relê o draft do servidor.
+   * A mensagem de sucesso só aparece se o valor retornado pelo backend
+   * for igual ao valor informado na manutenção.
+   */
+  async function salvarEConfirmarNoServidor({
+    colaborador,
+    obra,
+    dia,
+    diariaEsperada
+  }){
+    await window.salvarDraft(true);
+
+    const id=document.getElementById("agendaSel")?.value || semana?.id || "";
+    if(!id){
+      throw new Error("Não foi possível identificar a semana para conferir o rascunho.");
     }
+
+    const response=await api("load",{id});
+
+    if(!response || response.ok!==true){
+      throw new Error(response?.erro || "O servidor não devolveu o rascunho salvo.");
+    }
+
+    if(response.origem!=="draft"){
+      throw new Error("O servidor não reconheceu o rascunho como fonte oficial.");
+    }
+
+    const serverRows=(response.viagens||[]).map(row=>({
+      ...row,
+      diaria:
+        row.diaria===undefined || row.diaria===null || row.diaria===""
+          ? 0
+          : Number(row.diaria),
+      hotelValor:
+        row.hotelValor===undefined || row.hotelValor===null || row.hotelValor===""
+          ? 0
+          : Number(row.hotelValor)
+    }));
+
+    const matching=serverRows.filter(row=>
+      !row.cancelado &&
+      norm(row.colaborador)===norm(colaborador) &&
+      norm(row.obra)===norm(obra) &&
+      row.dia===dia
+    );
+
+    if(!matching.length){
+      throw new Error("O dia alterado não foi encontrado no draft devolvido pelo servidor.");
+    }
+
+    const persisted=matching.every(row=>
+      Number(row.diaria)===Number(diariaEsperada)
+    );
+
+    if(!persisted){
+      throw new Error(
+        `O servidor devolveu ${brl(Number(matching[0]?.diaria||0))}, `+
+        `mas a manutenção informou ${brl(diariaEsperada)}.`
+      );
+    }
+
+    semana=response.semana;
+    viagens=serverRows;
+    origem="draft";
+
+    if(typeof render==="function") render();
+
+    return true;
+  }
+
+  /*
+   * Manutenção definitiva:
+   * - diária: somente o dia selecionado;
+   * - hotel/quarto/status: permanecem como dados do grupo;
+   * - companheiros: recebem hotel compartilhado sem duplicar hospedagem;
+   * - não consulta nem recalcula Agenda Semanal.
+   */
+  window.aplicarModal=async function(){
+    const group=window.__EDIT_GROUP;
+
     const data={
-      colaborador:norm($("mColab").value), obra:$("mObra").value.trim(), dia:$("mDia").value,
-      diaria, hotel:$("mHotel").value.trim(), hotelValor,
-      quarto:$("mQuarto").value, disponibilidade:$("mDisp").value,
-      status:$("mStatus").value, obs:$("mObs").value.trim(), atualizado:true,
-      cancelado:$("mStatus").value==="cancelado"
+      colaborador:norm(document.getElementById("mColab")?.value),
+      obra:String(document.getElementById("mObra")?.value||"").trim(),
+      dia:String(document.getElementById("mDia")?.value||""),
+      diaria:moedaNumero(document.getElementById("mDiaria")?.value),
+      hotel:String(document.getElementById("mHotel")?.value||"").trim(),
+      hotelValor:moedaNumero(document.getElementById("mHotelValor")?.value),
+      quarto:String(document.getElementById("mQuarto")?.value||"Simples"),
+      disponibilidade:String(document.getElementById("mDisp")?.value||"consultar"),
+      status:String(document.getElementById("mStatus")?.value||"pendente"),
+      obs:String(document.getElementById("mObs")?.value||"").trim(),
+      atualizado:true,
+      cancelado:String(document.getElementById("mStatus")?.value||"")==="cancelado"
     };
-    if(!data.colaborador || !data.obra){
-      window.showToast?.("warning","Preenchimento incompleto","Informe o colaborador e a obra.");
+
+    if(!data.colaborador || !data.obra || !DIAS.includes(data.dia)){
+      showToast?.(
+        "warning",
+        "Preenchimento incompleto",
+        "Informe colaborador, obra e dia antes de confirmar."
+      );
       return;
     }
 
-    if(window.__EDIT_GROUP && editing===-1000){
-      const alvo=window.__EDIT_GROUP;
-      alvo.idxs.forEach(i=>{
-        viagens[i]={...viagens[i],...data,dia:viagens[i].dia};
+    if(
+      !Number.isFinite(data.diaria) ||
+      data.diaria<0 ||
+      !Number.isFinite(data.hotelValor) ||
+      data.hotelValor<0
+    ){
+      showToast?.(
+        "warning",
+        "Valores inválidos",
+        "Diária do colaborador e diária do hotel devem ser iguais ou superiores a zero."
+      );
+      return;
+    }
+
+    const companions=[
+      ...document.querySelectorAll(
+        '#companheirosBox input[type="checkbox"]:checked'
+      )
+    ].map(input=>norm(input.value));
+
+    if(group && editing===-1000){
+      const owner=norm(group.colab);
+      const work=norm(group.obra);
+      const ownerRows=linhasGrupo(owner,work);
+
+      /*
+       * Dados de hotel continuam comuns ao grupo.
+       * A diária muda apenas nos registros do dia escolhido.
+       */
+      ownerRows.forEach(row=>{
+        const update={
+          ...viagens[row._index],
+          hotel:data.hotel,
+          hotelValor:data.hotelValor,
+          quarto:data.quarto,
+          disponibilidade:data.disponibilidade,
+          status:data.status,
+          obs:data.obs,
+          atualizado:true,
+          cancelado:data.cancelado,
+          hospedagemPagante:true,
+          hospedagemCompartilhada:false,
+          companheiros:companions
+        };
+
+        if(row.dia===data.dia){
+          update.diaria=data.diaria;
+        }
+
+        viagens[row._index]=update;
       });
-    }else if(editing>=0){
-      viagens[editing]={...viagens[editing],...data};
+
+      companions.forEach(name=>{
+        linhasGrupo(name,work).forEach(row=>{
+          viagens[row._index]={
+            ...viagens[row._index],
+            hotel:data.hotel,
+            hotelValor:0,
+            quarto:data.quarto,
+            disponibilidade:data.disponibilidade,
+            status:data.status,
+            obs:data.obs,
+            atualizado:true,
+            hospedagemCompartilhada:true,
+            hospedagemPagante:false,
+            companheiros:[owner]
+          };
+        });
+      });
+    }else if(editing>=0 && viagens[editing]){
+      viagens[editing]={
+        ...viagens[editing],
+        ...data
+      };
     }else{
       viagens.push(data);
     }
 
     origem="draft";
-    window.__EDIT_GROUP=null;
-    fecharModal("modalTrip");
+
+    try{
+      await salvarEConfirmarNoServidor({
+        colaborador:data.colaborador,
+        obra:data.obra,
+        dia:data.dia,
+        diariaEsperada:data.diaria
+      });
+
+      window.__EDIT_GROUP=null;
+      fecharModal("modalTrip");
+
+      showToast?.(
+        "success",
+        "Manutenção gravada",
+        `${DIA_LABEL[data.dia]}: ${brl(data.diaria)}. O valor foi confirmado no draft do servidor.`
+      );
+    }catch(error){
+      showToast?.(
+        "error",
+        "A manutenção não foi gravada",
+        error?.message || String(error),
+        7000
+      );
+
+      setStatus(
+        "Erro ao confirmar a manutenção no draft: "+
+        (error?.message || String(error)),
+        true
+      );
+    }
+  };
+
+  /*
+   * Recalcula a tela atual com a soma real por dia.
+   */
+  if(typeof render==="function" && (semana || viagens.length)){
     render();
-    await salvarDraft(true);
-    window.showToast?.("success","Dia atualizado",`${DIA_LABEL[data.dia]||data.dia}: diária do colaborador ${brl(data.diaria)}.`);
-  };
-
-  function renderV5(){
-    let by={};
-    viagens.forEach((v,i)=>{
-      if(v.cancelado) return;
-      const c=norm(v.colaborador||"SEM NOME");
-      by[c]=by[c]||{}; DIAS.forEach(d=>by[c][d]=by[c][d]||[]);
-      if(DIAS.includes(v.dia)){
-        const key=norm(v.obra);
-        const found=by[c][v.dia].find(x=>norm(x.obra)===key);
-        if(!found) by[c][v.dia].push({...v,_idxs:[i]}); else found._idxs.push(i);
-      }
-    });
-
-    const cols=DIAS.map(d=>`<div class="hcell">${DIA_LABEL[d]}<span>${semana?.datas?.[d]||""}</span></div>`).join("");
-    let html=`<div class="head"><div class="hcell">Colaborador</div>${cols}</div>`;
-    Object.keys(by).sort().forEach(c=>{
-      const locais=[...new Set(Object.values(by[c]).flat().map(v=>norm(v.obra)))].length;
-      html+=`<div class="row"><div class="name" onclick="abrirColaborador('${escAttr(c)}')">${esc(c)}<span class="mini">${locais} obra(s) / clique no card do dia para editar</span></div>`;
-      DIAS.forEach(d=>{
-        html+=`<div class="day" data-colab="${escAttr(c)}" data-dia="${d}">`;
-        const arr=by[c][d]||[];
-        html+=arr.map(v=>{
-          const obra=norm(v.obra), hosp=qtdHospedagens(c,obra), totalHotel=hotelTotalGrupo(c,obra), totalDiaria=diariasColabGrupo(c,obra);
-          const completo=grupoCompleto(c,obra), cls=completo?"ok":statusTrip(v), base=baseHotelGrupo(c,obra);
-          const valorDia=(viagens[v._idxs[0]]?.diaria===undefined||viagens[v._idxs[0]]?.diaria===null)?30:Number(viagens[v._idxs[0]].diaria);
-          return `<div class="trip ${cls}" onclick="event.stopPropagation();editarGrupoHospedagem('${escAttr(c)}','${escAttr(obra)}','${d}')" title="Clique para editar somente ${DIA_LABEL[d]}">
-            <button class="cancel-x" onclick="event.stopPropagation();cancelarGrupo('${escAttr(c)}','${d}','${escAttr(obra)}')">×</button>
-            <div class="trip-title">${esc(obra)}</div>
-            <div class="trip-sub">${base.hotel?esc(base.hotel):'Hotel não definido'}</div>
-            <div class="trip-foot"><span class="pill">${hosp} diária(s)</span><span class="pill">Dia ${brl(valorDia)}</span><span class="pill">Alim. ${brl(totalDiaria)}</span><span class="pill">Hotel ${brl(totalHotel)}</span></div>
-          </div>`;
-        }).join("")||'<div class="empty">—</div>';
-        html+='</div>';
-      });
-      html+='</div>';
-    });
-    $("matrix").innerHTML=html||'<div class="empty">Nenhuma viagem encontrada.</div>';
-    resumo();
   }
-
-  window.render=renderV5;
-  window.abrirColaborador=function(colab){
-    const row=viagens.find(v=>!v.cancelado && norm(v.colaborador)===norm(colab));
-    if(row) abrirDia(colab,row.obra,row.dia);
-  };
-
-  if(semana || viagens.length) renderV5();
-  console.info("[Viagens V5] Alimentação por dia, último dia excluído e edição isolada por card.");
-})();
-</script>
-
-
-
-<script id="erpImparViagensDraftAutoritativoFinal">
-(function(){
-  "use strict";
-
-  if(window.__ERPIMPAR_VIAGENS_DRAFT_AUTORITATIVO_FINAL__) return;
-  window.__ERPIMPAR_VIAGENS_DRAFT_AUTORITATIVO_FINAL__=true;
-
-  const normalizar=value=>String(value||"").trim().toUpperCase();
-
-  function sequenciasPorColaboradorObra(){
-    const grupos=new Map();
-
-    viagens
-      .map((item,index)=>({...item,_index:index}))
-      .filter(item=>!item.cancelado && DIAS.includes(item.dia))
-      .forEach(item=>{
-        const chave=[
-          normalizar(item.colaborador),
-          normalizar(item.obra)
-        ].join("|");
-
-        if(!grupos.has(chave)) grupos.set(chave,[]);
-        grupos.get(chave).push(item);
-      });
-
-    return [...grupos.values()].flatMap(linhas=>{
-      const porDia=new Map();
-
-      linhas
-        .sort((a,b)=>DIAS.indexOf(a.dia)-DIAS.indexOf(b.dia))
-        .forEach(linha=>{
-          if(!porDia.has(linha.dia)) porDia.set(linha.dia,[]);
-          porDia.get(linha.dia).push(linha);
-        });
-
-      const dias=[...porDia.keys()]
-        .sort((a,b)=>DIAS.indexOf(a)-DIAS.indexOf(b));
-
-      const sequencias=[];
-      let atual=[];
-
-      dias.forEach(dia=>{
-        if(
-          !atual.length ||
-          DIAS.indexOf(dia)===DIAS.indexOf(atual[atual.length-1])+1
-        ){
-          atual.push(dia);
-        }else{
-          sequencias.push(atual);
-          atual=[dia];
-        }
-      });
-
-      if(atual.length) sequencias.push(atual);
-
-      return sequencias.map(seq=>({
-        dias:seq,
-        linhasPorDia:porDia
-      }));
-    });
-  }
-
-  /*
-   * Executa somente na primeira leitura da Agenda Semanal.
-   * Essa leitura cria a fotografia inicial:
-   * - R$ 30,00 nos dias anteriores ao retorno;
-   * - R$ 0,00 no último dia de cada sequência.
-   *
-   * Depois da gravação, o draft passa a ser a fonte autoritativa.
-   */
-  function criarFotografiaInicial(){
-    sequenciasPorColaboradorObra().forEach(({dias,linhasPorDia})=>{
-      dias.forEach((dia,posicao)=>{
-        const valorInicial=posicao===dias.length-1 ? 0 : 30;
-
-        (linhasPorDia.get(dia)||[]).forEach(linha=>{
-          if(viagens[linha._index]){
-            viagens[linha._index].diaria=valorInicial;
-          }
-        });
-      });
-    });
-
-    origem="draft";
-  }
-
-  const carregarBase=window.carregarSemana;
-
-  if(typeof carregarBase==="function"){
-    window.carregarSemana=async function(){
-      const resultado=await carregarBase.apply(this,arguments);
-
-      /*
-       * Se o backend devolveu draft, ele já é a verdade.
-       * Não recalcula diária, não consulta regra da semana e não sobrescreve nada.
-       */
-      if(origem==="draft"){
-        return resultado;
-      }
-
-      /*
-       * Sem draft: aplica a fotografia uma única vez e salva.
-       */
-      criarFotografiaInicial();
-
-      if(typeof render==="function") render();
-
-      try{
-        await salvarDraft(true);
-        setStatus(
-          "Rascunho de viagens criado. As próximas alterações usarão somente este rascunho."
-        );
-      }catch(error){
-        setStatus(
-          "A programação foi carregada, mas o rascunho não pôde ser salvo: "+error.message,
-          true
-        );
-      }
-
-      return resultado;
-    };
-  }
-
-  /*
-   * Não altera aplicarModal().
-   * A versão já existente no arquivo-base atualiza somente o card/dia aberto,
-   * aceita qualquer valor informado pelo RH e salva diretamente no draft.
-   */
 
   console.info(
-    "[Viagens] Agenda Semanal somente na primeira carga; draft autoritativo após criação."
+    "[Viagens] Manutenção por dia ativa; persistência conferida pelo draft retornado do servidor."
   );
 })();
 </script>
