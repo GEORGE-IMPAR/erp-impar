@@ -3543,29 +3543,146 @@ function normalizarGrupoPlanilha(v){
   return String(v||'').trim();
 }
 
+
+function normalizarTextoPlanilha(v){
+  return String(v??'')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g,' ')
+    .trim()
+    .toUpperCase();
+}
+
+function localizarEstruturaPlanilhaMateriais(linhas){
+  let melhor=null;
+
+  const ehMaterial=t =>
+    /\b(MATERIAIS?|DESCRICAO|DESCRIÇÃO|PRODUTO|INSUMO)\b/.test(t);
+
+  const ehQuantidade=t =>
+    /\b(QUANT|QUANTIDADE|QTD)\b/.test(t);
+
+  const ehUnidade=t =>
+    /\b(UNID|UNIDADE|UND)\b/.test(t);
+
+  const ehUnitario=t =>
+    /\b(UNITARIO|UNITÁRIO|VALOR UNITARIO|PRECO UNITARIO|PREÇO UNITÁRIO)\b/.test(t);
+
+  const limite=Math.min(Array.isArray(linhas)?linhas.length:0,40);
+
+  for(let r=0;r<limite;r++){
+    const linha=Array.isArray(linhas[r])?linhas[r]:[];
+    const norm=linha.map(normalizarTextoPlanilha);
+
+    const colDescricao=norm.findIndex(ehMaterial);
+    const colQuantidade=norm.findIndex(ehQuantidade);
+    const colUnidade=norm.findIndex(ehUnidade);
+    const colunasUnitario=norm
+      .map((texto,indice)=>ehUnitario(texto)?indice:-1)
+      .filter(indice=>indice>=0);
+
+    let score=0;
+    if(colDescricao>=0) score+=5;
+    if(colQuantidade>=0) score+=3;
+    if(colUnidade>=0) score+=3;
+    if(colunasUnitario.length) score+=3;
+
+    if(score<8) continue;
+
+    let colPreco=colunasUnitario[0]??-1;
+
+    if(colunasUnitario.length>1){
+      let escolhido=-1;
+
+      for(const coluna of colunasUnitario){
+        const abaixo=[1,2,3]
+          .map(deslocamento=>normalizarTextoPlanilha(linhas[r+deslocamento]?.[coluna]))
+          .join(' ');
+
+        if(
+          /\bMATERIAL\b/.test(abaixo) &&
+          !/\b(M\.?\s*O\.?|MAO DE OBRA|MÃO DE OBRA)\b/.test(abaixo)
+        ){
+          escolhido=coluna;
+          break;
+        }
+      }
+
+      if(escolhido>=0) colPreco=escolhido;
+    }
+
+    const candidato={
+      linhaCabecalho:r,
+      colDescricao,
+      colQuantidade,
+      colUnidade,
+      colPreco,
+      score
+    };
+
+    if(!melhor || candidato.score>melhor.score) melhor=candidato;
+  }
+
+  if(!melhor){
+    throw new Error(
+      'Não foi possível identificar os cabeçalhos de Materiais, Quantidade, Unidade e Unitário.'
+    );
+  }
+
+  return melhor;
+}
+
+function linhaPareceGrupoPlanilha(linha,colDescricao){
+  const descricao=String(linha?.[colDescricao]??'').trim();
+  const descNorm=normalizarTextoPlanilha(descricao);
+  if(!descricao) return false;
+
+  const nomesGrupo=[
+    'EQUIP',
+    'REDE FRIGOR',
+    'DUTO',
+    'DIFUS',
+    'CONTROLE',
+    'ELETR',
+    'DIVERS'
+  ];
+
+  if(!nomesGrupo.some(chave=>descNorm.includes(chave))) return false;
+
+  const item=String(linha?.[0]??'').trim();
+  const itemPrincipal=/^\d+$/.test(item);
+  return itemPrincipal || nomesGrupo.some(chave=>descNorm===chave);
+}
+
 function extrairItensPlanilhaMateriais(linhas){
+  const estrutura=localizarEstruturaPlanilhaMateriais(linhas);
   const itens=[];
   let grupoAtual='';
-  const nomesGrupo=['EQUIP','FRIGOR','DUTO','DIFUS','CONTROLE','ELETR','DIVERS'];
-  for(let r=0;r<linhas.length;r++){
-    const linha=Array.isArray(linhas[r])?linhas[r]:[];
-    const colItem=linha[0];
-    const descricao=String(linha[1]??'').trim();
-    const qtd=valorCelulaNumero(linha[2]);
-    const unidade=String(linha[3]??'').trim();
-    const preco=valorCelulaNumero(linha[4]);
-    const descNorm=descricao.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
 
-    const pareceGrupo=descricao && nomesGrupo.some(k=>descNorm.includes(k)) &&
-      (!unidade && !qtd && !preco || colItem!==null && colItem!==undefined && String(colItem).trim()!=='');
-    if(pareceGrupo){
+  for(let r=estrutura.linhaCabecalho+1;r<linhas.length;r++){
+    const linha=Array.isArray(linhas[r])?linhas[r]:[];
+
+    const descricao=String(linha[estrutura.colDescricao]??'').trim();
+    const descNorm=normalizarTextoPlanilha(descricao);
+    const qtd=valorCelulaNumero(linha[estrutura.colQuantidade]);
+    const unidade=String(linha[estrutura.colUnidade]??'').trim();
+    const preco=valorCelulaNumero(linha[estrutura.colPreco]);
+
+    if(linhaPareceGrupoPlanilha(linha,estrutura.colDescricao)){
       grupoAtual=normalizarGrupoPlanilha(descricao);
       continue;
     }
 
     if(!grupoAtual || !descricao) continue;
-    if(/^(MATERIAIS|QUANT|UNID|UNITARIO|TOTAL|VALOR DE VENDA|CONCEDENDO O DESCONTO)/i.test(descNorm)) continue;
-    const temConteudo=unidade || qtd!==0 || preco!==0;
+
+    if(
+      /^(ITEM|CODIGO|CÓDIGO|MARCA|MATERIAIS?|DESCRICAO|DESCRIÇÃO|QUANT|QTD|UNID|UNITARIO|UNITÁRIO|TOTAL)\b/.test(descNorm) ||
+      /\b(VALOR DE VENDA|CONCEDENDO O DESCONTO|IMPOSTOS|LUCRO|COMISSAO|COMISSÃO|CAPACIDADE EM TR|CONTROLE DA EMPRESA)\b/.test(descNorm)
+    ){
+      continue;
+    }
+
+    const temConteudo=unidade!=='' || qtd!==0 || preco!==0;
     if(!temConteudo) continue;
 
     itens.push({
@@ -3573,37 +3690,126 @@ function extrairItensPlanilhaMateriais(linhas){
       grupo:grupoAtual,
       material:descricao,
       quantidade:qtd,
-      unidade:unidade,
-      preco_planilha:preco
+      unidade,
+      preco_planilha:preco,
+      linha_origem:r+1
     });
   }
+
   return itens;
+}
+
+function localizarAbaOrcamento(wb){
+  const nomes=Array.isArray(wb?.SheetNames)?wb.SheetNames:[];
+
+  const exata=nomes.find(nome=>
+    normalizarTextoPlanilha(nome)==='ORCAMENTO'
+  );
+  if(exata) return exata;
+
+  const parcial=nomes.find(nome=>
+    normalizarTextoPlanilha(nome).includes('ORCAMENTO')
+  );
+  if(parcial) return parcial;
+
+  let melhor=null;
+
+  for(const nome of nomes){
+    try{
+      const ws=wb.Sheets[nome];
+      const linhas=XLSX.utils.sheet_to_json(ws,{
+        header:1,
+        defval:'',
+        raw:true
+      });
+      const estrutura=localizarEstruturaPlanilhaMateriais(linhas);
+
+      if(!melhor || estrutura.score>melhor.score){
+        melhor={nome,score:estrutura.score};
+      }
+    }catch(_){}
+  }
+
+  return melhor?.nome||'';
+}
+
+function mensagemImportacao(tipo,titulo,mensagem){
+  if(typeof window.showToast==='function'){
+    window.showToast(tipo,titulo,mensagem,5200);
+    return;
+  }
+
+  toastImportacao(`${titulo}: ${mensagem}`);
 }
 
 async function importarPlanilhaMateriaisSelecionada(file){
   if(!file) return;
+
   if(!window.XLSX){
-    alert('A biblioteca de leitura do Excel não foi carregada.');
+    mensagemImportacao(
+      'error',
+      'Importação indisponível',
+      'A biblioteca de leitura do Excel não foi carregada.'
+    );
     return;
   }
+
   try{
     const buffer=await file.arrayBuffer();
-    const wb=XLSX.read(new Uint8Array(buffer),{type:'array',cellDates:false});
-    if(!wb.SheetNames?.length) throw new Error('A planilha não possui abas.');
-    const nomeAbaOrcamento=wb.SheetNames.find(nome=>String(nome||'').trim().toUpperCase()==='ORÇAMENTO');
-    if(!nomeAbaOrcamento) throw new Error('Planilha inconsistente. Não foi encontrada a aba "ORÇAMENTO".');
+    const wb=XLSX.read(new Uint8Array(buffer),{
+      type:'array',
+      cellDates:false,
+      cellFormula:true,
+      cellNF:false,
+      cellText:false
+    });
+
+    if(!wb.SheetNames?.length){
+      throw new Error('A planilha não possui abas.');
+    }
+
+    const nomeAbaOrcamento=localizarAbaOrcamento(wb);
+
+    if(!nomeAbaOrcamento){
+      throw new Error(
+        'Não foi localizada uma aba com a estrutura de orçamento esperada.'
+      );
+    }
+
     const ws=wb.Sheets[nomeAbaOrcamento];
-    const linhas=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+    const linhas=XLSX.utils.sheet_to_json(ws,{
+      header:1,
+      defval:'',
+      raw:true
+    });
+
     const itens=extrairItensPlanilhaMateriais(linhas);
-    if(!itens.length) throw new Error('Nenhum item de material foi identificado na aba "ORÇAMENTO".');
+
+    if(!itens.length){
+      throw new Error(
+        `Nenhum item de material foi identificado na aba "${nomeAbaOrcamento}".`
+      );
+    }
+
     rpItensPlanilhaImportada=itens;
     await abrirImportadorInteligente(itens);
-    toastImportacao(`${itens.length} itens lidos da planilha.`);
+
+    mensagemImportacao(
+      'success',
+      'Planilha interpretada',
+      `${itens.length} item(ns) lido(s) na aba "${nomeAbaOrcamento}".`
+    );
   }catch(err){
     console.error('Erro ao importar planilha de materiais:',err);
-    alert(`Não foi possível importar a planilha.\n\n${err.message||err}`);
+
+    mensagemImportacao(
+      'error',
+      'Falha ao importar planilha',
+      err?.message||String(err)
+    );
   }
 }
+
 
 async function enviarBaseMateriaisAoAssistente(itens=rpItensPlanilhaImportada){
   const frame=document.getElementById('rpImportFrame');
