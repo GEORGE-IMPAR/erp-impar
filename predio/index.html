@@ -47,6 +47,18 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 .dropzone input{display:none}.month-highlight{outline:3px solid rgba(13,122,95,.25);box-shadow:0 0 0 5px rgba(13,122,95,.08),var(--shadow)}
 .interpretation{background:#f6faf8;border:1px solid var(--line);padding:12px;border-radius:14px}.file-preview{font-size:12px;color:var(--muted);word-break:break-all}
 @media(max-width:900px){.dropzone-grid{grid-template-columns:1fr}}
+
+.period-control{display:flex;align-items:center;gap:8px;background:white;border-radius:16px;padding:8px;box-shadow:var(--shadow)}
+.period-control .month-input{min-width:210px}
+.period-control .arrow{width:46px;height:46px;border:0;border-radius:13px;background:#e3f1ec;color:#0b6b55;font-size:20px;font-weight:900;cursor:pointer}
+.period-control .arrow:hover{background:#d6ebe3}
+.view-toggle{display:flex;gap:7px;background:#edf5f2;padding:5px;border-radius:13px}
+.view-toggle button{border:0;border-radius:10px;padding:9px 12px;font-weight:900;color:#56706a;background:transparent;cursor:pointer}
+.view-toggle button.active{background:var(--green);color:white}
+.expense-summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.expense-summary-card{background:white;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+.expense-summary-card h3{margin:0 0 7px;font-size:17px}.expense-summary-card strong{font-size:25px}.expense-summary-card small{display:block;color:var(--muted);margin-top:5px}
+@media(max-width:560px){.period-control{width:100%}.period-control .month-input{min-width:0;flex:1}.view-toggle{width:100%}.view-toggle button{flex:1}}
 @media(max-width:1000px){.kpis{grid-template-columns:1fr 1fr}.month-grid{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.allocation-list{grid-template-columns:1fr}.allocation-summary{grid-template-columns:1fr}.top{padding:18px 14px 72px}.shell{padding:0 10px 25px}.kpis{grid-template-columns:1fr 1fr;gap:8px}.kpi{padding:13px;min-height:102px}.month-select{width:100%;justify-content:space-between}.toolbar{align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}}
 </style>
@@ -69,14 +81,15 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <button class="active" data-panel="monthly">Mês operacional</button>
 <button data-panel="months">Histórico mensal</button>
 <button data-panel="apartments">Apartamentos</button>
+<button data-panel="expenses">Despesas</button>
 <button data-panel="files">Arquivos</button>
 <button data-panel="accounts">Conta corrente</button>
 </nav>
 
 <section id="monthly" class="panel active">
-<div class="toolbar"><div><h2>Central mensal</h2><small id="monthStatus"></small></div>
-<div class="month-select"><button class="btn soft" onclick="moveMonth(-1)">‹</button><select id="monthPicker"></select><button class="btn soft" onclick="moveMonth(1)">›</button></div></div>
-<div class="month-context"><div><strong id="monthlyMonthTitle">Mês operacional</strong><small>Todos os lançamentos abaixo pertencem ao mês selecionado.</small></div><input id="monthlyMonthInput" class="month-input" type="month"></div>
+<div class="toolbar"><div><h2>Central mensal</h2><small id="monthStatus"></small></div></div>
+<div class="month-context"><div><strong id="monthlyMonthTitle">Mês operacional</strong><small>Todos os lançamentos abaixo pertencem ao mês selecionado.</small></div>
+<div class="period-control"><button class="arrow" onclick="changeSelectedMonth(-1)">‹</button><input id="monthlyMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeSelectedMonth(1)">›</button></div></div>
 
 <div class="month-grid">
 <div class="card"><div class="card-head"><h3>Entradas do prédio</h3><button class="btn soft" onclick="openEntry('income')">+ Entrada</button></div><div class="card-body"><div id="incomeList" class="entry-list"></div><div class="totals"><span>Total recebido</span><span id="incomeTotal"></span></div></div></div>
@@ -88,18 +101,33 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 
 <section id="months" class="panel">
 <div class="toolbar"><h2>Histórico mensal</h2></div>
-<div class="month-context"><div><strong id="historyMonthTitle">Mês em destaque</strong><small>Os totalizadores do topo correspondem ao mês selecionado.</small></div><input id="historyMonthInput" class="month-input" type="month"></div>
+<div class="month-context"><div><strong id="historyMonthTitle">Mês em destaque</strong><small>Os totalizadores do topo correspondem ao mês selecionado.</small></div>
+<div class="period-control"><button class="arrow" onclick="changeSelectedMonth(-1)">‹</button><input id="historyMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeSelectedMonth(1)">›</button></div></div>
 <div id="monthsList" class="months-list"></div>
 </section>
 
 <section id="apartments" class="panel">
-<div class="toolbar"><div><h2>Conta corrente dos apartamentos</h2><small>Histórico importado da planilha</small></div><div class="month-select"><select id="aptMonthPicker"></select></div></div>
+<div class="toolbar"><div><h2>Conta corrente dos apartamentos</h2><small>Visão mensal ou acumulada de toda a base</small></div>
+<div class="view-toggle"><button id="aptMonthlyBtn" class="active" onclick="setApartmentView('month')">Mensal</button><button id="aptTotalBtn" onclick="setApartmentView('total')">Total da base</button></div></div>
+<div id="aptMonthContext" class="month-context"><div><strong id="aptMonthTitle">Apartamentos do mês</strong><small>Previsto, recebido e diferença do período selecionado.</small></div>
+<div class="period-control"><button class="arrow" onclick="changeApartmentMonth(-1)">‹</button><input id="aptMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeApartmentMonth(1)">›</button></div></div>
 <div class="table-wrap"><table><thead><tr><th>Apartamento</th><th>Previsto</th><th>Recebido</th><th>Diferença</th><th>Situação</th><th>Observação</th></tr></thead><tbody id="aptTable"></tbody></table></div>
+</section>
+
+
+<section id="expenses" class="panel">
+<div class="toolbar"><div><h2>Despesas</h2><small>Consolidação por categoria e histórico de pagamentos</small></div>
+<div class="view-toggle"><button id="expenseMonthlyBtn" class="active" onclick="setExpenseView('month')">Mensal</button><button id="expenseTotalBtn" onclick="setExpenseView('total')">Total da base</button></div></div>
+<div id="expenseMonthContext" class="month-context"><div><strong id="expenseMonthTitle">Despesas do mês</strong><small>Valores pagos agrupados por categoria.</small></div>
+<div class="period-control"><button class="arrow" onclick="changeExpenseMonth(-1)">‹</button><input id="expenseMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeExpenseMonth(1)">›</button></div></div>
+<div id="expenseSummaryGrid" class="expense-summary-grid"></div>
+<div style="margin-top:16px" class="table-wrap"><table><thead><tr><th>Categoria</th><th>Quantidade</th><th>Total pago</th><th>Participação</th></tr></thead><tbody id="expenseTable"></tbody></table></div>
 </section>
 
 <section id="files" class="panel">
 <div class="toolbar"><div><h2>Central de arquivos</h2><small>Arraste, selecione no computador ou capture uma foto pelo celular.</small></div></div>
-<div class="month-context"><div><strong id="filesMonthTitle">Arquivos do mês</strong><small>Todo comprovante enviado será vinculado ao mês selecionado.</small></div><input id="filesMonthInput" class="month-input" type="month"></div>
+<div class="month-context"><div><strong id="filesMonthTitle">Arquivos do mês</strong><small>Todo comprovante enviado será vinculado ao mês selecionado.</small></div>
+<div class="period-control"><button class="arrow" onclick="changeSelectedMonth(-1)">‹</button><input id="filesMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeSelectedMonth(1)">›</button></div></div>
 <div class="dropzone-grid">
 <div class="dropzone" data-upload-type="income" onclick="triggerUpload('income')">
   <div class="dz-icon">💰</div><h3>Receitas do Michel</h3><p>Comprovantes dos valores recebidos da imobiliária/Michel.</p>
@@ -176,6 +204,9 @@ function loadInitialState(){
 let state=loadInitialState();
 let selectedMonth=state.months['2026-08']?'2026-08':Object.keys(state.months).sort().at(-1);
 let selectedApartmentMonth=state.apartmentPayments.map(x=>x.month).sort().at(-1)||selectedMonth;
+let apartmentView='month';
+let selectedExpenseMonth=selectedMonth;
+let expenseView='month';
 let activePanel='monthly';
 let tempFile=null;
 let pendingUpload=null;
@@ -199,25 +230,27 @@ function calcRunning(target){
 }
 function fileLabel(x){return x.document?`📎 ${x.document.name}`:(x.historical?'Histórico sem arquivo digital':'Sem comprovante')}
 function render(){
- fillPickers(); renderMonthly(); renderMonths(); renderApartments(); renderFiles(); renderAccount(); renderContextKpis();
+ fillPickers(); renderMonthly(); renderMonths(); renderApartments(); renderExpenses(); renderFiles(); renderAccount(); renderContextKpis();
 }
 function fillPickers(){
  const list=sortedMonths();
- monthPicker.innerHTML=list.map(m=>`<option value="${m}" ${m===selectedMonth?'selected':''}>${monthName(m)}</option>`).join('');
- const aptMonths=[...new Set(state.apartmentPayments.map(x=>x.month))].sort().reverse();
- if(!aptMonths.includes(selectedApartmentMonth)) selectedApartmentMonth=aptMonths[0]||selectedMonth;
- aptMonthPicker.innerHTML=aptMonths.map(m=>`<option value="${m}" ${m===selectedApartmentMonth?'selected':''}>${monthName(m)}</option>`).join('');
- monthPicker.onchange=e=>{selectedMonth=e.target.value;render()};
- aptMonthPicker.onchange=e=>{selectedApartmentMonth=e.target.value;renderApartments();renderContextKpis()};
+ if(!list.includes(selectedMonth)) selectedMonth=list.at(-1);
+ const aptMonths=[...new Set(state.apartmentPayments.map(x=>x.month))].sort();
+ if(!aptMonths.includes(selectedApartmentMonth)) selectedApartmentMonth=aptMonths.at(-1)||selectedMonth;
  ['monthlyMonthInput','historyMonthInput','filesMonthInput'].forEach(id=>{
    const el=document.getElementById(id); if(!el)return; el.value=selectedMonth;
    el.onchange=e=>selectMonthFromCalendar(e.target.value);
  });
+ const aptInput=document.getElementById('aptMonthInput');
+ if(aptInput){aptInput.value=selectedApartmentMonth;aptInput.onchange=e=>{selectedApartmentMonth=e.target.value;renderApartments();renderContextKpis()}}
+ const expInput=document.getElementById('expenseMonthInput');
+ if(expInput){expInput.value=selectedExpenseMonth;expInput.onchange=e=>{selectedExpenseMonth=e.target.value;renderExpenses();renderContextKpis()}}
  document.getElementById('monthlyMonthTitle').textContent=`Mês operacional • ${monthName(selectedMonth)}`;
  document.getElementById('historyMonthTitle').textContent=`Totalizadores de ${monthName(selectedMonth)}`;
  document.getElementById('filesMonthTitle').textContent=`Arquivos de ${monthName(selectedMonth)}`;
+ document.getElementById('aptMonthTitle').textContent=apartmentView==='month'?`Apartamentos • ${monthName(selectedApartmentMonth)}`:'Total acumulado dos apartamentos';
+ document.getElementById('expenseMonthTitle').textContent=expenseView==='month'?`Despesas • ${monthName(selectedExpenseMonth)}`:'Despesas acumuladas de toda a base';
 }
-
 function ensureMonth(month){
  if(!month||!/^\d{4}-\d{2}$/.test(month))return false;
  if(!state.months[month]){
@@ -227,8 +260,15 @@ function ensureMonth(month){
 }
 function selectMonthFromCalendar(month){
  if(!ensureMonth(month))return;
- selectedMonth=month; persist(); render();
+ selectedMonth=month; selectedExpenseMonth=month; persist(); render();
 }
+function shiftMonthKey(month,dir){
+ const [y,m]=month.split('-').map(Number); const d=new Date(y,m-1+dir,1);
+ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function changeSelectedMonth(dir){selectMonthFromCalendar(shiftMonthKey(selectedMonth,dir))}
+function changeApartmentMonth(dir){selectedApartmentMonth=shiftMonthKey(selectedApartmentMonth,dir);render()}
+function changeExpenseMonth(dir){selectedExpenseMonth=shiftMonthKey(selectedExpenseMonth,dir);render()}
 function triggerUpload(type){
  const ids={income:'uploadIncome',expense:'uploadExpense',transfer:'uploadTransfer'};
  document.getElementById(ids[type]).click();
@@ -351,23 +391,80 @@ function apartmentMonthSummary(month=selectedApartmentMonth){
  state.apartments.forEach(apt=>{
   const x=state.apartmentPayments.find(p=>p.month===month&&p.apartment===apt)||{amount:0,status:'missing',note:''};
   const exp=x.status==='vacant'?0:expectedFor(apt,month);
-  const rec=Number(x.amount)||0;
-  const dif=Math.max(exp-rec,0);
-  expected+=exp; received+=rec; difference+=dif;
-  if(x.status!=='vacant' && dif<=0 && rec>0) receivedCount++;
-  if(x.status!=='vacant' && dif>0) pendingCount++;
+  const rec=Number(x.amount)||0; const dif=Math.max(exp-rec,0);
+  expected+=exp;received+=rec;difference+=dif;
+  if(x.status!=='vacant'&&dif<=0&&rec>0)receivedCount++;
+  if(x.status!=='vacant'&&dif>0)pendingCount++;
  });
  return {expected,received,difference,receivedCount,pendingCount,total:state.apartments.length};
 }
+function apartmentTotalSummary(){
+ let expected=0,received=0,difference=0;
+ state.apartments.forEach(apt=>{
+  const rows=state.apartmentPayments.filter(x=>x.apartment===apt);
+  rows.forEach(x=>{
+   const exp=x.status==='vacant'?0:expectedFor(apt,x.month);
+   const rec=Number(x.amount)||0;expected+=exp;received+=rec;difference+=Math.max(exp-rec,0);
+  });
+ });
+ return {expected,received,difference};
+}
+function setApartmentView(view){
+ apartmentView=view;
+ aptMonthlyBtn.classList.toggle('active',view==='month');aptTotalBtn.classList.toggle('active',view==='total');
+ aptMonthContext.style.display=view==='month'?'flex':'none';renderApartments();renderContextKpis();
+}
 function renderApartments(){
- const month=selectedApartmentMonth;
- const rows=state.apartments.map(apt=>{
-  const x=state.apartmentPayments.find(p=>p.month===month&&p.apartment===apt)||{amount:0,status:'missing',note:''};
-  const expected=x.status==='vacant'?0:expectedFor(apt,month); const diff=Math.max(expected-x.amount,0);
-  const status=x.status==='vacant'?['Desocupado','vacant']:x.status==='missing'?['Não recebido','missing']:diff>0?['Parcial','missing']:['Recebido','paid'];
-  return `<tr><td><b>${apt}</b></td><td>${BRL.format(expected)}</td><td>${BRL.format(x.amount)}</td><td class="${diff?'red':'green'}">${BRL.format(diff)}</td><td><span class="pill ${status[1]}">${status[0]}</span></td><td>${x.note||''}</td></tr>`;
- }).join('');
- aptTable.innerHTML=rows;
+ let rows='';
+ if(apartmentView==='month'){
+  const month=selectedApartmentMonth;
+  rows=state.apartments.map(apt=>{
+   const x=state.apartmentPayments.find(p=>p.month===month&&p.apartment===apt)||{amount:0,status:'missing',note:''};
+   const expected=x.status==='vacant'?0:expectedFor(apt,month),diff=Math.max(expected-x.amount,0);
+   const status=x.status==='vacant'?['Desocupado','vacant']:x.status==='missing'?['Não recebido','missing']:diff>0?['Parcial','missing']:['Recebido','paid'];
+   return `<tr><td><b>${apt}</b></td><td>${BRL.format(expected)}</td><td>${BRL.format(x.amount)}</td><td class="${diff?'red':'green'}">${BRL.format(diff)}</td><td><span class="pill ${status[1]}">${status[0]}</span></td><td>${x.note||''}</td></tr>`;
+  }).join('');
+ }else{
+  rows=state.apartments.map(apt=>{
+   const hist=state.apartmentPayments.filter(x=>x.apartment===apt);
+   let expected=0,received=0;
+   hist.forEach(x=>{expected+=x.status==='vacant'?0:expectedFor(apt,x.month);received+=Number(x.amount)||0});
+   const diff=Math.max(expected-received,0);
+   return `<tr><td><b>${apt}</b></td><td>${BRL.format(expected)}</td><td>${BRL.format(received)}</td><td class="${diff?'red':'green'}">${BRL.format(diff)}</td><td><span class="pill ${diff?'missing':'paid'}">${diff?'Em débito':'Em dia'}</span></td><td>${hist.length} meses na base</td></tr>`;
+  }).join('');
+ }
+ aptTable.innerHTML=rows;fillPickers();
+}
+function expenseCategory(x){
+ const text=`${x.category||''} ${x.description||''}`.toLowerCase();
+ if(text.includes('unimed'))return 'Unimed';
+ if(text.includes('reforma')||text.includes('pedreiro')||text.includes('pintura')||text.includes('material'))return 'Reformas';
+ if(text.includes('aluguel'))return 'Aluguel';
+ if(text.includes('água')||text.includes('agua'))return 'Água';
+ if(text.includes('energia')||text.includes('luz'))return 'Energia';
+ if(text.includes('condom'))return 'Condomínio';
+ if(text.includes('carro')||text.includes('veículo')||text.includes('veiculo'))return 'Veículo';
+ return x.category&&x.category!=='Histórico importado'?x.category:'Outras despesas';
+}
+function expenseData(){
+ const months=expenseView==='month'?[selectedExpenseMonth]:sortedMonths();
+ const groups={};
+ months.forEach(m=>(state.months[m]?.expenses||[]).forEach(x=>{
+  const cat=expenseCategory(x);if(!groups[cat])groups[cat]={category:cat,count:0,total:0};
+  groups[cat].count++;groups[cat].total+=Number(x.paid)||0;
+ }));
+ return Object.values(groups).sort((a,b)=>b.total-a.total);
+}
+function setExpenseView(view){
+ expenseView=view;
+ expenseMonthlyBtn.classList.toggle('active',view==='month');expenseTotalBtn.classList.toggle('active',view==='total');
+ expenseMonthContext.style.display=view==='month'?'flex':'none';renderExpenses();renderContextKpis();
+}
+function renderExpenses(){
+ const data=expenseData(),total=data.reduce((s,x)=>s+x.total,0);
+ expenseSummaryGrid.innerHTML=data.length?data.map(x=>`<div class="expense-summary-card"><h3>${x.category}</h3><strong>${BRL.format(x.total)}</strong><small>${x.count} lançamento(s)</small></div>`).join(''):'<div class="empty">Nenhuma despesa encontrada.</div>';
+ expenseTable.innerHTML=data.map(x=>`<tr><td><b>${x.category}</b></td><td>${x.count}</td><td>${BRL.format(x.total)}</td><td>${total?((x.total/total)*100).toFixed(1):'0,0'}%</td></tr>`).join('');
+ fillPickers();
 }
 function setKpi(index,label,value,hint,tone=''){
  const labelEl=document.getElementById(`kpiLabel${index}`);
@@ -393,11 +490,28 @@ function renderContextKpis(){
   return;
  }
  if(activePanel==='apartments'){
-  const a=apartmentMonthSummary(selectedApartmentMonth);
-  setKpi(1,'Previsto no mês',BRL.format(a.expected),`Total esperado em ${monthName(selectedApartmentMonth)}`);
-  setKpi(2,'Recebido no mês',BRL.format(a.received),`Total efetivamente recebido`);
-  setKpi(3,'Diferença a receber',BRL.format(a.difference),'Valor que não entrou no mês',a.difference>0?'red':'green');
-  setKpi(4,'Situação dos apartamentos',`${a.receivedCount} recebidos`,` ${a.pendingCount} com pendência no mês`,a.pendingCount>0?'red':'green');
+  if(apartmentView==='month'){
+   const a=apartmentMonthSummary(selectedApartmentMonth);
+   setKpi(1,'Previsto no mês',BRL.format(a.expected),`Total esperado em ${monthName(selectedApartmentMonth)}`);
+   setKpi(2,'Recebido no mês',BRL.format(a.received),'Total efetivamente recebido');
+   setKpi(3,'Diferença a receber',BRL.format(a.difference),'Valor que não entrou no mês',a.difference>0?'red':'green');
+   setKpi(4,'Situação dos apartamentos',`${a.receivedCount} recebidos`,`${a.pendingCount} com pendência no mês`,a.pendingCount>0?'red':'green');
+  }else{
+   const a=apartmentTotalSummary();
+   setKpi(1,'Previsto total da base',BRL.format(a.expected),'Soma de todos os meses e apartamentos');
+   setKpi(2,'Recebido total da base',BRL.format(a.received),'Total efetivamente recebido');
+   setKpi(3,'Débito acumulado',BRL.format(a.difference),'Total ainda não recebido',a.difference>0?'red':'green');
+   setKpi(4,'Apartamentos cadastrados',String(state.apartments.length),'Quantidade de unidades controladas');
+  }
+  return;
+ }
+ if(activePanel==='expenses'){
+  const data=expenseData(),total=data.reduce((s,x)=>s+x.total,0);
+  const top=data[0]||{category:'Sem despesas',total:0};
+  setKpi(1,expenseView==='month'?'Despesas do mês':'Despesas acumuladas',BRL.format(total),expenseView==='month'?monthName(selectedExpenseMonth):'Toda a base histórica');
+  setKpi(2,'Maior categoria',top.category,BRL.format(top.total));
+  setKpi(3,'Categorias utilizadas',String(data.length),'Quantidade de grupos de despesas');
+  setKpi(4,'Lançamentos de despesas',String(data.reduce((s,x)=>s+x.count,0)),'Quantidade total de pagamentos');
   return;
  }
  if(activePanel==='accounts'){
@@ -436,7 +550,7 @@ function renderAccount(){
  accountTable.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m);return `<tr><td><b>${monthName(m)}</b></td><td>${BRL.format(t.income)}</td><td>${BRL.format(t.expenses)}</td><td>${BRL.format(t.transfers)}</td><td class="${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</td><td class="${debt>0?'red':'green'}">${BRL.format(debt)}</td></tr>`}).join('');
 }
 function openMonth(m){selectedMonth=m;activePanel='monthly';document.querySelector('[data-panel="monthly"]').click();render()}
-function moveMonth(dir){const a=sortedMonths(),i=a.indexOf(selectedMonth),n=a[i+dir];if(n){selectedMonth=n;render()}}
+}
 function createNextMonth(){
  const last=sortedMonths().at(-1),[y,m]=last.split('-').map(Number),d=new Date(y,m,1),k=d.toISOString().slice(0,7);
  if(!state.months[k])state.months[k]={month:k,status:'open',incomes:[],expenses:[],transfers:[],summaryImported:null};
@@ -483,6 +597,8 @@ document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.quer
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 render();
 setupDropzones();
+setApartmentView('month');
+setExpenseView('month');
 </script>
 
 <div id="interpretModal" class="modal"><div class="dialog">
