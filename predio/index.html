@@ -56,8 +56,8 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 .view-toggle button{border:0;border-radius:10px;padding:9px 12px;font-weight:900;color:#56706a;background:transparent;cursor:pointer}
 .view-toggle button.active{background:var(--green);color:white}
 .expense-summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
-.expense-summary-card{background:white;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
-.expense-summary-card h3{margin:0 0 7px;font-size:17px}.expense-summary-card strong{font-size:25px}.expense-summary-card small{display:block;color:var(--muted);margin-top:5px}
+.expense-summary-card{background:white;border-radius:18px;padding:16px;box-shadow:var(--shadow);cursor:pointer}.expense-summary-card:hover{transform:translateY(-1px)}
+.expense-summary-card h3{margin:0 0 7px;font-size:17px}.expense-summary-card strong{font-size:25px}.expense-summary-card small{display:block;color:var(--muted);margin-top:5px}.expense-card-values{display:grid;grid-template-columns:1fr 1fr;gap:10px}.expense-card-values div{background:#f4f8f6;border-radius:12px;padding:10px}.expense-card-values b{display:block;font-size:16px;margin-top:3px}.system-toast{position:fixed;right:22px;bottom:22px;z-index:9999;max-width:420px;background:#123d32;color:#fff;padding:15px 18px;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.25);opacity:0;transform:translateY(20px);pointer-events:none;transition:.25s}.system-toast.show{opacity:1;transform:translateY(0)}
 @media(max-width:560px){.period-control{width:100%}.period-control .month-input{min-width:0;flex:1}.view-toggle{width:100%}.view-toggle button{flex:1}}
 @media(max-width:1000px){.kpis{grid-template-columns:1fr 1fr}.month-grid{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.allocation-list{grid-template-columns:1fr}.allocation-summary{grid-template-columns:1fr}.top{padding:18px 14px 72px}.shell{padding:0 10px 25px}.kpis{grid-template-columns:1fr 1fr;gap:8px}.kpi{padding:13px;min-height:102px}.month-select{width:100%;justify-content:space-between}.toolbar{align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}}
@@ -121,7 +121,7 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div id="expenseMonthContext" class="month-context"><div><strong id="expenseMonthTitle">Despesas do mês</strong><small>Valores pagos agrupados por categoria.</small></div>
 <div class="period-control"><button class="arrow" onclick="changeExpenseMonth(-1)">‹</button><input id="expenseMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeExpenseMonth(1)">›</button></div></div>
 <div id="expenseSummaryGrid" class="expense-summary-grid"></div>
-<div style="margin-top:16px" class="table-wrap"><table><thead><tr><th>Categoria</th><th>Quantidade</th><th>Total pago</th><th>Participação</th></tr></thead><tbody id="expenseTable"></tbody></table></div>
+<div style="margin-top:16px" class="table-wrap"><table><thead><tr><th>Categoria</th><th>Quantidade</th><th>Total pago</th><th>Rateado</th><th>Parte da mãe</th><th>Participação</th></tr></thead><tbody id="expenseTable"></tbody></table></div>
 </section>
 
 <section id="files" class="panel">
@@ -163,6 +163,8 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div class="field"><label>Descrição / origem</label><input id="entryDescription" required></div>
 <div class="field expenseOnly"><label>Categoria</label><select id="entryCategory"><option>Moradia da mãe</option><option>Condomínio do prédio</option><option>Saúde</option><option>Veículo</option><option>Reforma</option><option>Serviços</option><option>Diversos</option></select></div>
 <div class="field expenseOnly"><label>Valor previsto</label><input id="entryPlanned" type="number" step="0.01" min="0"></div>
+<div class="field expenseOnly"><label><input id="entryShared" type="checkbox" onchange="toggleEntryShare()"> Ratear esta despesa com a mãe</label></div>
+<div class="field expenseOnly" id="entryMotherShareField" style="display:none"><label>Parte da mãe no rateio</label><input id="entryMotherShare" type="number" step="0.01" min="0"><small style="color:var(--muted)">Esse valor será descontado automaticamente do repasse líquido para a mãe.</small></div>
 <div id="incomeAllocation" class="allocation-box">
 <div class="allocation-head"><div><b>Conferência do repasse do Michel</b><div style="font-size:12px;color:var(--muted)">Marque os apartamentos incluídos neste Pix.</div></div><button type="button" class="btn soft" onclick="toggleAllApartments()">Marcar todos</button></div>
 <div id="allocationList" class="allocation-list"></div>
@@ -180,9 +182,10 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div class="dialog-actions"><button class="btn soft" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="saveEntry()">Salvar lançamento</button></div>
 </div></div>
 
+<div id="systemToast" class="system-toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
-<script src="data.js?v=0.4.3"></script>
+<script src="data.js?v=0.4.4"></script>
 <script>
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -218,9 +221,13 @@ function persist(){localStorage.setItem('patrimonioMaeV0',JSON.stringify(state))
 function monthName(k){let [y,m]=k.split('-').map(Number);return MONTHS[m-1][0].toUpperCase()+MONTHS[m-1].slice(1)+'/'+y}
 function sum(a,key='value'){return (a||[]).reduce((s,x)=>s+(Number(x[key])||0),0)}
 function current(m=selectedMonth){return state.months[m]}
+let toastTimer=null;
+function notify(message){systemToast.textContent=message;systemToast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>systemToast.classList.remove('show'),4200)}
 function totals(m=selectedMonth){
- const x=current(m); const income=sum(x.incomes); const expenses=sum(x.expenses,'paid'); const transfers=sum(x.transfers);
- return {income,expenses,transfers,movement:income-expenses-transfers};
+ const x=current(m); const income=sum(x.incomes); const expenses=sum(x.expenses,'paid');
+ const grossTransfers=sum(x.transfers); const sharedMother=(x.expenses||[]).reduce((s,e)=>s+(e.shared?Number(e.motherShare||0):0),0);
+ const transfers=Math.max(grossTransfers-sharedMother,0);
+ return {income,expenses,transfers,grossTransfers,sharedMother,movement:income-expenses-transfers};
 }
 function sortedMonths(){return Object.keys(state.months).sort()}
 function calcRunning(target){
@@ -411,7 +418,7 @@ async function startInterpretation(type,file){
   const value=extractValueFromText(text),date=extractDateFromText(text),sender=extractSenderFromText(text);
   if(value&&date){
    saveInterpretedUpload(type,fileData,value,date,sender);
-   alert(`${descriptionForUpload(type,sender)} lançada automaticamente em ${monthName(date.slice(0,7))}.`);
+   notify(`${descriptionForUpload(type,sender)} lançada automaticamente em ${monthName(date.slice(0,7))}.`);
    return;
   }
   pendingUpload={type,file:fileData,ocrText:text,ocrSender:sender};
@@ -434,13 +441,13 @@ function cancelInterpretation(){pendingUpload=null;interpretModal.classList.remo
 function confirmInterpretation(){
  if(!pendingUpload)return;
  const date=interpretDate.value,value=Number(interpretValue.value),month=date?date.slice(0,7):interpretMonth.value,desc=interpretDescription.value.trim();
- if(!ensureMonth(month)||!value||!date){alert('Confirme a data e o valor.');return}
+ if(!ensureMonth(month)||!value||!date){notify('Confirme a data e o valor.');return}
  const sender=pendingUpload.ocrSender||desc.replace(/^(?:Receita de|Despesa paga para|Repasse para)\s*/i,'').trim();
  const base={id:crypto.randomUUID(),date,document:pendingUpload.file,historical:false,uploadedVia:'central-files-ocr',ocrSender:sender,ocrProcessed:true};
  if(pendingUpload.type==='income')state.months[month].incomes.push({...base,source:desc||descriptionForUpload('income',sender),value,allocations:[],reconciled:false});
  if(pendingUpload.type==='expense')state.months[month].expenses.push({...base,description:desc||descriptionForUpload('expense',sender),category:'Comprovante importado',planned:value,paid:value});
  if(pendingUpload.type==='transfer')state.months[month].transfers.push({...base,description:desc||descriptionForUpload('transfer',sender),value});
- selectedMonth=month;selectedExpenseMonth=month;persist();cancelInterpretation();render();alert('Comprovante interpretado e lançamento atualizado.');
+ selectedMonth=month;selectedExpenseMonth=month;persist();cancelInterpretation();render();notify('Comprovante interpretado e lançamento atualizado.');
 }
 function setupDropzones(){
  const map={income:'uploadIncome',expense:'uploadExpense',transfer:'uploadTransfer'};
@@ -458,7 +465,7 @@ function renderMonthly(){
  monthStatus.textContent=(m.status==='closed'?'Mês fechado':'Mês em andamento')+' • '+(m.summaryImported?'Base histórica importada':'Lançamentos editáveis');
  const make=(items,type)=>items.length?items.map(x=>`<div class="entry"><div><div class="title">${x.source||x.description}</div><div class="meta">${x.date?new Date(x.date+'T12:00').toLocaleDateString('pt-BR'):'Sem data'} • <span class="doc">${fileLabel(x)}</span>${type==='income'&&x.allocations?.length?` • ✓ ${x.allocations.map(a=>a.apartment).join(', ')}`:''}</div></div><div class="value">${BRL.format(type==='expense'?x.paid:x.value)}</div></div>`).join(''):'<div class="empty">Nenhum lançamento neste mês.</div>';
  incomeList.innerHTML=make(m.incomes,'income'); transferList.innerHTML=make(m.transfers,'transfer'); expenseList.innerHTML=make(m.expenses,'expense');
- incomeTotal.textContent=BRL.format(t.income); transferTotal.textContent=BRL.format(t.transfers); expenseTotal.textContent=BRL.format(t.expenses);
+ incomeTotal.textContent=BRL.format(t.income); transferTotal.textContent=BRL.format(t.transfers)+(t.sharedMother?` (bruto ${BRL.format(t.grossTransfers)} − rateio ${BRL.format(t.sharedMother)})`:''); expenseTotal.textContent=BRL.format(t.expenses);
  summaryGrid.innerHTML=`
  <div class="sum"><span>Receitas do mês</span><b>${BRL.format(t.income)}</b></div>
  <div class="sum"><span>Despesas do mês</span><b>${BRL.format(t.expenses)}</b></div>
@@ -579,8 +586,9 @@ function expenseData(){
  const months=expenseView==='month'?[selectedExpenseMonth]:sortedMonths();
  const groups={};
  months.forEach(m=>(state.months[m]?.expenses||[]).forEach(x=>{
-  const cat=expenseCategory(x);if(!groups[cat])groups[cat]={category:cat,count:0,total:0};
-  groups[cat].count++;groups[cat].total+=Number(x.paid)||0;
+  const cat=expenseCategory(x);if(!groups[cat])groups[cat]={category:cat,count:0,total:0,sharedTotal:0,motherShare:0,items:[]};
+  groups[cat].count++;groups[cat].total+=Number(x.paid)||0;groups[cat].items.push({...x,month:m});
+  if(x.shared){groups[cat].sharedTotal+=Number(x.paid)||0;groups[cat].motherShare+=Number(x.motherShare)||0;}
  }));
  return Object.values(groups).sort((a,b)=>b.total-a.total);
 }
@@ -591,10 +599,17 @@ function setExpenseView(view){
 }
 function renderExpenses(){
  const data=expenseData(),total=data.reduce((s,x)=>s+x.total,0);
- expenseSummaryGrid.innerHTML=data.length?data.map(x=>`<div class="expense-summary-card"><h3>${x.category}</h3><strong>${BRL.format(x.total)}</strong><small>${x.count} lançamento(s)</small></div>`).join(''):'<div class="empty">Nenhuma despesa encontrada.</div>';
- expenseTable.innerHTML=data.map(x=>`<tr><td><b>${x.category}</b></td><td>${x.count}</td><td>${BRL.format(x.total)}</td><td>${total?((x.total/total)*100).toFixed(1):'0,0'}%</td></tr>`).join('');
+ expenseSummaryGrid.innerHTML=data.length?data.map(x=>`<div class="expense-summary-card" onclick="openExpenseDetails('${encodeURIComponent(x.category)}')"><h3>${x.category}</h3><div class="expense-card-values"><div><small>Total pago</small><b>${BRL.format(x.total)}</b></div><div><small>Rateado</small><b>${BRL.format(x.sharedTotal)}</b></div></div><small>${x.count} lançamento(s) • clique para abrir</small></div>`).join(''):'<div class="empty">Nenhuma despesa encontrada.</div>';
+ expenseTable.innerHTML=data.map(x=>`<tr onclick="openExpenseDetails('${encodeURIComponent(x.category)}')" style="cursor:pointer"><td><b>${x.category}</b></td><td>${x.count}</td><td>${BRL.format(x.total)}</td><td>${BRL.format(x.sharedTotal)}</td><td>${BRL.format(x.motherShare)}</td><td>${total?((x.total/total)*100).toFixed(1):'0,0'}%</td></tr>`).join('');
  fillPickers();
 }
+function openExpenseDetails(encodedCategory){
+ const category=decodeURIComponent(encodedCategory);const group=expenseData().find(x=>x.category===category);if(!group)return;
+ expenseDetailsTitle.textContent=category;
+ expenseDetailsBody.innerHTML=group.items.map(x=>`<div class="entry"><div><div class="title">${x.description||'Despesa sem descrição'}</div><div class="meta">${x.date?new Date(x.date+'T12:00').toLocaleDateString('pt-BR'):'Sem data'} • ${monthName(x.month)}${x.shared?` • Rateio: mãe ${BRL.format(x.motherShare||0)}`:''}</div></div><div class="value">${BRL.format(x.paid||0)}</div></div>`).join('')||'<div class="empty">Nenhuma despesa.</div>';
+ expenseDetailsModal.classList.add('open');
+}
+function closeExpenseDetails(){expenseDetailsModal.classList.remove('open')}
 function setKpi(index,label,value,hint,tone=''){
  const labelEl=document.getElementById(`kpiLabel${index}`);
  const valueEl=document.getElementById(`kpiValue${index}`);
@@ -690,27 +705,28 @@ function openFileEditor(id){
  fileEditType.value=found.type;fileEditMonth.value=found.month;fileEditDate.value=found.item.date||'';
  fileEditValue.value=found.type==='expense'?(found.item.paid||0):(found.item.value||0);
  fileEditDescription.value=documentDescription(found.item,found.type);
- fileEditCategory.value=found.item.category||'Diversos';
- toggleFileEditCategory();fileEditModal.classList.add('open');
+ fileEditCategory.value=found.item.category||'Diversos';fileEditShared.checked=!!found.item.shared;fileEditMotherShare.value=Number(found.item.motherShare||0);
+ toggleFileEditCategory();toggleFileEditShare();fileEditModal.classList.add('open');
 }
 function closeFileEditor(){fileEditModal.classList.remove('open');editingDocument=null}
-function toggleFileEditCategory(){fileEditCategoryField.style.display=fileEditType.value==='expense'?'block':'none'}
+function toggleFileEditCategory(){const on=fileEditType.value==='expense';fileEditCategoryField.style.display=on?'block':'none';fileEditShareField.style.display=on?'block':'none';fileEditMotherShareField.style.display=on&&fileEditShared.checked?'block':'none'}
+function toggleFileEditShare(){fileEditMotherShareField.style.display=fileEditType.value==='expense'&&fileEditShared.checked?'block':'none';if(fileEditShared.checked&&!fileEditMotherShare.value)fileEditMotherShare.value=(Number(fileEditValue.value||0)/2).toFixed(2)}
 function buildMovedDocument(item,type,value,description,date,category){
  const base={id:item.id||crypto.randomUUID(),date,document:item.document,historical:!!item.historical};
  if(type==='income')return {...base,source:description,value,allocations:type===editingDocument?.originalType?(item.allocations||[]):[],reconciled:type===editingDocument?.originalType?!!item.reconciled:false};
- if(type==='expense')return {...base,description,category:category||'Diversos',planned:Number(item.planned||value),paid:value};
+ if(type==='expense'){const shared=typeof fileEditShared!=='undefined'?fileEditShared.checked:!!item.shared;const motherShare=shared?Number((typeof fileEditMotherShare!=='undefined'&&fileEditMotherShare.value)||item.motherShare||value/2):0;return {...base,description,category:category||'Diversos',planned:Number(item.planned||value),paid:value,shared,motherShare};}
  return {...base,description,value};
 }
 function saveFileEditor(){
  if(!editingDocument)return;
  const found=findDocumentEntry(editingDocument.id);if(!found)return closeFileEditor();
  const month=fileEditMonth.value,type=fileEditType.value,date=fileEditDate.value,value=Number(fileEditValue.value),description=fileEditDescription.value.trim();
- if(!ensureMonth(month)||!date||!value||!description){alert('Informe mês, data, valor e descrição.');return}
+ if(!ensureMonth(month)||!date||!value||!description){notify('Informe mês, data, valor e descrição.');return}
  const updated=buildMovedDocument(found.item,type,value,description,date,fileEditCategory.value);
  found.list.splice(found.index,1);
  const target=type==='income'?state.months[month].incomes:type==='expense'?state.months[month].expenses:state.months[month].transfers;
  target.push(updated);selectedMonth=month;selectedExpenseMonth=month;persist();closeFileEditor();render();
- alert(`Comprovante atualizado: ${monthName(month)} • ${description} • ${BRL.format(value)}`);
+ notify(`Comprovante atualizado: ${monthName(month)} • ${description} • ${BRL.format(value)}`);
 }
 function deleteDocument(id){
  const found=findDocumentEntry(id);if(!found)return;
@@ -727,7 +743,7 @@ function moveDocumentToType(id,targetType){
  const target=targetType==='income'?state.months[found.month].incomes:targetType==='expense'?state.months[found.month].expenses:state.months[found.month].transfers;
  target.push(moved);persist();render();
  const names={income:'Receitas do Michel',expense:'Despesas pagas',transfer:'Repasses para a mãe'};
- alert(`Comprovante movido para ${names[targetType]}. Clique nele para ajustar a descrição.`);
+ notify(`Comprovante movido para ${names[targetType]}. Clique nele para ajustar a descrição.`);
 }
 function renderFiles(){
  const docs=allDocuments();
@@ -743,14 +759,15 @@ function createNextMonth(){
  selectedMonth=k;persist();render();openMonth(k);
 }
 function openEntry(type){
- entryType.value=type; entryDate.value=new Date().toISOString().slice(0,10); entryValue.value='';entryDescription.value='';entryPlanned.value='';entryFile.value='';tempFile=null;
+ entryType.value=type; entryDate.value=new Date().toISOString().slice(0,10); entryValue.value='';entryDescription.value='';entryPlanned.value='';entryFile.value='';entryShared.checked=false;entryMotherShare.value='';toggleEntryShare();tempFile=null;
  document.querySelectorAll('.expenseOnly').forEach(x=>x.style.display=type==='expense'?'block':'none');
  modalTitle.textContent=type==='income'?'Nova entrada do prédio':type==='expense'?'Nova despesa':type==='transfer'?'Novo repasse para a mãe':'Arquivo sem vínculo';
  renderIncomeAllocation();
  modal.classList.add('open');
 }
 function closeModal(){modal.classList.remove('open')}
-entryValue.addEventListener('input',updateAllocationSummary);
+function toggleEntryShare(){entryMotherShareField.style.display=entryShared.checked?'block':'none';if(entryShared.checked&&!entryMotherShare.value&&entryValue.value)entryMotherShare.value=(Number(entryValue.value)/2).toFixed(2)}
+entryValue.addEventListener('input',()=>{updateAllocationSummary();if(entryShared.checked)entryMotherShare.value=(Number(entryValue.value||0)/2).toFixed(2)});
 entryFile.addEventListener('change',async e=>{
  const f=e.target.files[0];if(!f)return;ocrStatus.textContent='Arquivo selecionado. Preparando leitura...';
  const reader=new FileReader();reader.onload=()=>{tempFile={name:f.name,type:f.type,data:reader.result};ocrStatus.textContent='Comprovante pronto para ser vinculado. Para imagens, a leitura automática será ativada na integração com o servidor.'};reader.readAsDataURL(f);
@@ -759,23 +776,23 @@ entryFile.addEventListener('change',async e=>{
 });
 function saveEntry(){
  const type=entryType.value, value=Number(entryValue.value), desc=entryDescription.value.trim();
- if(type==='document'){alert('Na V0, o arquivo sem vínculo será liberado junto ao backend. Anexe diretamente a uma entrada, despesa ou repasse.');return}
- if(!value||!desc){alert('Informe a descrição e o valor.');return}
+ if(type==='document'){notify('Na V0, o arquivo sem vínculo será liberado junto ao backend. Anexe diretamente a uma entrada, despesa ou repasse.');return}
+ if(!value||!desc){notify('Informe a descrição e o valor.');return}
  const base={id:crypto.randomUUID(),date:entryDate.value,document:tempFile,historical:false};
  if(type==='income'){
   const allocations=selectedAllocations();
   const allocated=allocations.reduce((s,x)=>s+x.expected,0);
   if(allocations.length && Math.abs(allocated-value)>0.01){
-    alert(`A soma dos apartamentos selecionados (${BRL.format(allocated)}) não fecha com o Pix (${BRL.format(value)}).`);
+    notify(`A soma dos apartamentos selecionados (${BRL.format(allocated)}) não fecha com o Pix (${BRL.format(value)}).`);
     return;
   }
   current().incomes.push({...base,source:desc,value,allocations,reconciled:allocations.length>0});
  }
  if(type==='transfer')current().transfers.push({...base,description:desc,value});
- if(type==='expense')current().expenses.push({...base,description:desc,category:entryCategory.value,planned:Number(entryPlanned.value||value),paid:value});
+ if(type==='expense'){const shared=entryShared.checked;const motherShare=shared?Number(entryMotherShare.value||value/2):0;current().expenses.push({...base,description:desc,category:entryCategory.value,planned:Number(entryPlanned.value||value),paid:value,shared,motherShare});}
  persist();closeModal();render();
 }
-function closeMonth(){current().status='closed';persist();render();alert('Mês fechado. Na versão com backend, correções serão feitas por estorno, preservando a auditoria.')}
+function closeMonth(){current().status='closed';persist();render();notify('Mês fechado. Na versão com backend, correções serão feitas por estorno, preservando a auditoria.')}
 function exportBackup(){
  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='backup_patrimonio_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);
 }
@@ -795,8 +812,17 @@ setExpenseView('month');
 <div class="form-row"><div class="field"><label>Data</label><input id="fileEditDate" type="date"></div><div class="field"><label>Valor</label><input id="fileEditValue" type="number" min="0" step="0.01"></div></div>
 <div class="field"><label>Descrição</label><input id="fileEditDescription" placeholder="Ex.: Vivo, condomínio, Pix para Margareth"></div>
 <div class="field" id="fileEditCategoryField"><label>Categoria da despesa</label><select id="fileEditCategory"><option>Moradia da mãe</option><option>Condomínio do prédio</option><option>Saúde</option><option>Veículo</option><option>Reforma</option><option>Serviços</option><option>Diversos</option><option>Comprovante importado</option></select></div>
+<div class="field" id="fileEditShareField"><label><input id="fileEditShared" type="checkbox" onchange="toggleFileEditShare()"> Ratear esta despesa com a mãe</label></div>
+<div class="field" id="fileEditMotherShareField" style="display:none"><label>Parte da mãe no rateio</label><input id="fileEditMotherShare" type="number" min="0" step="0.01"></div>
 </div>
 <div class="dialog-actions"><button class="btn soft" onclick="deleteDocument(editingDocument?.id)">Excluir</button><button class="btn soft" onclick="closeFileEditor()">Cancelar</button><button class="btn primary" onclick="saveFileEditor()">Salvar alterações</button></div>
+</div></div>
+
+
+<div id="expenseDetailsModal" class="modal"><div class="dialog">
+<h3 id="expenseDetailsTitle">Despesas</h3>
+<div id="expenseDetailsBody" class="entry-list" style="margin-top:14px"></div>
+<div class="dialog-actions"><button class="btn primary" onclick="closeExpenseDetails()">Fechar</button></div>
 </div></div>
 
 <div id="interpretModal" class="modal"><div class="dialog">
