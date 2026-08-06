@@ -182,7 +182,7 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
-<script src="data.js?v=0.4.2.1"></script>
+<script src="data.js?v=0.4.3"></script>
 <script>
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -212,6 +212,7 @@ let expenseView='month';
 let activePanel='monthly';
 let tempFile=null;
 let pendingUpload=null;
+let editingDocument=null;
 
 function persist(){localStorage.setItem('patrimonioMaeV0',JSON.stringify(state))}
 function monthName(k){let [y,m]=k.split('-').map(Number);return MONTHS[m-1][0].toUpperCase()+MONTHS[m-1].slice(1)+'/'+y}
@@ -449,7 +450,7 @@ function setupDropzones(){
   const zone=document.querySelector(`[data-upload-type="${type}"]`);
   ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.add('dragover')}));
   ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.remove('dragover')}));
-  zone.addEventListener('drop',e=>startInterpretation(type,e.dataTransfer.files[0]));
+  zone.addEventListener('drop',e=>{const documentId=e.dataTransfer.getData('text/patrimonio-document');if(documentId){moveDocumentToType(documentId,type);return}const file=e.dataTransfer.files[0];if(file)startInterpretation(type,file)});
  });
 }
 function renderMonthly(){
@@ -666,13 +667,71 @@ function renderContextKpis(){
 function allDocuments(){
  const docs=[];
  Object.values(state.months).forEach(m=>{
-  [...m.incomes,...m.expenses,...m.transfers].forEach(x=>{if(x.document)docs.push({...x,month:m.month})})
+  [['income',m.incomes],['expense',m.expenses],['transfer',m.transfers]].forEach(([type,list])=>{
+   (list||[]).forEach(x=>{if(x.document)docs.push({...x,month:m.month,entryType:type})});
+  });
  });
  return docs;
 }
+function findDocumentEntry(id){
+ for(const [month,m] of Object.entries(state.months)){
+  for(const [type,list] of [['income',m.incomes],['expense',m.expenses],['transfer',m.transfers]]){
+   const index=(list||[]).findIndex(x=>x.id===id);
+   if(index>=0)return {month,type,list,index,item:list[index]};
+  }
+ }
+ return null;
+}
+function documentDescription(item,type){return type==='income'?(item.source||'Receita sem descrição'):(item.description||'Sem descrição')}
+function openFileEditor(id){
+ const found=findDocumentEntry(id);if(!found)return;
+ editingDocument={id,originalMonth:found.month,originalType:found.type};
+ fileEditName.textContent=found.item.document?.name||'Comprovante';
+ fileEditType.value=found.type;fileEditMonth.value=found.month;fileEditDate.value=found.item.date||'';
+ fileEditValue.value=found.type==='expense'?(found.item.paid||0):(found.item.value||0);
+ fileEditDescription.value=documentDescription(found.item,found.type);
+ fileEditCategory.value=found.item.category||'Diversos';
+ toggleFileEditCategory();fileEditModal.classList.add('open');
+}
+function closeFileEditor(){fileEditModal.classList.remove('open');editingDocument=null}
+function toggleFileEditCategory(){fileEditCategoryField.style.display=fileEditType.value==='expense'?'block':'none'}
+function buildMovedDocument(item,type,value,description,date,category){
+ const base={id:item.id||crypto.randomUUID(),date,document:item.document,historical:!!item.historical};
+ if(type==='income')return {...base,source:description,value,allocations:type===editingDocument?.originalType?(item.allocations||[]):[],reconciled:type===editingDocument?.originalType?!!item.reconciled:false};
+ if(type==='expense')return {...base,description,category:category||'Diversos',planned:Number(item.planned||value),paid:value};
+ return {...base,description,value};
+}
+function saveFileEditor(){
+ if(!editingDocument)return;
+ const found=findDocumentEntry(editingDocument.id);if(!found)return closeFileEditor();
+ const month=fileEditMonth.value,type=fileEditType.value,date=fileEditDate.value,value=Number(fileEditValue.value),description=fileEditDescription.value.trim();
+ if(!ensureMonth(month)||!date||!value||!description){alert('Informe mês, data, valor e descrição.');return}
+ const updated=buildMovedDocument(found.item,type,value,description,date,fileEditCategory.value);
+ found.list.splice(found.index,1);
+ const target=type==='income'?state.months[month].incomes:type==='expense'?state.months[month].expenses:state.months[month].transfers;
+ target.push(updated);selectedMonth=month;selectedExpenseMonth=month;persist();closeFileEditor();render();
+ alert(`Comprovante atualizado: ${monthName(month)} • ${description} • ${BRL.format(value)}`);
+}
+function deleteDocument(id){
+ const found=findDocumentEntry(id);if(!found)return;
+ const name=found.item.document?.name||'este comprovante';
+ if(!confirm(`Excluir ${name} e o lançamento vinculado?`))return;
+ found.list.splice(found.index,1);persist();render();if(editingDocument?.id===id)closeFileEditor();
+}
+function moveDocumentToType(id,targetType){
+ const found=findDocumentEntry(id);if(!found||found.type===targetType)return;
+ const value=found.type==='expense'?Number(found.item.paid||0):Number(found.item.value||0);
+ const description=documentDescription(found.item,found.type);
+ const moved=buildMovedDocument(found.item,targetType,value,description,found.item.date||`${found.month}-01`,found.item.category||'Diversos');
+ found.list.splice(found.index,1);
+ const target=targetType==='income'?state.months[found.month].incomes:targetType==='expense'?state.months[found.month].expenses:state.months[found.month].transfers;
+ target.push(moved);persist();render();
+ const names={income:'Receitas do Michel',expense:'Despesas pagas',transfer:'Repasses para a mãe'};
+ alert(`Comprovante movido para ${names[targetType]}. Clique nele para ajustar a descrição.`);
+}
 function renderFiles(){
  const docs=allDocuments();
- filesGrid.innerHTML=docs.length?docs.map(d=>`<div class="file-card"><div style="display:flex;gap:12px"><div class="file-icon">📄</div><div><b>${d.document.name}</b><div style="font-size:12px;color:var(--muted);margin-top:4px">${monthName(d.month)} • ${d.source||d.description}</div><div style="margin-top:7px;font-weight:900">${BRL.format(d.value||d.paid||0)}</div></div></div></div>`).join(''):'<div class="empty">Os comprovantes novos aparecerão aqui automaticamente.</div>';
+ filesGrid.innerHTML=docs.length?docs.map(d=>`<div class="file-card" draggable="true" ondragstart="event.dataTransfer.setData('text/patrimonio-document','${d.id}')" onclick="openFileEditor('${d.id}')" style="position:relative;cursor:pointer"><button type="button" title="Excluir comprovante" onclick="event.stopPropagation();deleteDocument('${d.id}')" style="position:absolute;right:10px;top:8px;border:0;background:transparent;font-size:22px;font-weight:900;cursor:pointer;line-height:1">×</button><div style="display:flex;gap:12px;padding-right:24px"><div class="file-icon">📄</div><div><b>${d.document.name}</b><div style="font-size:12px;color:var(--muted);margin-top:4px">${monthName(d.month)} • ${documentDescription(d,d.entryType)}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${d.entryType==='income'?'Receita':d.entryType==='expense'?'Despesa':'Repasse'} • clique para editar ou arraste para outra categoria</div><div style="margin-top:7px;font-weight:900">${BRL.format(d.value||d.paid||0)}</div></div></div></div>`).join(''):'<div class="empty">Os comprovantes novos aparecerão aqui automaticamente.</div>';
 }
 function renderAccount(){
  accountTable.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m);return `<tr><td><b>${monthName(m)}</b></td><td>${BRL.format(t.income)}</td><td>${BRL.format(t.expenses)}</td><td>${BRL.format(t.transfers)}</td><td class="${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</td><td class="${debt>0?'red':'green'}">${BRL.format(debt)}</td></tr>`}).join('');
@@ -727,6 +786,18 @@ setupDropzones();
 setApartmentView('month');
 setExpenseView('month');
 </script>
+
+<div id="fileEditModal" class="modal"><div class="dialog">
+<h3>Editar comprovante</h3>
+<div class="interpretation"><div><b id="fileEditName">Arquivo</b></div><div class="file-preview">Altere a descrição, o mês, o valor ou mova o comprovante para outra categoria.</div></div>
+<div class="form" style="margin-top:14px">
+<div class="form-row"><div class="field"><label>Tipo</label><select id="fileEditType" onchange="toggleFileEditCategory()"><option value="income">Receita do Michel</option><option value="expense">Despesa paga</option><option value="transfer">Repasse para a mãe</option></select></div><div class="field"><label>Mês</label><input id="fileEditMonth" type="month"></div></div>
+<div class="form-row"><div class="field"><label>Data</label><input id="fileEditDate" type="date"></div><div class="field"><label>Valor</label><input id="fileEditValue" type="number" min="0" step="0.01"></div></div>
+<div class="field"><label>Descrição</label><input id="fileEditDescription" placeholder="Ex.: Vivo, condomínio, Pix para Margareth"></div>
+<div class="field" id="fileEditCategoryField"><label>Categoria da despesa</label><select id="fileEditCategory"><option>Moradia da mãe</option><option>Condomínio do prédio</option><option>Saúde</option><option>Veículo</option><option>Reforma</option><option>Serviços</option><option>Diversos</option><option>Comprovante importado</option></select></div>
+</div>
+<div class="dialog-actions"><button class="btn soft" onclick="deleteDocument(editingDocument?.id)">Excluir</button><button class="btn soft" onclick="closeFileEditor()">Cancelar</button><button class="btn primary" onclick="saveFileEditor()">Salvar alterações</button></div>
+</div></div>
 
 <div id="interpretModal" class="modal"><div class="dialog">
 <h3>Confirmar leitura do comprovante</h3>
