@@ -208,8 +208,7 @@ function loadInitialState(){
  return candidate;
 }
 let state=loadInitialState();
-const monthsWithMovement=Object.keys(state.months).filter(m=>{const x=state.months[m]||{};return (x.incomes||[]).length||(x.expenses||[]).length||(x.transfers||[]).length;}).sort();
-let selectedMonth=monthsWithMovement.at(-1)||Object.keys(state.months).sort().at(-1);
+let selectedMonth=state.months['2026-08']?'2026-08':Object.keys(state.months).sort().at(-1);
 let selectedApartmentMonth=state.apartmentPayments.map(x=>x.month).sort().at(-1)||selectedMonth;
 let apartmentView='month';
 let selectedExpenseMonth=selectedMonth;
@@ -230,18 +229,30 @@ function totals(m=selectedMonth){
  const motherExpenses=(x.expenses||[]).reduce((total,e)=>total+Number(e.valor_mae ?? e.motherShare ?? 0),0);
  const transfers=sum(x.transfers);
  const dueMother=transfers+motherExpenses;
- const hasMotherCost=(x.expenses||[]).some(e=>Object.prototype.hasOwnProperty.call(e,'valor_mae')||Object.prototype.hasOwnProperty.call(e,'motherShare'));
- const useLegacyHistory=!!x.summaryImported&&!hasMotherCost;
- const movement=useLegacyHistory
-  ? income-expensesPaid-transfers
-  : income-motherExpenses-transfers;
- return {income,expenses:expensesPaid,expensesPaid,motherExpenses,transfers,dueMother,movement,useLegacyHistory};
+ const movement=income-motherExpenses-transfers;
+ return {income,expenses:expensesPaid,expensesPaid,motherExpenses,transfers,dueMother,movement};
 }
 function sortedMonths(){return Object.keys(state.months).sort()}
+function hasExplicitMotherCosts(month){
+ const x=current(month);
+ return (x.expenses||[]).some(e=>
+  Object.prototype.hasOwnProperty.call(e,'valor_mae') ||
+  Object.prototype.hasOwnProperty.call(e,'motherShare')
+ );
+}
+function monthMovement(month){
+ const x=current(month); const t=totals(month);
+ // Meses históricos importados preservam o saldo original da planilha.
+ // A nova regra só passa a valer quando houver custo efetivo da mãe informado linha a linha.
+ if(x?.summaryImported && !hasExplicitMotherCosts(month)){
+  return Number(x.summaryImported.monthBalance)||0;
+ }
+ return t.movement;
+}
 function calcRunning(target){
  let debt=Number(state.initialDebt||0);
  for(const m of sortedMonths()){
-  const t=totals(m); debt-=t.movement;
+  debt-=monthMovement(m);
   if(m===target)return debt;
  }
  return debt;
@@ -483,7 +494,7 @@ function renderMonthly(){
 
 }
 function renderMonths(){
- monthsList.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m), x=state.months[m];return `<div class="month-tile ${m===selectedMonth?'month-highlight':''}" onclick="openMonth('${m}')"><header><h3>${monthName(m)}</h3><span class="status ${x.status}">${x.status==='closed'?'Fechado':'Em andamento'}</span></header><div class="balance ${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</div><small>Entradas ${BRL.format(t.income)} • Despesas ${BRL.format(t.expensesPaid)} • Mãe ${BRL.format(t.motherExpenses)} • Repasses ${BRL.format(t.transfers)}</small><div style="margin-top:10px;font-size:12px;color:var(--muted)">Saldo acumulado: ${BRL.format(debt)}</div></div>`}).join('');
+ monthsList.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), movement=monthMovement(m), debt=calcRunning(m), x=state.months[m];return `<div class="month-tile ${m===selectedMonth?'month-highlight':''}" onclick="openMonth('${m}')"><header><h3>${monthName(m)}</h3><span class="status ${x.status}">${x.status==='closed'?'Fechado':'Em andamento'}</span></header><div class="balance ${movement>=0?'green':'red'}">${BRL.format(movement)}</div><small>Entradas ${BRL.format(t.income)} • Despesas ${BRL.format(t.expensesPaid)} • Mãe ${BRL.format(t.motherExpenses)} • Repasses ${BRL.format(t.transfers)}</small><div style="margin-top:10px;font-size:12px;color:var(--muted)">Saldo acumulado: ${BRL.format(debt)}</div></div>`}).join('');
 }
 function expectedFor(apt,month){
  const hist=state.apartmentPayments.filter(x=>x.apartment===apt&&x.month<=month&&x.amount>0).sort((a,b)=>a.month.localeCompare(b.month));
@@ -800,7 +811,7 @@ function renderFiles(){
  filesGrid.innerHTML=docs.length?docs.map(d=>`<div class="file-card" draggable="true" ondragstart="event.dataTransfer.setData('text/patrimonio-document','${d.id}')" onclick="viewDocument('${d.id}')" style="position:relative;cursor:pointer"><button type="button" title="Excluir comprovante" onclick="event.stopPropagation();deleteDocument('${d.id}')" style="position:absolute;right:10px;top:8px;border:0;background:transparent;font-size:22px;font-weight:900;cursor:pointer;line-height:1">×</button><button type="button" class="btn soft" title="Editar lançamento" onclick="event.stopPropagation();openFileEditor('${d.id}')" style="position:absolute;right:38px;top:8px;padding:5px 9px">Editar</button><div style="display:flex;gap:12px;padding-right:100px"><div class="file-icon">📄</div><div><b>${d.document.name}</b><div style="font-size:12px;color:var(--muted);margin-top:4px">${monthName(d.month)} • ${documentDescription(d,d.entryType)}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${d.entryType==='income'?'Receita':d.entryType==='expense'?'Despesa':'Repasse'} • clique para abrir o arquivo</div><div style="margin-top:7px;font-weight:900">${BRL.format(d.value||d.paid||0)}</div></div></div></div>`).join(''):'<div class="empty">Os comprovantes novos aparecerão aqui automaticamente.</div>';
 }
 function renderAccount(){
- accountTable.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m);return `<tr><td><b>${monthName(m)}</b></td><td>${BRL.format(t.income)}</td><td>${BRL.format(t.expensesPaid)}</td><td>${BRL.format(t.motherExpenses)}</td><td>${BRL.format(t.transfers)}</td><td>${BRL.format(t.dueMother)}</td><td class="${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</td></tr>`}).join('');
+ accountTable.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), movement=monthMovement(m);return `<tr><td><b>${monthName(m)}</b></td><td>${BRL.format(t.income)}</td><td>${BRL.format(t.expensesPaid)}</td><td>${BRL.format(t.motherExpenses)}</td><td>${BRL.format(t.transfers)}</td><td>${BRL.format(t.dueMother)}</td><td class="${movement>=0?'green':'red'}">${BRL.format(movement)}</td></tr>`}).join('');
 }
 function openMonth(m){selectedMonth=m;activePanel='monthly';document.querySelector('[data-panel="monthly"]').click();render()}
 function createNextMonth(){
