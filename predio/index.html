@@ -185,7 +185,7 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div id="systemToast" class="system-toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
-<script src="data.js?v=0.4.5"></script>
+<script src="data.js?v=0.4.6"></script>
 <script>
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -224,10 +224,13 @@ function current(m=selectedMonth){return state.months[m]}
 let toastTimer=null;
 function notify(message){systemToast.textContent=message;systemToast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>systemToast.classList.remove('show'),4200)}
 function totals(m=selectedMonth){
- const x=current(m); const income=sum(x.incomes); const expenses=sum(x.expenses,'paid');
- const grossTransfers=sum(x.transfers); const sharedMother=(x.expenses||[]).reduce((s,e)=>s+Number(e.motherShare||0),0);
- const transfers=Math.max(grossTransfers-sharedMother,0);
- return {income,expenses,transfers,grossTransfers,sharedMother,movement:income-expenses-transfers};
+ const x=current(m); const income=sum(x.incomes); const expensesPaid=sum(x.expenses,'paid');
+ const motherExpenses=(x.expenses||[]).reduce((s,e)=>{
+  const effective=Object.prototype.hasOwnProperty.call(e,'motherShare')?Number(e.motherShare||0):Number(e.paid||0);
+  return s+effective;
+ },0);
+ const transfers=sum(x.transfers);
+ return {income,expenses:motherExpenses,expensesPaid,motherExpenses,transfers,grossTransfers:transfers,sharedMother:motherExpenses,movement:income-motherExpenses-transfers};
 }
 function sortedMonths(){return Object.keys(state.months).sort()}
 function calcRunning(target){
@@ -465,7 +468,7 @@ function renderMonthly(){
  monthStatus.textContent=(m.status==='closed'?'Mês fechado':'Mês em andamento')+' • '+(m.summaryImported?'Base histórica importada':'Lançamentos editáveis');
  const make=(items,type)=>items.length?items.map(x=>`<div class="entry"><div><div class="title">${x.source||x.description}</div><div class="meta">${x.date?new Date(x.date+'T12:00').toLocaleDateString('pt-BR'):'Sem data'} • <span class="doc">${fileLabel(x)}</span>${type==='income'&&x.allocations?.length?` • ✓ ${x.allocations.map(a=>a.apartment).join(', ')}`:''}</div></div><div class="value">${BRL.format(type==='expense'?x.paid:x.value)}</div></div>`).join(''):'<div class="empty">Nenhum lançamento neste mês.</div>';
  incomeList.innerHTML=make(m.incomes,'income'); transferList.innerHTML=make(m.transfers,'transfer'); expenseList.innerHTML=make(m.expenses,'expense');
- incomeTotal.textContent=BRL.format(t.income); transferTotal.textContent=BRL.format(t.transfers)+(t.sharedMother?` (bruto ${BRL.format(t.grossTransfers)} − rateio ${BRL.format(t.sharedMother)})`:''); expenseTotal.textContent=BRL.format(t.expenses);
+ incomeTotal.textContent=BRL.format(t.income); transferTotal.textContent=BRL.format(t.transfers); expenseTotal.textContent=BRL.format(t.expenses)+(Math.abs(t.expensesPaid-t.expenses)>0.009?` (pago ${BRL.format(t.expensesPaid)})`:'');
  summaryGrid.innerHTML=`
  <div class="sum"><span>Receitas do mês</span><b>${BRL.format(t.income)}</b></div>
  <div class="sum"><span>Despesas do mês</span><b>${BRL.format(t.expenses)}</b></div>
