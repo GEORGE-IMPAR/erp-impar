@@ -121,7 +121,7 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div id="expenseMonthContext" class="month-context"><div><strong id="expenseMonthTitle">Despesas do mês</strong><small>Valores pagos agrupados por categoria.</small></div>
 <div class="period-control"><button class="arrow" onclick="changeExpenseMonth(-1)">‹</button><input id="expenseMonthInput" class="month-input" type="month"><button class="arrow" onclick="changeExpenseMonth(1)">›</button></div></div>
 <div id="expenseSummaryGrid" class="expense-summary-grid"></div>
-<div style="margin-top:16px" class="table-wrap"><table><thead><tr><th>Categoria</th><th>Quantidade</th><th>Total pago</th><th>Rateado</th><th>Parte da mãe</th><th>Participação</th></tr></thead><tbody id="expenseTable"></tbody></table></div>
+<div style="margin-top:16px" class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor pago</th><th>Custo efetivo da mãe</th><th>Ação rápida</th></tr></thead><tbody id="expenseTable"></tbody></table></div>
 </section>
 
 <section id="files" class="panel">
@@ -185,7 +185,7 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div id="systemToast" class="system-toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
-<script src="data.js?v=0.4.4"></script>
+<script src="data.js?v=0.4.5"></script>
 <script>
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -225,7 +225,7 @@ let toastTimer=null;
 function notify(message){systemToast.textContent=message;systemToast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>systemToast.classList.remove('show'),4200)}
 function totals(m=selectedMonth){
  const x=current(m); const income=sum(x.incomes); const expenses=sum(x.expenses,'paid');
- const grossTransfers=sum(x.transfers); const sharedMother=(x.expenses||[]).reduce((s,e)=>s+(e.shared?Number(e.motherShare||0):0),0);
+ const grossTransfers=sum(x.transfers); const sharedMother=(x.expenses||[]).reduce((s,e)=>s+Number(e.motherShare||0),0);
  const transfers=Math.max(grossTransfers-sharedMother,0);
  return {income,expenses,transfers,grossTransfers,sharedMother,movement:income-expenses-transfers};
 }
@@ -599,14 +599,33 @@ function setExpenseView(view){
 }
 function renderExpenses(){
  const data=expenseData(),total=data.reduce((s,x)=>s+x.total,0);
- expenseSummaryGrid.innerHTML=data.length?data.map(x=>`<div class="expense-summary-card" onclick="openExpenseDetails('${encodeURIComponent(x.category)}')"><h3>${x.category}</h3><div class="expense-card-values"><div><small>Total pago</small><b>${BRL.format(x.total)}</b></div><div><small>Rateado</small><b>${BRL.format(x.sharedTotal)}</b></div></div><small>${x.count} lançamento(s) • clique para abrir</small></div>`).join(''):'<div class="empty">Nenhuma despesa encontrada.</div>';
- expenseTable.innerHTML=data.map(x=>`<tr onclick="openExpenseDetails('${encodeURIComponent(x.category)}')" style="cursor:pointer"><td><b>${x.category}</b></td><td>${x.count}</td><td>${BRL.format(x.total)}</td><td>${BRL.format(x.sharedTotal)}</td><td>${BRL.format(x.motherShare)}</td><td>${total?((x.total/total)*100).toFixed(1):'0,0'}%</td></tr>`).join('');
+ expenseSummaryGrid.innerHTML=data.length?data.map(x=>`<div class="expense-summary-card" onclick="openExpenseDetails('${encodeURIComponent(x.category)}')"><h3>${x.category}</h3><div class="expense-card-values"><div><small>Total pago</small><b>${BRL.format(x.total)}</b></div><div><small>Custo da mãe</small><b>${BRL.format(x.motherShare)}</b></div></div><small>${x.count} lançamento(s) • clique para abrir</small></div>`).join(''):'<div class="empty">Nenhuma despesa encontrada.</div>';
+ const items=data.flatMap(group=>group.items).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+ expenseTable.innerHTML=items.length?items.map(x=>`<tr>
+  <td>${x.date?new Date(x.date+'T12:00').toLocaleDateString('pt-BR'):'—'}</td>
+  <td><b>${x.description||'Despesa sem descrição'}</b>${x.document?`<div style="font-size:11px;color:var(--muted);margin-top:3px;cursor:pointer" onclick="viewDocument('${x.id}')">📎 Abrir comprovante</div>`:''}</td>
+  <td>${x.category||'Diversos'}</td>
+  <td><b>${BRL.format(x.paid||0)}</b></td>
+  <td><input type="number" min="0" step="0.01" value="${Number(x.motherShare||0).toFixed(2)}" onchange="updateExpenseMotherShare('${x.month}','${x.id}',this.value)" style="width:140px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-weight:800"></td>
+  <td><button class="btn soft" type="button" onclick="splitExpenseHalf('${x.month}','${x.id}')">Dividir por 2</button></td>
+ </tr>`).join(''):'<tr><td colspan="6"><div class="empty">Nenhuma despesa encontrada.</div></td></tr>';
  fillPickers();
+}
+function updateExpenseMotherShare(month,id,value){
+ const item=(state.months[month]?.expenses||[]).find(x=>x.id===id);if(!item)return;
+ const maximum=Number(item.paid||0),amount=Math.max(0,Math.min(Number(value)||0,maximum));
+ item.motherShare=amount;item.shared=amount>0;persist();render();
+ notify(`Custo efetivo da mãe atualizado para ${BRL.format(amount)}.`);
+}
+function splitExpenseHalf(month,id){
+ const item=(state.months[month]?.expenses||[]).find(x=>x.id===id);if(!item)return;
+ item.motherShare=Number(item.paid||0)/2;item.shared=item.motherShare>0;persist();render();
+ notify(`Despesa dividida por dois: custo da mãe ${BRL.format(item.motherShare)}.`);
 }
 function openExpenseDetails(encodedCategory){
  const category=decodeURIComponent(encodedCategory);const group=expenseData().find(x=>x.category===category);if(!group)return;
  expenseDetailsTitle.textContent=category;
- expenseDetailsBody.innerHTML=group.items.map(x=>`<div class="entry"><div><div class="title">${x.description||'Despesa sem descrição'}</div><div class="meta">${x.date?new Date(x.date+'T12:00').toLocaleDateString('pt-BR'):'Sem data'} • ${monthName(x.month)}${x.shared?` • Rateio: mãe ${BRL.format(x.motherShare||0)}`:''}</div></div><div class="value">${BRL.format(x.paid||0)}</div></div>`).join('')||'<div class="empty">Nenhuma despesa.</div>';
+ expenseDetailsBody.innerHTML=group.items.map(x=>`<div class="entry"><div style="flex:1"><div class="title">${x.description||'Despesa sem descrição'}</div><div class="meta">${x.date?new Date(x.date+'T12:00').toLocaleDateString('pt-BR'):'Sem data'} • ${monthName(x.month)}</div>${x.document?`<button class="btn soft" style="margin-top:8px" onclick="viewDocument('${x.id}')">Abrir comprovante</button>`:''}</div><div style="text-align:right"><div class="value">${BRL.format(x.paid||0)}</div><small>Custo da mãe</small><div><input type="number" min="0" step="0.01" value="${Number(x.motherShare||0).toFixed(2)}" onchange="updateExpenseMotherShare('${x.month}','${x.id}',this.value)" style="width:130px;padding:8px;border:1px solid var(--line);border-radius:9px"></div><button class="btn soft" style="margin-top:6px" onclick="splitExpenseHalf('${x.month}','${x.id}')">Dividir por 2</button></div></div>`).join('')||'<div class="empty">Nenhuma despesa.</div>';
  expenseDetailsModal.classList.add('open');
 }
 function closeExpenseDetails(){expenseDetailsModal.classList.remove('open')}
@@ -698,6 +717,11 @@ function findDocumentEntry(id){
  return null;
 }
 function documentDescription(item,type){return type==='income'?(item.source||'Receita sem descrição'):(item.description||'Sem descrição')}
+function viewDocument(id){
+ const found=findDocumentEntry(id);if(!found)return;
+ const doc=found.item.document;if(!doc?.data){notify('Este lançamento não possui arquivo digital disponível.');return}
+ const link=document.createElement('a');link.href=doc.data;link.target='_blank';link.rel='noopener';link.click();
+}
 function openFileEditor(id){
  const found=findDocumentEntry(id);if(!found)return;
  editingDocument={id,originalMonth:found.month,originalType:found.type};
@@ -747,7 +771,7 @@ function moveDocumentToType(id,targetType){
 }
 function renderFiles(){
  const docs=allDocuments();
- filesGrid.innerHTML=docs.length?docs.map(d=>`<div class="file-card" draggable="true" ondragstart="event.dataTransfer.setData('text/patrimonio-document','${d.id}')" onclick="openFileEditor('${d.id}')" style="position:relative;cursor:pointer"><button type="button" title="Excluir comprovante" onclick="event.stopPropagation();deleteDocument('${d.id}')" style="position:absolute;right:10px;top:8px;border:0;background:transparent;font-size:22px;font-weight:900;cursor:pointer;line-height:1">×</button><div style="display:flex;gap:12px;padding-right:24px"><div class="file-icon">📄</div><div><b>${d.document.name}</b><div style="font-size:12px;color:var(--muted);margin-top:4px">${monthName(d.month)} • ${documentDescription(d,d.entryType)}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${d.entryType==='income'?'Receita':d.entryType==='expense'?'Despesa':'Repasse'} • clique para editar ou arraste para outra categoria</div><div style="margin-top:7px;font-weight:900">${BRL.format(d.value||d.paid||0)}</div></div></div></div>`).join(''):'<div class="empty">Os comprovantes novos aparecerão aqui automaticamente.</div>';
+ filesGrid.innerHTML=docs.length?docs.map(d=>`<div class="file-card" draggable="true" ondragstart="event.dataTransfer.setData('text/patrimonio-document','${d.id}')" onclick="viewDocument('${d.id}')" style="position:relative;cursor:pointer"><button type="button" title="Excluir comprovante" onclick="event.stopPropagation();deleteDocument('${d.id}')" style="position:absolute;right:10px;top:8px;border:0;background:transparent;font-size:22px;font-weight:900;cursor:pointer;line-height:1">×</button><button type="button" class="btn soft" title="Editar lançamento" onclick="event.stopPropagation();openFileEditor('${d.id}')" style="position:absolute;right:38px;top:8px;padding:5px 9px">Editar</button><div style="display:flex;gap:12px;padding-right:100px"><div class="file-icon">📄</div><div><b>${d.document.name}</b><div style="font-size:12px;color:var(--muted);margin-top:4px">${monthName(d.month)} • ${documentDescription(d,d.entryType)}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${d.entryType==='income'?'Receita':d.entryType==='expense'?'Despesa':'Repasse'} • clique para abrir o arquivo</div><div style="margin-top:7px;font-weight:900">${BRL.format(d.value||d.paid||0)}</div></div></div></div>`).join(''):'<div class="empty">Os comprovantes novos aparecerão aqui automaticamente.</div>';
 }
 function renderAccount(){
  accountTable.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m);return `<tr><td><b>${monthName(m)}</b></td><td>${BRL.format(t.income)}</td><td>${BRL.format(t.expenses)}</td><td>${BRL.format(t.transfers)}</td><td class="${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</td><td class="${debt>0?'red':'green'}">${BRL.format(debt)}</td></tr>`}).join('');
