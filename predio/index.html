@@ -180,7 +180,9 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <div class="dialog-actions"><button class="btn soft" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="saveEntry()">Salvar lançamento</button></div>
 </div></div>
 
-<script src="data.js?v=0.2.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+<script src="data.js?v=0.4.2"></script>
 <script>
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const MONTHS=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -273,45 +275,163 @@ function triggerUpload(type){
  const ids={income:'uploadIncome',expense:'uploadExpense',transfer:'uploadTransfer'};
  document.getElementById(ids[type]).click();
 }
-function inferValueFromName(name){
- const matches=(name.match(/\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\d+[.]\d{2}/g)||[]);
- if(!matches.length)return 0;
- const vals=matches.map(v=>{
-  if(v.includes(',')) return Number(v.replace(/\s/g,'').replace(/\./g,'').replace(',','.'));
-  return Number(v);
- }).filter(Number.isFinite);
- return vals.length?Math.max(...vals):0;
+function normalizeOcrText(text){
+ return String(text||'').replace(/\r/g,'\n').replace(/[|]/g,' ').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
 }
-function inferDateFromName(name){
- const m=name.match(/(20\d{2})[-_](\d{2})[-_](\d{2})|(\d{2})[-_](\d{2})[-_](20\d{2})/);
- if(!m)return new Date().toISOString().slice(0,10);
- if(m[1])return `${m[1]}-${m[2]}-${m[3]}`;
- return `${m[6]}-${m[5]}-${m[4]}`;
+function parseMoney(value){
+ const raw=String(value||'').replace(/R\$\s?/gi,'').replace(/\s/g,'');
+ if(!raw)return 0;
+ if(raw.includes(','))return Number(raw.replace(/\./g,'').replace(',','.'))||0;
+ const parts=raw.split('.');
+ if(parts.length>2)return Number(parts.join(''))||0;
+ return Number(raw)||0;
 }
-function startInterpretation(type,file){
+function extractValueFromText(text){
+ const normalized=normalizeOcrText(text);
+ const patterns=[
+  /(?:valor(?:\s+(?:do|da))?\s*(?:pix|transfer[eê]ncia|transa[cç][aã]o|recebido|creditado)?|pix\s+recebido|transfer[eê]ncia\s+recebida|total)\s*[:\-]?\s*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2})/gi,
+  /(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2})/gi
+ ];
+ for(const pattern of patterns){
+  const found=[]; let m;
+  while((m=pattern.exec(normalized))!==null){const n=parseMoney(m[1]);if(n>0)found.push(n)}
+  if(found.length)return Math.max(...found);
+ }
+ const all=(normalized.match(/\b\d{1,3}(?:\.\d{3})*,\d{2}\b/g)||[]).map(parseMoney).filter(v=>v>0);
+ return all.length?Math.max(...all):0;
+}
+function validIsoDate(y,m,d){
+ const year=Number(y),month=Number(m),day=Number(d),date=new Date(year,month-1,day);
+ return year>=2000&&year<=2100&&date.getFullYear()===year&&date.getMonth()===month-1&&date.getDate()===day;
+}
+function extractDateFromText(text){
+ const normalized=normalizeOcrText(text);
+ const preferred=[
+  /(?:data(?:\s+e\s+hora)?|realizado\s+em|recebido\s+em|efetuado\s+em|transferido\s+em|pagamento\s+em)\s*[:\-]?\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](20\d{2})/gi,
+  /\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](20\d{2})\b/g
+ ];
+ for(const pattern of preferred){
+  let m;
+  while((m=pattern.exec(normalized))!==null){
+   if(validIsoDate(m[3],m[2],m[1]))return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+  }
+ }
+ const iso=normalized.match(/\b(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})\b/);
+ if(iso&&validIsoDate(iso[1],iso[2],iso[3]))return `${iso[1]}-${String(iso[2]).padStart(2,'0')}-${String(iso[3]).padStart(2,'0')}`;
+ return '';
+}
+function cleanSenderName(value){
+ return String(value||'').replace(/\b(?:cpf|cnpj|institui[cç][aã]o|banco|ag[eê]ncia|conta|chave\s+pix).*$/i,'').replace(/[^A-Za-zÀ-ÿ0-9 .'-]/g,' ').replace(/\s+/g,' ').trim().replace(/^(?:nome\s*)?[:\-]\s*/,'').slice(0,80);
+}
+function extractSenderFromText(text){
+ const lines=normalizeOcrText(text).split('\n').map(x=>x.trim()).filter(Boolean);
+ const labels=[/^(?:remetente|pagador|de|origem|nome\s+do\s+pagador|quem\s+pagou)\s*[:\-]?\s*(.*)$/i,/^(?:dados\s+do\s+pagador|dados\s+de\s+quem\s+pagou)\s*[:\-]?\s*(.*)$/i];
+ for(let i=0;i<lines.length;i++){
+  for(const label of labels){
+   const m=lines[i].match(label);
+   if(!m)continue;
+   const candidate=cleanSenderName(m[1]||lines[i+1]||'');
+   if(candidate&&candidate.length>=3&&!/^(pix|transfer[eê]ncia|comprovante|dados)$/i.test(candidate))return candidate;
+  }
+ }
+ const michel=lines.find(x=>/\bmichel\b/i.test(x));
+ return michel?cleanSenderName(michel):'';
+}
+async function fileToDataUrl(file){
+ return await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)});
+}
+async function imageSourceFromFile(file){
+ const url=URL.createObjectURL(file);
+ return {sources:[url],cleanup:()=>URL.revokeObjectURL(url)};
+}
+async function pdfSourcesFromFile(file){
+ const pdfjs=await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs');
+ pdfjs.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+ const bytes=new Uint8Array(await file.arrayBuffer());
+ const pdf=await pdfjs.getDocument({data:bytes}).promise;
+ const sources=[]; let directText='';
+ for(let i=1;i<=Math.min(pdf.numPages,5);i++){
+  const page=await pdf.getPage(i);
+  const content=await page.getTextContent();
+  directText+='\n'+content.items.map(x=>x.str).join(' ');
+  const viewport=page.getViewport({scale:2});
+  const canvas=document.createElement('canvas');canvas.width=viewport.width;canvas.height=viewport.height;
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  sources.push(canvas.toDataURL('image/png'));
+ }
+ return {sources,directText,cleanup:()=>{}};
+}
+async function runBrowserOcr(file){
+ if(!window.Tesseract)throw new Error('Tesseract.js indisponível. Verifique a conexão com a internet.');
+ const prepared=file.type==='application/pdf'||/\.pdf$/i.test(file.name)?await pdfSourcesFromFile(file):await imageSourceFromFile(file);
+ try{
+  let text=prepared.directText||'';
+  if(extractValueFromText(text)&&extractDateFromText(text))return normalizeOcrText(text);
+  for(let i=0;i<prepared.sources.length;i++){
+   const result=await Tesseract.recognize(prepared.sources[i],'por',{logger:m=>{
+    if(m.status==='recognizing text')interpretFileMeta.textContent=`Lendo comprovante... ${Math.round((m.progress||0)*100)}%`;
+   }});
+   text+='\n'+(result.data?.text||'');
+   if(extractValueFromText(text)&&extractDateFromText(text)&&extractSenderFromText(text))break;
+  }
+  return normalizeOcrText(text);
+ }finally{prepared.cleanup()}
+}
+function descriptionForUpload(type,sender){
+ if(type==='income')return `Receita de ${sender||'remetente não identificado'}`;
+ if(type==='expense')return sender?`Despesa paga para ${sender}`:'Despesa paga';
+ return sender?`Repasse para ${sender}`:'Repasse para a mãe';
+}
+function saveInterpretedUpload(type,fileData,value,date,sender){
+ const month=date.slice(0,7);ensureMonth(month);
+ const desc=descriptionForUpload(type,sender);
+ const base={id:crypto.randomUUID(),date,document:fileData,historical:false,uploadedVia:'central-files-ocr',ocrSender:sender||'',ocrProcessed:true};
+ if(type==='income')state.months[month].incomes.push({...base,source:desc,value,allocations:[],reconciled:false});
+ if(type==='expense')state.months[month].expenses.push({...base,description:desc,category:'Comprovante importado',planned:value,paid:value});
+ if(type==='transfer')state.months[month].transfers.push({...base,description:desc,value});
+ selectedMonth=month;selectedExpenseMonth=month;persist();render();
+}
+async function startInterpretation(type,file){
  if(!file)return;
- const reader=new FileReader();
- reader.onload=()=>{
-  pendingUpload={type,file:{name:file.name,type:file.type,data:reader.result,size:file.size}};
-  interpretType.value=type; interpretMonth.value=selectedMonth;
-  interpretDate.value=inferDateFromName(file.name);
-  interpretValue.value=inferValueFromName(file.name)||'';
-  interpretDescription.value=type==='income'?'Repasse Michel':type==='expense'?'Despesa paga':'Repasse para a mãe';
-  interpretFileName.textContent=file.name;
-  interpretFileMeta.textContent=`${file.type||'arquivo'} • ${(file.size/1024).toFixed(1)} KB`;
+ interpretFileName.textContent=file.name;
+ interpretFileMeta.textContent=`${file.type||'arquivo'} • ${(file.size/1024).toFixed(1)} KB • preparando OCR...`;
+ const data=await fileToDataUrl(file);
+ const fileData={name:file.name,type:file.type,data,size:file.size};
+ try{
+  const text=await runBrowserOcr(file);
+  const value=extractValueFromText(text),date=extractDateFromText(text),sender=extractSenderFromText(text);
+  if(value&&date){
+   saveInterpretedUpload(type,fileData,value,date,sender);
+   alert(`${descriptionForUpload(type,sender)} lançada automaticamente em ${monthName(date.slice(0,7))}.`);
+   return;
+  }
+  pendingUpload={type,file:fileData,ocrText:text,ocrSender:sender};
+  interpretType.value=type;
+  interpretDate.value=date;
+  interpretMonth.value=date?date.slice(0,7):selectedMonth;
+  interpretValue.value=value||'';
+  interpretDescription.value=descriptionForUpload(type,sender);
+  interpretFileMeta.textContent=`OCR concluído • ${value?'valor identificado':'valor não identificado'} • ${date?'data identificada':'data não identificada'}`;
   interpretModal.classList.add('open');
- }; reader.readAsDataURL(file);
+ }catch(error){
+  console.error('Falha no OCR',error);
+  pendingUpload={type,file:fileData,ocrText:'',ocrSender:''};
+  interpretType.value=type;interpretMonth.value=selectedMonth;interpretDate.value='';interpretValue.value='';interpretDescription.value=descriptionForUpload(type,'');
+  interpretFileMeta.textContent='Não foi possível concluir o OCR. Informe somente os dados não identificados.';
+  interpretModal.classList.add('open');
+ }
 }
 function cancelInterpretation(){pendingUpload=null;interpretModal.classList.remove('open')}
 function confirmInterpretation(){
  if(!pendingUpload)return;
- const month=interpretMonth.value, value=Number(interpretValue.value), date=interpretDate.value, desc=interpretDescription.value.trim();
- if(!ensureMonth(month)||!value||!date||!desc){alert('Confirme mês, data, valor e descrição.');return}
- const base={id:crypto.randomUUID(),date,document:pendingUpload.file,historical:false,uploadedVia:'central-files'};
- if(pendingUpload.type==='income')state.months[month].incomes.push({...base,source:desc,value,allocations:[],reconciled:false});
- if(pendingUpload.type==='expense')state.months[month].expenses.push({...base,description:desc,category:'Comprovante importado',planned:value,paid:value});
- if(pendingUpload.type==='transfer')state.months[month].transfers.push({...base,description:desc,value});
- selectedMonth=month;persist();cancelInterpretation();render();alert('Comprovante vinculado e mês operacional atualizado.');
+ const date=interpretDate.value,value=Number(interpretValue.value),month=date?date.slice(0,7):interpretMonth.value,desc=interpretDescription.value.trim();
+ if(!ensureMonth(month)||!value||!date){alert('Confirme a data e o valor.');return}
+ const sender=pendingUpload.ocrSender||desc.replace(/^(?:Receita de|Despesa paga para|Repasse para)\s*/i,'').trim();
+ const base={id:crypto.randomUUID(),date,document:pendingUpload.file,historical:false,uploadedVia:'central-files-ocr',ocrSender:sender,ocrProcessed:true};
+ if(pendingUpload.type==='income')state.months[month].incomes.push({...base,source:desc||descriptionForUpload('income',sender),value,allocations:[],reconciled:false});
+ if(pendingUpload.type==='expense')state.months[month].expenses.push({...base,description:desc||descriptionForUpload('expense',sender),category:'Comprovante importado',planned:value,paid:value});
+ if(pendingUpload.type==='transfer')state.months[month].transfers.push({...base,description:desc||descriptionForUpload('transfer',sender),value});
+ selectedMonth=month;selectedExpenseMonth=month;persist();cancelInterpretation();render();alert('Comprovante interpretado e lançamento atualizado.');
 }
 function setupDropzones(){
  const map={income:'uploadIncome',expense:'uploadExpense',transfer:'uploadTransfer'};
@@ -611,7 +731,7 @@ setExpenseView('month');
 <div class="form-row"><div class="field"><label>Mês</label><input id="interpretMonth" type="month"></div><div class="field"><label>Data identificada</label><input id="interpretDate" type="date"></div></div>
 <div class="field"><label>Valor identificado</label><input id="interpretValue" type="number" min="0" step="0.01"></div>
 <div class="field"><label>Descrição</label><input id="interpretDescription"></div>
-<div class="ocr-note">Confirme os dados antes de salvar. A leitura completa de imagem/PDF será conectada ao OCR do backend em uma próxima etapa.</div>
+<div class="ocr-note">Confirme os dados antes de salvar. OCR automático com Tesseract.js. A confirmação só será aberta quando valor ou data não forem identificados.</div>
 </div>
 <div class="dialog-actions"><button class="btn soft" onclick="cancelInterpretation()">Cancelar</button><button class="btn primary" onclick="confirmInterpretation()">Confirmar e lançar</button></div>
 </div></div>
