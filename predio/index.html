@@ -35,6 +35,18 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 .allocation-item label{display:flex;align-items:center;gap:8px;font-weight:800;cursor:pointer}
 .allocation-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:10px}
 .allocation-summary div{background:white;border-radius:10px;padding:8px;font-size:12px}.allocation-summary b{display:block;margin-top:3px;font-size:15px}
+
+.month-context{display:flex;align-items:center;justify-content:space-between;gap:14px;background:linear-gradient(135deg,#e8f6f1,#fff);border:1px solid #d7ebe4;border-radius:18px;padding:14px 16px;margin:10px 0 16px;box-shadow:var(--shadow)}
+.month-context strong{font-size:20px}.month-context small{display:block;color:var(--muted);margin-top:3px}.month-input{border:1px solid #c9ddd6;border-radius:12px;padding:10px 12px;background:white;font-weight:900;color:var(--ink)}
+.dropzone-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.dropzone{min-height:240px;border:2px dashed #9ac8b9;border-radius:20px;background:#f8fcfa;padding:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.18s}
+.dropzone:hover,.dropzone.dragover{transform:translateY(-2px);border-color:var(--green);background:#eef9f5;box-shadow:var(--shadow)}
+.dropzone .dz-icon{width:58px;height:58px;border-radius:18px;background:#dff3eb;display:grid;place-items:center;font-size:28px;margin-bottom:12px}
+.dropzone h3{margin:0 0 6px}.dropzone p{color:var(--muted);margin:0;max-width:270px;font-size:13px}
+.dropzone .dz-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:13px}
+.dropzone input{display:none}.month-highlight{outline:3px solid rgba(13,122,95,.25);box-shadow:0 0 0 5px rgba(13,122,95,.08),var(--shadow)}
+.interpretation{background:#f6faf8;border:1px solid var(--line);padding:12px;border-radius:14px}.file-preview{font-size:12px;color:var(--muted);word-break:break-all}
+@media(max-width:900px){.dropzone-grid{grid-template-columns:1fr}}
 @media(max-width:1000px){.kpis{grid-template-columns:1fr 1fr}.month-grid{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.allocation-list{grid-template-columns:1fr}.allocation-summary{grid-template-columns:1fr}.top{padding:18px 14px 72px}.shell{padding:0 10px 25px}.kpis{grid-template-columns:1fr 1fr;gap:8px}.kpi{padding:13px;min-height:102px}.month-select{width:100%;justify-content:space-between}.toolbar{align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}}
 </style>
@@ -64,6 +76,8 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 <section id="monthly" class="panel active">
 <div class="toolbar"><div><h2>Central mensal</h2><small id="monthStatus"></small></div>
 <div class="month-select"><button class="btn soft" onclick="moveMonth(-1)">‹</button><select id="monthPicker"></select><button class="btn soft" onclick="moveMonth(1)">›</button></div></div>
+<div class="month-context"><div><strong id="monthlyMonthTitle">Mês operacional</strong><small>Todos os lançamentos abaixo pertencem ao mês selecionado.</small></div><input id="monthlyMonthInput" class="month-input" type="month"></div>
+
 <div class="month-grid">
 <div class="card"><div class="card-head"><h3>Entradas do prédio</h3><button class="btn soft" onclick="openEntry('income')">+ Entrada</button></div><div class="card-body"><div id="incomeList" class="entry-list"></div><div class="totals"><span>Total recebido</span><span id="incomeTotal"></span></div></div></div>
 <div class="card"><div class="card-head"><h3>Repasses para a mãe</h3><button class="btn soft" onclick="openEntry('transfer')">+ Repasse</button></div><div class="card-body"><div id="transferList" class="entry-list"></div><div class="totals"><span>Total repassado</span><span id="transferTotal"></span></div></div></div>
@@ -74,6 +88,7 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 
 <section id="months" class="panel">
 <div class="toolbar"><h2>Histórico mensal</h2></div>
+<div class="month-context"><div><strong id="historyMonthTitle">Mês em destaque</strong><small>Os totalizadores do topo correspondem ao mês selecionado.</small></div><input id="historyMonthInput" class="month-input" type="month"></div>
 <div id="monthsList" class="months-list"></div>
 </section>
 
@@ -83,8 +98,26 @@ button,input,select{font:inherit}.app{min-height:100vh}.top{background:linear-gr
 </section>
 
 <section id="files" class="panel">
-<div class="toolbar"><div><h2>Central de arquivos</h2><small>Um único arquivo, vinculado ao lançamento e ao histórico</small></div><button class="btn primary" onclick="openEntry('document')">+ Arquivo sem vínculo</button></div>
-<div id="filesGrid" class="files-grid"></div>
+<div class="toolbar"><div><h2>Central de arquivos</h2><small>Arraste, selecione no computador ou capture uma foto pelo celular.</small></div></div>
+<div class="month-context"><div><strong id="filesMonthTitle">Arquivos do mês</strong><small>Todo comprovante enviado será vinculado ao mês selecionado.</small></div><input id="filesMonthInput" class="month-input" type="month"></div>
+<div class="dropzone-grid">
+<div class="dropzone" data-upload-type="income" onclick="triggerUpload('income')">
+  <div class="dz-icon">💰</div><h3>Receitas do Michel</h3><p>Comprovantes dos valores recebidos da imobiliária/Michel.</p>
+  <div class="dz-actions"><span class="btn soft">Selecionar arquivo</span><span class="btn soft">Tirar foto</span></div>
+  <input id="uploadIncome" type="file" accept="image/*,.pdf" capture="environment">
+</div>
+<div class="dropzone" data-upload-type="expense" onclick="triggerUpload('expense')">
+  <div class="dz-icon">🧾</div><h3>Despesas pagas</h3><p>Contas, recibos, notas fiscais e comprovantes de pagamento.</p>
+  <div class="dz-actions"><span class="btn soft">Selecionar arquivo</span><span class="btn soft">Tirar foto</span></div>
+  <input id="uploadExpense" type="file" accept="image/*,.pdf" capture="environment">
+</div>
+<div class="dropzone" data-upload-type="transfer" onclick="triggerUpload('transfer')">
+  <div class="dz-icon">🏦</div><h3>Repasses para a mãe</h3><p>Pix, transferências ou recibos dos valores entregues para sua mãe.</p>
+  <div class="dz-actions"><span class="btn soft">Selecionar arquivo</span><span class="btn soft">Tirar foto</span></div>
+  <input id="uploadTransfer" type="file" accept="image/*,.pdf" capture="environment">
+</div>
+</div>
+<div style="margin-top:18px"><h3>Arquivos já vinculados</h3><div id="filesGrid" class="files-grid"></div></div>
 </section>
 
 <section id="accounts" class="panel">
@@ -145,6 +178,7 @@ let selectedMonth=state.months['2026-08']?'2026-08':Object.keys(state.months).so
 let selectedApartmentMonth=state.apartmentPayments.map(x=>x.month).sort().at(-1)||selectedMonth;
 let activePanel='monthly';
 let tempFile=null;
+let pendingUpload=null;
 
 function persist(){localStorage.setItem('patrimonioMaeV0',JSON.stringify(state))}
 function monthName(k){let [y,m]=k.split('-').map(Number);return MONTHS[m-1][0].toUpperCase()+MONTHS[m-1].slice(1)+'/'+y}
@@ -175,6 +209,80 @@ function fillPickers(){
  aptMonthPicker.innerHTML=aptMonths.map(m=>`<option value="${m}" ${m===selectedApartmentMonth?'selected':''}>${monthName(m)}</option>`).join('');
  monthPicker.onchange=e=>{selectedMonth=e.target.value;render()};
  aptMonthPicker.onchange=e=>{selectedApartmentMonth=e.target.value;renderApartments();renderContextKpis()};
+ ['monthlyMonthInput','historyMonthInput','filesMonthInput'].forEach(id=>{
+   const el=document.getElementById(id); if(!el)return; el.value=selectedMonth;
+   el.onchange=e=>selectMonthFromCalendar(e.target.value);
+ });
+ document.getElementById('monthlyMonthTitle').textContent=`Mês operacional • ${monthName(selectedMonth)}`;
+ document.getElementById('historyMonthTitle').textContent=`Totalizadores de ${monthName(selectedMonth)}`;
+ document.getElementById('filesMonthTitle').textContent=`Arquivos de ${monthName(selectedMonth)}`;
+}
+
+function ensureMonth(month){
+ if(!month||!/^\d{4}-\d{2}$/.test(month))return false;
+ if(!state.months[month]){
+  state.months[month]={month,status:'open',incomes:[],expenses:[],transfers:[],summaryImported:null};
+ }
+ return true;
+}
+function selectMonthFromCalendar(month){
+ if(!ensureMonth(month))return;
+ selectedMonth=month; persist(); render();
+}
+function triggerUpload(type){
+ const ids={income:'uploadIncome',expense:'uploadExpense',transfer:'uploadTransfer'};
+ document.getElementById(ids[type]).click();
+}
+function inferValueFromName(name){
+ const matches=(name.match(/\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\d+[.]\d{2}/g)||[]);
+ if(!matches.length)return 0;
+ const vals=matches.map(v=>{
+  if(v.includes(',')) return Number(v.replace(/\s/g,'').replace(/\./g,'').replace(',','.'));
+  return Number(v);
+ }).filter(Number.isFinite);
+ return vals.length?Math.max(...vals):0;
+}
+function inferDateFromName(name){
+ const m=name.match(/(20\d{2})[-_](\d{2})[-_](\d{2})|(\d{2})[-_](\d{2})[-_](20\d{2})/);
+ if(!m)return new Date().toISOString().slice(0,10);
+ if(m[1])return `${m[1]}-${m[2]}-${m[3]}`;
+ return `${m[6]}-${m[5]}-${m[4]}`;
+}
+function startInterpretation(type,file){
+ if(!file)return;
+ const reader=new FileReader();
+ reader.onload=()=>{
+  pendingUpload={type,file:{name:file.name,type:file.type,data:reader.result,size:file.size}};
+  interpretType.value=type; interpretMonth.value=selectedMonth;
+  interpretDate.value=inferDateFromName(file.name);
+  interpretValue.value=inferValueFromName(file.name)||'';
+  interpretDescription.value=type==='income'?'Repasse Michel':type==='expense'?'Despesa paga':'Repasse para a mãe';
+  interpretFileName.textContent=file.name;
+  interpretFileMeta.textContent=`${file.type||'arquivo'} • ${(file.size/1024).toFixed(1)} KB`;
+  interpretModal.classList.add('open');
+ }; reader.readAsDataURL(file);
+}
+function cancelInterpretation(){pendingUpload=null;interpretModal.classList.remove('open')}
+function confirmInterpretation(){
+ if(!pendingUpload)return;
+ const month=interpretMonth.value, value=Number(interpretValue.value), date=interpretDate.value, desc=interpretDescription.value.trim();
+ if(!ensureMonth(month)||!value||!date||!desc){alert('Confirme mês, data, valor e descrição.');return}
+ const base={id:crypto.randomUUID(),date,document:pendingUpload.file,historical:false,uploadedVia:'central-files'};
+ if(pendingUpload.type==='income')state.months[month].incomes.push({...base,source:desc,value,allocations:[],reconciled:false});
+ if(pendingUpload.type==='expense')state.months[month].expenses.push({...base,description:desc,category:'Comprovante importado',planned:value,paid:value});
+ if(pendingUpload.type==='transfer')state.months[month].transfers.push({...base,description:desc,value});
+ selectedMonth=month;persist();cancelInterpretation();render();alert('Comprovante vinculado e mês operacional atualizado.');
+}
+function setupDropzones(){
+ const map={income:'uploadIncome',expense:'uploadExpense',transfer:'uploadTransfer'};
+ Object.entries(map).forEach(([type,id])=>{
+  const input=document.getElementById(id); if(!input)return;
+  input.onchange=e=>{startInterpretation(type,e.target.files[0]);e.target.value=''};
+  const zone=document.querySelector(`[data-upload-type="${type}"]`);
+  ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.add('dragover')}));
+  ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.remove('dragover')}));
+  zone.addEventListener('drop',e=>startInterpretation(type,e.dataTransfer.files[0]));
+ });
 }
 function renderMonthly(){
  const m=current(); const t=totals(); const debt=calcRunning(selectedMonth);
@@ -190,7 +298,7 @@ function renderMonthly(){
 
 }
 function renderMonths(){
- monthsList.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m), x=state.months[m];return `<div class="month-tile" onclick="openMonth('${m}')"><header><h3>${monthName(m)}</h3><span class="status ${x.status}">${x.status==='closed'?'Fechado':'Em andamento'}</span></header><div class="balance ${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</div><small>Entradas ${BRL.format(t.income)} • Saídas ${BRL.format(t.expenses+t.transfers)}</small><div style="margin-top:10px;font-size:12px;color:var(--muted)">Saldo acumulado: ${BRL.format(debt)}</div></div>`}).join('');
+ monthsList.innerHTML=sortedMonths().reverse().map(m=>{const t=totals(m), debt=calcRunning(m), x=state.months[m];return `<div class="month-tile ${m===selectedMonth?'month-highlight':''}" onclick="openMonth('${m}')"><header><h3>${monthName(m)}</h3><span class="status ${x.status}">${x.status==='closed'?'Fechado':'Em andamento'}</span></header><div class="balance ${t.movement>=0?'green':'red'}">${BRL.format(t.movement)}</div><small>Entradas ${BRL.format(t.income)} • Saídas ${BRL.format(t.expenses+t.transfers)}</small><div style="margin-top:10px;font-size:12px;color:var(--muted)">Saldo acumulado: ${BRL.format(debt)}</div></div>`}).join('');
 }
 function expectedFor(apt,month){
  const hist=state.apartmentPayments.filter(x=>x.apartment===apt&&x.month<=month&&x.amount>0).sort((a,b)=>a.month.localeCompare(b.month));
@@ -374,5 +482,22 @@ function exportBackup(){
 document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');activePanel=b.dataset.panel;document.getElementById(activePanel).classList.add('active');renderContextKpis()});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 render();
+setupDropzones();
 </script>
+
+<div id="interpretModal" class="modal"><div class="dialog">
+<h3>Confirmar leitura do comprovante</h3>
+<div class="interpretation">
+<div><b id="interpretFileName">Arquivo</b></div>
+<div class="file-preview" id="interpretFileMeta"></div>
+</div>
+<div class="form" style="margin-top:14px">
+<input type="hidden" id="interpretType">
+<div class="form-row"><div class="field"><label>Mês</label><input id="interpretMonth" type="month"></div><div class="field"><label>Data identificada</label><input id="interpretDate" type="date"></div></div>
+<div class="field"><label>Valor identificado</label><input id="interpretValue" type="number" min="0" step="0.01"></div>
+<div class="field"><label>Descrição</label><input id="interpretDescription"></div>
+<div class="ocr-note">Confirme os dados antes de salvar. A leitura completa de imagem/PDF será conectada ao OCR do backend em uma próxima etapa.</div>
+</div>
+<div class="dialog-actions"><button class="btn soft" onclick="cancelInterpretation()">Cancelar</button><button class="btn primary" onclick="confirmInterpretation()">Confirmar e lançar</button></div>
+</div></div>
 </body></html>
