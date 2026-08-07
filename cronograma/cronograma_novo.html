@@ -1223,6 +1223,14 @@ html,body,.client-view,.client-page,.client-top,.client-kpi,.client-table,.clien
 }
 </style>
 
+<style id="erpCronogramaEncantarV11">
+.empty-state{display:none;min-height:330px;margin:10px 12px 12px;padding:28px;border:1px dashed #bfd0da;border-radius:16px;background:#fff;align-items:center;justify-content:center;text-align:center;color:#60798b}.empty-state.show{display:flex}.empty-state .box{max-width:650px}.empty-state .ico{width:58px;height:58px;margin:0 auto 14px;display:grid;place-items:center;border-radius:18px;background:#eef8f5;color:#0b7a50;font-size:28px}.empty-state h3{margin:0;color:#173247;font-size:20px}.empty-state p{margin:8px 0 0;font-size:12px;line-height:1.5}
+.bulk-bar{display:none;flex:1 1 100%;gap:8px;align-items:end;flex-wrap:wrap;padding:9px;border:1px solid #bde0cf;border-radius:11px;background:#f1faf6}.bulk-bar.show{display:flex}.bulk-count{align-self:center;min-width:130px;color:#0b7a50;font-size:10px;font-weight:950}.bulk-field{display:grid;gap:4px;min-width:130px}.bulk-field label{font-size:7px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#668091}.bulk-field input{height:32px;padding:0 9px;font-size:9px}.bulk-actions{display:flex;gap:6px;align-items:end}.bulk-actions .btn{min-height:32px;height:32px;padding:0 10px;font-size:8px}
+tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id].selected td:first-child{box-shadow:inset 4px 0 0 #18a66f}tbody tr[data-id].link-source td.meta{background:#fff8dd!important}tbody tr[data-id].link-source td:first-child{box-shadow:inset 4px 0 0 #f59e0b}
+.bar-segment{cursor:grab!important;touch-action:none;user-select:none}.bar-segment:active{cursor:grabbing!important}.resize-handle{position:absolute;top:-2px;bottom:-2px;width:7px;border-radius:4px;background:rgba(255,255,255,.9);border:1px solid rgba(23,50,71,.24);opacity:0;transition:.15s;z-index:8;cursor:ew-resize}.bar-segment:hover .resize-handle{opacity:1}.resize-handle.left{left:-4px}.resize-handle.right{right:-4px}
+.resource-chip-wrap{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.resource-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border-radius:999px;background:#eef8f5;border:1px solid #cfe6db;color:#0b7a50;font-size:8px;font-weight:900}.resource-chip button{border:0;background:transparent;color:#8c3340;padding:0;line-height:1;font-weight:950}.resource-add-row{display:grid;grid-template-columns:1fr auto;gap:7px}.resource-add-row .btn{height:38px}.gantt-interaction-note{display:none;margin-left:auto;color:#8c6b0b;font-size:8px;font-weight:850}.gantt-interaction-note.show{display:block}
+@media(max-width:900px){.bulk-field{min-width:calc(50% - 6px);flex:1}.bulk-actions{width:100%}}
+</style>
 </head>
 <body>
 <div class="wrap" id="appWrap">
@@ -1263,6 +1271,7 @@ html,body,.client-view,.client-page,.client-top,.client-kpi,.client-table,.clien
 
       <div class="action-break"></div>
 
+      <button class="btn green" id="loadBtn">↧ Carregar cronograma</button>
       <button class="btn blue" id="generateBtn">⚙ Gerar / Recalcular</button>
       <button class="btn green" id="draftBtn">💾 Salvar rascunho</button>
       <button class="btn green" id="finalizeBtn">✅ Finalizar / Criar linha de base</button>
@@ -1276,6 +1285,8 @@ html,body,.client-view,.client-page,.client-top,.client-kpi,.client-table,.clien
       <div class="status warning" id="status">
         RASCUNHO • Nesta validação o HTML não utiliza localStorage. A persistência física no backend será ligada após a validação do layout e do fluxo.
       </div>
+      <div class="bulk-bar" id="bulkBar"><div class="bulk-count" id="bulkCount">0 atividades selecionadas</div><div class="bulk-field"><label>% Real</label><input id="bulkPct" type="number" min="0" max="100" placeholder="Manter"></div><div class="bulk-field"><label>Duração base</label><input id="bulkDur" type="number" min="1" placeholder="Manter"></div><div class="bulk-field" style="min-width:220px"><label>Responsável</label><input id="bulkResp" list="responsibleList" placeholder="Manter / digitar novo"></div><div class="bulk-actions"><button class="btn green" id="bulkApplyBtn" type="button">Aplicar em lote</button><button class="btn red" id="bulkDeleteBtn" type="button">Excluir selecionadas</button><button class="btn" id="bulkClearBtn" type="button">Limpar seleção</button></div></div>
+      <span class="gantt-interaction-note" id="linkHint">Ctrl+clique em duas timelines: primeira = predecessora, segunda = sucessora.</span>
     </div>
 
     <button class="erp-toggle" id="erpToggle" type="button" title="Recolher"></button>
@@ -1291,7 +1302,9 @@ html,body,.client-view,.client-page,.client-top,.client-kpi,.client-table,.clien
     <div class="kpi" id="kDeviationCard"><small>Real / Desvio</small><b id="kReal">0% / 0 p.p.</b></div>
   </section>
 
-  <section class="gantt-wrap">
+  <section class="empty-state show" id="emptyState"><div class="box"><div class="ico">⌁</div><h3>Nenhum cronograma carregado</h3><p>Selecione uma obra disponível e clique em <b>Carregar cronograma</b>. A rotina sempre abre vazia para evitar edição acidental de outra obra.</p></div></section>
+
+  <section class="gantt-wrap" id="ganttWrap">
     <table id="ganttTable"></table>
   </section>
 
@@ -1322,13 +1335,7 @@ html,body,.client-view,.client-page,.client-top,.client-kpi,.client-table,.clien
 
     <div class="form">
       <div class="field span2"><label>Atividade</label><input id="mName"></div>
-      <div class="field"><label>Responsável</label>
-        <select id="mResp">
-          <option>Comercial</option><option>Projetos</option><option>Compras</option>
-          <option>Coordenador da Obra</option><option>Fornecedor</option><option>Cliente</option>
-          <option>Empreiteiro</option><option>Duteiro</option><option>Mecânico</option>
-        </select>
-      </div>
+      <div class="field"><label>Responsável principal</label><input id="mResp" list="responsibleList" placeholder="Selecione ou digite um novo responsável"><datalist id="responsibleList"></datalist></div>
       <div class="field"><label>Categoria</label>
         <select id="mCategory">
           <option value="planejamento">Planejamento</option>
@@ -1353,6 +1360,7 @@ html,body,.client-view,.client-page,.client-top,.client-kpi,.client-table,.clien
         <div class="readonly-card"><small>Caminho crítico</small><b id="rCritical">—</b></div>
       </div>
 
+      <div class="field full"><label>Recursos da atividade</label><div class="resource-add-row"><input id="mResourceInput" list="responsibleList" placeholder="Digite um recurso"><button class="btn" type="button" id="addResourceBtn">＋ Adicionar recurso</button></div><div class="resource-chip-wrap" id="resourceChips"></div><div class="muted" style="margin-top:6px">Mais recursos reduzem a duração efetiva automaticamente: duração base ÷ quantidade de recursos, mínimo de 1 dia útil.</div></div>
       <div class="field"><label>% Real concluído</label><input id="mPct" type="number" min="0" max="100"></div>
       <div class="field"><label>Início real</label><input id="mRealStart" type="date"></div>
       <div class="field"><label>Fim real</label><input id="mRealEnd" type="date"></div>
@@ -1498,6 +1506,36 @@ const state={
   draftSavedAt:null,
   sessionDraft:null
 };
+let selectedIds=new Set();
+let linkSourceId=null;
+let loadedSchedule=false;
+let modalResources=[];
+const RESPONSIBLE_DEFAULTS=["Comercial","Projetos","Compras","Coordenador da Obra","Fornecedor","Cliente","Empreiteiro","Duteiro","Mecânico"];
+let responsibleCatalog=[...RESPONSIBLE_DEFAULTS];
+function normResp(v){return String(v||"").trim()}
+function rememberResponsible(v){v=normResp(v);if(!v)return;if(!responsibleCatalog.some(x=>x.toLocaleLowerCase("pt-BR")===v.toLocaleLowerCase("pt-BR"))){responsibleCatalog.push(v);responsibleCatalog.sort((a,b)=>a.localeCompare(b,"pt-BR"));renderResponsibleList()}}
+function renderResponsibleList(){const dl=$("responsibleList");if(dl)dl.innerHTML=responsibleCatalog.map(v=>`<option value="${esc(v)}"></option>`).join("")}
+function resourceCount(a){const arr=Array.isArray(a.resources)?a.resources.filter(Boolean):[];return Math.max(1,arr.length||1)}
+function effectiveDuration(a){if(a.milestone)return 0;const base=Math.max(1,Number(a.baseDur??a.dur??1));return Math.max(1,Math.ceil(base/resourceCount(a)))}
+function syncEffectiveDurations(){activities.forEach(a=>{if(a.milestone){a.dur=0;return}if(a.baseDur===undefined)a.baseDur=Math.max(1,Number(a.dur||1));a.dur=effectiveDuration(a)})}
+function renderResourceChips(){const w=$("resourceChips");if(!w)return;w.innerHTML=modalResources.map((r,i)=>`<span class="resource-chip">${esc(r)}<button type="button" data-resource-index="${i}">×</button></span>`).join("");w.querySelectorAll("[data-resource-index]").forEach(b=>b.onclick=()=>{modalResources.splice(Number(b.dataset.resourceIndex),1);renderResourceChips()})}
+function addModalResource(){const i=$("mResourceInput"),v=normResp(i.value);if(!v)return;rememberResponsible(v);if(!modalResources.some(x=>x.toLocaleLowerCase("pt-BR")===v.toLocaleLowerCase("pt-BR")))modalResources.push(v);i.value="";renderResourceChips()}
+function setScheduleLoaded(v){loadedSchedule=!!v;$("emptyState")?.classList.toggle("show",!loadedSchedule);if($("ganttWrap"))$("ganttWrap").style.display=loadedSchedule?"block":"none";document.querySelector(".summary")?.style.setProperty("display",loadedSchedule?"grid":"none");document.querySelector(".legend")?.style.setProperty("display",loadedSchedule?"flex":"none");["generateBtn","draftBtn","finalizeBtn","addBtn","criticalBtn","reportBtn","clientBtn","excelBtn","resetBtn"].forEach(id=>{const e=$(id);if(e)e.disabled=!loadedSchedule});if(!loadedSchedule){selectedIds.clear();linkSourceId=null;updateBulkBar()}}
+function clearSelection(){selectedIds.clear();updateBulkBar();updateSelectionClasses()}
+function toggleRowSelection(id,add){if(!loadedSchedule)return;if(!add)selectedIds.clear();if(add&&selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);updateSelectionClasses();updateBulkBar()}
+function updateSelectionClasses(){document.querySelectorAll("#ganttTable tbody tr[data-id]").forEach(tr=>{const id=Number(tr.dataset.id);tr.classList.toggle("selected",selectedIds.has(id));tr.classList.toggle("link-source",linkSourceId===id)})}
+function updateBulkBar(){const b=$("bulkBar");if(!b)return;const n=selectedIds.size;b.classList.toggle("show",n>0);$("bulkCount").textContent=`${n} atividade${n===1?"":"s"} selecionada${n===1?"":"s"}`}
+async function applyBulkEdit(){if(!selectedIds.size)return;const pct=$("bulkPct").value,dur=$("bulkDur").value,resp=normResp($("bulkResp").value);if(resp)rememberResponsible(resp);activities.forEach(a=>{if(!selectedIds.has(a.id))return;if(pct!=="")a.pct=Math.max(0,Math.min(100,Number(pct)||0));if(state.status!=="baseline"&&dur!==""){a.baseDur=Math.max(1,Number(dur)||1);a.dur=effectiveDuration(a)}if(state.status!=="baseline"&&resp)a.resp=resp;if(Number(a.pct)>=100)a.realStatus="Concluído"});syncEffectiveDurations();if(state.status!=="baseline")calculateSchedule(activities,parseISO($("startDate").value),true);$("bulkPct").value="";$("bulkDur").value="";$("bulkResp").value="";render();showToast("success","Atualização em lote",`${selectedIds.size} atividades atualizadas.`)}
+async function bulkDelete(){if(state.status==="baseline"){showToast("warning","Linha de base bloqueada","Não é possível excluir atividades após a finalização.");return}if(!selectedIds.size)return;const ok=await askConfirm({title:"Excluir atividades selecionadas",message:`Deseja excluir ${selectedIds.size} atividade(s)?`,type:"danger",confirmText:"Excluir",cancelText:"Cancelar"});if(!ok)return;const ids=new Set(selectedIds);activities=activities.filter(a=>!ids.has(a.id));activities.forEach(a=>a.pred=(a.pred||[]).filter(p=>!ids.has(p)));clearSelection();calculateSchedule(activities,parseISO($("startDate").value),true);render();showToast("success","Atividades excluídas","Cronograma recalculado.")}
+function hasDependencyPath(from,to,seen=new Set()){if(from===to)return true;if(seen.has(from))return false;seen.add(from);return activities.filter(x=>(x.pred||[]).includes(from)).some(s=>hasDependencyPath(s.id,to,seen))}
+function linkActivitiesByCtrl(id){if(state.status==="baseline"){showToast("warning","Linha de base bloqueada","Vínculos só podem ser alterados no rascunho.");return}if(linkSourceId===null){linkSourceId=id;$("linkHint")?.classList.add("show");updateSelectionClasses();showToast("info","Predecessora selecionada",`#${id}. Agora Ctrl+clique na sucessora.`);return}if(linkSourceId===id){linkSourceId=null;$("linkHint")?.classList.remove("show");updateSelectionClasses();return}const pred=linkSourceId,succ=id;if(hasDependencyPath(succ,pred)){showToast("error","Vínculo inválido","A associação criaria um ciclo.");linkSourceId=null;$("linkHint")?.classList.remove("show");updateSelectionClasses();return}const target=activities.find(a=>a.id===succ);target.pred=Array.from(new Set([...(target.pred||[]),pred]));linkSourceId=null;$("linkHint")?.classList.remove("show");calculateSchedule(activities,parseISO($("startDate").value),true);render();showToast("success","Predecessora associada",`#${pred} → #${succ}`)}
+function projectEarliestStart(a){const ps=parseISO($("startDate").value);const pe=(a.pred||[]).map(id=>activities.find(x=>x.id===id)).filter(Boolean).map(x=>parseISO(x.end)).filter(Boolean);if(!pe.length)return ps;return nextWorkday(addCalDays(new Date(Math.max(...pe.map(d=>d.getTime()))),1))}
+function applyManualMove(id,deltaDays){if(state.status==="baseline")return;const a=activities.find(x=>x.id===id);if(!a)return;const cur=parseISO(a.manualStart||a.start),earliest=projectEarliestStart(a);let p=nextWorkday(addCalDays(cur,deltaDays));if(p<earliest){p=earliest;showToast("warning","Limite da predecessora","Posicionada na primeira data permitida.")}a.manualStart=iso(p);calculateSchedule(activities,parseISO($("startDate").value),true);render()}
+function applyManualResize(id,deltaDays,side){if(state.status==="baseline")return;const a=activities.find(x=>x.id===id);if(!a||a.milestone)return;if(a.baseDur===undefined)a.baseDur=Math.max(1,a.dur||1);if(side==="right")a.baseDur=Math.max(1,a.baseDur+deltaDays*resourceCount(a));else{const old=parseISO(a.manualStart||a.start),earliest=projectEarliestStart(a);let ns=nextWorkday(addCalDays(old,deltaDays));if(ns<earliest)ns=earliest;const shift=Math.round((ns-old)/86400000);a.manualStart=iso(ns);a.baseDur=Math.max(1,a.baseDur-shift*resourceCount(a))}a.dur=effectiveDuration(a);calculateSchedule(activities,parseISO($("startDate").value),true);render()}
+function enableGanttBarInteractions(){if(!loadedSchedule||state.status==="baseline")return;const sample=[...document.querySelectorAll("#ganttTable .gantt-cell")].find(c=>c.offsetWidth>0),weekPx=sample?.offsetWidth||62,daysPerPx=7/weekPx;document.querySelectorAll("#ganttTable .draft-bar").forEach(bar=>{const tr=bar.closest("tr[data-id]"),id=Number(tr?.dataset.id);if(!id)return;bar.classList.add("bar-segment");if(!bar.querySelector(".resize-handle.left")){bar.insertAdjacentHTML("afterbegin",'<span class="resize-handle left" data-side="left"></span>');bar.insertAdjacentHTML("beforeend",'<span class="resize-handle right" data-side="right"></span>')}bar.addEventListener("click",e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();linkActivitiesByCtrl(id)}});let mode=null,startX=0,last=0;bar.addEventListener("pointerdown",e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();e.stopPropagation();const h=e.target.closest(".resize-handle");mode=h?h.dataset.side:"move";startX=e.clientX;last=0;bar.setPointerCapture?.(e.pointerId)});bar.addEventListener("pointermove",e=>{if(!mode)return;const dx=e.clientX-startX;last=Math.round(dx*daysPerPx);document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{if(mode==="move")seg.style.transform=`translateX(${dx}px)`;else seg.style.filter="brightness(1.08)"})});const fin=()=>{if(!mode)return;document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{seg.style.transform="";seg.style.filter=""});const action=mode;mode=null;if(last!==0){if(action==="move")applyManualMove(id,last);else applyManualResize(id,last,action)}};bar.addEventListener("pointerup",fin);bar.addEventListener("pointercancel",fin)})}
+async function loadSelectedSchedule(){const obra=$("obra").value;if(!obra){showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");return}try{const r=await fetch(`https://api.erpimpar.com.br/cronograma/cronograma_novo_api.php?action=get&obra=${encodeURIComponent(obra)}&_=${Date.now()}`,{cache:"no-store"});const t=await r.text();if(r.ok&&t.trim()){const j=JSON.parse(t);if(j?.ok&&j?.data?.activities?.length){activities=j.data.activities;responsibleCatalog=Array.from(new Set([...RESPONSIBLE_DEFAULTS,...(j.data.responsibleCatalog||[]),...activities.map(a=>a.resp).filter(Boolean),...activities.flatMap(a=>a.resources||[])]));state.status=j.data.status||"draft";state.baseline=j.data.baseline||null;state.baselineAt=j.data.baselineAt||null;$("coordinator").value=j.data.coordinator||"";$("startDate").value=j.data.start||$("startDate").value;$("endDate").value=j.data.end||$("endDate").value;$("workDays").value=j.data.workDays||$("workDays").value;renderResponsibleList();setScheduleLoaded(true);render();showToast("success","Cronograma carregado",obra);return}}}catch(e){console.warn(e)}activities=structuredClone(TEMPLATE).map(a=>({...a,resources:Array.isArray(a.resources)?a.resources:[],manualStart:""}));state.status="draft";state.baseline=null;state.baselineAt=null;responsibleCatalog=[...RESPONSIBLE_DEFAULTS];activities.forEach(a=>{if(a.resp)rememberResponsible(a.resp)});syncEffectiveDurations();calculateSchedule(activities,parseISO($("startDate").value),true);renderResponsibleList();setScheduleLoaded(true);render();showToast("info","Novo cronograma","Template VRF carregado para a obra selecionada.")}
+async function persistSchedule(){if(!loadedSchedule||!validateParams())return false;const payload={obra:$("obra").value,coordinator:$("coordinator").value,start:$("startDate").value,end:$("endDate").value,workDays:Number($("workDays").value||0),status:state.status,baseline:state.baseline,baselineAt:state.baselineAt,responsibleCatalog,activities};try{const r=await fetch("https://api.erpimpar.com.br/cronograma/cronograma_novo_api.php?action=save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),cache:"no-store"});const t=await r.text();if(!r.ok)throw new Error(t||("HTTP "+r.status));const j=t.trim()?JSON.parse(t):{};if(!j.ok)throw new Error(j.error||"Falha ao salvar");return true}catch(e){console.warn(e);showToast("warning","Backend ainda não publicado","Publique cronograma_novo_api.php para persistência física.");return false}}
+
 
 const $=id=>document.getElementById(id);
 
@@ -1609,6 +1647,7 @@ function calculateSchedule(list,start,assign=true){
         const latest=new Date(Math.max(...preds.map(p=>ends[p].getTime())));
         st=nextWorkday(addCalDays(latest,1));
       }
+      if(a.manualStart){const manual=nextWorkday(parseISO(a.manualStart));if(manual>st)st=manual;}
       const en=a.dur===0?st:addWorkdays(st,a.dur);
       starts[id]=st;ends[id]=en;
       if(assign){a.start=iso(st);a.end=iso(en);}
@@ -1661,6 +1700,7 @@ function baseProjectDays(){
 }
 
 function scaleDurations(){
+  if(!loadedSchedule){showToast("warning","Nenhum cronograma carregado","Selecione uma obra e clique em Carregar cronograma.");return;}
   if(state.status==="baseline"){
     showToast("warning","Linha de base bloqueada","O planejamento já foi finalizado. Atualize somente o REAL.");
     return;
@@ -1756,6 +1796,8 @@ function progressDate(a){
 }
 
 function render(){
+  if(!loadedSchedule){setScheduleLoaded(false);return;}
+  syncEffectiveDurations();
   const start=parseISO($("startDate").value)||nextWorkday(today());
 
   if(state.status!=="baseline"){
@@ -1836,7 +1878,7 @@ function render(){
   });
 
   $("ganttTable").innerHTML=head+body+"</tbody>";
-  $("ganttTable").querySelectorAll("tbody tr").forEach(tr=>tr.addEventListener("dblclick",()=>openEdit(Number(tr.dataset.id))));
+  $("ganttTable").querySelectorAll("tbody tr").forEach(tr=>{const id=Number(tr.dataset.id);tr.addEventListener("dblclick",()=>openEdit(id));tr.addEventListener("click",e=>{if(e.target.closest(".draft-bar,.real-bar,.resize-handle,.drag-handle"))return;toggleRowSelection(id,!!(e.ctrlKey||e.metaKey))})});updateSelectionClasses();updateBulkBar();enableGanttBarInteractions();
   enableActivityDrag();
 
   updateSummary(startPlan,finish);
@@ -1892,10 +1934,11 @@ function saveDraft(){
     end:$("endDate").value,
     workDays:$("workDays").value,
     activities:structuredClone(activities),
+    responsibleCatalog:[...responsibleCatalog],
     baseline:state.baseline?structuredClone(state.baseline):null,
     status:state.status
   };
-  render();
+  render();persistSchedule();
   showToast(
     "success",
     state.status==="baseline"?"Acompanhamento salvo":"Rascunho salvo",
@@ -1928,7 +1971,7 @@ async function finalizeBaseline(){
   state.baselineAt=new Date().toISOString();
   state.draftSavedAt=state.baselineAt;
 
-  render();
+  render();persistSchedule();
   showToast("success","Linha de base criada","O PLAN foi congelado. O Gantt agora apresenta PLAN x REAL.");
 }
 
@@ -1944,6 +1987,7 @@ function openEdit(id){
 
   $("mName").value=a.name;
   $("mResp").value=a.resp;
+  modalResources=Array.isArray(a.resources)?[...a.resources]:[];renderResourceChips();
   $("mCategory").value=a.cat;
   $("mDur").value=a.dur;
   $("mPred").value=(a.pred||[]).join(", ");
@@ -1981,6 +2025,7 @@ function openNew(){
   $("modalSub").textContent="Inclua a atividade no planejamento antes da finalização.";
   $("mName").value="";
   $("mResp").value="Coordenador da Obra";
+  modalResources=[];renderResourceChips();
   $("mCategory").value="climatizacao";
   $("mDur").value=1;
   $("mPred").value="";
@@ -2006,7 +2051,8 @@ function saveActivity(){
   const pred=$("mPred").value.split(",").map(x=>Number(x.trim())).filter(n=>Number.isFinite(n)&&n>0);
   const data={
     name:$("mName").value.trim()||"Nova atividade",
-    resp:$("mResp").value,
+    resp:normResp($("mResp").value),
+    resources:[...modalResources],
     cat:$("mCategory").value,
     dur:Math.max(0,Number($("mDur").value)||0),
     pred,
@@ -2019,18 +2065,18 @@ function saveActivity(){
     obs:$("mObs").value.trim()
   };
 
-  if(data.milestone)data.dur=0;
+  rememberResponsible(data.resp);data.resources.forEach(rememberResponsible);
+  if(data.milestone)data.dur=0;else data.baseDur=Math.max(1,Number(data.dur||1));
 
   if(state.status==="baseline"&&editingId){
     const a=activities.find(x=>x.id===editingId);
     Object.assign(a,{pct:data.pct,realStart:data.realStart,realEnd:data.realEnd,realStatus:data.realStatus,obs:data.obs});
   }else if(editingId){
     const a=activities.find(x=>x.id===editingId);
-    Object.assign(a,data);
-    if(a.baseDur===undefined)a.baseDur=a.dur;
+    Object.assign(a,data);a.baseDur=data.baseDur||Math.max(1,a.baseDur||a.dur||1);a.dur=effectiveDuration(a);
   }else{
     const next=Math.max(0,...activities.map(a=>a.id))+1;
-    activities.push({id:next,...data,baseDur:data.dur});
+    activities.push({id:next,...data,baseDur:data.baseDur||Math.max(1,data.dur||1),manualStart:""});
   }
 
   if(editingId){
@@ -2081,6 +2127,7 @@ async function resetTemplate(){
 }
 
 function openReport(){
+  if(!loadedSchedule){showToast("warning","Nenhum cronograma carregado","Carregue uma obra primeiro.");return;}
   renderReport();
   $("reportPage").classList.add("open");
 }
@@ -2137,6 +2184,7 @@ function safeName(s){
 }
 
 function exportExcel(){
+  if(!loadedSchedule){showToast("warning","Nenhum cronograma carregado","Carregue uma obra primeiro.");return;}
   const pmap=new Map(planSource().map(a=>[a.id,a]));
   const rows=[[
     "ID","Atividade","Responsavel","Predecessoras","Duracao PLAN","Inicio PLAN","Fim PLAN",
@@ -2449,6 +2497,7 @@ function scaleReferenceSheets(){
 }
 
 function openClientSchedule(){
+  if(!loadedSchedule){showToast("warning","Nenhum cronograma carregado","Carregue uma obra primeiro.");return;}
   if(!validateParams())return;
   renderClientSchedule();
   $("clientView").classList.add("open");
@@ -2498,7 +2547,13 @@ $("erpToggle").onclick=()=>{
   $("erpToggle").title=collapsed?"Expandir":"Recolher";
 };
 
+$("loadBtn").onclick=loadSelectedSchedule;
 $("generateBtn").onclick=scaleDurations;
+$("addResourceBtn").onclick=addModalResource;
+$("mResourceInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addModalResource();}});
+$("bulkApplyBtn").onclick=applyBulkEdit;
+$("bulkDeleteBtn").onclick=bulkDelete;
+$("bulkClearBtn").onclick=clearSelection;
 $("draftBtn").onclick=saveDraft;
 $("finalizeBtn").onclick=finalizeBaseline;
 $("addBtn").onclick=openNew;
@@ -2538,7 +2593,7 @@ $("clientView").addEventListener("mousedown",e=>{
 });
 
 
-$("obra").addEventListener("change",render);
+$("obra").addEventListener("change",()=>{setScheduleLoaded(false);state.status="draft";state.baseline=null;state.baselineAt=null;});
 $("coordinator").addEventListener("change",render);
 $("startDate").addEventListener("change",()=>{if(state.status!=="baseline")render();});
 $("endDate").addEventListener("change",()=>{
@@ -2560,14 +2615,11 @@ document.addEventListener("keydown",e=>{
 
 /* INICIALIZAÇÃO */
 setDefaultDates();
-calculateSchedule(activities,parseISO($("startDate").value),true);
-const firstFinish=new Date(Math.max(...activities.map(a=>parseISO(a.end).getTime())));
-$("endDate").value=iso(firstFinish);
-$("workDays").value=workdaysBetween(parseISO($("startDate").value),firstFinish);
-render();
+renderResponsibleList();
+setScheduleLoaded(false);
 carregarCronogramasDisponiveis();
 window.addEventListener("resize",scaleReferenceSheets);
-setTimeout(()=>showToast("info","Cronograma no padrão ERP","Layout claro aplicado. Selecione o coordenador e valide o fluxo de rascunho → finalização → PLAN x REAL."),350);
+setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
 </script>
 </body>
 </html>
