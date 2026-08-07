@@ -1703,6 +1703,36 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 }
 </style>
 
+
+<style id="statusBadgeV58">
+#setupPanel{position:relative!important}
+.schedule-status-badge{
+  position:absolute;
+  top:15px;
+  right:58px;
+  z-index:8;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:30px;
+  padding:0 13px;
+  border:1px solid #f0c36b;
+  border-radius:999px;
+  background:#fff5d9;
+  color:#9a6500;
+  font-size:9px;
+  font-weight:950;
+  letter-spacing:.045em;
+  text-transform:uppercase;
+  box-shadow:0 3px 10px rgba(34,60,80,.08);
+}
+.schedule-status-badge.baseline{
+  border-color:#89d9b6;
+  background:#e9fbf2;
+  color:#087a4e;
+}
+</style>
+
 </head>
 <body>
 <div class="wrap" id="appWrap">
@@ -1761,7 +1791,7 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
       <span class="gantt-interaction-note" id="linkHint">Ctrl+clique em duas timelines: primeira = predecessora, segunda = sucessora.</span>
     </div>
 
-    <button class="erp-toggle" id="erpToggle" type="button" title="Recolher"></button>
+    <span class="schedule-status-badge" id="scheduleStatusBadge">RASCUNHO</span><button class="erp-toggle" id="erpToggle" type="button" title="Recolher"></button>
   </section>
 <section class="empty-state show" id="emptyState"><div class="box"><div class="ico">⌁</div><h3>Nenhum cronograma carregado</h3><p>Selecione uma obra disponível e clique em <b>Carregar cronograma</b>. A rotina sempre abre vazia para evitar edição acidental de outra obra.</p></div></section>
 
@@ -2298,11 +2328,14 @@ function scaleDurations(silent=false){
 
 function syncOutputsWithCurrentSchedule(){
   if(!loadedSchedule)return false;
-  /* Relatório, Visão Cliente e Excel usam exatamente as datas atuais das atividades. */
-  const b=currentScheduleBounds(activities);
+
+  const source=state.status==="baseline"&&state.baseline?state.baseline:activities;
+  const b=currentScheduleBounds(source);
+
   if(b.start)$("startDate").value=iso(b.start);
   if(b.finish)$("endDate").value=iso(b.finish);
   if(b.days)$("workDays").value=b.days;
+
   return true;
 }
 
@@ -2381,6 +2414,15 @@ function updateTopCompactMetrics(){
   if(realEl)realEl.textContent=Math.round(realPercent())+"%";
 }
 
+
+
+function updateScheduleStatusBadge(){
+  const el=$("scheduleStatusBadge");
+  if(!el)return;
+  const baseline=state.status==="baseline";
+  el.textContent=baseline?"LINHA DE BASE":"RASCUNHO";
+  el.classList.toggle("baseline",baseline);
+}
 
 function updateMainTitleStatus(){
   const headings=[...document.querySelectorAll("h1,h2,h3")];
@@ -2461,10 +2503,27 @@ function recalculateWholeSchedule(){
 
   if(best){
     const map=new Map(best.durations.map(x=>[x.id,x.dur]));
-    activities.forEach(a=>a.dur=map.get(a.id)??a.dur);
+    activities.forEach(a=>{
+      const newDur=map.get(a.id);
+      if(newDur===undefined)return;
+
+      a.dur=newDur;
+
+      /* IMPORTANTE:
+         render() recalcula a duração efetiva a partir de baseDur/resources.
+         Portanto, depois de um replanejamento global, a nova duração deve
+         virar também a nova base persistente do cronograma. */
+      if(!a.milestone){
+        const resources=typeof resourceCount==="function"?Math.max(1,resourceCount(a)):1;
+        a.baseDur=Math.max(1,newDur*resources);
+      }else{
+        a.baseDur=0;
+      }
+    });
   }
 
   /* Recalcula definitivamente todas as atividades e predecessoras. */
+  syncEffectiveDurations();
   calculateSchedule(activities,start,true);
 
   const bounds=currentScheduleBounds(activities);
@@ -2486,6 +2545,7 @@ function recalculateWholeSchedule(){
 }
 
 function render(){
+  updateScheduleStatusBadge();
   updateMainTitleStatus();
   updateMainTitleStatus();
   updateTopCompactMetrics();
@@ -2633,27 +2693,37 @@ function applyLock(){
   if($("recalcBtn"))$("recalcBtn").disabled=!loadedSchedule||state.status==="baseline";
 }
 
-function saveDraft(){
+async function saveDraft(){
   if(!validateParams())return;
+
+  /* Garante que os parâmetros refletem exatamente as atividades atuais. */
+  const bounds=currentScheduleBounds(activities);
+  if(bounds.start)$("startDate").value=iso(bounds.start);
+  if(bounds.finish)$("endDate").value=iso(bounds.finish);
+  if(bounds.days)$("workDays").value=bounds.days;
+
   state.draftSavedAt=new Date().toISOString();
   state.sessionDraft={
     obra:$("obra").value,
     coordinator:$("coordinator").value,
     start:$("startDate").value,
     end:$("endDate").value,
-    workDays:$("workDays").value,
+    workDays:Number($("workDays").value||0),
     activities:structuredClone(activities),
     responsibleCatalog:[...responsibleCatalog],
     baseline:state.baseline?structuredClone(state.baseline):null,
     status:state.status
   };
-  render();persistSchedule();
+
+  const saved=await persistSchedule();
+  render();
+
   showToast(
-    "success",
+    saved?"success":"warning",
     state.status==="baseline"?"Acompanhamento salvo":"Rascunho salvo",
-    state.status==="baseline"
-      ?"Os dados do REAL foram mantidos nesta sessão de validação."
-      :"Rascunho mantido nesta sessão. Nenhum dado foi gravado em localStorage."
+    saved
+      ?"Cronograma atualizado e gravado no backend."
+      :"O cronograma foi atualizado na tela, mas o backend não confirmou a gravação."
   );
 }
 
