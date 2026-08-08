@@ -84,13 +84,43 @@ function card(x){return `<div class="item"><div class="top"><div class="title">$
 ${x.observacao_ia?`<div class="ai"><strong>LEITURA DA IA</strong><p>${esc(x.observacao_ia)}</p></div>`:''}
 <div class="mini"><button class="btn sec" onclick="edit('${esc(x.id)}')">Revisar / direcionar</button><button class="btn sec" onclick="setStatus('${esc(x.id)}','aguardando')">Aguardando</button><button class="btn pri" onclick="setStatus('${esc(x.id)}','concluida')">Concluir</button></div></div>`}
 function openText(){$('source').value='';$('raw').value='';textDlg.showModal()}
-async function sendText(){const txt=$('raw').value.trim();if(!txt)return note('Cole a mensagem');textDlg.classList.add('loading');try{await call('ingest_text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origem:$('source').value.trim(),texto:txt})});textDlg.close();note('Mensagem interpretada');await load()}catch(e){note(e.message)}finally{textDlg.classList.remove('loading')}}
+async function sendText(){
+  const txt=$('raw').value.trim();
+  if(!txt)return note('Cole a mensagem');
+  textDlg.classList.add('loading');
+  try{
+    const resp=await call('ingest_text',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({origem:$('source').value.trim(),texto:txt})
+    });
+
+    if(resp.ignorada){
+      note('IA não criou demanda: '+(resp.motivo||'sem ação identificada'));
+      alert('A IA entendeu a mensagem, mas não criou uma demanda.\n\nMotivo: '+(resp.motivo||'sem ação identificada'));
+      return;
+    }
+
+    if(!resp.demanda || !resp.demanda.id){
+      throw new Error('Backend respondeu sem criar a demanda.');
+    }
+
+    textDlg.close();
+    note('Demanda '+resp.demanda.id+' criada');
+    await load();
+  }catch(e){
+    note(e.message);
+    alert('Erro ao interpretar/gravar:\n'+e.message);
+  }finally{
+    textDlg.classList.remove('loading');
+  }
+}
 function pick(acc){$('file').accept=acc;$('file').value='';$('file').click()}
 $('file').onchange=async e=>{const f=e.target.files[0];if(!f)return;note('Enviando e interpretando...');const fd=new FormData();fd.append('file',f);try{await call('ingest_file',{method:'POST',body:fd});note('Arquivo interpretado');await load()}catch(err){note(err.message)}}
 function edit(i){const x=state.demandas.find(d=>d.id===i);if(!x)return;$('id').value=x.id;$('obra').value=x.obra||'';$('subject').value=x.assunto||'';$('action').value=x.acao||'';$('owner').value=x.responsavel||'';$('deadline').value=x.prazo||'';$('status').value=x.status||'nova';$('priority').value=x.prioridade||'normal';$('phone').value=x.responsavel_whatsapp||'';$('outmsg').value=x.mensagem_responsavel||`Olá, ${x.responsavel||''}. Recebi uma demanda referente a ${x.obra||'uma obra'}: ${x.acao||x.assunto||''}. Pode verificar e me confirmar o andamento, por favor?`;editDlg.showModal()}
 async function save(openWa){const p={id:$('id').value,obra:$('obra').value,assunto:$('subject').value,acao:$('action').value,responsavel:$('owner').value,prazo:$('deadline').value,status:$('status').value,prioridade:$('priority').value,responsavel_whatsapp:$('phone').value,mensagem_responsavel:$('outmsg').value};await call('update_demand',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});editDlg.close();await load();if(openWa){const n=(p.responsavel_whatsapp||'').replace(/\D/g,'');if(n)window.open('https://wa.me/'+n+'?text='+encodeURIComponent(p.mensagem_responsavel),'_blank');else note('Informe o WhatsApp')}}
 async function setStatus(id,status){await call('update_demand',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})});await load()}
-function summary(){const a=state.demandas||[];let s=`📋 *STATUS — COORDENAÇÃO DE OBRAS*\\n\\n`;const open=a.filter(x=>x.status!=='concluida').slice(0,12),done=a.filter(x=>x.status==='concluida').slice(0,8);if(done.length){s+='✅ *TRATADAS / CONCLUÍDAS*\\n';done.forEach(x=>s+=`• ${x.obra||'Sem obra'} — ${x.assunto||'Demanda'}${x.responsavel?' | '+x.responsavel:''}\\n`);s+='\\n'}if(open.length){s+='⏳ *EM ANDAMENTO / PENDENTES*\\n';open.forEach(x=>s+=`• ${x.obra||'Sem obra'} — ${x.assunto||'Demanda'}${x.responsavel?' | Resp.: '+x.responsavel:' | sem responsável'}${x.prazo?' | '+x.prazo:''}\\n`);s+='\\n'}s+=`*Resumo:* ${a.length} registradas • ${a.filter(x=>x.status==='direcionada').length} direcionadas • ${a.filter(x=>x.status==='aguardando').length} aguardando • ${a.filter(x=>x.status==='concluida').length} concluídas.`;$('sum').textContent=s;$('sum').classList.remove('hidden');$('sumBtns').classList.remove('hidden')}
+function summary(){const a=state.demandas||[];let s=`📋 *STATUS — COORDENAÇÃO DE OBRAS*\n\n`;const open=a.filter(x=>x.status!=='concluida').slice(0,12),done=a.filter(x=>x.status==='concluida').slice(0,8);if(done.length){s+='✅ *TRATADAS / CONCLUÍDAS*\n';done.forEach(x=>s+=`• ${x.obra||'Sem obra'} — ${x.assunto||'Demanda'}${x.responsavel?' | '+x.responsavel:''}\n`);s+='\n'}if(open.length){s+='⏳ *EM ANDAMENTO / PENDENTES*\n';open.forEach(x=>s+=`• ${x.obra||'Sem obra'} — ${x.assunto||'Demanda'}${x.responsavel?' | Resp.: '+x.responsavel:' | sem responsável'}${x.prazo?' | '+x.prazo:''}\n`);s+='\n'}s+=`*Resumo:* ${a.length} registradas • ${a.filter(x=>x.status==='direcionada').length} direcionadas • ${a.filter(x=>x.status==='aguardando').length} aguardando • ${a.filter(x=>x.status==='concluida').length} concluídas.`;$('sum').textContent=s;$('sum').classList.remove('hidden');$('sumBtns').classList.remove('hidden')}
 async function copySum(){await navigator.clipboard.writeText($('sum').textContent);note('Resumo copiado')}
 async function shareSum(){if(navigator.share)await navigator.share({text:$('sum').textContent});else copySum()}
 load();
