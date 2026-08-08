@@ -1735,23 +1735,33 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 
 </head>
 <body>
+
+<script id="coreHelpersV12">
+const $ = id => document.getElementById(id);
+const esc = value => String(value ?? "")
+  .replaceAll("&","&amp;")
+  .replaceAll("<","&lt;")
+  .replaceAll(">","&gt;")
+  .replaceAll('"',"&quot;")
+  .replaceAll("'","&#039;");
+const num = (value, fallback=0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
+</script>
+
 <div class="wrap" id="appWrap">
 
   <section class="panel" id="setupPanel">
     <div class="panel-title">Cronograma Executivo</div>
     <div class="muted">
-      Planejamento da obra • Linha de base • Acompanhamento PLAN x REAL</div>
+      Planejamento da obra • Linha de base • Acompanhamento PLAN x REAL • Dados: /www/storage/data</div>
 
     <div class="toolbar">
       <div class="field wide">
         <label>Obra disponível</label>
-        <select id="obra">
-          <option>FIESC • CLIMATIZAÇÃO</option>
-          <option>HOSPITAL SOS • AMPLIAÇÃO</option>
-          <option>CORPORATE 8 • CLIMATIZAÇÃO</option>
-          <option>GIASSI TUBARÃO • CLIMATIZAÇÃO</option>
-          <option>HNS FÁTIMA • CLIMATIZAÇÃO</option>
-        </select>
+        <select id="obra"><option value="">Selecione uma obra...</option></select>
       </div>
 
       <div class="field medium">
@@ -2001,8 +2011,14 @@ let selectedIds=new Set();
 let linkSourceId=null;
 let loadedSchedule=false;
 let modalResources=[];
+
 const RESPONSIBLE_DEFAULTS=["Comercial","Projetos","Compras","Coordenador da Obra","Fornecedor","Cliente","Empreiteiro","Duteiro","Mecânico"];
 let responsibleCatalog=[...RESPONSIBLE_DEFAULTS];
+const CRONOGRAMA_API="https://api.erpimpar.com.br/cronograma/cronograma_api.php";
+let currentScheduleFile="";
+let currentScheduleId="";
+function selectedScheduleFile(){const opt=$("obra")?.selectedOptions?.[0];return opt?.dataset?.file||currentScheduleFile||""}
+function selectedScheduleId(){const opt=$("obra")?.selectedOptions?.[0];return opt?.dataset?.id||currentScheduleId||""}
 function normResp(v){return String(v||"").trim()}
 function rememberResponsible(v){v=normResp(v);if(!v)return;if(!responsibleCatalog.some(x=>x.toLocaleLowerCase("pt-BR")===v.toLocaleLowerCase("pt-BR"))){responsibleCatalog.push(v);responsibleCatalog.sort((a,b)=>a.localeCompare(b,"pt-BR"));renderResponsibleList()}}
 function renderResponsibleList(){const dl=$("responsibleList");if(dl)dl.innerHTML=responsibleCatalog.map(v=>`<option value="${esc(v)}"></option>`).join("")}
@@ -2037,20 +2053,135 @@ function projectEarliestStart(a){const ps=parseISO($("startDate").value);const p
 function applyManualMove(id,deltaDays){if(state.status==="baseline")return;const a=activities.find(x=>x.id===id);if(!a)return;const cur=parseISO(a.manualStart||a.start),earliest=projectEarliestStart(a);let p=nextWorkday(addCalDays(cur,deltaDays));if(p<earliest){p=earliest;showToast("warning","Limite da predecessora","Posicionada na primeira data permitida.")}a.manualStart=iso(p);calculateSchedule(activities,parseISO($("startDate").value),true);render()}
 function applyManualResize(id,deltaDays,side){if(state.status==="baseline")return;const a=activities.find(x=>x.id===id);if(!a||a.milestone)return;if(a.baseDur===undefined)a.baseDur=Math.max(1,a.dur||1);if(side==="right")a.baseDur=Math.max(1,a.baseDur+deltaDays*resourceCount(a));else{const old=parseISO(a.manualStart||a.start),earliest=projectEarliestStart(a);let ns=nextWorkday(addCalDays(old,deltaDays));if(ns<earliest)ns=earliest;const shift=Math.round((ns-old)/86400000);a.manualStart=iso(ns);a.baseDur=Math.max(1,a.baseDur-shift*resourceCount(a))}a.dur=effectiveDuration(a);calculateSchedule(activities,parseISO($("startDate").value),true);render()}
 function enableGanttBarInteractions(){if(!loadedSchedule||state.status==="baseline")return;const sample=[...document.querySelectorAll("#ganttTable .gantt-cell")].find(c=>c.offsetWidth>0),weekPx=sample?.offsetWidth||62,daysPerPx=7/weekPx;document.querySelectorAll("#ganttTable .draft-bar").forEach(bar=>{const tr=bar.closest("tr[data-id]"),id=Number(tr?.dataset.id);if(!id)return;bar.classList.add("bar-segment");if(!bar.querySelector(".resize-handle.left")){bar.insertAdjacentHTML("afterbegin",'<span class="resize-handle left" data-side="left"></span>');bar.insertAdjacentHTML("beforeend",'<span class="resize-handle right" data-side="right"></span>')}bar.addEventListener("click",e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();linkActivitiesByCtrl(id)}});let mode=null,startX=0,last=0;bar.addEventListener("pointerdown",e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();e.stopPropagation();const h=e.target.closest(".resize-handle");mode=h?h.dataset.side:"move";startX=e.clientX;last=0;bar.setPointerCapture?.(e.pointerId)});bar.addEventListener("pointermove",e=>{if(!mode)return;const dx=e.clientX-startX;last=Math.round(dx*daysPerPx);document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{if(mode==="move")seg.style.transform=`translateX(${dx}px)`;else seg.style.filter="brightness(1.08)"})});const fin=()=>{if(!mode)return;document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{seg.style.transform="";seg.style.filter=""});const action=mode;mode=null;if(last!==0){if(action==="move")applyManualMove(id,last);else applyManualResize(id,last,action)}};bar.addEventListener("pointerup",fin);bar.addEventListener("pointercancel",fin)})}
-async function loadSelectedSchedule(){const obra=$("obra").value;if(!obra){showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");return}try{const r=await fetch(`https://api.erpimpar.com.br/cronograma/cronograma_novo_api.php?action=get&obra=${encodeURIComponent(obra)}&_=${Date.now()}`,{cache:"no-store"});const t=await r.text();if(r.ok&&t.trim()){const j=JSON.parse(t);if(j?.ok&&j?.data?.activities?.length){activities=j.data.activities;responsibleCatalog=Array.from(new Set([...RESPONSIBLE_DEFAULTS,...(j.data.responsibleCatalog||[]),...activities.map(a=>a.resp).filter(Boolean),...activities.flatMap(a=>a.resources||[])]));state.status=j.data.status||"draft";state.baseline=j.data.baseline||null;state.baselineAt=j.data.baselineAt||null;$("coordinator").value=j.data.coordinator||"";$("startDate").value=j.data.start||$("startDate").value;$("endDate").value=j.data.end||$("endDate").value;$("workDays").value=j.data.workDays||$("workDays").value;renderResponsibleList();setScheduleLoaded(true);render();showToast("success","Cronograma carregado",obra);return}}}catch(e){console.warn(e)}activities=structuredClone(TEMPLATE).map(a=>({...a,resources:Array.isArray(a.resources)?a.resources:[],manualStart:""}));state.status="draft";state.baseline=null;state.baselineAt=null;responsibleCatalog=[...RESPONSIBLE_DEFAULTS];activities.forEach(a=>{if(a.resp)rememberResponsible(a.resp)});syncEffectiveDurations();calculateSchedule(activities,parseISO($("startDate").value),true);renderResponsibleList();setScheduleLoaded(true);render();showToast("info","Novo cronograma","Template VRF carregado para a obra selecionada.")}
-async function persistSchedule(){if(!loadedSchedule||!validateParams())return false;const payload={obra:$("obra").value,coordinator:$("coordinator").value,start:$("startDate").value,end:$("endDate").value,workDays:Number($("workDays").value||0),status:state.status,baseline:state.baseline,baselineAt:state.baselineAt,responsibleCatalog,activities};try{const r=await fetch("https://api.erpimpar.com.br/cronograma/cronograma_novo_api.php?action=save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),cache:"no-store"});const t=await r.text();if(!r.ok)throw new Error(t||("HTTP "+r.status));const j=t.trim()?JSON.parse(t):{};if(!j.ok)throw new Error(j.error||"Falha ao salvar");return true}catch(e){console.warn(e);showToast("warning","Backend ainda não publicado","Publique cronograma_novo_api.php para persistência física.");return false}}
+async function loadSelectedSchedule(){
+  const obra=$("obra").value;
+  const arquivo=selectedScheduleFile();
+  if(!obra||!arquivo){showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");return}
+  try{
+    const r=await fetch(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(arquivo)}&_=${Date.now()}`,{cache:"no-store"});
+    const t=await r.text();
+    if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
+    const j=t.trim()?JSON.parse(t):{};
+    if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma");
+    const d=j.data;
+    if(!Array.isArray(d.activities)||!d.activities.length)throw new Error("Cronograma sem atividades");
 
+    currentScheduleFile=j.arquivo||arquivo;
+    currentScheduleId=String(d.id||selectedScheduleId()||"");
+    activities=d.activities.map((a,index)=>({
+      ...a,
+      id:Number.isFinite(Number(a.id))?Number(a.id):(index+1),
+      name:String(a.name??a.nome??"Atividade"),
+      resp:String(a.resp??a.responsavel??""),
+      dur:Number(a.dur??a.duracao??0),
+      baseDur:Number(a.baseDur??a.dur??a.duracao??0),
+      pred:Array.isArray(a.pred)
+        ? a.pred.map(Number).filter(Number.isFinite)
+        : String(a.predecessora??"").split(/\s*[,;]\s*/).filter(Boolean).map(Number).filter(Number.isFinite),
+      cat:String(a.cat??"climatizacao"),
+      milestone:Boolean(a.milestone??(Number(a.dur??a.duracao??0)===0)),
+      dep:String(a.dep??"Nenhuma"),
+      pct:Number(a.pct??a.real??0),
+      realStart:String(a.realStart??""),
+      realEnd:String(a.realEnd??""),
+      realStatus:String(a.realStatus??a.status??"Não iniciado"),
+      obs:String(a.obs??""),
+      resources:Array.isArray(a.resources)?a.resources:[],
+      manualStart:String(a.manualStart??""),
+      start:String(a.start??a.inicio??""),
+      end:String(a.end??a.fim??""),
+      critical:Boolean(a.critical??false)
+    }));
+    responsibleCatalog=Array.from(new Set([
+      ...RESPONSIBLE_DEFAULTS,
+      ...(d.responsibleCatalog||[]),
+      ...activities.map(a=>a.resp).filter(Boolean),
+      ...activities.flatMap(a=>a.resources||[])
+    ]));
+    state.status=d.status||"draft";
+    state.baseline=d.baseline||null;
+    state.baselineAt=d.baselineAt||null;
+    $("coordinator").value=d.coordinator||"";
 
-const $=id=>document.getElementById(id);
-const safeText=(id,value)=>{const el=$(id);if(el)el.textContent=value;};
+    const storedStarts=activities.map(a=>parseISO(a.start)).filter(Boolean);
+    const storedEnds=activities.map(a=>parseISO(a.end)).filter(Boolean);
+    const loadedStart=d.start || (storedStarts.length?iso(new Date(Math.min(...storedStarts.map(x=>x.getTime())))):"");
+    const loadedEnd=d.end || (storedEnds.length?iso(new Date(Math.max(...storedEnds.map(x=>x.getTime())))):"");
 
-function esc(s){
-  return String(s??"")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
+    $("startDate").value=loadedStart;
+    $("endDate").value=loadedEnd;
+
+    const loadedDays=Number(d.workDays||0) ||
+      (loadedStart&&loadedEnd ? workdaysBetween(parseISO(loadedStart),parseISO(loadedEnd)) : 0);
+    $("workDays").value=loadedDays||"";
+    renderResponsibleList();
+    setScheduleLoaded(true);
+    console.info("[Cronograma] carregado do backend",{
+      arquivo:currentScheduleFile,
+      obra:d.obra,
+      atividades:activities.length,
+      inicio:$("startDate").value,
+      fim:$("endDate").value,
+      prazo:$("workDays").value
+    });
+    render();
+    showToast("success","Cronograma carregado",`${obra} • ${activities.length} atividades • ${currentScheduleFile}`);
+  }catch(e){
+    console.error(e);
+    showToast("error","Falha ao carregar cronograma",String(e.message||e));
+  }
+}
+async function persistSchedule(){
+  if(!loadedSchedule||!validateParams())return false;
+  const plan=Math.round(plannedPercentAt(today())*10)/10;
+  const real=Math.round(realPercent()*10)/10;
+  const start=$("startDate").value;
+  const end=$("endDate").value;
+  const workDays=Number($("workDays").value||0);
+  const obra=$("obra").value;
+  const coordinator=$("coordinator").value;
+  const projectStatus=real>=plan?"Em andamento":"Atrasado";
+
+  const atividadesCompat=activities.map((a,idx)=>({
+    id:String(a._legacyId||a.id),ordem:idx+1,ordemHier:String(idx+1),nivel:0,
+    nome:a.name||"",responsavel:a.resp||"",inicio:a.start||"",fim:a.end||"",
+    duracao:Number(a.dur||0),previsto:Number(a.planPct??0),real:Number(a.pct||0),
+    status:a.realStatus||((Number(a.pct||0)>=100)?"Concluído":"Não iniciado"),
+    collapsed:false,comentarios:[],predecessora:(a.pred||[]).join(", "),modo:"comercial"
+  }));
+
+  const payload={
+    _schema:"erpimpar-cronograma-v2",
+    arquivo:currentScheduleFile||selectedScheduleFile(),
+    id:currentScheduleId||selectedScheduleId()||"",
+    obra,coordinator,start,end,workDays,
+    workflowStatus:state.status,
+    baseline:state.baseline,baselineAt:state.baselineAt,
+    responsibleCatalog,activities,
+    updatedAt:new Date().toISOString(),
+
+    /* Compatibilidade com leitores antigos de /storage/data */
+    nome:obra,coordenador:coordinator,
+    resumo:{inicio:start,fim:end,dias:workDays,previsto:plan,real,status:projectStatus},
+    inicio:start,fim:end,dias:workDays,previsto:plan,real,status:projectStatus,
+    atividades:atividadesCompat
+  };
+  try{
+    const r=await fetch(`${CRONOGRAMA_API}?action=save`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload),cache:"no-store"
+    });
+    const t=await r.text();
+    if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
+    const j=t.trim()?JSON.parse(t):{};
+    if(!j.ok)throw new Error(j.error||"Falha ao salvar");
+    currentScheduleFile=j.arquivo||currentScheduleFile;
+    return true;
+  }catch(e){
+    console.error(e);
+    showToast("error","Falha ao salvar no servidor",String(e.message||e));
+    return false;
+  }
 }
 
 function parseISO(v){ if(!v)return null; const [y,m,d]=String(v).split("-").map(Number); return new Date(y,m-1,d,12); }
@@ -2552,11 +2683,12 @@ function render(){
   updateMainTitleStatus();
   if(!loadedSchedule){setScheduleLoaded(false);return;}
   syncEffectiveDurations();
-  const start=parseISO($("startDate").value)||nextWorkday(today());
 
-  if(state.status!=="baseline"){
-    calculateSchedule(activities,start,true);
-  }
+  /* IMPORTANTE:
+     Carregar cronograma deve exibir exatamente as datas gravadas no backend.
+     O replanejamento global só acontece quando o usuário clica em Recalcular
+     ou executa uma edição que explicitamente exige recálculo. */
+  const start=parseISO($("startDate").value)||nextWorkday(today());
 
   const source=planSource();
   const startPlan=new Date(Math.min(...source.map(a=>parseISO(a.start).getTime())));
@@ -3074,25 +3206,22 @@ function enableActivityDrag(){
 async function carregarCronogramasDisponiveis(){
   const select=$("obra");
   if(!select)return;
-  const fallback=[...select.options].map(o=>({value:o.value,text:o.textContent}));
+  select.innerHTML='<option value="">Carregando cronogramas...</option>';
   try{
-    const resp=await fetch("https://api.erpimpar.com.br/cronograma/listar_obras.php?_="+Date.now(),{cache:"no-store"});
+    const resp=await fetch(`${CRONOGRAMA_API}?action=list&_=${Date.now()}`,{cache:"no-store"});
     const text=await resp.text();
-    if(!resp.ok)throw new Error(text||("HTTP "+resp.status));
+    if(!resp.ok)throw new Error(text||(`HTTP ${resp.status}`));
     const json=text.trim()?JSON.parse(text):{};
-    const arr=Array.isArray(json)?json:(Array.isArray(json.data)?json.data:(Array.isArray(json.obras)?json.obras:[]));
-    const obras=arr.map((o,idx)=>({
-      id:String(o.id||o.codigo||o.cronograma_id||idx+1).replace(/\D/g,"").padStart(3,"0"),
-      nome:String(o.nome||o.obra||o.titulo||"").trim()
-    })).filter(o=>o.nome).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
-
-    if(!obras.length)throw new Error("Nenhum cronograma disponível");
-
-    select.innerHTML=obras.map(o=>`<option value="${esc(o.nome)}" data-id="${esc(o.id)}">${esc(o.nome)}</option>`).join("");
-    render();
+    const obras=Array.isArray(json.data)?json.data:[];
+    select.innerHTML='<option value="">Selecione uma obra...</option>'+obras.map(o=>
+      `<option value="${esc(o.obra)}" data-file="${esc(o.arquivo)}" data-id="${esc(o.id||"")}">${esc(o.obra)}</option>`
+    ).join("");
+    currentScheduleFile="";currentScheduleId="";
+    setScheduleLoaded(false);
   }catch(e){
-    console.warn("Falha ao carregar cronogramas disponíveis:",e);
-    select.innerHTML=fallback.map(o=>`<option value="${esc(o.value)}">${esc(o.text)}</option>`).join("");
+    console.error("Falha ao listar cronogramas:",e);
+    select.innerHTML='<option value="">Falha ao carregar obras</option>';
+    showToast("error","Falha ao listar cronogramas",String(e.message||e));
   }
 }
 
@@ -3522,7 +3651,7 @@ $("clientView").addEventListener("mousedown",e=>{
 });
 
 
-$("obra").addEventListener("change",()=>{setScheduleLoaded(false);state.status="draft";state.baseline=null;state.baselineAt=null;});
+$("obra").addEventListener("change",()=>{currentScheduleFile=selectedScheduleFile();currentScheduleId=selectedScheduleId();setScheduleLoaded(false);state.status="draft";state.baseline=null;state.baselineAt=null;});
 $("coordinator").addEventListener("change",render);
 $("startDate").addEventListener("change",()=>{
   if(state.status==="baseline")return;
