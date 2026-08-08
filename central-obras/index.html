@@ -87,29 +87,34 @@ function openText(){$('source').value='';$('raw').value='';textDlg.showModal()}
 async function sendText(){
   const txt=$('raw').value.trim();
   if(!txt)return note('Cole a mensagem');
+
   textDlg.classList.add('loading');
   try{
     const resp=await call('ingest_text',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({origem:$('source').value.trim(),texto:txt})
+      body:JSON.stringify({
+        origem:$('source').value.trim(),
+        texto:txt
+      })
     });
 
     if(resp.ignorada){
-      note('IA não criou demanda: '+(resp.motivo||'sem ação identificada'));
-      alert('A IA entendeu a mensagem, mas não criou uma demanda.\n\nMotivo: '+(resp.motivo||'sem ação identificada'));
+      alert('A mensagem foi analisada, mas não gerou demanda.\n\n'+(resp.motivo||'Sem ação operacional.'));
       return;
     }
 
     if(!resp.demanda || !resp.demanda.id){
+      console.log('Resposta do backend:',resp);
       throw new Error('Backend respondeu sem criar a demanda.');
     }
 
     textDlg.close();
     note('Demanda '+resp.demanda.id+' criada');
     await load();
+
   }catch(e){
-    note(e.message);
+    console.error(e);
     alert('Erro ao interpretar/gravar:\n'+e.message);
   }finally{
     textDlg.classList.remove('loading');
