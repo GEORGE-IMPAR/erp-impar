@@ -22,7 +22,7 @@ main{max-width:1000px;margin:auto;padding:16px 16px 80px}.head{display:flex;alig
 </head>
 <body>
 <main>
-<div class="head"><div class="orb">🧭</div><div><h1>Central George</h1><div class="sub">Assistente operacional das obras • Ação e acompanhamento</div></div><div id="sync" class="sync">conectando...</div></div>
+<div class="head"><div class="orb">🧭</div><div><h1>Central George</h1><div class="sub">Assistente operacional das obras • Webhook + Agenda</div></div><div id="sync" class="sync">conectando...</div></div>
 
 <div class="kpis">
  <div class="kpi"><b id="k0">0</b><span>Novas</span></div>
@@ -52,6 +52,8 @@ main{max-width:1000px;margin:auto;padding:16px 16px 80px}.head{display:flex;alig
 <div id="list" class="list" style="margin-top:10px"></div>
 </section>
 
+<section class="card"><div class="toolbar"><div><h2>Ações agendadas</h2><div class="sub">Agenda persistida no KingHost.</div></div><button class="btn pri" onclick="openAgenda()">Agendar ação</button></div><div id="agendaList" class="list" style="margin-top:10px"></div></section>
+
 <section class="card">
 <div class="toolbar"><div><h2>Devolutiva para a diretoria</h2><div class="sub">Conta assuntos gerenciais, não registros técnicos.</div></div><button class="btn pri" onclick="summary()">Gerar resumo</button></div>
 <div id="sum" class="summary hidden" style="margin-top:10px"></div><div id="sumBtns" class="mini hidden"><button class="btn sec" onclick="copySum()">Copiar</button><button class="btn sec" onclick="shareSum()">Compartilhar</button></div>
@@ -59,6 +61,7 @@ main{max-width:1000px;margin:auto;padding:16px 16px 80px}.head{display:flex;alig
 </main>
 
 <input id="zip" type="file" accept=".zip,application/zip" class="hidden">
+<dialog id="agendaDlg" style="width:min(560px,calc(100% - 24px));background:#071827;color:white;border:1px solid rgba(255,255,255,.1);border-radius:18px"><div style="padding:16px"><h3>Agendar ação</h3><input id="agDesc" placeholder="Descrição" style="width:100%;padding:10px;margin:6px 0;background:#071a2b;color:white;border:1px solid #294054;border-radius:10px"><input id="agWhen" type="datetime-local" style="width:100%;padding:10px;margin:6px 0;background:#071a2b;color:white;border:1px solid #294054;border-radius:10px"><div class="mini"><button class="btn sec" onclick="agendaDlg.close()">Cancelar</button><button class="btn pri" onclick="saveAgenda()">Salvar</button></div></div></dialog>
 <div id="toast" class="toast"></div>
 
 <script src="config.js"></script>
@@ -68,7 +71,7 @@ const $=id=>document.getElementById(id);
 function note(t){$('toast').textContent=t;$('toast').classList.add('on');setTimeout(()=>$('toast').classList.remove('on'),2200)}
 async function call(action,opt={}){const u=API+(API.includes('?')?'&':'?')+'action='+encodeURIComponent(action);const r=await fetch(u,opt);const j=await r.json().catch(()=>({}));if(!r.ok||j.ok===false)throw Error(j.error||'Erro');return j}
 function esc(v=''){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-async function load(){try{state=await call('bootstrap');$('sync').textContent='sincronizado';render();renderImport()}catch(e){$('sync').textContent='erro';$('list').innerHTML='<div class="item">'+esc(e.message)+'</div>'}}
+async function load(){try{state=await call('bootstrap');$('sync').textContent='sincronizado';render();renderImport();await loadAgenda();await pollWhatsApp()}catch(e){$('sync').textContent='erro';$('list').innerHTML='<div class="item">'+esc(e.message)+'</div>'}}
 function visibleDemands(){return (state.demandas||[]).filter(x=>x.visivel_gestao!==false && x.status!=='interna' && x.status!=='mesclada')}
 function render(){
  const a=visibleDemands().sort((a,b)=>(b.atualizado_em||b.criado_em||'').localeCompare(a.atualizado_em||a.criado_em||''));
@@ -115,6 +118,12 @@ async function direction(id,cobranca=false){
    window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
  }catch(e){alert('Erro ao direcionar:\\n'+e.message)}
 }
+
+
+async function loadAgenda(){try{const r=await call('agenda_list');const a=(r.items||[]).sort((x,y)=>(x.executar_em||'').localeCompare(y.executar_em||''));$('agendaList').innerHTML=a.length?a.map(x=>`<div class="item"><div class="title">${esc(x.descricao||'Ação')}</div><div class="meta">⏰ ${esc(x.executar_em||'')} • ${esc(x.status||'agendada')}</div></div>`).join(''):'<div class="item">Nenhuma ação agendada.</div>'}catch(e){}}
+function openAgenda(){ $('agDesc').value='';const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);$('agWhen').value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);agendaDlg.showModal()}
+async function saveAgenda(){const descricao=$('agDesc').value.trim(),executar_em=$('agWhen').value;if(!descricao||!executar_em)return note('Informe descrição e horário');await call('agenda_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao,executar_em,status:'agendada'})});agendaDlg.close();note('Ação agendada');await loadAgenda()}
+async function pollWhatsApp(){try{const r=await call('whatsapp_queue');const a=r.items||[];if(a.length){console.log('Eventos WhatsApp novos:',a);$('sync').textContent=`WhatsApp: ${a.length} novo(s)`}}catch(e){console.warn(e)}}
 
 function summary(){
  const a=visibleDemands();let s=`📋 *STATUS — COORDENAÇÃO DE OBRAS*\n\n`;const open=a.filter(x=>x.status!=='concluida'),done=a.filter(x=>x.status==='concluida');
