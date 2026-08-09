@@ -29,6 +29,57 @@ body{min-height:100vh}button,input{font:inherit}button{cursor:pointer}main{max-w
 @media(max-width:900px){main{padding:8px 8px 72px}.head{padding-right:15px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis .kpi:last-child{grid-column:1/-1}.toolbar .btn{flex:1 1 auto}.card{padding:14px}.hero{padding:16px 18px}}
 @media(max-width:560px){.head{align-items:flex-start}.orb{width:38px;height:38px;flex-basis:38px}.head h1{font-size:17px}.sync{position:absolute;right:10px;bottom:9px}.kpis{grid-template-columns:repeat(2,1fr)}.kpi{min-height:64px}.drop{padding:16px 12px}.toolbar{align-items:stretch}.toolbar>h2,.toolbar>div{flex-basis:100%}.toolbar .btn{width:100%}.top{align-items:flex-start}.pill{flex:0 0 auto}.mini .btn{flex:1 1 45%}}
 </style>
+
+<style id="centralObrasV08Css">
+/* V0.8 — legibilidade + toast oficial ERP */
+html,body{font-size:14px!important}
+body,.desc,.summary,.item,.drop{font-size:14px!important}
+.panel p,.sub,.meta,.note,.tag,.pill{font-size:12px!important;line-height:1.5!important}
+.panel-title,.card h2{font-size:21px!important}
+.btn{font-size:13px!important;min-height:42px!important;padding:0 16px!important}
+input,select,textarea{font-size:14px!important}
+.kpi small{font-size:11px!important}
+.kpi b{font-size:20px!important}
+.item .title{font-size:15px!important}
+.item .desc{font-size:14px!important;line-height:1.55!important}
+.drop strong{font-size:15px!important}
+.drop span{font-size:13px!important}
+
+/* Toast padrão do ERP — canto superior direito */
+#toast{display:none!important}
+.system-toast-stack{
+  position:fixed;top:16px;right:16px;z-index:99999;
+  width:min(390px,calc(100vw - 24px));display:grid;gap:10px;pointer-events:none
+}
+.system-toast{
+  position:relative;min-height:76px;padding:13px 38px 13px 13px;
+  display:grid;grid-template-columns:38px minmax(0,1fr);gap:11px;align-items:center;
+  overflow:hidden;border:1px solid #d8e4e9;border-left:4px solid #38bdf8;
+  border-radius:14px;background:#fff;color:#173247;
+  box-shadow:0 16px 38px rgba(30,66,96,.20);animation:v08toastin .22s ease;pointer-events:auto
+}
+.system-toast.success{border-left-color:#22c55e}
+.system-toast.warning{border-left-color:#f59e0b}
+.system-toast.error{border-left-color:#ef5b67}
+.system-toast.info{border-left-color:#38bdf8}
+.system-toast-ico{width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:#e8f5fb;font-size:18px;font-weight:950}
+.system-toast.success .system-toast-ico{background:#dff7ea;color:#12845a}
+.system-toast.warning .system-toast-ico{background:#fff1c5;color:#a97308}
+.system-toast.error .system-toast-ico{background:#ffe2e5;color:#c73646}
+.system-toast.info .system-toast-ico{background:#e8f5fb;color:#197baa}
+.system-toast b{display:block;color:#173247;font-size:14px;line-height:1.2}
+.system-toast p{margin:5px 0 0;color:#61788a;font-size:12px;line-height:1.4;font-weight:650}
+.system-toast-close{position:absolute;top:7px;right:7px;width:26px;height:26px;border:0;background:transparent;color:#60798b;font-size:18px;cursor:pointer}
+@keyframes v08toastin{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:none}}
+
+.media-progress{margin-top:10px;display:none;padding:12px;border:1px solid #d7e2e8;border-radius:12px;background:#f7fafb}
+.media-progress.on{display:block}
+.media-progress .bar{height:8px;margin-top:8px;background:#e5edf1;border-radius:999px;overflow:hidden}
+.media-progress .fill{height:100%;width:0;background:linear-gradient(90deg,#1fc477,#159b68);transition:width .2s ease}
+.media-progress .txt{font-size:12px;color:#48677d;font-weight:750}
+.media-result{margin-top:9px;font-size:12px;color:#48677d;line-height:1.45}
+</style>
+
 </head>
 <body>
 <main>
@@ -44,12 +95,17 @@ body{min-height:100vh}button,input{font:inherit}button{cursor:pointer}main{max-w
 
 <section class="card hero">
   <h2>Importar conversa do WhatsApp</h2>
-  <p>Exporte o grupo e envie o ZIP. A Central processa só o que é novo e consolida registros equivalentes no mesmo assunto operacional.</p>
+  <p>Envie um único ZIP exportado do WhatsApp. A Central lê o texto e também procura áudios, vídeos e imagens para identificar ações adicionais.</p>
   <div class="drop" onclick="pickZip()">
     <strong>📦 Selecionar exportação do WhatsApp</strong>
     <span>ZIP gerado pelo WhatsApp</span>
   </div>
   <div id="lastImport" class="meta" style="margin-top:10px"></div>
+    <div id="mediaProgress" class="media-progress">
+      <div id="mediaProgressText" class="txt">Preparando mídias...</div>
+      <div class="bar"><div id="mediaProgressFill" class="fill"></div></div>
+      <div id="mediaResult" class="media-result"></div>
+    </div>
 </section>
 
 <section class="card">
@@ -72,13 +128,22 @@ body{min-height:100vh}button,input{font:inherit}button{cursor:pointer}main{max-w
 
 <input id="zip" type="file" accept=".zip,application/zip" class="hidden">
 <dialog id="agendaDlg"><div><h3>Agendar ação</h3><input id="agDesc" placeholder="Descrição"><input id="agWhen" type="datetime-local"><div class="mini"><button class="btn sec" onclick="agendaDlg.close()">Cancelar</button><button class="btn pri" onclick="saveAgenda()">Salvar</button></div></div></dialog>
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast"></div><div id="toastStack" class="system-toast-stack"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="config.js"></script>
 <script>
 const API=CENTRAL_CONFIG.API_BASE; let state={demandas:[],importacao:null};
 const $=id=>document.getElementById(id);
-function note(t){$('toast').textContent=t;$('toast').classList.add('on');setTimeout(()=>$('toast').classList.remove('on'),2200)}
+function toast(type='info',title='Informação',message='',ms=4200){
+ const stack=$('toastStack'); if(!stack)return;
+ const ico={info:'ℹ',success:'✓',warning:'!',error:'×'}[type]||'ℹ';
+ const el=document.createElement('div');el.className='system-toast '+type;
+ el.innerHTML=`<div class="system-toast-ico">${ico}</div><div><b>${esc(title)}</b><p>${esc(message)}</p></div><button class="system-toast-close" aria-label="Fechar">×</button>`;
+ el.querySelector('button').onclick=()=>el.remove();stack.appendChild(el);
+ setTimeout(()=>{if(el.isConnected)el.remove()},ms);
+}
+function note(t,type='info'){toast(type,type==='success'?'Concluído':type==='error'?'Erro':type==='warning'?'Atenção':'Informação',t)}
 async function call(action,opt={}){const u=API+(API.includes('?')?'&':'?')+'action='+encodeURIComponent(action);const r=await fetch(u,opt);const j=await r.json().catch(()=>({}));if(!r.ok||j.ok===false)throw Error(j.error||'Erro');return j}
 function esc(v=''){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 async function load(){try{state=await call('bootstrap');$('sync').textContent='sincronizado';render();renderImport();await loadAgenda();await pollWhatsApp()}catch(e){$('sync').textContent='erro';$('list').innerHTML='<div class="item">'+esc(e.message)+'</div>'}}
@@ -100,22 +165,188 @@ function render(){
 }
 function renderImport(){const i=state.importacao;if(!i){$('lastImport').textContent='Nenhuma importação registrada.';return}$('lastImport').textContent=`Última importação: ${i.em||''} • ${i.novas_mensagens||0} novas mensagens • ${i.demandas_criadas||0} criadas • ${i.demandas_atualizadas||0} atualizadas`}
 function pickZip(){$('zip').value='';$('zip').click()}
-$('zip').onchange=async e=>{const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);note('Importando WhatsApp...');try{const r=await call('import_whatsapp_zip',{method:'POST',body:fd});note(`Importação concluída: ${r.novas_mensagens||0} novas mensagens`);await consolidate(false)}catch(err){alert('Erro na importação:\\n'+err.message)}}
-async function consolidate(show=true){try{const r=await call('consolidar',{method:'POST'});if(show)note(`Consolidação: ${r.mescladas||0} duplicidade(s) unificada(s)`);await load()}catch(e){alert('Erro ao consolidar:\\n'+e.message)}}
+$('zip').onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ $('mediaProgress').classList.add('on');$('mediaResult').textContent='';setMediaProgress(2,'Abrindo ZIP...');
+ try{
+   // Texto continua preservando o fluxo já validado.
+   const fd=new FormData();fd.append('file',f);
+   const textPromise=call('import_whatsapp_zip',{method:'POST',body:fd});
+
+   // Em paralelo, o HTML lê as mídias do ZIP.
+   const mediaPromise=processZipMediaInBrowser(f);
+
+   const [r,m]=await Promise.all([textPromise,mediaPromise]);
+   setMediaProgress(100,'Importação concluída.');
+   const extra=(m?.demandas||0);
+   $('mediaResult').textContent=`Mídias: ${m?.arquivos||0} analisadas • ${m?.transcritos||0} áudio/vídeo transcrito(s) • ${m?.imagens||0} imagem(ns) analisada(s) • ${extra} ação(ões) adicional(is).`;
+   toast('success','Importação concluída',`${r.novas_mensagens||0} novas mensagens de texto • ${extra} ação(ões) encontrada(s) nas mídias.`);
+   await consolidate(false);
+ }catch(err){
+   setMediaProgress(100,'Falha no processamento.');
+   toast('error','Erro na importação',err.message);
+ }
+}
+
+function setMediaProgress(p,t){$('mediaProgressFill').style.width=Math.max(0,Math.min(100,p))+'%';$('mediaProgressText').textContent=t}
+
+const MEDIA_AUDIO_EXT=['.ogg','.opus','.mp3','.m4a','.wav','.aac','.webm'];
+const MEDIA_VIDEO_EXT=['.mp4','.mov','.m4v','.3gp','.webm'];
+const MEDIA_IMAGE_EXT=['.jpg','.jpeg','.png','.webp'];
+
+function extOf(name){const x=name.toLowerCase();const i=x.lastIndexOf('.');return i>=0?x.slice(i):''}
+function isWhatsappNoise(name){const n=name.toLowerCase();return n.includes('__macosx')||n.endsWith('/')||n.includes('sticker')}
+
+async function processZipMediaInBrowser(file){
+ if(typeof JSZip==='undefined')throw Error('JSZip não carregou. Verifique a conexão com a internet.');
+ const zip=await JSZip.loadAsync(file);
+ const entries=Object.values(zip.files).filter(x=>!x.dir&&!isWhatsappNoise(x.name));
+ const medias=entries.filter(x=>{
+   const e=extOf(x.name);return MEDIA_AUDIO_EXT.includes(e)||MEDIA_VIDEO_EXT.includes(e)||MEDIA_IMAGE_EXT.includes(e)
+ });
+ if(!medias.length){setMediaProgress(94,'Nenhuma mídia encontrada no ZIP.');return {arquivos:0,transcritos:0,imagens:0,demandas:0}}
+ let transcritos=0,imagens=0,demandas=0,processed=0;
+ for(const entry of medias){
+   processed++;
+   const pct=10+Math.round((processed/medias.length)*80);
+   setMediaProgress(pct,`Analisando ${processed}/${medias.length}: ${entry.name}`);
+   const blob=await entry.async('blob');
+   const ext=extOf(entry.name);
+   try{
+     let contextText='';
+     let tipo='';
+     if(MEDIA_IMAGE_EXT.includes(ext)){
+       tipo='imagem';imagens++;
+       contextText=await analyzeImageBlob(blob,entry.name);
+     }else{
+       tipo=MEDIA_VIDEO_EXT.includes(ext)?'video':'audio';
+       let audioBlob=blob;
+       // Vídeo: extração de áudio acontece no navegador.
+       if(tipo==='video')audioBlob=await videoToWav(blob);
+       contextText=await transcribeAudioBlob(audioBlob,entry.name);
+       transcritos++;
+     }
+     if(contextText && contextText.trim()){
+       const found=await interpretMediaTextInFront(contextText,entry.name,tipo);
+       if(found?.eh_demanda){
+         await saveMediaDemand(found,contextText,entry.name,tipo);
+         demandas++;
+       }
+     }
+   }catch(err){
+     console.warn('Falha na mídia',entry.name,err);
+     toast('warning','Mídia não processada',`${entry.name}: ${err.message}`,5200);
+   }
+ }
+ return {arquivos:medias.length,transcritos,imagens,demandas}
+}
+
+async function transcribeAudioBlob(blob,name){
+ const fd=new FormData();
+ const safe=(name||'audio').replace(/[^\w.\-]+/g,'_');
+ fd.append('file',blob,safe.endsWith('.wav')?safe:safe+'.wav');
+ const r=await call('ai_transcribe',{method:'POST',body:fd});
+ return r.text||'';
+}
+
+async function analyzeImageBlob(blob,name){
+ const dataUrl=await blobToDataURL(blob);
+ const prompt=`Você está lendo uma imagem recebida em um grupo de coordenação de obras.
+Descreva SOMENTE informações operacionais visíveis que possam gerar ação: problema, equipamento, material, local/obra, prazo, entrega, defeito ou pedido.
+Não invente informação. Se não houver conteúdo operacional útil, responda exatamente: SEM_ACAO.
+Arquivo: ${name}`;
+ const payload={
+   model:'gpt-5-mini',
+   input:[{role:'user',content:[
+     {type:'input_text',text:prompt},
+     {type:'input_image',image_url:dataUrl}
+   ]}]
+ };
+ const r=await call('ai_response',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ return (r.text||'').trim()==='SEM_ACAO'?'':(r.text||'');
+}
+
+async function interpretMediaTextInFront(text,filename,tipo){
+ const system=`Você é o interpretador operacional da Central de Obras ÍMPAR.
+A regra de negócio está neste prompt do HTML.
+Analise uma transcrição/descrição de mídia de WhatsApp e identifique somente uma ação real de gestão de obras.
+Não crie tarefas internas como arquivar mídia, organizar arquivo ou cadastrar contato.
+Não invente obra, prazo ou responsável. Quando não souber, use string vazia.
+Se não existir ação, eh_demanda=false.
+Retorne JSON estrito com:
+eh_demanda(boolean), obra(string), assunto(string), acao(string), responsavel(string), prazo(string),
+prioridade("normal"|"alta"|"urgente"), observacao_ia(string), mensagem_responsavel(string), chave_contexto(string).`;
+ const payload={
+   model:'gpt-5-mini',
+   input:[
+     {role:'system',content:system},
+     {role:'user',content:`TIPO: ${tipo}\nARQUIVO: ${filename}\nCONTEÚDO EXTRAÍDO:\n${text}`}
+   ],
+   text:{format:{type:'json_schema',name:'demanda_midia',strict:true,schema:{
+     type:'object',additionalProperties:false,
+     properties:{
+       eh_demanda:{type:'boolean'},obra:{type:'string'},assunto:{type:'string'},acao:{type:'string'},
+       responsavel:{type:'string'},prazo:{type:'string'},prioridade:{type:'string',enum:['normal','alta','urgente']},
+       observacao_ia:{type:'string'},mensagem_responsavel:{type:'string'},chave_contexto:{type:'string'}
+     },
+     required:['eh_demanda','obra','assunto','acao','responsavel','prazo','prioridade','observacao_ia','mensagem_responsavel','chave_contexto']
+   }}}
+ };
+ const r=await call('ai_response',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ try{return JSON.parse(r.text||'{}')}catch{throw Error('A IA retornou JSON inválido para '+filename)}
+}
+
+async function saveMediaDemand(d,text,filename,tipo){
+ const payload={...d,origem:'whatsapp_midia',tipo_midia:tipo,arquivo_origem:filename,texto_bruto:text};
+ await call('demand_create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+}
+
+function blobToDataURL(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob)})}
+
+/* Extrai a trilha sonora do vídeo no próprio navegador e gera WAV PCM.
+   Se o navegador não conseguir decodificar o codec, a mídia é sinalizada no toast. */
+async function videoToWav(videoBlob){
+ const buf=await videoBlob.arrayBuffer();
+ const AC=window.AudioContext||window.webkitAudioContext;
+ if(!AC)throw Error('Navegador sem AudioContext para extrair áudio do vídeo.');
+ const ctx=new AC();
+ try{
+   const audio=await ctx.decodeAudioData(buf.slice(0));
+   return audioBufferToWavBlob(audio);
+ }catch(e){
+   throw Error('O Chrome não conseguiu extrair o áudio deste vídeo/codec.');
+ }finally{
+   try{await ctx.close()}catch{}
+ }
+}
+function audioBufferToWavBlob(buffer){
+ const channels=buffer.numberOfChannels,sampleRate=buffer.sampleRate,length=buffer.length;
+ const bytesPerSample=2,blockAlign=channels*bytesPerSample,dataSize=length*blockAlign;
+ const ab=new ArrayBuffer(44+dataSize),v=new DataView(ab);let p=0;
+ const w=s=>{for(let i=0;i<s.length;i++)v.setUint8(p++,s.charCodeAt(i))};
+ w('RIFF');v.setUint32(p,36+dataSize,true);p+=4;w('WAVE');w('fmt ');
+ v.setUint32(p,16,true);p+=4;v.setUint16(p,1,true);p+=2;v.setUint16(p,channels,true);p+=2;
+ v.setUint32(p,sampleRate,true);p+=4;v.setUint32(p,sampleRate*blockAlign,true);p+=4;
+ v.setUint16(p,blockAlign,true);p+=2;v.setUint16(p,16,true);p+=2;w('data');v.setUint32(p,dataSize,true);p+=4;
+ for(let i=0;i<length;i++)for(let c=0;c<channels;c++){let s=Math.max(-1,Math.min(1,buffer.getChannelData(c)[i]));v.setInt16(p,s<0?s*0x8000:s*0x7fff,true);p+=2}
+ return new Blob([ab],{type:'audio/wav'});
+}
+
+async function consolidate(show=true){try{const r=await call('consolidar',{method:'POST'});if(show)note(`Consolidação: ${r.mescladas||0} duplicidade(s) unificada(s)`);await load()}catch(e){toast('error','Erro ao consolidar',e.message)}}
 
 async function setStatus(id,status){
  try{
    await call('update_demand',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})});
    note(status==='concluida'?'Demanda concluída':'Status atualizado');
    await load();
- }catch(e){alert('Erro:\\n'+e.message)}
+ }catch(e){toast('error','Erro',e.message)}
 }
 async function direction(id,cobranca=false){
  const x=(state.demandas||[]).find(d=>d.id===id); if(!x)return;
  const resp=x.responsavel||x.sugestao_responsavel||'';
  const phone=(x.responsavel_whatsapp||x.sugestao_whatsapp||'').replace(/\D/g,'');
- if(!resp){alert('Esta demanda ainda não possui responsável definido.');return}
- if(!phone){alert('O responsável '+resp+' não possui WhatsApp cadastrado em contatos.json.');return}
+ if(!resp){toast('warning','Responsável','Esta demanda ainda não possui responsável definido.');return}
+ if(!phone){toast('warning','WhatsApp não cadastrado','O responsável '+resp+' não possui WhatsApp cadastrado em contatos.json.');return}
  let msg='';
  if(cobranca){
    msg=`Olá, ${resp}. Passando para acompanhar a demanda referente a ${x.obra||'obra'}: ${x.acao||x.assunto||''}. Consegue me atualizar sobre o andamento, por favor?`;
@@ -126,13 +357,13 @@ async function direction(id,cobranca=false){
    await call('direction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,responsavel:resp,whatsapp:phone,mensagem:msg,cobranca})});
    await load();
    window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
- }catch(e){alert('Erro ao direcionar:\\n'+e.message)}
+ }catch(e){toast('error','Erro ao direcionar',e.message)}
 }
 
 
 async function loadAgenda(){try{const r=await call('agenda_list');const a=(r.items||[]).sort((x,y)=>(x.executar_em||'').localeCompare(y.executar_em||''));$('agendaList').innerHTML=a.length?a.map(x=>`<div class="item"><div class="title">${esc(x.descricao||'Ação')}</div><div class="meta">⏰ ${esc(x.executar_em||'')} • ${esc(x.status||'agendada')}</div></div>`).join(''):'<div class="item">Nenhuma ação agendada.</div>'}catch(e){}}
 function openAgenda(){ $('agDesc').value='';const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);$('agWhen').value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);agendaDlg.showModal()}
-async function saveAgenda(){const descricao=$('agDesc').value.trim(),executar_em=$('agWhen').value;if(!descricao||!executar_em)return note('Informe descrição e horário');await call('agenda_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao,executar_em,status:'agendada'})});agendaDlg.close();note('Ação agendada');await loadAgenda()}
+async function saveAgenda(){const descricao=$('agDesc').value.trim(),executar_em=$('agWhen').value;if(!descricao||!executar_em)return note('Informe descrição e horário');await call('agenda_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao,executar_em,status:'agendada'})});agendaDlg.close();note('Ação agendada','success');await loadAgenda()}
 async function pollWhatsApp(){try{const r=await call('whatsapp_queue');const a=r.items||[];if(a.length){console.log('Eventos WhatsApp novos:',a);$('sync').textContent=`WhatsApp: ${a.length} novo(s)`}}catch(e){console.warn(e)}}
 
 function summary(){
@@ -142,7 +373,7 @@ function summary(){
  s+=`*Resumo:* ${open.length} assunto(s) ativo(s) • ${a.filter(x=>x.status==='direcionada').length} direcionado(s) • ${a.filter(x=>x.status==='aguardando').length} aguardando • ${done.length} concluído(s).`;
  $('sum').textContent=s;$('sum').classList.remove('hidden');$('sumBtns').classList.remove('hidden')
 }
-async function copySum(){await navigator.clipboard.writeText($('sum').textContent);note('Resumo copiado')}
+async function copySum(){await navigator.clipboard.writeText($('sum').textContent);note('Resumo copiado','success')}
 async function shareSum(){if(navigator.share)await navigator.share({text:$('sum').textContent});else copySum()}
 load();
 </script>
