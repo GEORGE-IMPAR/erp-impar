@@ -93,28 +93,26 @@ input,select,textarea{font-size:14px!important}
  <div class="kpi"><b id="k4">0</b><span>Assuntos ativos</span></div>
 </div>
 
-<section class="card hero">
-  <h2>Importar conversa do WhatsApp</h2>
-  <p>Envie um único ZIP exportado do WhatsApp. A Central lê o texto e também procura áudios, vídeos e imagens para identificar ações adicionais.</p>
-  <div class="drop" onclick="pickZip()">
-    <strong>📦 Selecionar exportação do WhatsApp</strong>
-    <span>ZIP gerado pelo WhatsApp</span>
-  </div>
-  <div id="lastImport" class="meta" style="margin-top:10px"></div>
+<details class="card" style="margin-top:9px">
+  <summary style="cursor:pointer;font-weight:900;color:var(--clean-green-dark)">Ferramentas • Importar histórico antigo</summary>
+  <div style="margin-top:12px">
+    <p class="sub">Use somente para conversas anteriores à integração automática com o WhatsApp.</p>
+    <div class="drop" onclick="pickZip()">
+      <strong>📦 Selecionar exportação antiga do WhatsApp</strong>
+      <span>ZIP gerado pelo WhatsApp</span>
+    </div>
+    <div id="lastImport" class="meta" style="margin-top:10px"></div>
     <div id="mediaProgress" class="media-progress">
       <div id="mediaProgressText" class="txt">Preparando mídias...</div>
       <div class="bar"><div id="mediaProgressFill" class="fill"></div></div>
       <div id="mediaResult" class="media-result"></div>
     </div>
-</section>
+  </div>
+</details>
 
 <section class="card">
-<div class="toolbar">
-  <h2>Caixa de entrada consolidada</h2>
-  <button class="btn sec" onclick="consolidate()">Consolidar agora</button>
-  <button class="btn sec" onclick="load()">Atualizar</button>
-</div>
-<div class="note">A Central agrupa duplicidades, preserva o histórico original e tenta sugerir o coordenador cadastrado para cada obra.</div>
+<div class="toolbar"><h2>Caixa de entrada</h2></div>
+<div class="note">As mensagens do WhatsApp entram, são interpretadas e consolidadas automaticamente. Você só precisa agir quando houver uma decisão.</div>
 <div id="list" class="list" style="margin-top:10px"></div>
 </section>
 
@@ -146,7 +144,7 @@ function toast(type='info',title='Informação',message='',ms=4200){
 function note(t,type='info'){toast(type,type==='success'?'Concluído':type==='error'?'Erro':type==='warning'?'Atenção':'Informação',t)}
 async function call(action,opt={}){const u=API+(API.includes('?')?'&':'?')+'action='+encodeURIComponent(action);const r=await fetch(u,opt);const j=await r.json().catch(()=>({}));if(!r.ok||j.ok===false)throw Error(j.error||'Erro');return j}
 function esc(v=''){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-async function load(){try{state=await call('bootstrap');$('sync').textContent='sincronizado';render();renderImport();await loadAgenda();await pollWhatsApp()}catch(e){$('sync').textContent='erro';$('list').innerHTML='<div class="item">'+esc(e.message)+'</div>'}}
+async function load(){try{state=await call('bootstrap');$('sync').textContent='sincronizado';render();renderImport();await loadAgenda()}catch(e){$('sync').textContent='erro';$('list').innerHTML='<div class="item">'+esc(e.message)+'</div>'}}
 function visibleDemands(){return (state.demandas||[]).filter(x=>x.visivel_gestao!==false && x.status!=='interna' && x.status!=='mesclada')}
 function render(){
  const a=visibleDemands().sort((a,b)=>(b.atualizado_em||b.criado_em||'').localeCompare(a.atualizado_em||a.criado_em||''));
@@ -364,7 +362,62 @@ async function direction(id,cobranca=false){
 async function loadAgenda(){try{const r=await call('agenda_list');const a=(r.items||[]).sort((x,y)=>(x.executar_em||'').localeCompare(y.executar_em||''));$('agendaList').innerHTML=a.length?a.map(x=>`<div class="item"><div class="title">${esc(x.descricao||'Ação')}</div><div class="meta">⏰ ${esc(x.executar_em||'')} • ${esc(x.status||'agendada')}</div></div>`).join(''):'<div class="item">Nenhuma ação agendada.</div>'}catch(e){}}
 function openAgenda(){ $('agDesc').value='';const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);$('agWhen').value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);agendaDlg.showModal()}
 async function saveAgenda(){const descricao=$('agDesc').value.trim(),executar_em=$('agWhen').value;if(!descricao||!executar_em)return note('Informe descrição e horário');await call('agenda_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao,executar_em,status:'agendada'})});agendaDlg.close();note('Ação agendada','success');await loadAgenda()}
-async function pollWhatsApp(){try{const r=await call('whatsapp_queue');const a=r.items||[];if(a.length){console.log('Eventos WhatsApp novos:',a);$('sync').textContent=`WhatsApp: ${a.length} novo(s)`}}catch(e){console.warn(e)}}
+let whatsappBusy=false;
+function extractWhatsAppMessages(event){
+ const out=[]; const payload=event?.payload||{};
+ for(const entry of (payload.entry||[])) for(const change of (entry.changes||[])){
+  if(change.field!=='messages')continue;
+  const v=change.value||{}, contacts=v.contacts||[];
+  const names={}; contacts.forEach(c=>{if(c?.wa_id)names[c.wa_id]=c?.profile?.name||''});
+  for(const m of (v.messages||[])){
+   let text='';
+   if(m.type==='text')text=m.text?.body||'';
+   else if(m.type==='button')text=m.button?.text||'';
+   else if(m.type==='interactive')text=m.interactive?.button_reply?.title||m.interactive?.list_reply?.title||'';
+   else text=`[${m.type||'mídia'} recebida]`;
+   out.push({event_id:event.id||'',wamid:m.id||'',from:m.from||'',profile_name:names[m.from]||'',type:m.type||'',text,raw_message:m});
+  }
+ }
+ return out;
+}
+async function interpretIncomingWhatsApp(m){
+ const system=`Você é o interpretador operacional da Central de Obras ÍMPAR.
+A regra de negócio fica no front-end. Analise uma mensagem recebida pelo WhatsApp e identifique se existe uma ação real de gestão de obras.
+Não invente obra, prazo ou responsável. Quando não souber, use string vazia. Não crie tarefas administrativas internas.
+Se não existir ação operacional, eh_demanda=false.
+Retorne JSON estrito com: eh_demanda(boolean), obra(string), assunto(string), acao(string), responsavel(string), prazo(string), prioridade("normal"|"alta"|"urgente"), observacao_ia(string), mensagem_responsavel(string), chave_contexto(string).`;
+ const payload={model:'gpt-5-mini',input:[{role:'system',content:system},{role:'user',content:`REMETENTE: ${m.profile_name||m.from}\nTIPO: ${m.type}\nMENSAGEM:\n${m.text}`}],text:{format:{type:'json_schema',name:'demanda_whatsapp',strict:true,schema:{type:'object',additionalProperties:false,properties:{eh_demanda:{type:'boolean'},obra:{type:'string'},assunto:{type:'string'},acao:{type:'string'},responsavel:{type:'string'},prazo:{type:'string'},prioridade:{type:'string',enum:['normal','alta','urgente']},observacao_ia:{type:'string'},mensagem_responsavel:{type:'string'},chave_contexto:{type:'string'}},required:['eh_demanda','obra','assunto','acao','responsavel','prazo','prioridade','observacao_ia','mensagem_responsavel','chave_contexto']}}}};
+ const r=await call('ai_response',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ try{return JSON.parse(r.text||'{}')}catch{throw Error('IA retornou interpretação inválida')}
+}
+async function processWhatsAppQueue(showToast=false){
+ if(whatsappBusy)return; whatsappBusy=true;
+ try{
+  const r=await call('whatsapp_queue'); const events=r.items||[];
+  if(!events.length){$('sync').textContent='WhatsApp • conectado';return}
+  $('sync').textContent=`WhatsApp • ${events.length} recebendo`;
+  const ack=[]; let created=0;
+  for(const ev of events){
+   try{
+    const msgs=extractWhatsAppMessages(ev);
+    for(const m of msgs){
+     if(!m.text)continue;
+     const d=await interpretIncomingWhatsApp(m);
+     if(d?.eh_demanda){
+      await call('demand_create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...d,origem:'whatsapp_api',texto_bruto:m.text,whatsapp_event_id:m.event_id,whatsapp_message_id:m.wamid,remetente_nome:m.profile_name,remetente_whatsapp:m.from})});
+      created++;
+     }
+    }
+    ack.push(ev.id);
+   }catch(err){console.warn('Evento WhatsApp mantido na fila para nova tentativa',ev?.id,err)}
+  }
+  if(ack.length)await call('whatsapp_ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ack})});
+  if(created){await call('consolidar',{method:'POST'});await load();if(showToast)toast('success','WhatsApp recebido',`${created} nova(s) demanda(s) entrou(aram) automaticamente.`)}
+  $('sync').textContent='WhatsApp • conectado';
+ }catch(e){console.warn(e);$('sync').textContent='WhatsApp • reconectando'}finally{whatsappBusy=false}
+}
+async function pollWhatsApp(){return processWhatsAppQueue(false)}
+function startWhatsAppAuto(){processWhatsAppQueue(false);setInterval(()=>processWhatsAppQueue(true),10000)}
 
 function summary(){
  const a=visibleDemands();let s=`📋 *STATUS — COORDENAÇÃO DE OBRAS*\n\n`;const open=a.filter(x=>x.status!=='concluida'),done=a.filter(x=>x.status==='concluida');
@@ -375,6 +428,6 @@ function summary(){
 }
 async function copySum(){await navigator.clipboard.writeText($('sum').textContent);note('Resumo copiado','success')}
 async function shareSum(){if(navigator.share)await navigator.share({text:$('sum').textContent});else copySum()}
-load();
+load().then(startWhatsAppAuto);
 </script>
 </body></html>
