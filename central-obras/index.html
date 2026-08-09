@@ -22,7 +22,7 @@ main{max-width:1000px;margin:auto;padding:16px 16px 80px}.head{display:flex;alig
 </head>
 <body>
 <main>
-<div class="head"><div class="orb">🧭</div><div><h1>Central George</h1><div class="sub">Assistente operacional das obras • Consolidação inteligente</div></div><div id="sync" class="sync">conectando...</div></div>
+<div class="head"><div class="orb">🧭</div><div><h1>Central George</h1><div class="sub">Assistente operacional das obras • Ação e acompanhamento</div></div><div id="sync" class="sync">conectando...</div></div>
 
 <div class="kpis">
  <div class="kpi"><b id="k0">0</b><span>Novas</span></div>
@@ -72,7 +72,16 @@ async function load(){try{state=await call('bootstrap');$('sync').textContent='s
 function visibleDemands(){return (state.demandas||[]).filter(x=>x.visivel_gestao!==false && x.status!=='interna' && x.status!=='mesclada')}
 function render(){
  const a=visibleDemands().sort((a,b)=>(b.atualizado_em||b.criado_em||'').localeCompare(a.atualizado_em||a.criado_em||''));
- $('list').innerHTML=a.length?a.map(x=>`<div class="item"><div class="top"><div class="title">${esc(x.obra||'Sem obra')} • ${esc(x.assunto||'Demanda')}</div><span class="pill">${esc((x.status||'nova').toUpperCase())}</span></div><div class="meta">#${esc(x.id)} • ${esc(x.origem||'')}${x.ids_mesclados?.length?` • ${x.ids_mesclados.length} registro(s) consolidado(s)`:''}</div><div class="desc">${esc(x.acao||x.texto_bruto||'')}</div><div class="tags"><span class="tag">👤 ${esc(x.responsavel||x.sugestao_responsavel||'sem responsável')}</span>${x.prazo?`<span class="tag">📅 ${esc(x.prazo)}</span>`:''}<span class="tag">⚡ ${esc(x.prioridade||'normal')}</span></div>${x.observacao_consolidacao?`<div class="note">${esc(x.observacao_consolidacao)}</div>`:''}</div>`).join(''):'<div class="item">Nenhum assunto ativo.</div>';
+ $('list').innerHTML=a.length?a.map(x=>{
+ const resp=x.responsavel||x.sugestao_responsavel||'';
+ const phone=x.responsavel_whatsapp||x.sugestao_whatsapp||'';
+ let actions='';
+ if(x.status==='nova' && resp) actions+=`<button class="btn pri" onclick="direction('${esc(x.id)}')">Direcionar para ${esc(resp)}</button>`;
+ if(x.status==='direcionada') actions+=`<button class="btn sec" onclick="setStatus('${esc(x.id)}','aguardando')">Aguardando retorno</button>`;
+ if(x.status==='aguardando') actions+=`<button class="btn sec" onclick="direction('${esc(x.id)}',true)">Cobrar retorno</button>`;
+ if(x.status!=='concluida') actions+=`<button class="btn pri" onclick="setStatus('${esc(x.id)}','concluida')">Concluir</button>`;
+ return `<div class="item"><div class="top"><div class="title">${esc(x.obra||'Sem obra')} • ${esc(x.assunto||'Demanda')}</div><span class="pill">${esc((x.status||'nova').toUpperCase())}</span></div><div class="meta">#${esc(x.id)} • ${esc(x.origem||'')}${x.ids_mesclados?.length?` • ${x.ids_mesclados.length} registro(s) consolidado(s)`:''}</div><div class="desc">${esc(x.acao||x.texto_bruto||'')}</div><div class="tags"><span class="tag">👤 ${esc(resp||'sem responsável')}</span>${x.prazo?`<span class="tag">📅 ${esc(x.prazo)}</span>`:''}<span class="tag">⚡ ${esc(x.prioridade||'normal')}</span>${phone?`<span class="tag">📱 WhatsApp cadastrado</span>`:''}</div>${x.observacao_consolidacao?`<div class="note">${esc(x.observacao_consolidacao)}</div>`:''}<div class="mini">${actions}</div></div>`;
+}).join(''):'<div class="item">Nenhum assunto ativo.</div>';
  ['nova','direcionada','aguardando','concluida'].forEach((s,i)=>$('k'+i).textContent=a.filter(x=>x.status===s).length);
  $('k4').textContent=a.filter(x=>x.status!=='concluida').length;
 }
@@ -80,6 +89,33 @@ function renderImport(){const i=state.importacao;if(!i){$('lastImport').textCont
 function pickZip(){$('zip').value='';$('zip').click()}
 $('zip').onchange=async e=>{const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);note('Importando WhatsApp...');try{const r=await call('import_whatsapp_zip',{method:'POST',body:fd});note(`Importação concluída: ${r.novas_mensagens||0} novas mensagens`);await consolidate(false)}catch(err){alert('Erro na importação:\\n'+err.message)}}
 async function consolidate(show=true){try{const r=await call('consolidar',{method:'POST'});if(show)note(`Consolidação: ${r.mescladas||0} duplicidade(s) unificada(s)`);await load()}catch(e){alert('Erro ao consolidar:\\n'+e.message)}}
+
+async function setStatus(id,status){
+ try{
+   await call('update_demand',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})});
+   note(status==='concluida'?'Demanda concluída':'Status atualizado');
+   await load();
+ }catch(e){alert('Erro:\\n'+e.message)}
+}
+async function direction(id,cobranca=false){
+ const x=(state.demandas||[]).find(d=>d.id===id); if(!x)return;
+ const resp=x.responsavel||x.sugestao_responsavel||'';
+ const phone=(x.responsavel_whatsapp||x.sugestao_whatsapp||'').replace(/\D/g,'');
+ if(!resp){alert('Esta demanda ainda não possui responsável definido.');return}
+ if(!phone){alert('O responsável '+resp+' não possui WhatsApp cadastrado em contatos.json.');return}
+ let msg='';
+ if(cobranca){
+   msg=`Olá, ${resp}. Passando para acompanhar a demanda referente a ${x.obra||'obra'}: ${x.acao||x.assunto||''}. Consegue me atualizar sobre o andamento, por favor?`;
+ }else{
+   msg=x.mensagem_responsavel||`Olá, ${resp}. Preciso do seu apoio na seguinte demanda${x.obra?' da obra '+x.obra:''}: ${x.acao||x.assunto||''}${x.prazo?' Prazo: '+x.prazo+'.':''} Pode verificar e me confirmar, por favor?`;
+ }
+ try{
+   await call('direction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,responsavel:resp,whatsapp:phone,mensagem:msg,cobranca})});
+   await load();
+   window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
+ }catch(e){alert('Erro ao direcionar:\\n'+e.message)}
+}
+
 function summary(){
  const a=visibleDemands();let s=`📋 *STATUS — COORDENAÇÃO DE OBRAS*\n\n`;const open=a.filter(x=>x.status!=='concluida'),done=a.filter(x=>x.status==='concluida');
  if(done.length){s+='✅ *TRATADAS / CONCLUÍDAS*\n';done.forEach(x=>s+=`• ${x.obra||'Sem obra'} — ${x.assunto||'Demanda'}${(x.responsavel||x.sugestao_responsavel)?' | '+(x.responsavel||x.sugestao_responsavel):''}\n`);s+='\n'}
