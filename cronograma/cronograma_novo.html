@@ -1733,6 +1733,112 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 }
 </style>
 
+
+<style id="clientPrintCleanupTodayV1">
+/* =========================================================
+   VISÃO CLIENTE — LIMPEZA DA PRANCHA + LINHA HOJE
+   Remove resíduos da imagem-base entre Gantt e rodapé.
+   ========================================================= */
+
+/* A prancha usa uma imagem de referência como fundo.
+   Esta máscara cobre somente a zona morta entre o miolo executivo
+   e o rodapé, evitando que linhas/IDs antigos da imagem apareçam. */
+.ref-exec-lower-clean-mask{
+  position:absolute;
+  left:15px;
+  top:769px;
+  width:1505px;
+  height:104px;
+  z-index:18;
+  background:#fff;
+  border-left:1px solid #d8e0e6;
+  border-right:1px solid #d8e0e6;
+  pointer-events:none;
+}
+
+/* Linha temporal de HOJE */
+.ref-exec-today-line{
+  position:absolute;
+  top:0;
+  bottom:0;
+  width:2px;
+  z-index:30;
+  background:#ef4444;
+  box-shadow:0 0 0 1px rgba(255,255,255,.75);
+  pointer-events:none;
+}
+.ref-exec-today-line::before{
+  content:"";
+  position:absolute;
+  left:-4px;
+  top:-1px;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#ef4444;
+  box-shadow:0 0 0 2px #fff;
+}
+.ref-exec-today-label{
+  position:absolute;
+  top:5px;
+  z-index:31;
+  transform:translateX(-50%);
+  min-width:74px;
+  padding:4px 7px;
+  border-radius:7px;
+  background:#ef4444;
+  color:#fff;
+  text-align:center;
+  font-size:9px;
+  line-height:1.15;
+  font-weight:950;
+  letter-spacing:.025em;
+  box-shadow:0 4px 10px rgba(80,20,20,.18);
+  pointer-events:none;
+}
+.ref-exec-today-label::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:100%;
+  transform:translateX(-50%);
+  border:4px solid transparent;
+  border-top-color:#ef4444;
+}
+
+/* Garante que o rodapé dinâmico fique acima da máscara */
+.ref-phase-mask,.ref-critical-mask,.ref-final-mask,
+.ref-phase-value,.ref-critical-value,.ref-final-value,
+.ref-bottom-mask,.ref-bottom-copy,.ref-page-no{
+  z-index:24!important;
+}
+
+@media print{
+  .ref-exec-lower-clean-mask{
+    display:block!important;
+    background:#fff!important;
+  }
+  .ref-exec-today-line{
+    width:1.5px!important;
+  }
+  .ref-exec-today-label{
+    font-size:5.4pt!important;
+    padding:1mm 1.4mm!important;
+    min-width:14mm!important;
+  }
+}
+</style>
+
+
+<style id="clientPrintIsolationV1">
+@media print{
+  body > *:not(#clientView){display:none!important}
+  #clientView{display:block!important;visibility:visible!important}
+  #clientView *{visibility:visible}
+  #clientView .ref-client-toolbar{display:none!important}
+}
+</style>
+
 </head>
 <body>
 
@@ -3503,6 +3609,14 @@ function renderClientSchedule(){
     return clamp(((d.getTime()-planStart.getTime())/timeSpan)*ganttW,0,ganttW);
   };
 
+  const todayDate=today();
+  const todayInside=todayDate>=planStart && todayDate<=planFinish;
+  const todayX=todayInside?xForDate(todayDate):null;
+  const todayHtml=todayInside
+    ? `<span class="ref-exec-today-line" style="left:${todayX}px"></span>
+       <span class="ref-exec-today-label" style="left:${todayX}px">HOJE<br>${fmt(todayDate)}</span>`
+    : "";
+
   const monthStarts=[];
   let cursor=new Date(planStart.getFullYear(),planStart.getMonth(),1);
   const lastMonth=new Date(planFinish.getFullYear(),planFinish.getMonth(),1);
@@ -3746,9 +3860,12 @@ function renderClientSchedule(){
           <div class="ref-exec-left">${leftRows}</div>
           <div class="ref-exec-gantt">
             ${grid}
+            ${todayHtml}
             ${bars}
           </div>
         </div>
+
+        <div class="ref-exec-lower-clean-mask"></div>
 
         <div class="ref-footer-value ref-phase-mask"></div>
         <div class="ref-footer-value ref-critical-mask"></div>
