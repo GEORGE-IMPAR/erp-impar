@@ -1770,6 +1770,37 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 <style id="clientCriticalCalloutV3">
 .client-critical-callout{border:2px solid #df0b5a!important;background:#fff0f5!important;color:#9f123f!important}
 </style>
+
+<style id="clientCleanDynamicV4">
+.ref-exec-bottom-clean{
+  position:absolute;
+  left:15px;
+  top:830px;
+  width:1505px;
+  height:45px;
+  background:#fff;
+  z-index:8;
+  pointer-events:none;
+}
+/* Valores/rodapé continuam acima da limpeza. */
+.ref-footer-value,.ref-bottom-mask,.ref-bottom-copy,.ref-page-no{z-index:25!important}
+
+/* Grupo dinâmico: a altura é fornecida inline de acordo com a quantidade de grupos. */
+.ref-exec-group,.ref-exec-row-bg{min-height:0!important}
+
+/* Campo de contabilização */
+.progress-count-box{
+  display:flex;align-items:center;gap:8px;min-height:38px;padding:7px 10px;
+  border:1px solid #d8e4ea;border-radius:9px;background:#f8fbfc
+}
+.progress-count-box input{width:17px;height:17px}
+.progress-count-box b{font-size:9px;color:#15394f}
+.progress-count-box small{display:block;color:#6b8392;font-size:8px;margin-top:2px}
+
+/* Peso zero proposital */
+.weight-pill.weight-zero{background:#f1f3f5;color:#7b8992;border-color:#e0e5e8}
+</style>
+
 </head>
 <body>
 
@@ -1883,7 +1914,14 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
         </select>
       </div>
       <div class="field"><label>Duração planejada (dias úteis)</label><input id="mDur" type="number" min="0"></div>
-      <div class="field"><label>Peso da atividade (%)</label><input id="mWeight" type="number" min="0" max="100" step="0.01"><div class="muted" style="margin-top:5px">A soma das atividades produtivas é normalizada para 100%.</div></div>
+      <div class="field"><label>Peso da atividade (%)</label><input id="mWeight" type="number" min="0" max="100" step="0.01"><div class="muted" style="margin-top:5px">A soma das atividades que contabilizam avanço é normalizada para 100%.</div></div>
+      <div class="field">
+        <label>Contabiliza no avanço geral?</label>
+        <label class="progress-count-box">
+          <input id="mProgressCounts" type="checkbox" checked>
+          <span><b>Sim, compõe PLAN x REAL</b><small>Desmarque para prazos de fabricação/entrega. A atividade continua com datas e predecessoras, mas terá peso 0%.</small></span>
+        </label>
+      </div>
       <div class="field span2"><label>Predecessoras (IDs separados por vírgula)</label><input id="mPred" placeholder="Ex.: 18, 23"></div>
       <div class="field"><label>É marco?</label><select id="mMilestone"><option value="false">Não</option><option value="true">Sim</option></select></div>
       <div class="field"><label>Dependência externa</label>
@@ -1934,7 +1972,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
     <div class="modal-head">
       <div>
         <div class="modal-title">Classificar Visão Cliente</div>
-        <div class="muted">Selecione atividades por checkbox ou informe IDs/intervalos. Ex.: 1-20, 24, 27-30.</div>
+        <div class="muted">Selecione por checkbox ou IDs/intervalos. Grupo, timeline e destaque são independentes: deixe “Não atualizar” no que não quiser alterar.</div>
       </div>
       <button class="close" id="clientClassifyClose">×</button>
     </div>
@@ -1947,6 +1985,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
       <div class="field">
         <label>Grupo cliente</label>
         <select id="clientGroupSelect">
+          <option value="keep" selected>— Não atualizar grupo —</option>
           <option value="planejamento">Planejamento / Mobilização</option>
           <option value="suprimentos">Suprimentos</option>
           <option value="civil">Preparação Civil</option>
@@ -1957,13 +1996,15 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
       <div class="field">
         <label>Exibir na timeline?</label>
         <select id="clientVisibleSelect">
-          <option value="true">Sim</option>
-          <option value="false">Não</option>
+          <option value="keep" selected>— Não atualizar timeline —</option>
+          <option value="true">Sim, exibir</option>
+          <option value="false">Não exibir</option>
         </select>
       </div>
       <div class="field">
         <label>Destaque</label>
         <select id="clientHighlightSelect">
+          <option value="keep" selected>— Não atualizar destaque —</option>
           <option value="normal">Normal</option>
           <option value="milestone">Marco</option>
           <option value="critical">Crítico</option>
@@ -2654,10 +2695,12 @@ function ensureClientFields(){
     if(typeof a.clientVisible!=="boolean")a.clientVisible=defaultClientVisible(a);
     if(!a.clientHighlight)a.clientHighlight=a.milestone?"milestone":"normal";
     if(a.clientLabel===undefined)a.clientLabel="";
+    if(a.progressCounts===undefined)a.progressCounts=!a.milestone;
+    if(a.milestone)a.progressCounts=false;
   });
 }
 function ensureActivityWeights(){
-  const productive=activities.filter(a=>!a.milestone);
+  const productive=activities.filter(a=>!a.milestone && a.progressCounts!==false);
   if(!productive.length)return;
   const currentSum=productive.reduce((s,a)=>s+(Number(a.weight)||0),0);
 
@@ -2675,10 +2718,10 @@ function ensureActivityWeights(){
       sum+=a.weight;
     }
   });
-  activities.filter(a=>a.milestone).forEach(a=>a.weight=0);
+  activities.filter(a=>a.milestone || a.progressCounts===false).forEach(a=>a.weight=0);
 }
 function normalizeWeightsKeeping(fixedId=null,fixedWeight=null){
-  const productive=activities.filter(a=>!a.milestone);
+  const productive=activities.filter(a=>!a.milestone && a.progressCounts!==false);
   if(!productive.length)return;
   if(fixedId===null){ensureActivityWeights();return}
   const fixed=productive.find(a=>a.id===fixedId);
@@ -2703,7 +2746,7 @@ function normalizeWeightsKeeping(fixedId=null,fixedWeight=null){
 function weightedPlannedPercentAt(ref){
   ensureActivityWeights();
   let earned=0;
-  planSource().filter(a=>!a.milestone).forEach(p=>{
+  planSource().filter(a=>!a.milestone && (activities.find(x=>x.id===a.id)?.progressCounts!==false)).forEach(p=>{
     const current=activities.find(x=>x.id===p.id)||p;
     const weight=Math.max(0,Number(current.weight)||0);
     const s=parseISO(p.start),e=parseISO(p.end);
@@ -2718,13 +2761,13 @@ function weightedPlannedPercentAt(ref){
 function weightedRealPercent(){
   ensureActivityWeights();
   return Math.max(0,Math.min(100,
-    activities.filter(a=>!a.milestone)
+    activities.filter(a=>!a.milestone && a.progressCounts!==false)
       .reduce((s,a)=>s+(Math.max(0,Number(a.weight)||0)*(Math.max(0,Math.min(100,Number(a.pct)||0))/100)),0)
   ));
 }
 function applyWeightsToTargetDays(target){
   ensureActivityWeights();
-  const productive=activities.filter(a=>!a.milestone);
+  const productive=activities.filter(a=>!a.milestone && a.progressCounts!==false);
   productive.forEach(a=>{
     const resources=typeof resourceCount==="function"?Math.max(1,resourceCount(a)):1;
     const effort=Math.max(1,Math.round(target*(Number(a.weight)||0)/100));
@@ -2732,6 +2775,8 @@ function applyWeightsToTargetDays(target){
     a.dur=Math.max(1,Math.ceil(a.baseDur/resources));
     a.manualStart="";
   });
+  /* Itens "não contabiliza" preservam duração/data. Servem como lead time
+     e continuam restringindo sucessoras pelas predecessoras. */
   activities.filter(a=>a.milestone).forEach(a=>{a.dur=0;a.baseDur=0});
 }
 
@@ -2892,7 +2937,7 @@ function render(){
       <td class="meta respcol">${esc(a.resp)}</td>
       <td class="meta predcol">${(a.pred||[]).length?esc(a.pred.join(", ")):"—"}</td>
       <td class="meta durcol">${p.dur===0?"MARCO":p.dur+"d"}</td>
-      <td class="meta weightcol"><span class="weight-pill">${a.milestone?"—":Number(a.weight||0).toFixed(1)+"%"}</span></td>
+      <td class="meta weightcol"><span class="weight-pill ${(a.progressCounts===false||a.milestone)?"weight-zero":""}">${a.milestone?"—":(a.progressCounts===false?"0%*":Number(a.weight||0).toFixed(1)+"%")}</span></td>
       <td class="meta pctcol">${Math.round(Number(a.pct||0))}%</td>`;
 
     weeks.forEach((w,idx)=>{
@@ -3060,7 +3105,9 @@ function openEdit(id){
   modalResources=Array.isArray(a.resources)?[...a.resources]:[];renderResourceChips();
   $("mCategory").value=a.cat;
   $("mDur").value=a.dur;
-  $("mWeight").value=a.milestone?0:Number(a.weight||0).toFixed(2);
+  $("mWeight").value=(a.milestone||a.progressCounts===false)?0:Number(a.weight||0).toFixed(2);
+  $("mProgressCounts").checked=a.progressCounts!==false && !a.milestone;
+  $("mWeight").disabled=a.progressCounts===false || a.milestone;
   $("mPred").value=(a.pred||[]).join(", ");
   $("mMilestone").value=String(!!a.milestone);
   $("mDependency").value=a.dep||"Nenhuma";
@@ -3077,7 +3124,7 @@ function openEdit(id){
   $("rCritical").textContent=p.critical?"SIM":"NÃO";
 
   const locked=state.status==="baseline";
-  ["mName","mResp","mCategory","mDur","mWeight","mPred","mMilestone","mDependency"].forEach(id2=>$(id2).disabled=locked);
+  ["mName","mResp","mCategory","mDur","mWeight","mProgressCounts","mPred","mMilestone","mDependency"].forEach(id2=>$(id2).disabled=locked);
   $("deleteBtn").style.display=locked?"none":"inline-flex";
   $("activityModal").classList.add("open");
 }
@@ -3101,6 +3148,8 @@ function openNew(){
   $("mCategory").value="climatizacao";
   $("mDur").value=1;
   $("mWeight").value=0;
+  $("mProgressCounts").checked=true;
+  $("mWeight").disabled=false;
   $("mPred").value="";
   $("mMilestone").value="false";
   $("mDependency").value="Nenhuma";
@@ -3114,7 +3163,7 @@ function openNew(){
   $("rPlanEnd").textContent="Após salvar";
   $("rPlanDur").textContent="—";
   $("rCritical").textContent="Automático";
-  ["mName","mResp","mCategory","mDur","mWeight","mPred","mMilestone","mDependency"].forEach(id=>$(id).disabled=false);
+  ["mName","mResp","mCategory","mDur","mWeight","mProgressCounts","mPred","mMilestone","mDependency"].forEach(id=>$(id).disabled=false);
   $("deleteBtn").style.display="none";
   $("activityModal").classList.add("open");
 }
@@ -3129,7 +3178,8 @@ function saveActivity(){
     resources:[...modalResources],
     cat:$("mCategory").value,
     dur:Math.max(0,Number($("mDur").value)||0),
-    weight:Math.max(0,Math.min(100,Number($("mWeight").value)||0)),
+    progressCounts:$("mProgressCounts").checked,
+    weight:$("mProgressCounts").checked?Math.max(0,Math.min(100,Number($("mWeight").value)||0)):0,
     pred,
     milestone:$("mMilestone").value==="true",
     dep:$("mDependency").value,
@@ -3141,7 +3191,7 @@ function saveActivity(){
   };
 
   rememberResponsible(data.resp);data.resources.forEach(rememberResponsible);
-  if(data.milestone)data.dur=0;else data.baseDur=Math.max(1,Number(data.dur||1));
+  if(data.milestone){data.dur=0;data.progressCounts=false;data.weight=0}else data.baseDur=Math.max(1,Number(data.dur||1));
 
   if(state.status==="baseline"&&editingId){
     const a=activities.find(x=>x.id===editingId);
@@ -3715,16 +3765,19 @@ function applyClientClassification(){
     return;
   }
   const group=$("clientGroupSelect").value;
-  const visible=$("clientVisibleSelect").value==="true";
+  const visibleMode=$("clientVisibleSelect").value;
   const highlight=$("clientHighlightSelect").value;
   const label=$("clientLabelInput").value.trim();
   activities.forEach(a=>{
     if(!clientClassSelected.has(a.id))return;
-    a.clientGroup=group;
-    a.clientVisible=visible;
-    a.clientHighlight=highlight;
+
+    /* As dimensões são independentes. "keep" significa não tocar no valor atual. */
+    if(group!=="keep")a.clientGroup=group;
+    if(visibleMode!=="keep")a.clientVisible=visibleMode==="true";
+    if(highlight!=="keep")a.clientHighlight=highlight;
+
+    /* Nome executivo só altera quando digitado e houver uma única atividade. */
     if(label && clientClassSelected.size===1)a.clientLabel=label;
-    else if(label && clientClassSelected.size>1)a.clientLabel="";
   });
   $("clientIdsInput").value="";
   $("clientLabelInput").value="";
@@ -3752,7 +3805,8 @@ function renderClientSchedule(){
 
   const activeSource=new Map(source.map(a=>[a.id,a]));
   const ganttW=1125;
-  const rowH=107;
+  const bodyH=584;
+  let rowH=116.8;
 
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const timeSpan=Math.max(1,planFinish.getTime()-planStart.getTime());
@@ -3824,8 +3878,12 @@ function renderClientSchedule(){
     };
   }).filter(Boolean);
 
+  /* Distribuição vertical proporcional à quantidade REAL de grupos.
+     Ex.: 4 grupos = 25% da área; 5 grupos = 20%. */
+  rowH=bodyH/Math.max(1,groups.length);
+
   const leftRows=groups.map(g=>`
-    <div class="ref-exec-group">
+    <div class="ref-exec-group" style="height:${rowH}px">
       <span class="ref-exec-dot" style="background:${g.color}"></span>
       <div class="ref-exec-group-copy">
         <div class="ref-exec-group-title">${g.name}</div>
@@ -3841,7 +3899,7 @@ function renderClientSchedule(){
     grid+=`<span class="ref-exec-v" style="left:${x+(monthX2-x)/2}px"></span>`;
   });
   groups.forEach((g,i)=>{
-    grid+=`<span class="ref-exec-row-bg" style="top:${i*rowH}px"></span>`;
+    grid+=`<span class="ref-exec-row-bg" style="top:${i*rowH}px;height:${rowH}px"></span>`;
   });
 
   let bars="";
@@ -3852,10 +3910,10 @@ function renderClientSchedule(){
 
     /* Faixa superior da linha = marcos.
        Faixa inferior = barra + data final. */
-    const labelTop=rowTop+4;
+    const labelTop=rowTop+Math.max(4,(rowH-116.8)*0.12);
     const labelW=154;
     const labelH=39;
-    const barY=rowTop+72;
+    const barY=rowTop+rowH-38;
     const markerY=barY+5;
 
     /* Reserva 120 px no lado direito exclusivamente para a data final. */
@@ -3984,6 +4042,8 @@ function renderClientSchedule(){
             ${bars}
           </div>
         </div>
+
+        <div class="ref-exec-bottom-clean"></div>
 
         <div class="ref-footer-value ref-phase-mask"></div>
         <div class="ref-footer-value ref-critical-mask"></div>
@@ -4125,6 +4185,11 @@ $("resetBtn").onclick=resetTemplate;
 
 $("closeModal").onclick=closeModal;
 $("cancelBtn").onclick=closeModal;
+$("mProgressCounts").onchange=()=>{
+  const enabled=$("mProgressCounts").checked && $("mMilestone").value!=="true";
+  $("mWeight").disabled=!enabled;
+  if(!enabled)$("mWeight").value=0;
+};
 $("saveActivityBtn").onclick=saveActivity;
 $("deleteBtn").onclick=deleteActivity;
 
