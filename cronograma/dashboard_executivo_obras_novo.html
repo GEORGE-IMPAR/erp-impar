@@ -533,6 +533,7 @@ body:not(.collapsed) .content{
   .dashboard{height:190mm!important;border:0!important;padding:0!important}
 }
 </style>
+<meta name="erpimpar-dashboard-backend" content="listar_obras_farol.php + carregar_cronograma.php + /www/storage/data">
 </head>
 <body>
 <section class="toolbar">
@@ -611,7 +612,10 @@ document.querySelectorAll(".count-up").forEach(el=>{
 <script id="erpImparDashboardProductionV8">
 (()=>{
 "use strict";
-const API="https://api.erpimpar.com.br/cronograma/cronograma_api.php";
+const API_BASE="https://api.erpimpar.com.br/cronograma/";
+const LIST_PRIMARY=API_BASE+"listar_obras_farol.php";
+const LIST_FALLBACK=API_BASE+"listar_obras.php";
+const LOAD_URL=id=>API_BASE+"carregar_cronograma.php?id="+encodeURIComponent(id);
 const $=id=>document.getElementById(id);
 const qs=(s,r=document)=>r.querySelector(s);
 const qsa=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -693,20 +697,39 @@ function statusLabel(s){return s==="ontrack"?"NO PRAZO":s==="attention"?"ATENÇ�
 function statusColor(s){return s==="ontrack"?"#18b978":s==="attention"?"#f0a200":"#e14b61"}
 function coordinatorName(v){const n=norm(v); if(n.includes("NICOLAS"))return "NICOLAS";if(n.includes("PABLO"))return "PABLO";if(n.includes("FABIO"))return "FÁBIO";return String(v||"SEM COORD.").trim().toUpperCase()}
 function normalizeActivity(a,i){
-  return {...a,id:a.id??i+1,name:String(a.name??a.nome??"Atividade"),dur:Number(a.dur??a.duracao??0),pct:Number(a.pct??a.real??0),
-    start:String(a.start??a.inicio??""),end:String(a.end??a.fim??""),cat:String(a.cat??"climatizacao"),
+  return {...a,id:String(a.id??i+1),name:String(a.name??a.nome??"Atividade"),dur:Number(a.dur??a.duracao??0),pct:Number(a.pct??a.real??0),
+    start:String(a.start??a.inicio??""),end:String(a.end??a.fim??""),cat:String(a.cat??a.categoria??"climatizacao"),
     pred:Array.isArray(a.pred)?a.pred:String(a.predecessora??"").split(/\s*[,;]\s*/).filter(Boolean).map(Number),
-    milestone:Boolean(a.milestone??(Number(a.dur??a.duracao??0)===0)),critical:Boolean(a.critical??false),
+    milestone:Boolean(a.milestone??a.marco??(Number(a.dur??a.duracao??0)===0)),critical:Boolean(a.critical??false),
     realStart:String(a.realStart??""),realEnd:String(a.realEnd??""),realStatus:String(a.realStatus??a.status??"")
   };
 }
 function normalizeSchedule(item,d){
-  d={...d}; d.activities=(d.activities||[]).map(normalizeActivity);
+  const resumo=(d&&typeof d.resumo==="object"&&d.resumo)
+    ||(d&&typeof d.consolidado==="object"&&d.consolidado)
+    ||(item&&typeof item.resumo==="object"&&item.resumo)
+    ||{};
+
+  d={...d};
+  const source=Array.isArray(d.activities)&&d.activities.length ? d.activities : (Array.isArray(d.atividades)?d.atividades:[]);
+  d.activities=source.map(normalizeActivity);
   if(Array.isArray(d.baseline))d.baseline=d.baseline.map(normalizeActivity);
-  d.file=item.arquivo; d.id=d.id||item.id; d.obra=String(d.obra||item.obra||"").trim();
-  d.coordinator=coordinatorName(d.coordinator||item.coordinator||"");
+
+  d.id=String(d.id??item.id??"");
+  d.file="obra_"+d.id+".json";
+  d.obra=String(d.nome??d.obra??item.nome??item.obra??("OBRA "+d.id)).trim();
+  d.coordinator=coordinatorName(d.coordenador??d.coordinator??item.coordenador??"");
   d.updatedAt=d.updatedAt||item.updatedAt||"";
-  d.plan=schedulePlan(d); d.real=scheduleReal(d); d.deviation=d.real-d.plan; d.health=statusOf(d.plan,d.real);
+  d.start=String(resumo.inicio??resumo.inicioPrevisto??d.inicio??d.start??"");
+  d.end=String(resumo.fim??resumo.fimPrevisto??d.fim??d.end??"");
+  d.workDays=Number(resumo.dias??resumo.duracaoProjeto??d.dias??d.workDays??0);
+
+  /* PLAN e REAL oficiais: primeiro o resumo salvo pelo cronograma,
+     depois o resumo calculado por listar_obras_farol.php. */
+  d.plan=clamp(Number(resumo.previsto??d.previsto??item?.resumo?.previsto??0));
+  d.real=clamp(Number(resumo.real??d.real??item?.resumo?.real??0));
+  d.deviation=d.real-d.plan;
+  d.health=statusOf(d.plan,d.real);
   return d;
 }
 async function fetchJson(url){
@@ -720,20 +743,38 @@ function showRuntimeError(msg){
 async function loadAll(){
   setLoading(true);
   try{
-    const listJson=await fetchJson(`${API}?action=list`);
-    const list=Array.isArray(listJson.data)?listJson.data:[];
+    let list=[];
+    try{
+      const j=await fetchJson(LIST_PRIMARY);
+      list=Array.isArray(j.data)?j.data:[];
+    }catch(primaryErr){
+      console.warn("[Dashboard] listar_obras_farol.php falhou; usando listar_obras.php",primaryErr);
+      const j=await fetchJson(LIST_FALLBACK);
+      list=Array.isArray(j.data)?j.data:(Array.isArray(j.obras)?j.obras:[]);
+    }
     STATE.list=list;
-    const res=await Promise.allSettled(list.map(async item=>{
-      const j=await fetchJson(`${API}?action=get&arquivo=${encodeURIComponent(item.arquivo)}`);
-      if(!j?.ok||!j?.data)throw new Error(j?.error||`Falha: ${item.obra}`);
+
+    const unique=[]; const seen=new Set();
+    list.forEach(item=>{
+      const id=String(item.id??item.codigo??"").trim();
+      if(!id||id==="0"||seen.has(id))return;
+      seen.add(id); unique.push({...item,id});
+    });
+
+    const res=await Promise.allSettled(unique.map(async item=>{
+      const j=await fetchJson(LOAD_URL(item.id));
+      if(!j?.ok||!j?.data)throw new Error(j?.error||`Falha: ${item.nome||item.id}`);
       return normalizeSchedule(item,j.data);
     }));
-    STATE.all=res.filter(x=>x.status==="fulfilled").map(x=>x.value);
+
+    STATE.all=res.filter(x=>x.status==="fulfilled").map(x=>x.value)
+      .sort((a,b)=>a.obra.localeCompare(b.obra,"pt-BR"));
     const failed=res.filter(x=>x.status==="rejected");
-    if(!STATE.all.length)throw new Error("A API não retornou cronogramas válidos de /www/storage/data.");
+    if(!STATE.all.length)throw new Error("O backend oficial do Farol não retornou cronogramas válidos de /www/storage/data.");
     STATE.loadedAt=new Date();
     fillFilters();
     applyFilters();
+    console.info("[Dashboard] Backend oficial do Farol",{lista:LIST_PRIMARY,carga:"carregar_cronograma.php?id=...",obras:STATE.all.length,falhas:failed.length});
     if(failed.length)console.warn("[Dashboard] Cronogramas ignorados por erro:",failed);
   }catch(err){console.error(err);showRuntimeError(err.message||String(err))}
   finally{setLoading(false)}
@@ -741,7 +782,7 @@ async function loadAll(){
 function fillFilters(){
   const obra=$("filterObra"),coord=$("filterCoordinator");
   const oldO=obra.value,oldC=coord.value;
-  obra.innerHTML='<option value="">Todas as obras</option>'+STATE.all.slice().sort((a,b)=>a.obra.localeCompare(b.obra,"pt-BR")).map(d=>`<option value="${esc(d.file)}">${esc(d.obra)}</option>`).join("");
+  obra.innerHTML='<option value="">Todas as obras</option>'+STATE.all.slice().sort((a,b)=>a.obra.localeCompare(b.obra,"pt-BR")).map(d=>`<option value="${esc(d.id)}">${esc(d.obra)}</option>`).join("");
   const cs=[...new Set(STATE.all.map(d=>d.coordinator).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
   coord.innerHTML='<option value="">Todos</option>'+cs.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
   if([...obra.options].some(o=>o.value===oldO))obra.value=oldO;
@@ -749,14 +790,19 @@ function fillFilters(){
 }
 function applyFilters(){
   const of=$("filterObra")?.value||"", cf=$("filterCoordinator")?.value||"", sf=$("filterStatus")?.value||"";
-  STATE.filtered=STATE.all.filter(d=>(!of||d.file===of)&&(!cf||d.coordinator===cf)&&(!sf||d.health===sf));
+  STATE.filtered=STATE.all.filter(d=>(!of||d.id===of)&&(!cf||d.coordinator===cf)&&(!sf||d.health===sf));
   render();
 }
 function periodDays(){const v=$("filterPeriod")?.value;return v==="90"?90:30}
 function aggregate(list,ref=today()){
   if(!list.length)return {plan:0,real:0,deviation:0};
-  const plan=list.reduce((s,d)=>s+schedulePlan(d,ref),0)/list.length;
-  const real=ref.toDateString()===today().toDateString()?list.reduce((s,d)=>s+d.real,0)/list.length:list.reduce((s,d)=>s+historicalRealEstimate(d,ref),0)/list.length;
+  const isNow=ref.toDateString()===today().toDateString();
+  const plan=isNow
+    ? list.reduce((s,d)=>s+d.plan,0)/list.length
+    : list.reduce((s,d)=>s+schedulePlan(d,ref),0)/list.length;
+  const real=isNow
+    ? list.reduce((s,d)=>s+d.real,0)/list.length
+    : list.reduce((s,d)=>s+historicalRealEstimate(d,ref),0)/list.length;
   return {plan,real,deviation:real-plan};
 }
 function getMilestones(list){
