@@ -805,19 +805,34 @@ function aggregate(list,ref=today()){
     : list.reduce((s,d)=>s+historicalRealEstimate(d,ref),0)/list.length;
   return {plan,real,deviation:real-plan};
 }
+function isExecutiveMilestone(a){
+  /* Fonte real validada no cronograma:
+     clientVisible=true define o que entra na timeline/visão cliente.
+     milestone/duração 0 ficam apenas como fallback de legado. */
+  return a?.clientVisible===true || a?.milestone===true || Number(a?.dur||0)===0;
+}
 function getMilestones(list){
   const now=today(),limit=addDays(now,periodDays());
   const out=[];
   list.forEach(d=>{
     const cur=new Map((d.activities||[]).map(a=>[String(a.id),a]));
-    (planSource(d)||[]).forEach(pa=>{
-      if(!(pa.milestone||Number(pa.dur||0)===0))return;
-      const date=parseDate(pa.end||pa.start);if(!date||date<now||date>limit)return;
-      const a=cur.get(String(pa.id))||pa;
-      const pred=(pa.pred||[]).map(id=>cur.get(String(id))).filter(Boolean);
+    (d.activities||[]).forEach(a=>{
+      if(!isExecutiveMilestone(a))return;
+      const date=parseDate(a.start||a.end);
+      if(!date||date<now||date>limit)return;
+
+      const pred=(a.pred||[]).map(id=>cur.get(String(id))).filter(Boolean);
       const predLate=pred.some(x=>clamp(x.pct)<100 && parseDate(x.end)&&parseDate(x.end)<now);
       const state=predLate?"critical":d.health==="attention"?"attention":d.health==="late"?"critical":"planned";
-      out.push({obra:d.obra,name:pa.name,date,state,schedule:d});
+
+      out.push({
+        obra:d.obra,
+        name:a.clientLabel||a.name,
+        date,
+        state,
+        schedule:d,
+        activity:a
+      });
     });
   });
   return out.sort((a,b)=>a.date-b.date||a.obra.localeCompare(b.obra,"pt-BR"));
@@ -838,7 +853,7 @@ function riskItems(list){
     const cur=new Map((d.activities||[]).map(a=>[String(a.id),a]));
     (planSource(d)||[]).forEach(pa=>{
       const a=cur.get(String(pa.id))||pa, end=parseDate(pa.end),start=parseDate(pa.start),pct=clamp(a.pct||0);
-      if((pa.milestone||Number(pa.dur||0)===0)&&end&&end<now&&pct<100)
+      if(isExecutiveMilestone(pa)&&end&&end<now&&pct<100)
         arr.push({sev:"high",score:130,title:`${d.obra} • Marco vencido`,text:`${pa.name} deveria ter ocorrido em ${fmtShort(end)}.`});
       else if(pa.critical&&end&&end<now&&pct<100)
         arr.push({sev:"high",score:120,title:`${d.obra} • Atividade crítica`,text:`${pa.name} está atrasada.`});
@@ -907,6 +922,26 @@ function bind(){
 }
 bind(); loadAll();
 })();
+</script>
+
+
+<script id="dashboardDataDiagnosticsV10">
+window.addEventListener("load",()=>{
+  setTimeout(()=>{
+    try{
+      if(typeof STATE!=="undefined"){
+        console.info("[Dashboard V10] Diagnóstico", STATE.all.map(d=>({
+          obra:d.obra,
+          atividades:(d.activities||[]).length,
+          visaoCliente:(d.activities||[]).filter(a=>a.clientVisible===true).length,
+          milestonesLegado:(d.activities||[]).filter(a=>a.milestone===true||Number(a.dur||0)===0).length,
+          previsto:d.plan,
+          realizado:d.real
+        })));
+      }
+    }catch(e){console.warn("[Dashboard V10] diagnóstico indisponível",e)}
+  },1200);
+});
 </script>
 
 </body>
