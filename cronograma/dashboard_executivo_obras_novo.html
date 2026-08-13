@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP ÍMPAR • Dashboard Executivo de Obras</title>
+<style>
+:root{
+  --bg:#eef4f7;--surface:#fff;--soft:#f7fafb;--line:#d8e3ea;--line2:#c7d6df;
+  --text:#153249;--muted:#6f8492;--green:#18b978;--green2:#43d09b;
+  --blue:#1c6fb6;--cyan:#38c9d5;--yellow:#f0a200;--red:#e14b61;--violet:#6e59ef;
+  --navy:#031d34;--navy2:#0d4779;
+  --toolbar-open:150px;--toolbar-closed:64px;--footer-h:30px;
+}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--text)}
+button,input,select{font:inherit}
+body{position:relative}
+
+/* =========================
+   TOPO PADRÃO AGENDA
+   ========================= */
+.toolbar{
+  position:absolute;inset:0 0 auto 0;height:var(--toolbar-open);background:#fff;border-bottom:1px solid var(--line);
+  transition:height .28s ease;z-index:20
+}
+.toolbar:before{content:"";position:absolute;left:8px;top:10px;bottom:10px;width:6px;border-radius:4px;background:linear-gradient(180deg,#21c77a,#159b68)}
+.toolbarTop{height:61px;display:flex;align-items:flex-start;justify-content:space-between;padding:13px 18px 7px 26px}
+.titles h1{margin:0;color:#0d7850;font-size:21px;font-weight:1000;letter-spacing:.01em}
+.titles p{margin:5px 0 0;color:#667b8d;font-size:12.5px}
+.collapse{width:34px;height:34px;border-radius:11px;border:1px solid var(--line);background:#f0f4f7;position:relative;cursor:pointer;transition:transform .22s}
+.collapse:before{content:"";position:absolute;left:11px;top:13px;width:10px;height:10px;border-left:2px solid #49697f;border-top:2px solid #49697f;transform:rotate(45deg)}
+.toolbarBottom{height:89px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:6px 18px 10px 26px}
+.params{position:relative;border:1px solid var(--line);border-radius:12px;background:var(--soft);padding:18px 8px 8px;display:grid;grid-template-columns:1.3fr .62fr .62fr .62fr;gap:8px}
+.params:before{content:"PARÂMETROS";position:absolute;left:10px;top:6px;font-size:9px;font-weight:950;letter-spacing:.08em;color:#587284}
+.param label{display:block;font-size:9px;font-weight:900;color:#587284;letter-spacing:.05em;margin-bottom:4px}
+.param input,.param select{width:100%;height:34px;border:1px solid var(--line2);border-radius:9px;background:#fff;padding:0 9px;color:#31556d;font-size:12px;font-weight:800;outline:none}
+.actions{border:1px solid var(--line);border-radius:12px;background:#fff;padding:8px;display:flex;gap:8px;align-items:center}
+.action{height:40px;border:1px solid var(--line2);border-radius:10px;background:#f2f5f7;color:#31556d;padding:0 13px;font-size:12px;font-weight:900;cursor:pointer;transition:.18s}
+.action:hover{background:#e8eef3;transform:translateY(-1px)}.action.primary{background:linear-gradient(135deg,#1dbf75,#159b68);border-color:transparent;color:#fff}.action.dark{background:#173247;color:#fff;border-color:#173247}
+body.collapsed .toolbar{height:var(--toolbar-closed)}
+body.collapsed .toolbarTop{height:64px;align-items:center;padding:10px 18px 10px 26px}
+body.collapsed .titles p,body.collapsed .toolbarBottom{display:none}
+body.collapsed .collapse{transform:rotate(180deg)}
+
+/* =========================
+   CONTEÚDO SEM SCROLL
+   ========================= */
+.content{position:absolute;left:0;right:0;top:158px;bottom:var(--footer-h);padding:0 8px 8px;overflow:hidden;transition:top .28s ease}
+body.collapsed .content{top:72px}
+.dashboard{height:100%;border:1px solid var(--line);background:#fff;overflow:hidden;display:grid;grid-template-rows:92px 78px minmax(0,1.08fr) minmax(0,.88fr);gap:7px;padding:7px}
+
+/* EXECUTIVE BANNER — inspirado no cronograma premium */
+.hero{
+  min-height:0;border-radius:12px;overflow:hidden;background:
+    radial-gradient(circle at 82% 20%,rgba(62,136,207,.30),transparent 23%),
+    linear-gradient(120deg,var(--navy),#062a4a 60%,#0d4779);
+  color:#fff;display:grid;grid-template-columns:minmax(0,1.3fr) repeat(5,minmax(110px,.42fr));gap:8px;padding:13px 14px;align-items:stretch
+}
+.heroTitle{display:flex;flex-direction:column;justify-content:center;min-width:0}
+.heroTitle .eyebrow{font-size:11px;color:#ffb000;font-weight:1000;letter-spacing:.14em;text-transform:uppercase}
+.heroTitle h2{margin:5px 0 0;font-size:30px;line-height:.95;font-weight:1000;letter-spacing:-.02em}
+.heroTitle p{margin:6px 0 0;font-size:12px;color:#d8e7ef}
+.heroKpi{border:1px solid rgba(255,255,255,.28);border-radius:12px;padding:9px 10px;background:rgba(255,255,255,.025);display:flex;flex-direction:column;justify-content:center}
+.heroKpi span{font-size:10px;color:#dce9f0;font-weight:900;text-transform:uppercase}.heroKpi b{font-size:22px;margin-top:5px}.heroKpi small{font-size:9px;color:#a9c4d6;margin-top:2px}
+
+/* KPI STRIP */
+.kpis{display:grid;grid-template-columns:repeat(8,1fr);gap:7px;min-height:0}
+.kpi{--c:var(--blue);position:relative;border:1px solid var(--line);border-radius:11px;background:#fff;padding:9px 10px;overflow:hidden}
+.kpi:before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--c),transparent)}
+.kpi .lab{font-size:10px;color:#60788a;font-weight:950;text-transform:uppercase}.kpi .val{font-size:23px;font-weight:1000;margin-top:7px}.kpi .sub{font-size:9px;color:#758b99;margin-top:4px}
+.kpi .dot{position:absolute;right:10px;top:11px;width:7px;height:7px;border-radius:50%;background:var(--c);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 35%,transparent)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* ROWS */
+.row{display:grid;gap:7px;min-height:0}
+.row1{grid-template-columns:1.45fr .78fr .77fr}
+.row2{grid-template-columns:1.08fr .92fr 1fr}
+.card{min-width:0;min-height:0;border:1px solid var(--line);border-radius:11px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
+.cardHead{height:43px;flex:0 0 43px;display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-bottom:1px solid #e5edf1}
+.cardHeadLeft{display:flex;align-items:center;gap:7px}.ico{width:29px;height:29px;border-radius:8px;display:grid;place-items:center;background:var(--ibg,#edf7f2);color:var(--ic,var(--green));font-weight:950}
+.cardHead b{display:block;font-size:12px}.cardHead span{display:block;font-size:9px;color:#738896;margin-top:2px}
+.badge{font-size:8px!important;font-weight:950!important;color:#587284!important;border:1px solid var(--line)!important;border-radius:99px!important;padding:4px 6px!important;background:#f6f9fb!important}
+.cardBody{flex:1;min-height:0;background:#f7f9fb;padding:6px;overflow:hidden}
+
+/* PLAN x REAL */
+.lineWrap{height:100%;background:#fff;border:1px solid #e0e8ed;border-radius:9px;padding:5px 7px}
+.lineWrap svg{display:block;width:100%;height:calc(100% - 22px)}
+.gridline{stroke:#edf2f5;stroke-width:1}.planLine,.realLine{fill:none;stroke-width:4;stroke-linecap:round;stroke-dasharray:1000;stroke-dashoffset:1000}.planLine{stroke:#5db5e6;animation:draw 1.6s .1s ease forwards}.realLine{stroke:#18b978;animation:draw 1.7s .35s ease forwards}@keyframes draw{to{stroke-dashoffset:0}}.area{opacity:0;animation:fade .7s 1s forwards}@keyframes fade{to{opacity:1}}
+.legend{display:flex;gap:14px;font-size:9px;font-weight:900;color:#6e8392}.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+
+/* DONUT SVG */
+.health{height:100%;display:grid;grid-template-columns:48% 52%;gap:5px}
+.donutBox{background:#fff;border:1px solid #e0e8ed;border-radius:9px;display:grid;place-items:center;position:relative}
+.donutBox svg{width:100%;height:100%}.seg{fill:none;stroke-width:16;transform:rotate(-90deg);transform-origin:50% 50%;stroke-linecap:butt}
+.centerText{font-size:22px;font-weight:1000;fill:#173247}.centerSub{font-size:7px;font-weight:900;fill:#718695}
+.healthList{display:grid;gap:5px}.healthItem{background:#fff;border:1px solid #e0e8ed;border-radius:8px;padding:6px}.healthTop{display:flex;justify-content:space-between;font-size:9px;font-weight:950}.track{height:5px;background:#edf2f5;border-radius:99px;margin-top:5px;overflow:hidden}.track i{display:block;height:100%;border-radius:99px;transform-origin:left;animation:grow 1s ease both}@keyframes grow{from{transform:scaleX(0)}}
+
+/* COORD */
+.coordList{height:100%;display:grid;grid-template-rows:repeat(3,1fr);gap:5px}.coord{display:grid;grid-template-columns:32px 1fr 44px;gap:7px;align-items:center;background:#fff;border:1px solid #e0e8ed;border-radius:8px;padding:5px 7px}.avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#20bd76,#0f5f91);color:#fff;font-size:8px;font-weight:1000}.coord b{font-size:10px}.coord span{font-size:8px;color:#738896}.rank{height:5px;background:#edf2f5;border-radius:99px;margin-top:4px;overflow:hidden}.rank i{display:block;height:100%;background:linear-gradient(90deg,#0f5f91,#22c6c7);animation:grow 1s ease both}.score{font-size:14px;font-weight:1000;text-align:right}
+
+/* RISK */
+.risks{height:100%;display:grid;grid-template-rows:repeat(3,1fr);gap:5px}.risk{display:grid;grid-template-columns:29px 1fr auto;gap:6px;align-items:center;background:#fff;border:1px solid #e0e8ed;border-radius:8px;padding:5px 6px}.riskI{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;font-size:12px}.risk b{font-size:9px}.risk p{margin:2px 0 0;font-size:7.5px;color:#718695}.sev{font-size:7px;font-weight:950;border-radius:99px;padding:4px 6px}
+
+/* DEVIATION */
+.devs{height:100%;display:grid;grid-template-rows:repeat(5,1fr);gap:4px}.dev{background:#fff;border:1px solid #e0e8ed;border-radius:7px;padding:4px 6px}.devTop{display:flex;justify-content:space-between;font-size:8.5px;font-weight:950}.devbar{height:5px;background:#edf2f5;border-radius:99px;margin-top:4px;overflow:hidden}.devbar i{display:block;height:100%;border-radius:99px;animation:grow 1s ease both}
+
+/* HEAT */
+.heat{height:100%;display:grid;grid-template-columns:86px repeat(7,1fr);grid-template-rows:18px repeat(4,1fr);gap:4px}.hh{font-size:8px;font-weight:900;color:#718695;display:grid;place-items:center}.obra{font-size:8.5px;font-weight:900;display:flex;align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.cell{border-radius:5px}.g1{background:#bfeeda}.g2{background:#72dbad}.y{background:#ffe1a2}.r{background:#f4a7b3}.b{background:#bce3f4}
+
+/* TIMELINE */
+.timeline{height:100%;position:relative;padding:4px 6px}.axis{position:absolute;left:5%;right:5%;top:50%;height:3px;background:#dbe5ea;border-radius:99px;transform-origin:left;animation:grow 1s ease both}.events{height:100%;display:grid;grid-template-columns:repeat(5,1fr);position:relative;z-index:2}.event{position:relative;text-align:center;opacity:0;animation:event .4s ease forwards}.event:nth-child(1){animation-delay:.3s}.event:nth-child(2){animation-delay:.45s}.event:nth-child(3){animation-delay:.6s}.event:nth-child(4){animation-delay:.75s}.event:nth-child(5){animation-delay:.9s}@keyframes event{to{opacity:1;transform:none}from{opacity:0;transform:translateY(5px)}}.eventCard{position:absolute;left:4px;right:4px;background:#fff;border:1px solid #dce6eb;border-radius:8px;padding:5px 4px}.event:nth-child(odd) .eventCard{bottom:54%}.event:nth-child(even) .eventCard{top:54%}.eventCard b{display:block;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.eventCard span{display:block;font-size:7px;color:#718695;margin-top:2px}.eventDot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--c);border:3px solid #fff;outline:1px solid var(--c)}
+
+/* FOOTER */
+.footer{position:absolute;left:4px;right:4px;bottom:3px;height:26px;border-top:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:9px;color:#667b8d;font-weight:800}
+.footer:before{content:"";width:150px;height:5px;border-radius:99px;background:linear-gradient(90deg,#159b68,#22c6c7)}
+
+/* MODAL */
+.modal{position:fixed;inset:0;background:rgba(5,27,46,.50);display:none;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(6px)}.modal.show{display:flex}.modalCard{width:min(720px,92vw);background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px}.modalHead{display:flex;justify-content:space-between;align-items:flex-start}.modalHead h3{margin:0;color:#0d7850;font-size:18px}.modalHead p{font-size:9px;color:#718695;margin:4px 0 0}.close{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer}.newgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:13px}.newopt{border:1px solid var(--line);border-radius:13px;background:#f8fafb;padding:13px;cursor:pointer}.newopt .big{font-size:28px}.newopt b{display:block;font-size:11px;margin-top:8px}.newopt p{font-size:8px;color:#718695;line-height:1.4}.newopt strong{font-size:8px;color:#0d7850}
+</style>
+
+<style id="v4ExecutiveReflow">
+.dashboard{
+  grid-template-rows:92px 38px minmax(0,1fr) minmax(0,1fr)!important;
+  gap:7px!important;
+}
+.executive-reading{
+  min-height:0;border:1px solid #f0cf73;border-left:5px solid #f0a200;border-radius:10px;
+  background:#fff8e7;padding:0 13px;display:flex;align-items:center;gap:10px;
+  font-size:13px;font-weight:850;color:#5d4a1d;overflow:hidden;white-space:nowrap
+}
+.executive-reading b{font-size:13px;color:#9a6500}
+.row1,.row2{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px!important;min-height:0!important}
+.cardHead{height:49px!important;flex:0 0 49px!important;padding:8px 11px!important}
+.cardHead b{font-size:14px!important}.cardHead span{font-size:10px!important}
+.ico{width:31px!important;height:31px!important;font-size:15px!important}
+.badge{font-size:9px!important;padding:4px 7px!important}
+.cardBody{padding:8px!important}
+.lineWrap{padding:7px 9px!important}.lineWrap svg{height:calc(100% - 28px)!important}.legend{font-size:10px!important;gap:12px!important}
+.health{grid-template-columns:50% 50%!important;gap:7px!important}.centerText{font-size:27px!important}.centerSub{font-size:9px!important}
+.healthList{gap:7px!important}.healthItem{padding:8px!important}.healthTop{font-size:11px!important}.track{height:7px!important}
+.coordList{gap:7px!important}.coord{grid-template-columns:39px 1fr 54px!important;padding:7px 9px!important}
+.avatar{width:37px!important;height:37px!important;font-size:10px!important}.coord b{font-size:12px!important}.coord span{font-size:9px!important}.rank{height:7px!important}.score{font-size:18px!important}
+.risks{gap:7px!important}.risk{grid-template-columns:36px 1fr auto!important;padding:7px 8px!important}.riskI{width:34px!important;height:34px!important;font-size:15px!important}.risk b{font-size:11px!important}.risk p{font-size:9px!important;line-height:1.25!important}.sev{font-size:8px!important;padding:5px 7px!important}
+.devs{gap:6px!important}.dev{padding:6px 8px!important}.devTop{font-size:10.5px!important}.devbar{height:7px!important;margin-top:5px!important}
+.timeline{padding:8px!important}.eventCard{padding:7px 5px!important}.eventCard b{font-size:10px!important}.eventCard span{font-size:9px!important}.eventDot{width:17px!important;height:17px!important}
+.heroTitle h2{font-size:31px!important}.heroKpi span{font-size:11px!important}.heroKpi b{font-size:25px!important}.heroKpi small{font-size:9px!important}
+</style>
+<style id="v6">
+.gauge-grid{width:100%;height:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.gauge{height:100%;border:1px solid #e0e8ed;border-radius:9px;background:#fff;padding:5px;display:grid;grid-template-rows:1fr auto;overflow:hidden}.gauge svg{width:100%;height:100%}.gauge-needle{transform-box:fill-box;transform-origin:50% 100%;transform:rotate(-90deg);animation:needle 1.45s cubic-bezier(.22,.85,.24,1) forwards}.gauge:nth-child(2) .gauge-needle{animation-delay:.15s}.gauge:nth-child(3) .gauge-needle{animation-delay:.3s}@keyframes needle{to{transform:rotate(var(--needle))}}.gauge-foot{text-align:center;font-size:11px;font-weight:950}.gauge-foot span{display:block;font-size:9px;color:#738896;margin-top:2px}.gauge-value{font-size:24px;font-weight:1000;fill:#173247}
+.coord-kpi-grid{width:100%;height:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.coord-kpi{--cc:#159b68;--w:90%;height:100%;border:1px solid #dce6eb;border-radius:9px;background:#fff;padding:8px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;position:relative}.coord-kpi:before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--cc)}.ck-head{display:flex;align-items:center;gap:6px}.ck-avatar{width:29px;height:29px;border-radius:50%;display:grid;place-items:center;color:#fff;background:var(--cc);font-size:9px;font-weight:1000}.ck-name b{display:block;font-size:11px}.ck-name span{display:block;font-size:8px;color:#738896}.ck-value{font-size:30px;font-weight:1000;line-height:1;color:var(--cc)}.ck-track{height:8px;border-radius:99px;background:#edf2f5;overflow:hidden}.ck-track i{display:block;height:100%;width:var(--w);background:var(--cc);transform:scaleX(0);transform-origin:left;animation:growck 1.35s ease forwards}@keyframes growck{to{transform:scaleX(1)}}.ck-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}.ck-meta div{background:#f5f8fa;border-radius:5px;padding:3px;text-align:center}.ck-meta b{display:block;font-size:8px}.ck-meta span{font-size:6.5px;color:#738896}
+.row2{grid-template-columns:.80fr .76fr 1.44fr!important}.risks{gap:5px!important}.risk{padding:5px 7px!important}.devs{gap:4px!important}.dev{padding:5px 7px!important}
+.marks11{height:100%;display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(6,1fr);gap:4px 6px}.mark11{display:grid;grid-template-columns:40px 8px minmax(0,1fr) auto;gap:5px;align-items:center;border:1px solid #e0e8ed;border-radius:7px;background:#fff;padding:3px 5px;opacity:0;animation:min .35s ease forwards}.mark11:nth-child(n){animation-delay:.12s}@keyframes min{to{opacity:1}}.mdate{font-size:8px;font-weight:950;color:#5f7787}.mdot{width:8px;height:8px;border-radius:50%}.mtext{min-width:0}.mtext b{display:block;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mtext span{display:block;font-size:7.5px;color:#738896;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mstate{font-size:6.5px;font-weight:950;padding:3px 4px;border-radius:99px;white-space:nowrap}
+</style>
+<style id="v7SpaceRecovery">
+/* ==========================================================
+   V7 — RECUPERAÇÃO DE ESPAÇO SEM DIMINUIR CONTEÚDO
+   ========================================================== */
+
+/* 1) CABEÇALHO MAIS COMPACTO */
+:root{
+  --toolbar-open:112px!important;
+}
+.toolbar{
+  height:var(--toolbar-open)!important;
+}
+.toolbarTop{
+  height:48px!important;
+  padding:9px 18px 4px 26px!important;
+  align-items:center!important;
+}
+.titles{
+  display:flex!important;
+  align-items:baseline!important;
+  gap:13px!important;
+  min-width:0!important;
+}
+.titles h1{
+  font-size:20px!important;
+  white-space:nowrap!important;
+}
+.titles p{
+  margin:0!important;
+  font-size:11.5px!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.toolbarBottom{
+  height:64px!important;
+  padding:2px 18px 8px 26px!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  gap:10px!important;
+  align-items:end!important;
+}
+.params{
+  border:0!important;
+  background:transparent!important;
+  border-radius:0!important;
+  padding:0!important;
+  grid-template-columns:1.3fr .62fr .62fr .62fr!important;
+  gap:8px!important;
+}
+.params:before{display:none!important}
+.param label{
+  font-size:9px!important;
+  margin-bottom:3px!important;
+}
+.param input,.param select{
+  height:34px!important;
+  font-size:12px!important;
+}
+.actions{
+  border:0!important;
+  background:transparent!important;
+  border-radius:0!important;
+  padding:0!important;
+  gap:8px!important;
+}
+.action{
+  height:36px!important;
+  min-height:36px!important;
+  padding:0 13px!important;
+}
+body.collapsed .toolbarTop{
+  height:64px!important;
+}
+body.collapsed .toolbarBottom{display:none!important}
+
+/* conteúdo sobe junto */
+.content{
+  top:120px!important;
+}
+body.collapsed .content{top:72px!important}
+
+/* 2) FAIXA EXECUTIVA AZUL MAIS COMPACTA */
+.dashboard{
+  grid-template-rows:72px 38px minmax(0,.92fr) minmax(0,1.22fr)!important;
+  gap:7px!important;
+}
+.hero{
+  padding:9px 14px!important;
+  grid-template-columns:minmax(0,1.28fr) repeat(5,minmax(105px,.42fr))!important;
+  gap:10px!important;
+  align-items:center!important;
+}
+.heroTitle .eyebrow{
+  font-size:10px!important;
+  margin-bottom:1px!important;
+}
+.heroTitle h2{
+  font-size:28px!important;
+  margin:2px 0 0!important;
+}
+.heroTitle p{display:none!important}
+.heroKpi{
+  border:0!important;
+  background:transparent!important;
+  border-radius:0!important;
+  padding:2px 4px!important;
+  justify-content:center!important;
+}
+.heroKpi span{
+  font-size:10px!important;
+  color:#dce9f0!important;
+}
+.heroKpi b{
+  font-size:24px!important;
+  margin-top:4px!important;
+  line-height:1!important;
+}
+.heroKpi small{display:none!important}
+
+/* 3) LINHA EXECUTIVA */
+.executive-reading{
+  height:38px!important;
+  min-height:38px!important;
+  font-size:12px!important;
+}
+
+/* 4) LINHA SUPERIOR — MESMO TAMANHO RELATIVO, MAIS ALTURA ÚTIL */
+.cardHead{
+  height:46px!important;
+  flex:0 0 46px!important;
+}
+
+/* VELOCÍMETROS — número fora da zona do pivô */
+.gauge{
+  grid-template-rows:minmax(0,1fr) auto!important;
+  padding:4px 6px 7px!important;
+}
+.gauge svg{
+  min-height:0!important;
+  overflow:visible!important;
+}
+.gauge .gauge-value{
+  display:none!important;
+}
+.gauge-foot{
+  font-size:13px!important;
+  line-height:1!important;
+}
+.gauge-foot .gauge-count{
+  display:block!important;
+  font-size:22px!important;
+  line-height:1!important;
+  color:#173247!important;
+  margin-bottom:3px!important;
+  font-weight:1000!important;
+}
+.gauge-foot span{
+  font-size:9.5px!important;
+  margin-top:3px!important;
+}
+
+/* COORDENADORES — MAIS RESPIRO */
+.coord-kpi-grid{
+  gap:9px!important;
+}
+.coord-kpi{
+  padding:10px 9px 8px!important;
+}
+.ck-head{gap:8px!important}
+.ck-avatar{
+  width:33px!important;height:33px!important;font-size:10px!important;
+}
+.ck-name b{font-size:12px!important}
+.ck-name span{font-size:8.5px!important}
+.ck-value{
+  font-size:32px!important;
+  margin:6px 0!important;
+}
+.ck-track{height:9px!important}
+.ck-meta{
+  gap:5px!important;
+  margin-top:6px!important;
+}
+.ck-meta div{
+  padding:4px 2px!important;
+}
+.ck-meta b{font-size:9px!important}
+.ck-meta span{font-size:7px!important}
+
+/* 5) LINHA INFERIOR — GANHA ALTURA REAL */
+.row2{
+  grid-template-columns:.78fr .74fr 1.48fr!important;
+  min-height:0!important;
+}
+.row2 .cardHead{
+  height:44px!important;
+  flex:0 0 44px!important;
+}
+.row2 .cardBody{
+  padding:6px!important;
+}
+
+/* RISCOS — TODOS VISÍVEIS, SEM ESPAÇO MORTO */
+.risks{
+  grid-template-rows:repeat(3,minmax(0,1fr))!important;
+  gap:6px!important;
+}
+.risk{
+  min-height:0!important;
+  padding:6px 7px!important;
+  grid-template-columns:34px minmax(0,1fr) auto!important;
+}
+.riskI{
+  width:32px!important;height:32px!important;
+}
+.risk b{font-size:10.5px!important}
+.risk p{
+  font-size:8.8px!important;
+  line-height:1.2!important;
+}
+
+/* TOP 5 — os CINCO sempre aparecem */
+.devs{
+  grid-template-rows:repeat(5,minmax(0,1fr))!important;
+  gap:5px!important;
+}
+.dev{
+  min-height:0!important;
+  padding:5px 7px!important;
+}
+.devTop{
+  font-size:10.2px!important;
+}
+.devbar{
+  height:6px!important;
+  margin-top:4px!important;
+}
+
+/* 11 MARCOS EM 3 COLUNAS — 4 + 4 + 3 */
+.marks11{
+  height:100%!important;
+  min-height:0!important;
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-template-rows:repeat(4,minmax(0,1fr))!important;
+  grid-auto-flow:column!important;
+  gap:5px 7px!important;
+}
+.mark11{
+  min-width:0!important;
+  min-height:0!important;
+  display:grid!important;
+  grid-template-columns:42px 9px minmax(0,1fr) auto!important;
+  gap:6px!important;
+  align-items:center!important;
+  padding:5px 6px!important;
+}
+.mdate{
+  font-size:9px!important;
+}
+.mdot{
+  width:9px!important;height:9px!important;
+}
+.mtext b{
+  font-size:10px!important;
+  line-height:1.05!important;
+}
+.mtext span{
+  font-size:9px!important;
+  margin-top:2px!important;
+}
+.mstate{
+  font-size:7px!important;
+  padding:3px 5px!important;
+}
+
+/* Rodapé segue discreto */
+.footer{
+  height:26px!important;
+}
+</style>
+
+<style id="v71TwoFixesOnly">
+/* 1) COORDENADORES — SOMENTE reduzir percentual e recuperar KPIs */
+.ck-value{
+  font-size:26px!important;
+  line-height:.95!important;
+  margin:4px 0 3px!important;
+}
+.ck-meta{
+  margin-top:3px!important;
+}
+.ck-meta div{
+  padding:3px 2px!important;
+}
+.ck-meta b{
+  font-size:8.5px!important;
+  line-height:1!important;
+}
+.ck-meta span{
+  display:block!important;
+  font-size:6.8px!important;
+  line-height:1.05!important;
+  margin-top:2px!important;
+  white-space:nowrap!important;
+}
+
+/* 2) RECOLHER / EXPANDIR — reduzir fisicamente o bloco superior */
+body.collapsed .toolbar{
+  height:64px!important;
+}
+body.collapsed .toolbarTop{
+  height:64px!important;
+  min-height:64px!important;
+  padding:10px 18px 10px 26px!important;
+  align-items:center!important;
+}
+body.collapsed .titles{
+  align-items:center!important;
+}
+body.collapsed .titles p{
+  display:none!important;
+}
+body.collapsed .toolbarBottom{
+  display:none!important;
+  height:0!important;
+  padding:0!important;
+  margin:0!important;
+  overflow:hidden!important;
+}
+body.collapsed .content{
+  top:72px!important;
+}
+
+/* ao expandir, volta exatamente à geometria da V7 */
+body:not(.collapsed) .toolbar{
+  height:112px!important;
+}
+body:not(.collapsed) .toolbarTop{
+  height:48px!important;
+}
+body:not(.collapsed) .toolbarBottom{
+  display:grid!important;
+  height:64px!important;
+}
+body:not(.collapsed) .content{
+  top:120px!important;
+}
+</style>
+</head>
+<body>
+<section class="toolbar">
+  <div class="toolbarTop">
+    <div class="titles"><h1>Dashboard Executivo de Obras</h1><p>Visão consolidada do programa • desempenho, riscos, marcos e tomada de decisão.</p></div>
+    <button class="collapse" id="collapse" title="Recolher/expandir"></button>
+  </div>
+  <div class="toolbarBottom">
+    <div class="params">
+      <div class="param"><label>Pesquisar obra</label><input placeholder="Digite o nome da obra..."></div>
+      <div class="param"><label>Coordenador</label><select><option>Todos</option><option>Nicolas</option><option>Fábio</option><option>Pablo</option></select></div>
+      <div class="param"><label>Status</label><select><option>Todos</option><option>No prazo</option><option>Atenção</option><option>Atrasado</option></select></div>
+      <div class="param"><label>Período</label><select><option>Hoje</option><option>30 dias</option><option>90 dias</option></select></div>
+    </div>
+    <div class="actions">
+      <button class="action primary" id="newBtn">＋ Novo cronograma</button>
+      <button class="action">▣ PDF executivo</button>
+      <button class="action dark">⟳ Atualizar dados</button>
+    </div>
+  </div>
+</section>
+
+<section class="content">
+<div class="dashboard">
+  <section class="hero">
+    <div class="heroTitle"><div class="eyebrow">GESTÃO EXECUTIVA</div><h2>PROGRAMA DE OBRAS</h2><p>Leitura consolidada de todas as obras ativas.</p></div>
+    <div class="heroKpi"><span>Previsto</span><b>77%</b><small>programa</small></div>
+    <div class="heroKpi"><span>Realizado</span><b>71%</b><small>avanço físico</small></div>
+    <div class="heroKpi"><span>Desvio</span><b>-6 p.p.</b><small>REAL − PLAN</small></div>
+    <div class="heroKpi"><span>Obras</span><b>14</b><small>ativas</small></div>
+    <div class="heroKpi"><span>Marcos</span><b>11</b><small>próx. 30 dias</small></div>
+  </section>
+<div class="executive-reading"><b>⚠ PROGRAMA EM ATENÇÃO</b><span>Realizado 6 p.p. abaixo do previsto • Maior impacto: Clínica Renal Imbituba (-20 p.p.) • 11 marcos relevantes nos próximos 30 dias.</span></div>
+<section class="row row1">
+    <article class="card"><div class="cardHead"><div class="cardHeadLeft"><span class="ico">↗</span><div><b>Evolução PLAN × REAL</b><span>últimas 8 atualizações</span></div></div><span class="badge">TENDÊNCIA</span></div><div class="cardBody"><div class="lineWrap"><svg viewBox="0 0 700 175" preserveAspectRatio="none"><defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#18b978" stop-opacity=".22"/><stop offset="1" stop-color="#18b978" stop-opacity="0"/></linearGradient></defs><line class="gridline" x1="0" y1="145" x2="700" y2="145"/><line class="gridline" x1="0" y1="105" x2="700" y2="105"/><line class="gridline" x1="0" y1="65" x2="700" y2="65"/><path class="area" d="M0 144 C80 139,120 126,180 120 C250 112,290 99,355 94 C430 88,475 76,535 69 C600 61,640 52,700 42 L700 175 L0 175 Z" fill="url(#ag)"/><path class="planLine" d="M0 135 C85 125,125 114,180 102 C245 88,290 80,355 69 C430 58,480 48,535 40 C600 32,650 27,700 22"/><path class="realLine" d="M0 144 C80 139,120 126,180 120 C250 112,290 99,355 94 C430 88,475 76,535 69 C600 61,640 52,700 42"/></svg><div class="legend"><span><i style="background:#5db5e6"></i>Previsto</span><span><i style="background:#18b978"></i>Realizado</span><span>↗ Recuperação de 3 p.p. nas últimas semanas</span></div></div></div></article>
+
+    <article class="card"><div class="cardHead"><div class="cardHeadLeft"><span class="ico" style="--ibg:#fff0f2;--ic:#e14b61">◉</span><div><b>Saúde da carteira</b><span>obras por status</span></div></div><span class="badge">FAROL</span></div><div class="cardBody"><div class="gauge-grid"><div class="gauge"><svg viewBox="0 0 130 92"><path d="M20 75 A45 45 0 0 1 110 75" fill="none" stroke="#edf2f5" stroke-width="13"/><path d="M20 75 A45 45 0 0 1 110 75" fill="none" stroke="#18b978" stroke-width="13" stroke-dasharray="92 150"/><g class="gauge-needle" style="--needle:54deg"><line x1="65" y1="72" x2="65" y2="34" stroke="#173247" stroke-width="3.5"/><circle cx="65" cy="72" r="6" fill="#173247"/><circle cx="65" cy="72" r="2.5" fill="#fff"/></g><text x="65" y="91" text-anchor="middle" class="gauge-value">6</text></svg><div class="gauge-foot" style="color:#18b978"><span class="gauge-count">6</span>NO PRAZO<span>42,9% da carteira</span></div></div><div class="gauge"><svg viewBox="0 0 130 92"><path d="M20 75 A45 45 0 0 1 110 75" fill="none" stroke="#edf2f5" stroke-width="13"/><path d="M20 75 A45 45 0 0 1 110 75" fill="none" stroke="#f0a200" stroke-width="13" stroke-dasharray="92 150"/><g class="gauge-needle" style="--needle:-38deg"><line x1="65" y1="72" x2="65" y2="34" stroke="#173247" stroke-width="3.5"/><circle cx="65" cy="72" r="6" fill="#173247"/><circle cx="65" cy="72" r="2.5" fill="#fff"/></g><text x="65" y="91" text-anchor="middle" class="gauge-value">2</text></svg><div class="gauge-foot" style="color:#f0a200"><span class="gauge-count">2</span>ATENÇÃO<span>14,2% da carteira</span></div></div><div class="gauge"><svg viewBox="0 0 130 92"><path d="M20 75 A45 45 0 0 1 110 75" fill="none" stroke="#edf2f5" stroke-width="13"/><path d="M20 75 A45 45 0 0 1 110 75" fill="none" stroke="#e14b61" stroke-width="13" stroke-dasharray="92 150"/><g class="gauge-needle" style="--needle:54deg"><line x1="65" y1="72" x2="65" y2="34" stroke="#173247" stroke-width="3.5"/><circle cx="65" cy="72" r="6" fill="#173247"/><circle cx="65" cy="72" r="2.5" fill="#fff"/></g><text x="65" y="91" text-anchor="middle" class="gauge-value">6</text></svg><div class="gauge-foot" style="color:#e14b61"><span class="gauge-count">6</span>ATRASADAS<span>42,9% da carteira</span></div></div></div></div></article>
+
+    <article class="card"><div class="cardHead"><div class="cardHeadLeft"><span class="ico" style="--ibg:#edf7fc;--ic:#2586c6">♟</span><div><b>Coordenadores</b><span>execução média</span></div></div><span class="badge">RANKING</span></div><div class="cardBody"><div class="coord-kpi-grid"><div class="coord-kpi" style="--cc:#159b68;--w:90%"><div class="ck-head"><div class="ck-avatar">F</div><div class="ck-name"><b>FÁBIO</b><span>5 obras • 4 críticas</span></div></div><div class="ck-value count-up" data-target="90">0%</div><div class="ck-track"><i></i></div><div class="ck-meta"><div><b>5</b><span>OBRAS</span></div><div><b>3</b><span>PRAZO</span></div><div><b>2</b><span>RISCO</span></div></div></div><div class="coord-kpi" style="--cc:#159b68;--w:90%"><div class="ck-head"><div class="ck-avatar">N</div><div class="ck-name"><b>NICOLAS</b><span>5 obras • 2 críticas</span></div></div><div class="ck-value count-up" data-target="90">0%</div><div class="ck-track"><i></i></div><div class="ck-meta"><div><b>5</b><span>OBRAS</span></div><div><b>3</b><span>PRAZO</span></div><div><b>2</b><span>RISCO</span></div></div></div><div class="coord-kpi" style="--cc:#d49a16;--w:60%"><div class="ck-head"><div class="ck-avatar">P</div><div class="ck-name"><b>PABLO</b><span>4 obras • atenção</span></div></div><div class="ck-value count-up" data-target="60">0%</div><div class="ck-track"><i></i></div><div class="ck-meta"><div><b>5</b><span>OBRAS</span></div><div><b>2</b><span>PRAZO</span></div><div><b>2</b><span>RISCO</span></div></div></div></div></div></article>
+  </section>
+
+  <section class="row row2">
+    <article class="card"><div class="cardHead"><div class="cardHeadLeft"><span class="ico" style="--ibg:#fff0f2;--ic:#e14b61">!</span><div><b>Riscos & pontos de atenção</b><span>prioridades gerenciais</span></div></div><span class="badge">AÇÃO</span></div><div class="cardBody"><div class="risks"><div class="risk"><div class="riskI" style="background:#fff0f2;color:#c74354">⚠</div><div><b>Hospital SOS • Climatização</b><p>Desvio de -12 p.p.; recuperar produção.</p></div><span class="sev" style="background:#fff0f2;color:#b43748">ALTA</span></div><div class="risk"><div class="riskI" style="background:#fff7e7;color:#a76d08">◆</div><div><b>FIESC • Equipamentos</b><p>Chegada condiciona testes finais.</p></div><span class="sev" style="background:#fff7e7;color:#8b5c08">MÉDIA</span></div><div class="risk"><div class="riskI" style="background:#edf7fc;color:#276e96">↻</div><div><b>Corporate 8 • Frente civil</b><p>Dependência externa impactando instalação.</p></div><span class="sev" style="background:#edf7fc;color:#276e96">MONITORAR</span></div></div></div></article>
+
+    <article class="card"><div class="cardHead"><div class="cardHeadLeft"><span class="ico" style="--ibg:#f2efff;--ic:#6e59ef">▰</span><div><b>Maiores desvios</b><span>REAL − PLAN</span></div></div><span class="badge">TOP 5</span></div><div class="cardBody"><div class="devs"><div class="dev"><div class="devTop"><span>Clínica Renal Imbituba</span><span style="color:#c74354">-20 p.p.</span></div><div class="devbar"><i style="width:100%;background:#e14b61"></i></div></div><div class="dev"><div class="devTop"><span>Hospital SOS</span><span style="color:#c74354">-12 p.p.</span></div><div class="devbar"><i style="width:60%;background:#e14b61"></i></div></div><div class="dev"><div class="devTop"><span>Corporate 8</span><span style="color:#c74354">-11 p.p.</span></div><div class="devbar"><i style="width:55%;background:#e14b61"></i></div></div><div class="dev"><div class="devTop"><span>FIESC</span><span style="color:#a56e08">-7 p.p.</span></div><div class="devbar"><i style="width:35%;background:#f0a200"></i></div></div><div class="dev"><div class="devTop"><span>Giassi Tubarão</span><span style="color:#0c8d5d">0 p.p.</span></div><div class="devbar"><i style="width:8%;background:#18b978"></i></div></div></div></div></article>
+
+    <article class="card"><div class="cardHead"><div class="cardHeadLeft"><span class="ico" style="--ibg:#fff7e7;--ic:#f0a200">◆</span><div><b>Próximos marcos</b><span>eventos do programa</span></div></div><span class="badge">11 MARCOS</span></div><div class="cardBody"><div class="marks11"><div class="mark11"><span class="mdate">22/08</span><i class="mdot" style="background:#f0a200"></i><div class="mtext"><b>FIESC</b><span>Start Up</span></div><span class="mstate" style="background:#fff7e7;color:#8b5c08">PRÓXIMO</span></div><div class="mark11"><span class="mdate">22/08</span><i class="mdot" style="background:#e14b61"></i><div class="mtext"><b>Clínica Renal</b><span>Entrega final</span></div><span class="mstate" style="background:#fff0f2;color:#b43748">CRÍTICO</span></div><div class="mark11"><span class="mdate">28/08</span><i class="mdot" style="background:#2586c6"></i><div class="mtext"><b>Corporate 8</b><span>Montagem final</span></div><span class="mstate" style="background:#edf7fc;color:#276e96">PROGR.</span></div><div class="mark11"><span class="mdate">30/08</span><i class="mdot" style="background:#18b978"></i><div class="mtext"><b>Giassi Araranguá</b><span>Entrega</span></div><span class="mstate" style="background:#e8f7ef;color:#087451">NO PRAZO</span></div><div class="mark11"><span class="mdate">05/09</span><i class="mdot" style="background:#18b978"></i><div class="mtext"><b>Giassi Tubarão</b><span>Testes finais</span></div><span class="mstate" style="background:#e8f7ef;color:#087451">NO PRAZO</span></div><div class="mark11"><span class="mdate">12/09</span><i class="mdot" style="background:#f0a200"></i><div class="mtext"><b>H. São Sebastião</b><span>Ventiladores</span></div><span class="mstate" style="background:#fff7e7;color:#8b5c08">ATENÇÃO</span></div><div class="mark11"><span class="mdate">18/09</span><i class="mdot" style="background:#2586c6"></i><div class="mtext"><b>Corporate 8</b><span>Start Up</span></div><span class="mstate" style="background:#edf7fc;color:#276e96">PROGR.</span></div><div class="mark11"><span class="mdate">21/09</span><i class="mdot" style="background:#e14b61"></i><div class="mtext"><b>Hospital SOS</b><span>Chegada Chiller</span></div><span class="mstate" style="background:#fff0f2;color:#b43748">CRÍTICO</span></div><div class="mark11"><span class="mdate">25/09</span><i class="mdot" style="background:#6e59ef"></i><div class="mtext"><b>Clínica Focus</b><span>Comissionamento</span></div><span class="mstate" style="background:#edf7fc;color:#276e96">PROGR.</span></div><div class="mark11"><span class="mdate">30/09</span><i class="mdot" style="background:#18b978"></i><div class="mtext"><b>FIESC</b><span>Aceite técnico</span></div><span class="mstate" style="background:#e8f7ef;color:#087451">PLANEJ.</span></div><div class="mark11"><span class="mdate">14/10</span><i class="mdot" style="background:#18b978"></i><div class="mtext"><b>Hospital SOS</b><span>Testes e Start Up</span></div><span class="mstate" style="background:#e8f7ef;color:#087451">PLANEJ.</span></div></div></div></article>
+  </section>
+</div>
+</section>
+
+<div class="footer"><span>ERP ÍMPAR • Dashboard Executivo de Obras</span><span>Visão consolidada do programa</span></div>
+
+<div class="modal" id="modal"><div class="modalCard"><div class="modalHead"><div><h3>Novo cronograma</h3><p>Escolha como deseja iniciar.</p></div><button class="close" id="close">×</button></div><div class="newgrid"><div class="newopt"><div class="big">▦</div><b>Usar template</b><p>Modelo oficial já estruturado com fases e regras.</p><strong>Mais rápido →</strong></div><div class="newopt"><div class="big">▤</div><b>Importar Excel</b><p>Criar ou atualizar a partir da planilha padrão.</p><strong>Importar →</strong></div><div class="newopt"><div class="big">＋</div><b>Criar manualmente</b><p>Começar um cronograma totalmente do zero.</p><strong>Começar →</strong></div></div></div></div>
+
+<script>
+const body=document.body;
+document.getElementById('collapse').onclick=()=>body.classList.toggle('collapsed');
+const modal=document.getElementById('modal');
+document.getElementById('newBtn').onclick=()=>modal.classList.add('show');
+document.getElementById('close').onclick=()=>modal.classList.remove('show');
+modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('show')});
+document.querySelectorAll('.counter').forEach(el=>{
+ const target=+el.dataset.target;let n=0;const step=Math.max(1,Math.ceil(target/18));
+ const t=setInterval(()=>{n=Math.min(target,n+step);el.textContent=n;if(n>=target)clearInterval(t)},45);
+});
+</script>
+<script>
+document.querySelectorAll(".count-up").forEach(el=>{
+ const target=Number(el.dataset.target||0); let n=0;
+ const timer=setInterval(()=>{ n=Math.min(target,n+2); el.textContent=n+"%"; if(n>=target)clearInterval(timer); },22);
+});
+</script>
+<script id="erpImparDashboardNavigation">
+function abrirCronogramaNovo(){
+  window.location.href='cronograma_novo.html';
+}
+document.getElementById('newBtn')?.addEventListener('dblclick', abrirCronogramaNovo);
+document.querySelectorAll('.newopt').forEach((opt,idx)=>{
+  opt.addEventListener('click',()=>{
+    // O cronograma oficial já possui as três modalidades:
+    // template, Excel e manual. O dashboard apenas encaminha.
+    window.location.href='cronograma_novo.html?novo=1&modo='+(idx===0?'template':idx===1?'excel':'manual');
+  });
+});
+</script>
+
+</body>
+</html>
