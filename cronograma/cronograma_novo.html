@@ -3337,11 +3337,36 @@ function applyLock(){
 async function saveDraft(){
   if(!validateParams())return;
 
-  /* Garante que os parâmetros refletem exatamente as atividades atuais. */
-  const bounds=currentScheduleBounds(activities);
-  if(bounds.start)$("startDate").value=iso(bounds.start);
-  if(bounds.finish)$("endDate").value=iso(bounds.finish);
-  if(bounds.days)$("workDays").value=bounds.days;
+  const requestedStart=parseISO($("startDate").value);
+  const requestedEnd=parseISO($("endDate").value);
+  const requestedDays=Math.max(1,Number($("workDays").value)||0);
+  const currentBounds=currentScheduleBounds(activities);
+
+  if(state.status!=="baseline"){
+    const currentEnd=currentBounds.finish?iso(currentBounds.finish):"";
+    const currentDays=Number(currentBounds.days||0);
+    const endChanged=!!requestedEnd && iso(requestedEnd)!==currentEnd;
+    const daysChanged=requestedDays!==currentDays;
+
+    /* Se o usuário alterou Data Final ou Prazo, essa é a nova meta oficial.
+       Replaneja primeiro e só depois persiste. */
+    if(endChanged||daysChanged){
+      if(!requestedStart||!requestedEnd||requestedEnd<requestedStart){
+        showToast("warning","Datas inválidas","Confira Data Inicial e Data Final.");
+        return;
+      }
+
+      $("workDays").value=workdaysBetween(requestedStart,requestedEnd);
+      const okRecalc=scaleDurations(true);
+      if(!okRecalc)return;
+    }else{
+      /* Sem alteração da meta, apenas sincroniza com as atividades atuais. */
+      const bounds=currentScheduleBounds(activities);
+      if(bounds.start)$("startDate").value=iso(bounds.start);
+      if(bounds.finish)$("endDate").value=iso(bounds.finish);
+      if(bounds.days)$("workDays").value=bounds.days;
+    }
+  }
 
   state.draftSavedAt=new Date().toISOString();
   state.sessionDraft={
@@ -4810,7 +4835,9 @@ $("startDate").addEventListener("change",()=>{
 $("endDate").addEventListener("change",()=>{
   if(state.status==="baseline")return;
   const s=parseISO($("startDate").value),e=parseISO($("endDate").value);
-  if(s&&e&&e>=s)$("workDays").value=workdaysBetween(s,e);
+  if(s&&e&&e>=s){
+    $("workDays").value=workdaysBetween(s,e);
+  }
 });
 
 $("workDays").addEventListener("change",()=>{
