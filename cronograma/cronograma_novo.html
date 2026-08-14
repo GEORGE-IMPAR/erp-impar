@@ -1804,7 +1804,7 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 <style id="clientDynamicGroupsV5">
 /* A quantidade real de grupos controla 100% da altura do miolo.
    Não existe mais altura fixa herdada do template premium. */
-.ref-exec-left{height:100%!important;display:block!important;padding-top:0!important}
+.ref-exec-left{height:100%!important;display:block!important}
 .ref-exec-left .ref-exec-group{box-sizing:border-box!important}
 .ref-exec-gantt{height:100%!important}
 .ref-exec-row-bg{box-sizing:border-box!important}
@@ -1823,33 +1823,9 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 </style>
 
 
-<style id="clientTodayLineV6">
-.ref-exec-today-line{
-  position:absolute;top:0;bottom:0;width:2px;background:#ef4444;
-  z-index:40;pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.65)
-}
-.ref-exec-today-line::before{
-  content:"";position:absolute;top:-4px;left:-4px;width:10px;height:10px;border-radius:50%;
-  background:#ef4444;border:2px solid #fff;box-sizing:border-box
-}
-.ref-exec-today-label{
-  position:absolute;z-index:41;transform:translateX(-50%);top:5px;background:#ef4444;color:#fff;
-  border-radius:7px;padding:4px 7px;min-width:70px;text-align:center;font-size:8px;font-weight:950;
-  line-height:1.15;letter-spacing:.02em;box-shadow:0 4px 12px rgba(100,20,20,.18);pointer-events:none
-}
-.ref-exec-today-label::after{
-  content:"";position:absolute;left:50%;top:100%;transform:translateX(-50%);
-  border:4px solid transparent;border-top-color:#ef4444
-}
-.ref-exec-gantt{overflow:visible!important}
-.ref-exec-group{
-  display:flex!important;align-items:center!important;justify-content:center!important
-}
-.ref-exec-group>div{width:100%!important;padding-top:4px!important;padding-bottom:4px!important}
-@media print{
-  .ref-exec-today-line{width:1.3px!important}
-  .ref-exec-today-label{font-size:5.4pt!important;min-width:14mm!important;padding:1mm 1.5mm!important}
-}
+<style id="cronograma-especifico-producao-v51">
+/* Criação de novo cronograma pertence ao Dashboard Executivo */
+#newScheduleBtn{display:none!important}
 </style>
 
 </head>
@@ -2227,6 +2203,10 @@ let modalResources=[];
 const RESPONSIBLE_DEFAULTS=["Comercial","Projetos","Compras","Coordenador da Obra","Fornecedor","Cliente","Empreiteiro","Duteiro","Mecânico"];
 let responsibleCatalog=[...RESPONSIBLE_DEFAULTS];
 const CRONOGRAMA_API="https://api.erpimpar.com.br/cronograma/cronograma_api.php";
+const CRONOGRAMA_PROD_BASE="https://api.erpimpar.com.br/cronograma/";
+const CRONOGRAMA_LIST_PROD=CRONOGRAMA_PROD_BASE+"listar_obras_farol.php";
+const CRONOGRAMA_LIST_FALLBACK=CRONOGRAMA_PROD_BASE+"listar_obras.php";
+const CRONOGRAMA_LOAD_PROD=id=>CRONOGRAMA_PROD_BASE+"carregar_cronograma.php?id="+encodeURIComponent(id);
 const COORDENADORES_API="https://api.erpimpar.com.br/cronograma/listar_coordenadores.php";
 let currentScheduleFile="";
 let currentScheduleId="";
@@ -2268,77 +2248,113 @@ function applyManualResize(id,deltaDays,side){if(state.status==="baseline")retur
 function enableGanttBarInteractions(){if(!loadedSchedule||state.status==="baseline")return;const sample=[...document.querySelectorAll("#ganttTable .gantt-cell")].find(c=>c.offsetWidth>0),weekPx=sample?.offsetWidth||62,daysPerPx=7/weekPx;document.querySelectorAll("#ganttTable .draft-bar").forEach(bar=>{const tr=bar.closest("tr[data-id]"),id=Number(tr?.dataset.id);if(!id)return;bar.classList.add("bar-segment");if(!bar.querySelector(".resize-handle.left")){bar.insertAdjacentHTML("afterbegin",'<span class="resize-handle left" data-side="left"></span>');bar.insertAdjacentHTML("beforeend",'<span class="resize-handle right" data-side="right"></span>')}bar.addEventListener("click",e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();linkActivitiesByCtrl(id)}});let mode=null,startX=0,last=0;bar.addEventListener("pointerdown",e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();e.stopPropagation();const h=e.target.closest(".resize-handle");mode=h?h.dataset.side:"move";startX=e.clientX;last=0;bar.setPointerCapture?.(e.pointerId)});bar.addEventListener("pointermove",e=>{if(!mode)return;const dx=e.clientX-startX;last=Math.round(dx*daysPerPx);document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{if(mode==="move")seg.style.transform=`translateX(${dx}px)`;else seg.style.filter="brightness(1.08)"})});const fin=()=>{if(!mode)return;document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{seg.style.transform="";seg.style.filter=""});const action=mode;mode=null;if(last!==0){if(action==="move")applyManualMove(id,last);else applyManualResize(id,last,action)}};bar.addEventListener("pointerup",fin);bar.addEventListener("pointercancel",fin)})}
 async function loadSelectedSchedule(){
   const obra=$("obra").value;
-  const arquivo=selectedScheduleFile();
-  if(!obra||!arquivo){showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");return}
+  const id=selectedScheduleId();
+  if(!obra||!id){
+    showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");
+    return;
+  }
   try{
-    const r=await fetch(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(arquivo)}&_=${Date.now()}`,{cache:"no-store"});
+    const r=await fetch(`${CRONOGRAMA_LOAD_PROD(id)}&_=${Date.now()}`,{cache:"no-store"});
     const t=await r.text();
     if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
     const j=t.trim()?JSON.parse(t):{};
     if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma");
-    const d=j.data;
-    if(!Array.isArray(d.activities)||!d.activities.length)throw new Error("Cronograma sem atividades");
 
-    currentScheduleFile=j.arquivo||arquivo;
-    currentScheduleId=String(d.id||selectedScheduleId()||"");
-    activities=d.activities.map((a,index)=>({
-      ...a,
-      id:Number.isFinite(Number(a.id))?Number(a.id):(index+1),
-      name:String(a.name??a.nome??"Atividade"),
-      resp:String(a.resp??a.responsavel??""),
-      dur:Number(a.dur??a.duracao??0),
-      baseDur:Number(a.baseDur??a.dur??a.duracao??0),
-      pred:Array.isArray(a.pred)
-        ? a.pred.map(Number).filter(Number.isFinite)
-        : String(a.predecessora??"").split(/\s*[,;]\s*/).filter(Boolean).map(Number).filter(Number.isFinite),
-      cat:String(a.cat??"climatizacao"),
-      milestone:Boolean(a.milestone??(Number(a.dur??a.duracao??0)===0)),
-      dep:String(a.dep??"Nenhuma"),
-      pct:Number(a.pct??a.real??0),
-      realStart:String(a.realStart??""),
-      realEnd:String(a.realEnd??""),
-      realStatus:String(a.realStatus??a.status??"Não iniciado"),
-      obs:String(a.obs??""),
-      resources:Array.isArray(a.resources)?a.resources:[],
-      manualStart:String(a.manualStart??""),
-      start:String(a.start??a.inicio??""),
-      end:String(a.end??a.fim??""),
-      critical:Boolean(a.critical??false)
-    }));
+    const d=j.data;
+    const rawActivities=(Array.isArray(d.activities)&&d.activities.length)
+      ? d.activities
+      : (Array.isArray(d.atividades)?d.atividades:[]);
+
+    if(!rawActivities.length)throw new Error("Cronograma sem atividades");
+
+    currentScheduleId=String(d.id||id||"");
+    currentScheduleFile=`obra_${currentScheduleId}.json`;
+
+    activities=rawActivities.map((a,index)=>{
+      const dur=Number(a.dur??a.duracao??0);
+      const predRaw=a.pred??a.predecessora??"";
+      const pred=Array.isArray(predRaw)
+        ? predRaw.map(Number).filter(Number.isFinite)
+        : String(predRaw).split(/\s*[,;]\s*/).filter(Boolean).map(Number).filter(Number.isFinite);
+
+      return {
+        ...a,
+        _legacyId:String(a._legacyId??a.id??index+1),
+        id:Number.isFinite(Number(a.id))?Number(a.id):(index+1),
+        name:String(a.name??a.nome??"Atividade"),
+        resp:String(a.resp??a.responsavel??""),
+        dur,
+        baseDur:Number(a.baseDur??a.dur??a.duracao??dur),
+        pred,
+        cat:String(a.cat??a.categoria??inferLegacyCategory(a)),
+        milestone:Boolean(a.milestone??a.marco??(dur===0)),
+        dep:String(a.dep??a.dependencia??"Nenhuma"),
+        pct:Number(a.pct??a.real??0),
+        planPct:Number(a.planPct??a.previsto??0),
+        realStart:String(a.realStart??a.inicioReal??""),
+        realEnd:String(a.realEnd??a.fimReal??""),
+        realStatus:String(a.realStatus??a.status??"Não iniciado"),
+        obs:String(a.obs??a.observacoes??""),
+        resources:Array.isArray(a.resources)?a.resources:[],
+        manualStart:String(a.manualStart??""),
+        start:String(a.start??a.inicio??""),
+        end:String(a.end??a.fim??""),
+        critical:Boolean(a.critical??a.critica??false),
+        clientVisible:typeof a.clientVisible==="boolean"?a.clientVisible:undefined,
+        clientGroup:String(a.clientGroup??""),
+        clientLabel:String(a.clientLabel??""),
+        clientHighlight:String(a.clientHighlight??""),
+        progressCounts:a.progressCounts,
+        weight:Number(a.weight??a.peso??0)
+      };
+    });
+
     responsibleCatalog=Array.from(new Set([
       ...RESPONSIBLE_DEFAULTS,
       ...(d.responsibleCatalog||[]),
       ...activities.map(a=>a.resp).filter(Boolean),
       ...activities.flatMap(a=>a.resources||[])
     ]));
-    state.status=d.status||"draft";
-    state.baseline=d.baseline||null;
+
+    /* workflow novo quando existir; legado continua editável como rascunho */
+    state.status=(d.workflowStatus==="baseline"||d.status==="baseline")?"baseline":"draft";
+    state.baseline=Array.isArray(d.baseline)&&d.baseline.length?d.baseline:null;
     state.baselineAt=d.baselineAt||null;
-    $("coordinator").value=d.coordinator||"";
+
+    $("coordinator").value=d.coordinator??d.coordenador??"";
 
     const storedStarts=activities.map(a=>parseISO(a.start)).filter(Boolean);
     const storedEnds=activities.map(a=>parseISO(a.end)).filter(Boolean);
-    const loadedStart=d.start || (storedStarts.length?iso(new Date(Math.min(...storedStarts.map(x=>x.getTime())))):"");
-    const loadedEnd=d.end || (storedEnds.length?iso(new Date(Math.max(...storedEnds.map(x=>x.getTime())))):"");
+    const resumo=(d.resumo&&typeof d.resumo==="object")?d.resumo:{};
+
+    const loadedStart=d.start||d.inicio||resumo.inicio||
+      (storedStarts.length?iso(new Date(Math.min(...storedStarts.map(x=>x.getTime())))):"");
+    const loadedEnd=d.end||d.fim||resumo.fim||
+      (storedEnds.length?iso(new Date(Math.max(...storedEnds.map(x=>x.getTime())))):"");
 
     $("startDate").value=loadedStart;
     $("endDate").value=loadedEnd;
 
-    const loadedDays=Number(d.workDays||0) ||
+    const loadedDays=Number(d.workDays??d.dias??resumo.dias??0) ||
       (loadedStart&&loadedEnd ? workdaysBetween(parseISO(loadedStart),parseISO(loadedEnd)) : 0);
     $("workDays").value=loadedDays||"";
+
     renderResponsibleList();
     setScheduleLoaded(true);
-    console.info("[Cronograma] carregado do backend",{
-      arquivo:currentScheduleFile,
-      obra:d.obra,
+
+    console.info("[Cronograma] produção carregada",{
+      endpoint:"carregar_cronograma.php",
+      id:currentScheduleId,
+      obra:d.nome||d.obra||obra,
       atividades:activities.length,
+      atividadesComDatas:activities.filter(a=>parseISO(a.start)&&parseISO(a.end)).length,
       inicio:$("startDate").value,
       fim:$("endDate").value,
       prazo:$("workDays").value
     });
+
     render();
-    showToast("success","Cronograma carregado",`${obra} • ${activities.length} atividades • ${currentScheduleFile}`);
+    showToast("success","Cronograma carregado",`${obra} • ${activities.length} atividades • produção`);
   }catch(e){
     console.error(e);
     showToast("error","Falha ao carregar cronograma",String(e.message||e));
@@ -2397,7 +2413,28 @@ async function persistSchedule(){
   }
 }
 
-function parseISO(v){ if(!v)return null; const [y,m,d]=String(v).split("-").map(Number); return new Date(y,m-1,d,12); }
+function parseISO(v){
+  if(!v)return null;
+  if(v instanceof Date)return Number.isNaN(v.getTime())?null:new Date(v);
+  const raw=String(v).trim();
+  let m=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){
+    const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12);
+    return Number.isNaN(d.getTime())?null:d;
+  }
+  m=raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if(m){
+    const d=new Date(Number(m[3]),Number(m[2])-1,Number(m[1]),12);
+    return Number.isNaN(d.getTime())?null:d;
+  }
+  const d=new Date(raw);
+  if(Number.isNaN(d.getTime()))return null;
+  d.setHours(12,0,0,0);
+  return d;
+}
+function datedPlanSource(){
+  return planSource().filter(a=>parseISO(a.start)&&parseISO(a.end));
+}
 function iso(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function addCalDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 function isWorkday(d){ const w=d.getDay(); return w!==0&&w!==6; }
@@ -2729,6 +2766,14 @@ const CLIENT_GROUP_COLORS={
   climatizacao:"#1269c7",
   entrega:"#df0b5a"
 };
+function inferLegacyCategory(a){
+  const n=String(a?.name??a?.nome??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+  if(/(AS BUILT|START UP|STARTUP|ENTREGA DA OBRA|ENTREGA DA PASTA|ACEITE|TESTE DE ESTANQUEIDADE|COMISSIONAMENTO)/.test(n))return "entrega";
+  if(/(CHEGADA|COMPRA|COTACAO|PEDIDO|MATERIAL|EQUIPAMENTO|FORNEC|FABRICACAO|SUPRIMENTO|SOLICITACAO)/.test(n))return "suprimentos";
+  if(/(CIVIL|LIBERACAO DE FRENTE|LIBERACAO DE FURO|SHAFT|ENTRE-FORRO|FORRO|ALVENARIA|PINTURA)/.test(n))return "civil";
+  if(/(KICK ?OFF|PROJETO|COMPATIBILIZACAO|APROVACAO TECNICA|PLANEJAMENTO|MOBILIZACAO)/.test(n))return "planejamento";
+  return "climatizacao";
+}
 function defaultClientGroup(a){
   if(a.clientGroup)return a.clientGroup;
   if(a.cat==="planejamento")return "planejamento";
@@ -2945,7 +2990,8 @@ function render(){
      ou executa uma edição que explicitamente exige recálculo. */
   const start=parseISO($("startDate").value)||nextWorkday(today());
 
-  const source=planSource();
+  const source=datedPlanSource();
+  if(!source.length){showToast("error","Datas inválidas","Nenhuma atividade com início e fim válidos foi encontrada.");return;}
   const startPlan=new Date(Math.min(...source.map(a=>parseISO(a.start).getTime())));
   const finish=new Date(Math.max(...source.map(a=>parseISO(a.end).getTime())));
   const weeks=buildWeeks(startPlan,finish);
@@ -3316,7 +3362,8 @@ function openReport(){
 
 function renderReport(){
   syncOutputsWithCurrentSchedule();
-  const source=planSource();
+  const source=datedPlanSource();
+  if(!source.length)return;
   const start=new Date(Math.min(...source.map(a=>parseISO(a.start).getTime())));
   const finish=new Date(Math.max(...source.map(a=>parseISO(a.end).getTime())));
   const plan=plannedPercentAt(today());
@@ -3890,16 +3937,35 @@ async function carregarCronogramasDisponiveis(){
   if(!select)return;
   select.innerHTML='<option value="">Carregando cronogramas...</option>';
   try{
-    const resp=await fetch(`${CRONOGRAMA_API}?action=list&_=${Date.now()}`,{cache:"no-store"});
-    const text=await resp.text();
-    if(!resp.ok)throw new Error(text||(`HTTP ${resp.status}`));
-    const json=text.trim()?JSON.parse(text):{};
-    const obras=Array.isArray(json.data)?json.data:[];
+    let json;
+    try{
+      const resp=await fetch(`${CRONOGRAMA_LIST_PROD}?_=${Date.now()}`,{cache:"no-store"});
+      const text=await resp.text();
+      if(!resp.ok)throw new Error(text||(`HTTP ${resp.status}`));
+      json=text.trim()?JSON.parse(text):{};
+    }catch(primaryError){
+      console.warn("listar_obras_farol.php falhou; usando fallback:",primaryError);
+      const resp=await fetch(`${CRONOGRAMA_LIST_FALLBACK}?_=${Date.now()}`,{cache:"no-store"});
+      const text=await resp.text();
+      if(!resp.ok)throw new Error(text||(`HTTP ${resp.status}`));
+      json=text.trim()?JSON.parse(text):{};
+    }
+
+    const raw=Array.isArray(json.data)?json.data:[];
+    const seen=new Set();
+    const obras=raw.map(o=>({
+      id:String(o.id??o.codigo??"").trim(),
+      obra:String(o.nome??o.obra??"").trim(),
+      coordenador:String(o.coordenador??"")
+    })).filter(o=>o.id&&o.obra&&!seen.has(o.id)&&seen.add(o.id));
+
     cronogramasDisponiveis=obras;
     select.innerHTML='<option value="">Selecione uma obra...</option>'+obras.map(o=>
-      `<option value="${esc(o.obra)}" data-file="${esc(o.arquivo)}" data-id="${esc(o.id||"")}">${esc(o.obra)}</option>`
+      `<option value="${esc(o.obra)}" data-file="${esc("obra_"+o.id+".json")}" data-id="${esc(o.id)}">${esc(o.obra)}</option>`
     ).join("");
-    currentScheduleFile="";currentScheduleId="";
+
+    currentScheduleFile="";
+    currentScheduleId="";
     setScheduleLoaded(false);
   }catch(e){
     console.error("Falha ao listar cronogramas:",e);
@@ -4004,7 +4070,7 @@ async function saveClientClassification(){
 
 function renderClientSchedule(){
   syncOutputsWithCurrentSchedule();
-  const source=planSource();
+  const source=datedPlanSource();
   if(!source.length)return;
 
   const planStart=new Date(Math.min(...source.map(a=>parseISO(a.start).getTime())));
@@ -4015,7 +4081,7 @@ function renderClientSchedule(){
 
   const activeSource=new Map(source.map(a=>[a.id,a]));
   const ganttW=1125;
-  const bodyH=565;
+  const bodyH=535;
   let rowH=116.8;
 
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -4024,14 +4090,6 @@ function renderClientSchedule(){
     if(!d)return 0;
     return clamp(((d.getTime()-planStart.getTime())/timeSpan)*ganttW,0,ganttW);
   };
-
-  const todayDate=today();
-  const todayInside=todayDate>=planStart && todayDate<=planFinish;
-  const todayX=todayInside?xForDate(todayDate):null;
-  const todayHtml=todayInside
-    ? `<span class="ref-exec-today-line" style="left:${todayX}px"></span>
-       <span class="ref-exec-today-label" style="left:${todayX}px">HOJE<br>${fmt(todayDate)}</span>`
-    : "";
 
   const monthStarts=[];
   let cursor=new Date(planStart.getFullYear(),planStart.getMonth(),1);
@@ -4128,10 +4186,10 @@ function renderClientSchedule(){
 
     /* Faixa superior da linha = marcos.
        Faixa inferior = barra + data final. */
-    const labelTop=rowTop+Math.max(6,rowH*0.12);
+    const labelTop=rowTop+Math.max(4,(rowH-116.8)*0.12);
     const labelW=154;
     const labelH=39;
-    const barY=rowTop+Math.max(58,rowH*0.68);
+    const barY=rowTop+rowH-38;
     const markerY=barY+5;
 
     /* Reserva 120 px no lado direito exclusivamente para a data final. */
@@ -4257,7 +4315,6 @@ function renderClientSchedule(){
           <div class="ref-exec-left" style="height:${bodyH}px">${leftRows}</div>
           <div class="ref-exec-gantt" style="height:${bodyH}px">
             ${grid}
-            ${todayHtml}
             ${bars}
           </div>
         </div>
@@ -4293,8 +4350,9 @@ function scaleReferenceSheets(){
     const maxH=(pages?.clientHeight||window.innerHeight-80)-8;
 
     const scaleX=maxW/1536;
-    const scaleY=maxH/1024;
-    const scale=Math.min(1,scaleX,scaleY);
+    /* A largura da barra superior é a referência visual.
+       Não reduzir o cronograma pela altura da viewport; o overlay já possui rolagem vertical. */
+    const scale=Math.min(1,scaleX);
 
     shell.style.width=(1536*scale)+"px";
     shell.style.height=(1024*scale)+"px";
@@ -4311,7 +4369,8 @@ function openClientSchedule(){
 }
 
 async function shareClientSchedule(){
-  const source=planSource();
+  const source=datedPlanSource();
+  if(!source.length)return;
   const start=new Date(Math.min(...source.map(a=>parseISO(a.start).getTime())));
   const finish=new Date(Math.max(...source.map(a=>parseISO(a.end).getTime())));
   const plan=Math.round(plannedPercentAt(today()));
