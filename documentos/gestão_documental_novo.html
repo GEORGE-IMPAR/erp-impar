@@ -2141,6 +2141,129 @@ let previewHistory=[];
 let previewHistoryIndex=-1;
 let previewHistoryTimer=null;
 
+
+function savedCompanyData(prefix,e){
+  e=e||{};
+  const enderecoCompleto =
+    e.enderecoCompleto ||
+    [e.log||e.logradouro,e.num||e.numero,e.comp||e.complemento,e.bairro,e.cidade,e.uf]
+      .filter(Boolean).join(", ");
+  return {
+    ["nome"+prefix]: e.nome || e.fantasia || "",
+    ["cpfCnpj"+prefix]: e.cnpj || e.cpfCnpj || "",
+    ["endereco"+prefix+"Completo"]: enderecoCompleto,
+    ["cep"+prefix]: e.cep || "",
+    ["contato"+prefix]: e.contato || e.responsavel || "",
+    ["cpfContato"+prefix]: e.cpf || e.cpfContato || e.cpfResponsavel || ""
+  };
+}
+
+function contractValuesFromSavedForm(f){
+  f=f||{};
+  return {
+    codigo:f.codigo||"",
+    servico:f.servico||"",
+    enderecoObra:f.enderecoObra||"",
+    prazoDias:f.prazoDias||"",
+    valor:f.valor||"",
+    valorExtenso:f.valorExtenso||"",
+    dataExtenso:f.dataExtenso||"",
+    ...savedCompanyData("Contratante",f.contratante||{}),
+    ...savedCompanyData("Contratada",f.contratada||{})
+  };
+}
+
+function resolveLegacyPlaceholdersInHtml(sourceHtml,form,{highlight=false}={}){
+  const vals=contractValuesFromSavedForm(form);
+  const host=document.createElement("div");
+  host.innerHTML=sourceHtml||"";
+
+  // Variáveis estruturadas do editor atual.
+  host.querySelectorAll(".var").forEach(el=>{
+    const key=el.dataset.var||"";
+    let value=vals[key] ?? "";
+    value=transformedVarValue(el,value||`[${key}]`);
+    if(highlight){
+      const tmp=document.createElement("span");
+      tmp.innerHTML=autoFieldHTML(key,value);
+      el.replaceWith(tmp.firstElementChild);
+    }else{
+      el.replaceWith(document.createTextNode(value||`[${key}]`));
+    }
+  });
+
+  // Compatibilidade com contratos já gravados em versões anteriores,
+  // onde o placeholder virou texto puro dentro do HTML.
+  const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);
+  const nodes=[];
+  while(walker.nextNode())nodes.push(walker.currentNode);
+
+  nodes.forEach(node=>{
+    let text=node.nodeValue||"";
+    let changed=false;
+    Object.entries(vals).forEach(([key,value])=>{
+      const token=`[${key}]`;
+      if(text.includes(token) && String(value||"").trim()!==""){
+        text=text.split(token).join(String(value));
+        changed=true;
+      }
+    });
+    if(changed)node.nodeValue=text;
+  });
+
+  return host.innerHTML;
+}
+
+function hasUnresolvedContractVariables(sourceHtml){
+  return /\[(?:codigo|servico|enderecoObra|prazoDias|valor|valorExtenso|dataExtenso|nomeContratante|cpfCnpjContratante|enderecoContratanteCompleto|cepContratante|contatoContratante|cpfContatoContratante|nomeContratada|cpfCnpjContratada|enderecoContratadaCompleto|cepContratada|contatoContratada|cpfContatoContratada)\]/i
+    .test(sourceHtml||"");
+}
+
+async function refreshTemplateFromBackend(){
+  try{
+    const data=await backendRequest("template_get",{id:"contrato_padrao_impar"});
+    if(data?.template?.html){
+      templateHTML=data.template.html;
+      return true;
+    }
+    return false;
+  }catch(err){
+    console.error("[Template] falha ao buscar atual",err);
+    showToast("error","Falha ao carregar template","Não foi possível buscar o template atual no backend.");
+    return false;
+  }
+}
+
+async function buildPreviewFromSavedForm(form,{useCurrentTemplate=true,highlight=true}={}){
+  if(useCurrentTemplate){
+    const ok=await refreshTemplateFromBackend();
+    if(!ok && !templateHTML){
+      throw new Error("Template atual indisponível.");
+    }
+  }
+  const vals=contractValuesFromSavedForm(form);
+  const w=document.createElement("div");
+  w.innerHTML=templateHTML||"";
+
+  w.querySelectorAll(".var").forEach(x=>{
+    const key=x.dataset.var;
+    let value=vals[key]||`[${key}]`;
+    value=transformedVarValue(x,value);
+    if(highlight){
+      const temp=document.createElement("span");
+      temp.innerHTML=autoFieldHTML(key,value);
+      x.replaceWith(temp.firstElementChild);
+    }else{
+      x.replaceWith(document.createTextNode(value));
+    }
+  });
+
+  // Se o template salvo for legado e contiver tokens como texto simples.
+  w.innerHTML=resolveLegacyPlaceholdersInHtml(w.innerHTML,form,{highlight:false});
+
+  return w.innerHTML;
+}
+
 function companyData(prefix,e){
   e=e||{};
   const endereco=[e.log,e.num,e.comp,e.bairro,e.cidade,e.uf].filter(Boolean).join(", ");
@@ -2751,7 +2874,16 @@ async function abrirContratoSalvo(id){
     syncSignatarios();
 
     const preview=document.getElementById("preview");
-    preview.innerHTML=d.finalHtml||"";
+    let savedHtml=d.finalHtml||"";
+
+    // Contratos salvos em versões antigas podem ter placeholders não resolvidos.
+    // Corrige em memória antes de exibir, sem alterar o backend até o usuário salvar.
+    if(hasUnresolvedContractVariables(savedHtml) || savedHtml.includes('class="var"')){
+      savedHtml=resolveLegacyPlaceholdersInHtml(savedHtml,f,{highlight:true});
+      showToast("info","Contrato compatibilizado","Dados do contrato salvo foram reaplicados na prévia.");
+    }
+
+    preview.innerHTML=savedHtml;
     previewHistory=[];
     previewHistoryIndex=-1;
     previewSnapshot();
@@ -2776,14 +2908,26 @@ async function aplicarTemplateAtualContrato(){
   }
   const ok=await erpConfirm(
     "Aplicar template atual",
-    "O documento salvo não será apagado. Será gerada uma nova prévia com os dados cadastrados usando o template atual. Você poderá revisar antes de salvar uma nova revisão.",
+    "O documento salvo não será apagado. Será gerada uma nova prévia com os dados cadastrados usando o template atual. Você poderá revisar antes de salvar a atualização.",
     {type:"warning",okText:"Aplicar template"}
   );
   if(!ok)return;
 
-  // Reaplica os dados atuais do formulário ao template atual.
-  await gerarPreviaFinal();
-  showToast("info","Template reaplicado","Revise a nova prévia e salve quando estiver de acordo.");
+  try{
+    const formAtual=contratoAbertoMeta?.form || contractFormData();
+    const rebuilt=await buildPreviewFromSavedForm(formAtual,{useCurrentTemplate:true,highlight:true});
+    const preview=document.getElementById("preview");
+    preview.innerHTML=rebuilt;
+    previewHistory=[];
+    previewHistoryIndex=-1;
+    previewSnapshot();
+    document.getElementById("docWizardForm").style.display="none";
+    document.getElementById("docPreviewStage").style.display="block";
+    showToast("success","Template aplicado","Template atual aplicado aos dados cadastrados do contrato.");
+  }catch(err){
+    console.error("[Template] aplicar atual",err);
+    showToast("error","Falha ao aplicar template",err.message||"Não foi possível reconstruir o documento.");
+  }
 }
 
 function iniciarNovoContrato(){
