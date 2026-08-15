@@ -1142,35 +1142,32 @@ window.GESTAO_DOC_API = window.GESTAO_DOC_API || "https://api.erpimpar.com.br/do
 </style>
 
 
-<style id="v0127PapeisEmpresa">
+<style id="v0128PapeisCheckbox">
 #empresaRolePicker.role-picker{
   display:flex;
   flex-wrap:wrap;
-  gap:7px;
+  gap:8px 14px;
   min-height:38px;
   align-items:center;
 }
-#empresaRolePicker .role{
-  appearance:none;
-  border:1px solid #cfdde4;
-  background:#f7fafb;
-  color:#294d63;
-  border-radius:999px;
-  min-height:32px;
-  padding:0 12px;
-  font:800 10px/1 Arial,sans-serif;
+#empresaRolePicker .role-check{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
   cursor:pointer;
-  transition:.16s ease;
+  user-select:none;
+  color:#294d63;
+  font:800 10px/1 Arial,sans-serif;
 }
-#empresaRolePicker .role:hover{
-  border-color:#7dcfb0;
-  background:#f0faf6;
+#empresaRolePicker .role-check input{
+  width:16px;
+  height:16px;
+  margin:0;
+  accent-color:#16ad73;
+  cursor:pointer;
 }
-#empresaRolePicker .role.on{
-  background:#16ad73;
-  border-color:#16ad73;
-  color:#fff;
-  box-shadow:0 4px 10px rgba(22,173,115,.18);
+#empresaRolePicker .role-check span{
+  line-height:1.1;
 }
 </style>
 
@@ -1420,12 +1417,12 @@ window.GESTAO_DOC_API = window.GESTAO_DOC_API || "https://api.erpimpar.com.br/do
 <div class="f uf-field"><label>UF</label><input id="eUf" maxlength="2" autocomplete="address-level1" placeholder="SC"></div>
 <div class="f span2"><label>Papéis</label>
 <div class="role-picker" id="empresaRolePicker" aria-label="Papéis da empresa">
-  <button type="button" class="role" data-r="Cliente">Cliente</button>
-  <button type="button" class="role" data-r="Contratante">Contratante</button>
-  <button type="button" class="role" data-r="Contratada">Contratada</button>
-  <button type="button" class="role" data-r="Empreiteiro">Empreiteiro</button>
-  <button type="button" class="role" data-r="Fornecedor">Fornecedor</button>
-  <button type="button" class="role" data-r="Parceiro">Parceiro</button>
+  <label class="role-check"><input type="checkbox" class="role" data-r="Cliente"><span>Cliente</span></label>
+  <label class="role-check"><input type="checkbox" class="role" data-r="Contratante"><span>Contratante</span></label>
+  <label class="role-check"><input type="checkbox" class="role" data-r="Contratada"><span>Contratada</span></label>
+  <label class="role-check"><input type="checkbox" class="role" data-r="Empreiteiro"><span>Empreiteiro</span></label>
+  <label class="role-check"><input type="checkbox" class="role" data-r="Fornecedor"><span>Fornecedor</span></label>
+  <label class="role-check"><input type="checkbox" class="role" data-r="Parceiro"><span>Parceiro</span></label>
 </div>
 <div class="roles" id="roles"></div></div>
 </div>
@@ -1838,11 +1835,9 @@ function bindEmpresaRolePicker(){
   const picker=document.getElementById("empresaRolePicker");
   if(!picker || picker.dataset.bound==="1")return;
   picker.dataset.bound="1";
-  picker.addEventListener("click",e=>{
-    const btn=e.target.closest(".role");
-    if(!btn)return;
-    e.preventDefault();
-    btn.classList.toggle("on");
+  picker.addEventListener("change",e=>{
+    const box=e.target.closest(".role");
+    if(!box)return;
   });
 }
 
@@ -1868,7 +1863,7 @@ saveEmp.onclick=async()=>{
   e.tel=maskPhone(e.tel);
   e.cep=maskCep(e.cep);
   e.uf=(e.uf||"").toUpperCase();
-  e.papeis=[...document.querySelectorAll(".role.on")].map(b=>b.dataset.r);
+  e.papeis=[...document.querySelectorAll("#empresaRolePicker .role:checked")].map(b=>b.dataset.r);
   if(editIdx>=0 && empresas[editIdx]?.id)e.id=empresas[editIdx].id;
 
   try{
@@ -2816,15 +2811,31 @@ async function salvarContratoBackend(){
   }
 }
 
-async function loadContracts(){
+async function loadContracts(showFeedback=false){
   try{
     const data=await backendRequest("document_list");
     contractsCache=Array.isArray(data.documents)?data.documents:[];
     renderContracts();
+
+    if(showFeedback){
+      let companyCount=0;
+      try{
+        const c=await backendRequest("company_list");
+        companyCount=Array.isArray(c.companies)?c.companies.length:0;
+        if(Array.isArray(c.companies)){
+          empresas=c.companies;
+          renderEmp();
+          fillSelects();
+        }
+      }catch(e){console.error("[Empresas] atualizar",e)}
+
+      showToast("success","Dados atualizados",`${contractsCache.length} contrato(s) e ${companyCount} empresa(s) carregados do KingHost.`);
+    }
   }catch(err){
     console.error("[Documentos] listar",err);
     const body=document.getElementById("contractsTableBody");
     if(body)body.innerHTML=`<tr><td colspan="8" class="empty-row">Falha ao carregar contratos do backend.</td></tr>`;
+    if(showFeedback)showToast("error","Falha ao atualizar","Não foi possível carregar os dados do KingHost.");
   }
 }
 
@@ -2998,7 +3009,7 @@ function iniciarNovoContrato(){
 function bindBackendDocumentos(){
   document.getElementById("btnSalvarNoBackend")?.addEventListener("click",salvarContratoBackend);
   document.getElementById("btnAplicarTemplateAtual")?.addEventListener("click",aplicarTemplateAtualContrato);
-  document.getElementById("btnAtualizarContratos")?.addEventListener("click",loadContracts);
+  document.getElementById("btnAtualizarContratos")?.addEventListener("click",()=>loadContracts(true));
   document.getElementById("contractsSearch")?.addEventListener("input",renderContracts);
 
   document.querySelectorAll('.doc-toolbar button[data-v="contratos"]').forEach(b=>{
@@ -3055,33 +3066,99 @@ function legacyHtml(f){
  const w=document.createElement("div");w.innerHTML=templateHTML;w.querySelectorAll(".var").forEach(x=>x.replaceWith(document.createTextNode(transformedVarValue(x,vals[x.dataset.var]||`[${x.dataset.var}]`))));return w.innerHTML;
 }
 async function importLegacy(){
- const confirm=document.getElementById("legacyConfirm");
- const modal=document.getElementById("legacyImportModal");
- const list=legacyPending.filter(x=>x.valid);let ok=0,fail=0;if(confirm)confirm.disabled=true;
- for(let i=0;i<list.length;i++){const x=list[i];if(confirm)confirm.textContent=`IMPORTANDO ${i+1}/${list.length}`;try{
-  for(const [c,p] of [[x.form.contratante,"Contratante"],[x.form.contratada,"Contratada"]]){
-    const cnpjKey=onlyDigits(c.cnpj||"");
-    const nameKey=String(c.nome||"").trim().toLocaleUpperCase("pt-BR");
-    const existing=empresas.find(e=>{
-      const ec=onlyDigits(e.cnpj||"");
-      const en=String(e.nome||"").trim().toLocaleUpperCase("pt-BR");
-      return (cnpjKey && ec===cnpjKey) || (!cnpjKey && nameKey && en===nameKey);
-    });
-    const merged={
-      ...(existing||{}),
-      ...Object.fromEntries(Object.entries(c).filter(([k,v])=>v!==undefined && v!==null && String(v).trim()!=="")),
-      id:existing?.id||c.id,
-      papeis:[...new Set([...(existing?.papeis||[]),p])]
-    };
-    const r=await backendRequest("company_save",{company:merged});
-    Object.assign(c,r.company||merged);
-    const idx=empresas.findIndex(e=>e.id===(r.company||merged).id);
-    if(idx>=0)empresas[idx]=r.company||merged; else empresas.push(r.company||merged);
+  const list=legacyPending.filter(x=>x.valid);
+  if(!list.length){
+    showToast("warning","Nada para importar","Nenhum contrato válido foi encontrado na análise.");
+    return;
   }
-  await backendRequest("document_import",{form:x.form,finalHtml:legacyHtml(x.form),templateHtml:templateHTML,legacyMeta:{filename:x.file,baseCodigo:x.base,revision:x.revision}});ok++;
- }catch(e){console.error(e);fail++;x.valid=false;x.error=e.message}}
- if(confirm)confirm.disabled=false;renderLegacy();await loadEmpresasBackend();await loadContracts();
- if(!fail){modal?.classList.remove("on");showToast("success","Importação concluída",`${ok} contrato(s) importado(s).`)}else showToast("warning","Importação com pendências",`${ok} importado(s) e ${fail} com erro.`);
+
+  legacyConfirm.disabled=true;
+  legacyCancel.disabled=true;
+  let ok=0,fail=0;
+  const importedCodes=[];
+
+  showToast("info","Importação iniciada",`Enviando ${list.length} contrato(s) para o KingHost...`);
+
+  for(let i=0;i<list.length;i++){
+    const x=list[i];
+    legacyConfirm.textContent=`IMPORTANDO ${i+1}/${list.length}`;
+
+    try{
+      // 1. Empresas
+      for(const [c,p] of [[x.form.contratante,"Contratante"],[x.form.contratada,"Contratada"]]){
+        const cnpjKey=onlyDigits(c.cnpj||"");
+        const nameKey=String(c.nome||"").trim().toLocaleUpperCase("pt-BR");
+        const existing=empresas.find(e=>{
+          const ec=onlyDigits(e.cnpj||"");
+          const en=String(e.nome||"").trim().toLocaleUpperCase("pt-BR");
+          return (cnpjKey && ec===cnpjKey) || (!cnpjKey && nameKey && en===nameKey);
+        });
+
+        const merged={
+          ...(existing||{}),
+          ...Object.fromEntries(Object.entries(c).filter(([k,v])=>v!==undefined && v!==null && String(v).trim()!=="")),
+          id:existing?.id||c.id,
+          papeis:[...new Set([...(existing?.papeis||[]),p])]
+        };
+
+        const r=await backendRequest("company_save",{company:merged});
+        if(!r?.company)throw new Error(`Backend não confirmou o cadastro da empresa ${merged.nome||""}.`);
+        Object.assign(c,r.company);
+
+        const idx=empresas.findIndex(e=>e.id===r.company.id);
+        if(idx>=0)empresas[idx]=r.company; else empresas.push(r.company);
+      }
+
+      // 2. Contrato
+      const resp=await backendRequest("document_import",{
+        form:x.form,
+        finalHtml:legacyHtml(x.form),
+        templateHtml:templateHTML,
+        legacyMeta:{filename:x.file,baseCodigo:x.base,revision:x.revision}
+      });
+      if(!resp?.document?.id)throw new Error("Backend não confirmou a gravação do contrato.");
+
+      importedCodes.push(String(x.form.codigo||"").trim().toUpperCase());
+      ok++;
+      x.imported=true;
+    }catch(e){
+      console.error("[Importação legado]",x.file,e);
+      fail++;
+      x.error=e.message||"Falha ao gravar no backend";
+    }
+  }
+
+  // 3. Releitura obrigatória do backend para confirmar persistência física
+  let confirmed=0;
+  try{
+    const docs=await backendRequest("document_list");
+    const backCodes=new Set((docs.documents||[]).map(d=>String(d.codigo||"").trim().toUpperCase()));
+    confirmed=importedCodes.filter(c=>backCodes.has(c)).length;
+
+    const comps=await backendRequest("company_list");
+    if(Array.isArray(comps.companies)){
+      empresas=comps.companies;
+      renderEmp();
+      fillSelects();
+    }
+
+    contractsCache=Array.isArray(docs.documents)?docs.documents:[];
+    renderContracts();
+  }catch(e){
+    console.error("[Confirmação pós-importação]",e);
+    fail += Math.max(0,ok-confirmed);
+  }
+
+  legacyConfirm.disabled=false;
+  legacyCancel.disabled=false;
+  legacyConfirm.textContent="IMPORTAR PARA O BACKEND";
+
+  if(ok>0 && confirmed===ok && fail===0){
+    legacyImportModal.classList.remove("on");
+    showToast("success","Importação concluída",`${confirmed} contrato(s) gravado(s) e confirmados no KingHost.`);
+  }else{
+    showToast("error","Importação incompleta",`${confirmed} contrato(s) confirmados no KingHost. ${fail} falha(s). Nada é considerado importado sem confirmação do backend.`);
+  }
 }
 function bindLegacyImport(){
   const btn=document.getElementById("btnImportarLegado");
@@ -3109,7 +3186,7 @@ function bindLegacyImport(){
       legacyPending=await readLegacy(files);
       renderLegacy();
       if(modal)modal.classList.add("on");
-      showToast("success","Análise concluída",`${legacyPending.length} contrato(s) encontrado(s).`);
+      showToast("success","Análise concluída",`${legacyPending.length} contrato(s) encontrado(s). Ainda não importado(s).`);
     }catch(x){
       console.error("[Legado]",x);
       showToast("error","Falha na importação",x.message||"Não foi possível ler o ZIP/JSON.",6500);
