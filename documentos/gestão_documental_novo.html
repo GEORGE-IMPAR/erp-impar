@@ -1141,6 +1141,39 @@ window.GESTAO_DOC_API = window.GESTAO_DOC_API || "https://api.erpimpar.com.br/do
 }
 </style>
 
+
+<style id="v0127PapeisEmpresa">
+#empresaRolePicker.role-picker{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  min-height:38px;
+  align-items:center;
+}
+#empresaRolePicker .role{
+  appearance:none;
+  border:1px solid #cfdde4;
+  background:#f7fafb;
+  color:#294d63;
+  border-radius:999px;
+  min-height:32px;
+  padding:0 12px;
+  font:800 10px/1 Arial,sans-serif;
+  cursor:pointer;
+  transition:.16s ease;
+}
+#empresaRolePicker .role:hover{
+  border-color:#7dcfb0;
+  background:#f0faf6;
+}
+#empresaRolePicker .role.on{
+  background:#16ad73;
+  border-color:#16ad73;
+  color:#fff;
+  box-shadow:0 4px 10px rgba(22,173,115,.18);
+}
+</style>
+
 </head><body>
 <div class="wrap" id="appWrap">
 <section class="panel" id="setupPanel">
@@ -1385,7 +1418,16 @@ window.GESTAO_DOC_API = window.GESTAO_DOC_API || "https://api.erpimpar.com.br/do
 <div class="f"><label>Cidade</label><input id="eCidade" autocomplete="address-level2"></div>
 
 <div class="f uf-field"><label>UF</label><input id="eUf" maxlength="2" autocomplete="address-level1" placeholder="SC"></div>
-<div class="f span2"><label>Papéis</label><div class="roles" id="roles"></div></div>
+<div class="f span2"><label>Papéis</label>
+<div class="role-picker" id="empresaRolePicker" aria-label="Papéis da empresa">
+  <button type="button" class="role" data-r="Cliente">Cliente</button>
+  <button type="button" class="role" data-r="Contratante">Contratante</button>
+  <button type="button" class="role" data-r="Contratada">Contratada</button>
+  <button type="button" class="role" data-r="Empreiteiro">Empreiteiro</button>
+  <button type="button" class="role" data-r="Fornecedor">Fornecedor</button>
+  <button type="button" class="role" data-r="Parceiro">Parceiro</button>
+</div>
+<div class="roles" id="roles"></div></div>
 </div>
 <div class="empresa-actions"><button class="btn s" onclick="closeEmp()">Cancelar</button><button class="btn p" id="saveEmp">Salvar</button></div></div></div>
 
@@ -1791,16 +1833,29 @@ async function saveEmpresaBackend(e){
   return data.company;
 }
 
+
+function bindEmpresaRolePicker(){
+  const picker=document.getElementById("empresaRolePicker");
+  if(!picker || picker.dataset.bound==="1")return;
+  picker.dataset.bound="1";
+  picker.addEventListener("click",e=>{
+    const btn=e.target.closest(".role");
+    if(!btn)return;
+    e.preventDefault();
+    btn.classList.toggle("on");
+  });
+}
+
 function renderEmp(){let q=qemp.value.toLowerCase();tbody.innerHTML=empresas.map((e,i)=>({e,i})).filter(x=>!q||JSON.stringify(x.e).toLowerCase().includes(q)).map(x=>`<tr><td><b>${esc(x.e.fantasia||x.e.nome)}</b><div class="sub">${esc(x.e.nome)}</div></td><td>${esc(x.e.cnpj)}</td><td>${esc(x.e.contato||"—")}</td><td>${x.e.papeis.map(p=>`<span class="tag">${p}</span>`).join("")}</td><td><button class="btn s" onclick="openEmp(${x.i})">Editar</button></td></tr>`).join("");kemp.textContent=empresas.length;fillSelects()}
 qemp.oninput=renderEmp;
 function roles(selected){roles.innerHTML=roleNames.map(r=>`<button type="button" class="role ${selected.includes(r)?"on":""}" data-r="${r}">${r}</button>`).join("");document.querySelectorAll(".role").forEach(b=>b.onclick=()=>b.classList.toggle("on"))}
-function openEmp(i=-1){editIdx=i;let e=i>=0?empresas[i]:{nome:"",fantasia:"",cnpj:"",contato:"",cpf:"",tel:"",mail:"",cep:"",log:"",num:"",comp:"",bairro:"",cidade:"",uf:"",papeis:[]};empTitle.textContent=i>=0?"Editar empresa":"Nova empresa";let m={eNome:"nome",eFantasia:"fantasia",eCnpj:"cnpj",eContato:"contato",eCpf:"cpf",eTel:"tel",eMail:"mail",eCep:"cep",eLog:"log",eNum:"num",eComp:"comp",eBairro:"bairro",eCidade:"cidade",eUf:"uf"};Object.entries(m).forEach(([id,k])=>document.getElementById(id).value=e[k]||"");roles(e.papeis);
+function openEmp(i=-1){bindEmpresaRolePicker();editIdx=i;let e=i>=0?empresas[i]:{nome:"",fantasia:"",cnpj:"",contato:"",cpf:"",tel:"",mail:"",cep:"",log:"",num:"",comp:"",bairro:"",cidade:"",uf:"",papeis:[]};empTitle.textContent=i>=0?"Editar empresa":"Nova empresa";let m={eNome:"nome",eFantasia:"fantasia",eCnpj:"cnpj",eContato:"contato",eCpf:"cpf",eTel:"tel",eMail:"mail",eCep:"cep",eLog:"log",eNum:"num",eComp:"comp",eBairro:"bairro",eCidade:"cidade",eUf:"uf"};Object.entries(m).forEach(([id,k])=>document.getElementById(id).value=e[k]||"");roles(e.papeis);
   document.getElementById("eCnpj").value=maskCpfCnpj(document.getElementById("eCnpj").value);
   document.getElementById("eCpf").value=maskCpf(document.getElementById("eCpf").value);
   document.getElementById("eTel").value=maskPhone(document.getElementById("eTel").value);
   document.getElementById("eCep").value=maskCep(document.getElementById("eCep").value);
   document.getElementById("eUf").value=(document.getElementById("eUf").value||"").toUpperCase();
-  bindEmpresaMasks();
+  bindEmpresaMasks();bindEmpresaRolePicker();
   empModal.classList.add("on")
 }window.openEmp=openEmp;newEmp.onclick=()=>openEmp();window.closeEmp=()=>empModal.classList.remove("on");
 saveEmp.onclick=async()=>{
