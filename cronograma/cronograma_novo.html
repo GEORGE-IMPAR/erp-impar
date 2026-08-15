@@ -4962,14 +4962,47 @@ document.addEventListener("keydown",e=>{
   }
 });
 
+
+async function autoOpenScheduleFromQuery(){
+  const qs=new URLSearchParams(location.search);
+  const arquivo=String(qs.get("arquivo")||"").trim();
+  const visao=String(qs.get("visao")||"").trim().toLowerCase();
+  if(!arquivo)return false;
+
+  const wantedId=arquivo.replace(/^obra_/i,"").replace(/\.json$/i,"");
+  const options=[...$("obra").options];
+  const opt=options.find(o=>String(o.dataset.id||"")===wantedId || String(o.dataset.file||"")===arquivo);
+  if(!opt){
+    showToast("warning","Cronograma não localizado",`Não encontrei o cronograma ${arquivo} na lista de obras.`);
+    return false;
+  }
+
+  $("obra").value=opt.value;
+  currentScheduleId=String(opt.dataset.id||wantedId);
+  currentScheduleFile=String(opt.dataset.file||arquivo);
+  setScheduleLoaded(false);
+
+  await loadSelectedSchedule();
+
+  if(visao==="cliente" && loadedSchedule){
+    renderClientSchedule();
+    $("clientView").classList.add("open");
+    requestAnimationFrame(scaleReferenceSheets);
+  }
+  return true;
+}
+
 /* INICIALIZAÇÃO */
 setDefaultDates();
 renderResponsibleList();
 setScheduleLoaded(false);
 carregarCoordenadoresDisponiveis();
-carregarCronogramasDisponiveis();
+(async()=>{
+  await carregarCronogramasDisponiveis();
+  const opened=await autoOpenScheduleFromQuery();
+  if(!opened)setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
+})();
 window.addEventListener("resize",scaleReferenceSheets);
-setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
 
 requestAnimationFrame(()=>{try{updateMainTitleStatus()}catch(e){}});
 </script>

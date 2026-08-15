@@ -242,7 +242,7 @@ input:focus,select:focus,textarea:focus{
 </div>
 <div class="ov" id="contractOv"><div class="dlg" style="width:min(980px,94vw)"><div class="dh"><h2>Selecionar origem comercial</h2><div class="sp"></div><button class="btn" onclick="closeContractPicker()">×</button></div><div class="db"><p style="font-size:10px;color:#6b8291;margin-top:0">Selecione um contrato finalizado no Comercial/Jurídico. O contrato permanece na Gestão Documental; a Vida da Obra apenas utiliza seus dados para iniciar o projeto.</p><div style="display:flex;gap:8px;margin:10px 0"><input id="contractSearch" placeholder="Pesquisar por código, cliente ou serviço..." style="flex:1"><button class="btn" id="contractRefresh">↻ Atualizar</button></div><div id="contractList" style="display:grid;gap:7px;max-height:52vh;overflow:auto"></div></div><div class="df"><button class="btn" onclick="closeContractPicker()">Cancelar</button></div></div></div>
 <div class="ov" id="startOv"><div class="dlg"><div class="dh"><h2>Iniciar obra</h2><div class="sp"></div><button class="btn" onclick="closeStart()">×</button></div><div class="db"><p style="font-size:10px;color:#6b8291">Primeiro defina o coordenador. Os demais dados vêm do contrato.</p><div class="fg"><div class="f"><label>Coordenador *</label><select id="coord"></select></div><div class="f"><label>Código / Centro de custo</label><input id="code" readonly></div><div class="f"><label>Data de início *</label><input id="start" type="date"></div><div class="f s2"><label>Nome da obra *</label><input id="name"></div><div class="f"><label>Prazo (dias úteis)</label><input id="days" type="number" min="1"></div><div class="f full"><label>Endereço</label><input id="address"></div><div class="f full"><label>Escopo</label><textarea id="scope"></textarea></div><div class="f"><label>Projetista</label><input id="designer"></div><div class="f"><label>Tipo instalação</label><input id="type"></div><div class="f"><label>CNO</label><input id="cno"></div></div><div class="prog" id="prog" style="display:none"><div class="pline"><i id="pbar"></i></div><div class="pt" id="ptext">Preparando...</div></div></div><div class="df"><button class="btn" onclick="closeStart()">Cancelar</button><button class="btn g" id="confirm">INICIAR OBRA</button></div></div></div>
-<div class="ov" id="docOv"><div class="dlg" style="width:min(1180px,96vw)"><div class="dh"><h2 id="dtitle">Documento</h2><div class="sp"></div><button class="btn g" id="pdf">SALVAR PDF</button><button class="btn" onclick="closeDoc()">×</button></div><div class="preview"><div class="paper" id="paper"></div></div></div></div>
+<div class="ov" id="docOv"><div class="dlg" style="width:min(1180px,96vw)"><div class="dh"><h2 id="dtitle">Documento</h2><div class="sp"></div><button class="btn g" id="pdf">SALVAR PDF</button><button class="btn" onclick="closeDoc()">×</button></div><div class="preview" id="previewWrap"><div class="paper" id="paper"></div><iframe id="pdfFrame" title="Documento PDF" style="display:none;width:100%;height:72vh;border:0;border-radius:8px;background:#fff"></iframe></div></div></div>
 <input type="file" id="up" multiple hidden><div class="ts" id="ts"></div>
 <script>
 const OAPI="https://api.erpimpar.com.br/obras/api.php",DAPI="https://api.erpimpar.com.br/documentos/api.php",CAPI="https://api.erpimpar.com.br/cronograma/cronograma_api.php",COORD="https://api.erpimpar.com.br/cronograma/listar_coordenadores.php",CURL="../cronograma/cronograma_novo.html";
@@ -310,7 +310,46 @@ function renderContractPicker(){const q=String($("contractSearch")?.value||"").t
 async function loadCommercialContracts(showMessage=false){try{const j=await post(DAPI,{action:"document_list"});commercialContracts=Array.isArray(j.documents)?j.documents:[];renderContractPicker();if(showMessage)toast("success","Contratos atualizados",`${commercialContracts.length} contrato(s) carregado(s) da Gestão Documental.`)}catch(e){console.error("[Comercial] contratos",e);toast("error","Falha ao carregar contratos","Não foi possível consultar a Gestão Documental: "+e.message)}}
 async function openContractPicker(){await loadCommercialContracts(false);$("contractOv").classList.add("on");setTimeout(()=>$("contractSearch")?.focus(),80)}
 function selectCommercialContract(id){closeContractPicker();begin(id)}
-function openCommercialSource(){const id=sel?.contractId||sel?.documents?.contract?.sourceId;if(!id)return toast("warning","Origem não encontrada","Este projeto não possui contrato comercial vinculado.");window.open("../documentos/gestão_documental_novo.html?contrato="+encodeURIComponent(id),"_blank")}
+async function openCommercialSource(){
+  const id=sel?.contractId||sel?.documents?.contract?.sourceId;
+  if(!id)return toast("warning","Origem não encontrada","Este projeto não possui contrato comercial vinculado.");
+  try{
+    const j=await post(DAPI,{action:"document_get",id});
+    const doc=j.document;
+    if(!doc?.finalHtml)throw new Error("Conteúdo final do contrato não encontrado.");
+
+    $("dtitle").textContent=`Contrato ${doc.codigo||sel.code||""}`;
+    $("pdf").style.display="none";
+    $("paper").style.display="none";
+    $("pdfFrame").style.display="block";
+    $("docOv").classList.add("on");
+
+    const temp=document.createElement("div");
+    temp.style.cssText="width:794px;background:#fff;padding:56px 60px;font:13px/1.45 Arial;color:#111;";
+    temp.innerHTML=doc.finalHtml;
+    document.body.appendChild(temp);
+
+    const worker=html2pdf().set({
+      margin:[8,8,8,8],
+      filename:`Contrato_${doc.codigo||sel.code||"obra"}.pdf`,
+      image:{type:"jpeg",quality:.98},
+      html2canvas:{scale:2,useCORS:true},
+      jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
+      pagebreak:{mode:["css","legacy"],avoid:["p","li","tr","table"]}
+    }).from(temp).toPdf();
+
+    const pdf=await worker.get("pdf");
+    const blob=pdf.output("blob");
+    temp.remove();
+
+    if(window.__contractPdfUrl)URL.revokeObjectURL(window.__contractPdfUrl);
+    window.__contractPdfUrl=URL.createObjectURL(blob);
+    $("pdfFrame").src=window.__contractPdfUrl;
+  }catch(e){
+    console.error("[Origem Comercial]",e);
+    toast("error","Falha ao abrir contrato",e.message||"Não foi possível gerar a visualização PDF.");
+  }
+}
 window.selectCommercialContract=selectCommercialContract;window.openCommercialSource=openCommercialSource;
 async function begin(id){try{const j=await post(DAPI,{action:"document_get",id});pending=j.document;const f=pending.form||{};$("code").value=f.codigo||pending.codigo||"";$("start").value=f.dataISO||iso(new Date());$("days").value=f.prazoDias||30;$("address").value=f.enderecoObra||"";$("scope").value=f.servico||pending.servico||"";$("name").value=(f.nomeObra||f.obra||f.contratante?.fantasia||f.contratante?.nome||`OBRA ${f.codigo||""}`).trim();await coords();$("startOv").classList.add("on")}catch(e){toast("error","Falha ao carregar contrato",e.message)}}
 async function coords(){try{const r=await fetch(COORD,{cache:"no-store"}),j=await r.json();let a=j.coordenadores||j.data||j||[];if(!Array.isArray(a))a=[];$("coord").innerHTML=`<option value="">Selecione...</option>`+a.map(x=>`<option>${esc(typeof x==="string"?x:(x.nome||x.name||""))}</option>`).join("")}catch(e){$("coord").innerHTML=`<option value="">Selecione...</option><option>FABIO</option><option>NICOLAS</option><option>PABLO</option>`}}
@@ -335,7 +374,7 @@ function kickoff(p){
  <h3 style="text-align:center">CONTROLE DE REVISÃO</h3>
  <table><tr><th>ITEM</th><th>RESPONSÁVEL</th><th>DESCRIÇÃO</th><th>DATA</th></tr>
  <tr><td>0</td><td>Rafael Ramos</td><td>Emissão inicial</td><td>25/04/2025</td></tr>
- <tr><td>1</td><td>Rafael Ramos</td><td>Acertos com Silvio e Rogers</td><td>03/05/2025</td></tr>
+ <tr><td>1</td><td>Rafael Ramos</td><td>Acertos com Silvio</td><td>03/05/2025</td></tr>
  <tr><td>2</td><td></td><td></td><td></td></tr><tr><td>3</td><td></td><td></td><td></td></tr></table>
 
  <div style="page-break-before:always"></div>
@@ -377,8 +416,60 @@ function kickoff(p){
  <p style="margin-top:30px"><i>Data: São José, _____ de __________________ de 20___</i></p>`;
 }
 function executive(p,s){const G={planejamento:["Mobilização","#0b4f82"],suprimentos:["Suprimentos","#f39a00"],civil:["Preparação Civil","#2ca317"],climatizacao:["Climatização","#1c72c7"],dutos:["Dutos","#6857f0"],entrega:["Entrega","#e70058"]},st=pd(p.startDate),en=pd(s.endDate),tot=Math.max(1,en-st),rows=Object.entries(G).map(([cat,[n,c]])=>{const a=s.activities.filter(x=>x.cat===cat);if(!a.length)return"";const x=new Date(Math.min(...a.map(v=>pd(v.start).getTime()))),y=new Date(Math.max(...a.map(v=>pd(v.end).getTime()))),l=((x-st)/tot)*100,w=Math.max(2,((y-x)/tot)*100),ms=a.filter(v=>v.milestone).map(v=>`${v.name.replace(/^MARCO\s*[–-]\s*/i,"")} (${v.end.split("-").reverse().join("/")})`).join(" • ");return `<div class="gr"><div class="gn">${n}</div><div><div class="bw"><div class="bar" style="background:${c};margin-left:${l}%;width:${w}%"></div></div><div class="ms">${esc(ms)}</div></div></div>`}).join("");return `<div class="exec"><div class="eh"><div><small>GESTÃO EXECUTIVA</small><h2>${esc(p.code)} • ${esc(p.name)}</h2></div><div class="ek"><small>INÍCIO</small><b>${p.startDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>CONCLUSÃO</small><b>${s.endDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>DURAÇÃO</small><b>${p.workDays} DIAS</b></div><div class="ek"><small>COORDENADOR</small><b style="font-size:13px">${esc(p.coordinator)}</b></div></div>${rows}</div>`}
-async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira nome, código, início e prazo.");$("confirm").disabled=true;try{prog(8,"Criando dossiê...");let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});prog(28,"Gerando cronograma oficial...");const s=autos(start,days),cj=await saveCron(p,s);p.scheduleFile=cj.arquivo;p.endDate=s.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};prog(48,"Gerando resumo executivo...");p.documents.executive={type:"html",title:"Resumo Executivo",html:executive(p,s),status:"done"};prog(63,"Gerando Ordem de Serviço...");p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};prog(76,"Gerando Guia / Checklist...");p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};prog(88,"Gerando Termo de Kickoff...");p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};prog(96,"Gravando no backend...");await oa("project_save",{project:p});prog(100,"Obra iniciada.");toast("success","Obra iniciada",`${code} criada com cronograma, OS, checklist, termo e resumo.`);setTimeout(async()=>{closeStart();await load();await openP(code)},650)}catch(e){console.error(e);toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
-function openSchedule(){if(sel?.scheduleFile)location.href=CURL+"?arquivo="+encodeURIComponent(sel.scheduleFile)}function openDoc(k,pdf=false){const d=sel?.documents?.[k];if(!d)return;if(k==="contract"){openCommercialSource();return}docHtml=d.html||"";docName=`${sel.code}_${d.title.replace(/\s+/g,"_")}`;$("dtitle").textContent=d.title;$("paper").className=k==="executive"?"":"paper";$("paper").innerHTML=docHtml;$("docOv").classList.add("on");if(pdf)setTimeout(savePdf,180)}function closeDoc(){$("docOv").classList.remove("on")}function savePdf(){html2pdf().set({margin:8,filename:docName+".pdf",image:{type:"jpeg",quality:.98},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:"mm",format:"a4",orientation:docName.includes("Resumo")?"landscape":"portrait"},pagebreak:{mode:["css","legacy"],avoid:["p","tr","table"]}}).from($("paper")).save()}
+async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira nome, código, início e prazo.");$("confirm").disabled=true;try{prog(8,"Criando dossiê...");let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});prog(28,"Gerando cronograma oficial...");const s=autos(start,days),cj=await saveCron(p,s);p.scheduleFile=cj.arquivo;p.endDate=s.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};prog(48,"Vinculando resumo executivo oficial do Cronograma...");p.documents.executive={type:"cronograma",title:"Resumo Executivo",file:cj.arquivo,status:"done"};prog(63,"Gerando Ordem de Serviço...");p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};prog(76,"Gerando Guia / Checklist...");p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};prog(88,"Gerando Termo de Kickoff...");p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};prog(96,"Gravando no backend...");await oa("project_save",{project:p});prog(100,"Obra iniciada.");toast("success","Obra iniciada",`${code} criada com cronograma, OS, checklist, termo e resumo.`);setTimeout(async()=>{closeStart();await load();await openP(code)},650)}catch(e){console.error(e);toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
+function scheduleIdFromFile(){
+  const f=String(sel?.scheduleFile||sel?.documents?.schedule?.file||"");
+  return f.replace(/^obra_/,"").replace(/\.json$/i,"");
+}
+function openSchedule(){
+  const file=sel?.scheduleFile||sel?.documents?.schedule?.file;
+  if(!file)return toast("warning","Cronograma não encontrado","A obra não possui cronograma vinculado.");
+  location.href=CURL+"?arquivo="+encodeURIComponent(file);
+}
+function openExecutive(){
+  const file=sel?.scheduleFile||sel?.documents?.schedule?.file||sel?.documents?.executive?.file;
+  if(!file)return toast("warning","Resumo não encontrado","A obra não possui cronograma vinculado.");
+  location.href=CURL+"?arquivo="+encodeURIComponent(file)+"&visao=cliente";
+}
+function openDoc(k,pdf=false){
+  const d=sel?.documents?.[k];
+  if(!d)return;
+  if(k==="contract"){openCommercialSource();return}
+  if(k==="executive"){openExecutive();return}
+
+  $("pdf").style.display="";
+  $("pdfFrame").style.display="none";
+  $("pdfFrame").src="about:blank";
+  $("paper").style.display="";
+  docHtml=d.html||"";
+  docName=`${sel.code}_${d.title.replace(/\s+/g,"_")}`;
+  $("dtitle").textContent=d.title;
+  $("paper").className="paper";
+  $("paper").innerHTML=docHtml;
+  $("docOv").classList.add("on");
+  if(pdf)setTimeout(savePdf,180)
+}
+function closeDoc(){
+  $("docOv").classList.remove("on");
+  $("pdfFrame").src="about:blank";
+  $("pdfFrame").style.display="none";
+  $("paper").style.display="";
+  $("pdf").style.display="";
+  if(window.__contractPdfUrl){
+    URL.revokeObjectURL(window.__contractPdfUrl);
+    window.__contractPdfUrl=null;
+  }
+}
+function savePdf(){
+  html2pdf().set({
+    margin:8,
+    filename:docName+".pdf",
+    image:{type:"jpeg",quality:.98},
+    html2canvas:{scale:2,useCORS:true},
+    jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
+    pagebreak:{mode:["css","legacy"],avoid:["p","tr","table"]}
+  }).from($("paper")).save()
+}
 $("pdf").onclick=savePdf;$("confirm").onclick=startProject;$("refresh").onclick=()=>load(true);$("new").onclick=()=>{const id=new URLSearchParams(location.search).get("contrato");id?begin(id):openContractPicker()};$("contractSearch").oninput=renderContractPicker;$("contractRefresh").onclick=()=>loadCommercialContracts(true);
 (async()=>{await load();const id=new URLSearchParams(location.search).get("contrato");if(id)begin(id)})();
 </script></body></html>
