@@ -417,6 +417,17 @@ function kickoff(p){
 }
 function executive(p,s){const G={planejamento:["Mobilização","#0b4f82"],suprimentos:["Suprimentos","#f39a00"],civil:["Preparação Civil","#2ca317"],climatizacao:["Climatização","#1c72c7"],dutos:["Dutos","#6857f0"],entrega:["Entrega","#e70058"]},st=pd(p.startDate),en=pd(s.endDate),tot=Math.max(1,en-st),rows=Object.entries(G).map(([cat,[n,c]])=>{const a=s.activities.filter(x=>x.cat===cat);if(!a.length)return"";const x=new Date(Math.min(...a.map(v=>pd(v.start).getTime()))),y=new Date(Math.max(...a.map(v=>pd(v.end).getTime()))),l=((x-st)/tot)*100,w=Math.max(2,((y-x)/tot)*100),ms=a.filter(v=>v.milestone).map(v=>`${v.name.replace(/^MARCO\s*[–-]\s*/i,"")} (${v.end.split("-").reverse().join("/")})`).join(" • ");return `<div class="gr"><div class="gn">${n}</div><div><div class="bw"><div class="bar" style="background:${c};margin-left:${l}%;width:${w}%"></div></div><div class="ms">${esc(ms)}</div></div></div>`}).join("");return `<div class="exec"><div class="eh"><div><small>GESTÃO EXECUTIVA</small><h2>${esc(p.code)} • ${esc(p.name)}</h2></div><div class="ek"><small>INÍCIO</small><b>${p.startDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>CONCLUSÃO</small><b>${s.endDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>DURAÇÃO</small><b>${p.workDays} DIAS</b></div><div class="ek"><small>COORDENADOR</small><b style="font-size:13px">${esc(p.coordinator)}</b></div></div>${rows}</div>`}
 async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira nome, código, início e prazo.");$("confirm").disabled=true;try{prog(8,"Criando dossiê...");let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});prog(28,"Gerando cronograma oficial...");const s=autos(start,days),cj=await saveCron(p,s);p.scheduleFile=cj.arquivo;p.endDate=s.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};prog(48,"Vinculando resumo executivo oficial do Cronograma...");p.documents.executive={type:"cronograma",title:"Resumo Executivo",file:cj.arquivo,status:"done"};prog(63,"Gerando Ordem de Serviço...");p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};prog(76,"Gerando Guia / Checklist...");p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};prog(88,"Gerando Termo de Kickoff...");p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};prog(96,"Gravando no backend...");await oa("project_save",{project:p});prog(100,"Obra iniciada.");toast("success","Obra iniciada",`${code} criada com cronograma, OS, checklist, termo e resumo.`);setTimeout(async()=>{closeStart();await load();await openP(code)},650)}catch(e){console.error(e);toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
+
+function shellNavigate(module,url){
+  try{
+    if(window.parent && window.parent !== window){
+      window.parent.postMessage({type:"ERP_IMPAR_NAVIGATE",module,url},"*");
+      return;
+    }
+  }catch(e){}
+  location.href=url;
+}
+
 function scheduleIdFromFile(){
   const f=String(sel?.scheduleFile||sel?.documents?.schedule?.file||"");
   return f.replace(/^obra_/,"").replace(/\.json$/i,"");
@@ -424,12 +435,12 @@ function scheduleIdFromFile(){
 function openSchedule(){
   const file=sel?.scheduleFile||sel?.documents?.schedule?.file;
   if(!file)return toast("warning","Cronograma não encontrado","A obra não possui cronograma vinculado.");
-  location.href=CURL+"?arquivo="+encodeURIComponent(file);
+  shellNavigate("Cronograma",CURL+"?arquivo="+encodeURIComponent(file));
 }
 function openExecutive(){
   const file=sel?.scheduleFile||sel?.documents?.schedule?.file||sel?.documents?.executive?.file;
   if(!file)return toast("warning","Resumo não encontrado","A obra não possui cronograma vinculado.");
-  location.href=CURL+"?arquivo="+encodeURIComponent(file)+"&visao=cliente";
+  shellNavigate("Cronograma",CURL+"?arquivo="+encodeURIComponent(file)+"&visao=cliente");
 }
 function openDoc(k,pdf=false){
   const d=sel?.documents?.[k];
