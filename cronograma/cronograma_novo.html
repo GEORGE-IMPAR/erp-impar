@@ -2099,6 +2099,11 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
         <select id="obra"><option value="">Selecione uma obra...</option></select>
       </div>
 
+      <div class="field small">
+        <label>Centro de custo *</label>
+        <input id="costCenter" type="text" placeholder="Obrigatório" readonly>
+      </div>
+
       <div class="field medium">
         <label>Coordenador responsável pela obra</label>
         <select id="coordinator"><option value="">Carregando coordenadores...</option></select>
@@ -2575,6 +2580,7 @@ async function loadSelectedSchedule(){
     state.clientObservations=String(d.clientObservations??d.observacoesCliente??"");
 
     $("coordinator").value=d.coordinator??d.coordenador??"";
+    $("costCenter").value=String(d.centroCusto??d.centro_custo??d.costCenter??"").trim();
 
     const storedStarts=activities.map(a=>parseISO(a.start)).filter(Boolean);
     const storedEnds=activities.map(a=>parseISO(a.end)).filter(Boolean);
@@ -2636,7 +2642,7 @@ async function persistSchedule(){
     _schema:"erpimpar-cronograma-v2",
     arquivo:currentScheduleFile||selectedScheduleFile(),
     id:currentScheduleId||selectedScheduleId()||"",
-    obra,coordinator,start,end,workDays,
+    obra,centroCusto:$("costCenter").value.trim(),centro_custo:$("costCenter").value.trim(),coordinator,start,end,workDays,
     workflowStatus:state.status,
     baseline:state.baseline,baselineAt:state.baselineAt,
     clientObservations:state.clientObservations||"",
@@ -2755,6 +2761,7 @@ function validateParams(show=true){
   const missing=[];
   if(!$("obra").value)missing.push("obra");
   if(!$("coordinator").value)missing.push("coordenador responsável");
+  if(!$("costCenter").value.trim())missing.push("centro de custo");
   if(!$("startDate").value)missing.push("data de início");
   if(!Number($("workDays").value||0))missing.push("prazo");
   if(missing.length && show){
@@ -4073,6 +4080,10 @@ function ensureNewScheduleDialog(){
           <select id="newScheduleCoord"></select>
         </div>
         <div class="field">
+          <label>Centro de custo *</label>
+          <input id="newScheduleCostCenter" type="text" placeholder="Ex.: AC02926">
+        </div>
+        <div class="field">
           <label>Forma de criação</label>
           <select id="newScheduleMode">
             <option value="template">Carregar via template oficial</option>
@@ -4109,6 +4120,7 @@ async function openNewScheduleDialog(){
   modalCoord.innerHTML=mainCoord.innerHTML;
   modalCoord.value=mainCoord.value||"";
   $("newScheduleObra").value="";
+  $("newScheduleCostCenter").value="";
   $("newScheduleMode").value="template";
   $("newScheduleFile").value="";
   $("newScheduleFileWrap").style.display="none";
@@ -4119,10 +4131,12 @@ async function openNewScheduleDialog(){
 async function criarNovoCronograma(){
   const obra=String($("newScheduleObra").value||"").trim();
   const coordinator=String($("newScheduleCoord").value||"").trim();
+  const costCenter=String($("newScheduleCostCenter").value||"").trim().toUpperCase();
   const mode=$("newScheduleMode").value;
 
   if(!obra){showToast("warning","Informe a obra","Digite o nome da obra/projeto.");return;}
   if(!coordinator){showToast("warning","Informe o coordenador","Selecione o coordenador responsável.");return;}
+  if(!costCenter){showToast("warning","Centro de custo obrigatório","Não é permitido criar ou salvar um cronograma sem centro de custo.");$("newScheduleCostCenter").focus();return;}
 
   const duplicate=cronogramasDisponiveis.find(o=>String(o.obra||"").trim().toLocaleLowerCase("pt-BR")===obra.toLocaleLowerCase("pt-BR"));
   if(duplicate){
@@ -4165,6 +4179,7 @@ async function criarNovoCronograma(){
     state.draftSavedAt=null;
 
     $("coordinator").value=coordinator;
+    $("costCenter").value=costCenter;
     if(!$("startDate").value)setDefaultDates();
     calculateSchedule(activities,parseISO($("startDate").value),true);
     const bounds=currentScheduleBounds(activities);
@@ -4180,7 +4195,7 @@ async function criarNovoCronograma(){
     render();
     $("newScheduleOverlay").classList.remove("open");
     showToast("success","Novo cronograma criado",
-      mode==="template"?"Template oficial carregado. Salve o rascunho para gravar no servidor.":
+      mode==="template"?`Template oficial carregado • Centro de custo ${costCenter}. Salve o rascunho para gravar no servidor.`:
       mode==="excel"?`${activities.length} atividades importadas. Salve o rascunho para gravar no servidor.`:
       "Cronograma manual iniciado. Salve o rascunho para gravar no servidor.");
   }catch(e){
