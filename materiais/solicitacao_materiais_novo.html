@@ -191,7 +191,7 @@ td{padding:8px;border-top:1px solid #edf2f5;font-size:11px;vertical-align:top}
 <div class="modal" id="historicoModal">
   <div class="modalCard">
     <div class="modalHead"><div><h3>Solicitações de Materiais</h3><p>Histórico físico gravado no backend</p></div><button class="close" id="closeHistorico">×</button></div>
-    <div class="modalFilters"><input id="histBusca" placeholder="Buscar obra, solicitante, protocolo ou material..."><select id="histStatus"><option value="">Todas as solicitações</option><option value="solicitado">Solicitado</option><option value="atendido">Atendido</option><option value="cancelado">Cancelado</option></select></div>
+    <div class="modalFilters"><input id="histBusca" placeholder="Buscar obra, solicitante, protocolo ou material..."><select id="histStatus"><option value="">Todas as solicitações</option><option value="solicitado">Solicitado</option><option value="atendido">Atendido</option><option value="cancelado">Cancelado</option></select><button class="btn" id="btnExportarHistorico">📊 Exportar Excel</button></div>
     <div class="history" id="historyList"></div>
   </div>
 </div>
@@ -246,6 +246,7 @@ const URL_SAVE = API_BASE + "/materiais/salvar_solicitacao.php";
 const URL_HISTORY = API_BASE + "/materiais/data/solicitacoes_material.json";
 const URL_NOTIFY = API_BASE + "/materiais/notificar_solicitacao.php";
 const URL_EMAIL_CONFIG = API_BASE + "/materiais/email_config.php";
+const URL_EMAIL_STATUS = API_BASE + "/materiais/atualizar_status_email.php";
 const CRONOGRAMA_API = API_BASE + "/cronograma/cronograma_api.php";
 const CRONOGRAMA_STORAGE = API_BASE + "/storage/data/";
 
@@ -467,9 +468,10 @@ function emailHtml(p){const c=STATE.emailConfig||{},rows=p.materiais.map(m=>`<tr
 function emailSubject(p){let s=(STATE.emailConfig?.assunto||"[PROTOCOLO] • Solicitação de materiais • [OBRA]");return s.replaceAll("[PROTOCOLO]",p.id).replaceAll("[OBRA]",p.obra).replaceAll("[CENTRO_CUSTO]",p.centroCusto)}
 async function loadEmailConfig(){try{const j=await fetchJson(URL_EMAIL_CONFIG+"?_="+Date.now(),{cache:"no-store"});STATE.emailConfig=j.data||j}catch(e){}}
 async function notify(p){return fetchJson(URL_NOTIFY,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({assunto:emailSubject(p),html:emailHtml(p),replyTo:p.email,protocolo:p.id})})}
+async function updateEmailStatus(id,status,erro=""){return fetchJson(URL_EMAIL_STATUS,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status,erro})})}
 async function saveEmailConfig(){const c={para:$("emailPara").value.trim(),cc:$("emailCc").value.trim(),assunto:$("emailAssunto").value.trim(),texto:$("emailTexto").value};if(!c.para||!c.assunto||!c.texto.trim()){toast("warning","Configuração incompleta","Preencha Para, Assunto e Texto-base.");return}try{const j=await fetchJson(URL_EMAIL_CONFIG,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(c)});STATE.emailConfig=j.data||c;$("emailConfigModal").classList.remove("show");toast("success","Configuração salva","Parâmetros atualizados no servidor.")}catch(e){toast("error","Erro ao salvar",String(e.message||e))}}
 
-async function send(){const obra=validate();if(!obra)return;const p=buildPayload(obra);setLoading(true,"Gravando solicitação...","Garantindo um único registro físico.");try{await savePayload(p);toast("success","Solicitação registrada",`${p.id} foi gravada no servidor.`);setLoading(true,"Notificando Compras...","Enviando e-mail.");try{await notify(p);toast("success","Processo concluído",`${p.id} foi registrado e Compras foi notificado.`)}catch(e){toast("warning","Solicitação salva; e-mail pendente",String(e.message||e),7000)}}catch(e){toast("error","Solicitação não registrada",String(e.message||e));return}finally{setLoading(false);resetAposConclusao()}}
+async function send(){const obra=validate();if(!obra)return;const p=buildPayload(obra);setLoading(true,"Gravando solicitação...","Garantindo um único registro físico.");try{await savePayload(p);toast("success","Solicitação registrada",`${p.id} foi gravada no servidor.`);setLoading(true,"Notificando Compras...","Enviando e-mail.");try{await notify(p);await updateEmailStatus(p.id,"enviado","");toast("success","Processo concluído",`${p.id} foi registrado e Compras foi notificado.`)}catch(e){try{await updateEmailStatus(p.id,"pendente",String(e.message||e))}catch(_){}toast("warning","Solicitação salva; e-mail pendente",String(e.message||e),7000)}}catch(e){toast("error","Solicitação não registrada",String(e.message||e));return}finally{setLoading(false);resetAposConclusao()}}
 
 async function openHistory(){
   $("historicoModal").classList.add("show");$("historyList").innerHTML='<div style="padding:25px;text-align:center;color:#718695">Carregando histórico...</div>';
@@ -479,19 +481,30 @@ async function openHistory(){
     renderHistory();
   }catch(e){$("historyList").innerHTML='<div style="padding:25px;text-align:center;color:#b43748">Não foi possível carregar o histórico.</div>'}
 }
-function renderHistory(){
+function filteredHistory(){
   const q=norm($("histBusca").value),st=$("histStatus").value;
-  const arr=STATE.historico.filter(s=>{
-    const status=String(s?.status||"solicitado").toLowerCase();
-    const hay=norm([s.id,s.obra,s.solicitante,s.centroCusto,...(s.materiais||[]).map(m=>m.material)].join(" "));
-    return (!q||hay.includes(q))&&(!st||status===st);
-  }).slice().reverse();
+  return STATE.historico.filter(s=>{const status=String(s?.status||"solicitado").toLowerCase();const hay=norm([s.id,s.obra,s.solicitante,s.centroCusto,...(s.materiais||[]).map(m=>m.material)].join(" "));return (!q||hay.includes(q))&&(!st||status===st);}).slice().reverse();
+}
+function exportHistoryExcel(){
+  const arr=filteredHistory(); if(!arr.length){toast("warning","Nada para exportar","Não há solicitações nos filtros atuais.");return}
+  const rows=[]; arr.forEach(s=>(s.materiais||[]).forEach(m=>rows.push([s.id||"",s.obra||"",s.centroCusto||"",s.solicitante||"",(s.criadoEm||s.dataHora||"").slice(0,10),s.prazo||"",s.localEntrega||"",s.status||"solicitado",s?.notificacao?.email?.status||"pendente",m.material||"",m.unidade||m.und||"",m.quantidade||"",m.observacao||""])));
+  const headers=["Protocolo","Obra","Centro de custo","Solicitante","Data","Prazo","Local de entrega","Status","Status e-mail","Material","UND","Quantidade","Observação"];
+  const escX=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const html=`<html><head><meta charset="UTF-8"></head><body><table border="1"><tr>${headers.map(x=>`<th>${escX(x)}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map(x=>`<td>${escX(x)}</td>`).join("")}</tr>`).join("")}</table></body></html>`;
+  const blob=new Blob(["\ufeff",html],{type:"application/vnd.ms-excel;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`solicitacoes_materiais_${todayISO()}.xls`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800);
+}
+async function resendEmailById(id){
+  const p=STATE.historico.find(x=>String(x.id)===String(id));if(!p){toast("error","Solicitação não encontrada",id);return}
+  try{setLoading(true,"Reenviando e-mail...",p.obra||id);await notify(p);await updateEmailStatus(p.id,"enviado","");p.notificacao=p.notificacao||{};p.notificacao.email={status:"enviado",data:new Date().toISOString(),erro:null};renderHistory();toast("success","E-mail reenviado",`${p.id} enviado com sucesso.`)}catch(e){try{await updateEmailStatus(p.id,"pendente",String(e.message||e))}catch(_){}toast("error","Falha no reenvio",String(e.message||e),7000)}finally{setLoading(false)}
+}
+function renderHistory(){
+  const arr=filteredHistory();
   $("historyList").innerHTML=arr.length?arr.map(s=>{
     const status=String(s?.status||"solicitado").toLowerCase();
     const notif=String(s?.notificacao?.email?.status||"pendente");
     const statusCls=status==="atendido"?"ok":(status==="cancelado"?"warn":"info");
     const notifCls=notif==="enviado"?"ok":"warn";
-    return `<div class="historyItem"><div class="historyTop"><b>${esc(s.id||"SEM PROTOCOLO")} • ${esc(s.obra||"—")}</b><div style="display:flex;gap:5px;flex-wrap:wrap"><span class="statusPill ${statusCls}">${esc(status.toUpperCase())}</span><span class="statusPill ${notifCls}">E-MAIL ${esc(notif.toUpperCase())}</span></div></div><div class="historyMeta">${esc(s.solicitante||"—")} • ${fmtDate((s.criadoEm||s.dataHora||"").slice(0,10))} • CC ${esc(s.centroCusto||"—")} • Prazo ${fmtDate(s.prazo)}</div><div class="historyMaterials">${(s.materiais||[]).map(m=>`<div class="historyMat"><b>${esc(m.material||"—")}</b><br>${esc(m.quantidade||"—")} ${esc(m.unidade||m.und||"")}${m.observacao?` • ${esc(m.observacao)}`:""}</div>`).join("")}</div></div>`;
+    return `<div class="historyItem"><div class="historyTop"><b>${esc(s.id||"SEM PROTOCOLO")} • ${esc(s.obra||"—")}</b><div style="display:flex;gap:5px;flex-wrap:wrap"><span class="statusPill ${statusCls}">${esc(status.toUpperCase())}</span><span class="statusPill ${notifCls}">E-MAIL ${esc(notif.toUpperCase())}</span></div></div><div class="historyMeta">${esc(s.solicitante||"—")} • ${fmtDate((s.criadoEm||s.dataHora||"").slice(0,10))} • CC ${esc(s.centroCusto||"—")} • Prazo ${fmtDate(s.prazo)}</div>${notif!=="enviado"?`<div style="margin:8px 0"><button class="btn" onclick="resendEmailById('${String(s.id||'').replace(/'/g,"\'")}')">↻ Reenviar e-mail</button></div>`:""}<div class="historyMaterials">${(s.materiais||[]).map(m=>`<div class="historyMat"><b>${esc(m.material||"—")}</b><br>${esc(m.quantidade||"—")} ${esc(m.unidade||m.und||"")}${m.observacao?` • ${esc(m.observacao)}`:""}</div>`).join("")}</div></div>`;
   }).join(""):'<div style="padding:25px;text-align:center;color:#718695">Nenhuma solicitação encontrada.</div>';
 }
 
@@ -633,7 +646,7 @@ document.querySelectorAll(".reportTab").forEach(btn=>btn.addEventListener("click
 
 $("closeHistorico").addEventListener("click",()=>$("historicoModal").classList.remove("show"));
 $("historicoModal").addEventListener("click",e=>{if(e.target===$("historicoModal"))$("historicoModal").classList.remove("show")});
-$("histBusca").addEventListener("input",renderHistory);$("histStatus").addEventListener("change",renderHistory);
+$("histBusca").addEventListener("input",renderHistory);$("histStatus").addEventListener("change",renderHistory);$("btnExportarHistorico").addEventListener("click",exportHistoryExcel);
 $("btnVoltar").addEventListener("click",()=>location.href="../menu_novo.html");
 
 async function boot(){
