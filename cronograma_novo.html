@@ -2015,15 +2015,14 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
       <button class="btn blue" id="newScheduleBtn">＋ Novo cronograma</button>
       <button class="btn" id="updateExcelBtn" type="button">📥 Atualizar via Excel</button>
       <input id="updateExcelFile" type="file" accept=".xlsx,.xls" style="display:none">
-          <button class="btn primary" id="recalcBtn">↻ Recalcular</button>
       <button class="btn green" id="draftBtn">💾 Salvar rascunho</button>
       <button class="btn green" id="finalizeBtn">✅ Finalizar / Criar linha de base</button>
+      <button class="btn red" id="archiveBtn">🏁 Encerrar obra</button>
       <button class="btn" id="addBtn">＋ Nova atividade</button>
       <button class="btn" id="criticalBtn">🔴 Caminho crítico</button>
       <button class="btn" id="reportBtn">📄 Relatório</button>
       <button class="btn purple" id="clientBtn">👤 Visão cliente</button>
       <button class="btn" id="clientClassifyBtn">🎯 Classificar visão cliente</button>
-      <button class="btn red" id="resetBtn">↻ Restaurar</button>
       <div class="activity-filter-box">
         <label for="activityStatusFilter">Filtrar atividades</label>
         <select id="activityStatusFilter">
@@ -2365,7 +2364,7 @@ function effectiveDuration(a){if(a.milestone)return 0;const base=Math.max(1,Numb
 function syncEffectiveDurations(){activities.forEach(a=>{if(a.milestone){a.dur=0;return}if(a.baseDur===undefined)a.baseDur=Math.max(1,Number(a.dur||1));a.dur=effectiveDuration(a)})}
 function renderResourceChips(){const w=$("resourceChips");if(!w)return;w.innerHTML=modalResources.map((r,i)=>`<span class="resource-chip">${esc(r)}<button type="button" data-resource-index="${i}">×</button></span>`).join("");w.querySelectorAll("[data-resource-index]").forEach(b=>b.onclick=()=>{modalResources.splice(Number(b.dataset.resourceIndex),1);renderResourceChips()})}
 function addModalResource(){const i=$("mResourceInput"),v=normResp(i.value);if(!v)return;rememberResponsible(v);if(!modalResources.some(x=>x.toLocaleLowerCase("pt-BR")===v.toLocaleLowerCase("pt-BR")))modalResources.push(v);i.value="";renderResourceChips()}
-function setScheduleLoaded(v){loadedSchedule=!!v;$("emptyState")?.classList.toggle("show",!loadedSchedule);if($("ganttWrap"))$("ganttWrap").style.display=loadedSchedule?"block":"none";document.querySelector(".summary")?.style.setProperty("display",loadedSchedule?"grid":"none");document.querySelector(".legend")?.style.setProperty("display",loadedSchedule?"flex":"none");["draftBtn","finalizeBtn","addBtn","criticalBtn","reportBtn","clientBtn","clientClassifyBtn","resetBtn","updateExcelBtn"].forEach(id=>{const e=$(id);if(e)e.disabled=!loadedSchedule});if(!loadedSchedule){selectedIds.clear();linkSourceId=null;updateBulkBar()}}
+function setScheduleLoaded(v){loadedSchedule=!!v;$("emptyState")?.classList.toggle("show",!loadedSchedule);if($("ganttWrap"))$("ganttWrap").style.display=loadedSchedule?"block":"none";document.querySelector(".summary")?.style.setProperty("display",loadedSchedule?"grid":"none");document.querySelector(".legend")?.style.setProperty("display",loadedSchedule?"flex":"none");["draftBtn","finalizeBtn","archiveBtn","addBtn","criticalBtn","reportBtn","clientBtn","clientClassifyBtn","updateExcelBtn"].forEach(id=>{const e=$(id);if(e)e.disabled=!loadedSchedule});if(!loadedSchedule){selectedIds.clear();linkSourceId=null;updateBulkBar()}}
 function clearSelection(){selectedIds.clear();updateBulkBar();updateSelectionClasses();hideRowContextMenu();hideRowContextEditor()}
 function toggleRowSelection(id,add){if(!loadedSchedule)return;if(!add)selectedIds.clear();if(add&&selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);updateSelectionClasses();updateBulkBar()}
 function updateSelectionClasses(){document.querySelectorAll("#ganttTable tbody tr[data-id]").forEach(tr=>{const id=Number(tr.dataset.id);tr.classList.toggle("selected",selectedIds.has(id));tr.classList.toggle("link-source",linkSourceId===id)})}
@@ -2394,16 +2393,38 @@ function enableGanttBarInteractions(){if(!loadedSchedule||state.status==="baseli
 async function loadSelectedSchedule(){
   const obra=$("obra").value;
   const id=selectedScheduleId();
-  if(!obra||!id){
+  const file=selectedScheduleFile() || (id?`obra_${id}.json`:"");
+  if(!obra&&!file){
     showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");
-    return;
+    return false;
   }
   try{
-    const r=await fetch(`${CRONOGRAMA_LOAD_PROD(id)}&_=${Date.now()}`,{cache:"no-store"});
-    const t=await r.text();
-    if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
-    const j=t.trim()?JSON.parse(t):{};
-    if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma");
+    let j=null,source="cronograma_api.php?action=get";
+
+    // FONTE PRIMÁRIA OFICIAL:
+    // abre diretamente o JSON físico informado, sem depender da lista de obras.
+    if(file){
+      try{
+        const r=await fetch(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(file)}&_=${Date.now()}`,{cache:"no-store"});
+        const t=await r.text();
+        if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
+        j=t.trim()?JSON.parse(t):{};
+        if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma pelo arquivo");
+      }catch(directError){
+        console.warn("[Cronograma] leitura direta falhou; tentando compatibilidade legada:",directError);
+      }
+    }
+
+    // Compatibilidade com obras antigas.
+    if(!j?.ok||!j?.data){
+      if(!id)throw new Error(`Cronograma ${file||""} não localizado no backend.`);
+      source="carregar_cronograma.php";
+      const r=await fetch(`${CRONOGRAMA_LOAD_PROD(id)}&_=${Date.now()}`,{cache:"no-store"});
+      const t=await r.text();
+      if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
+      j=t.trim()?JSON.parse(t):{};
+      if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma");
+    }
 
     const d=j.data;
     const rawActivities=(Array.isArray(d.activities)&&d.activities.length)
@@ -2412,8 +2433,24 @@ async function loadSelectedSchedule(){
 
     if(!rawActivities.length)throw new Error("Cronograma sem atividades");
 
-    currentScheduleId=String(d.id||id||"");
-    currentScheduleFile=`obra_${currentScheduleId}.json`;
+    currentScheduleId=String(d.id||id||(file.replace(/^obra_/i,"").replace(/\.json$/i,""))||"");
+    currentScheduleFile=String(j.arquivo||file||(`obra_${currentScheduleId}.json`));
+
+    // Se a abertura veio por arquivo e a obra ainda não estava na listagem,
+    // cria uma opção temporária usando os próprios dados do JSON.
+    const loadedObra=String(d.obra||d.nome||obra||currentScheduleId||"").trim();
+    if(loadedObra){
+      let opt=[...$("obra").options].find(o=>String(o.dataset.file||"")===currentScheduleFile || String(o.dataset.id||"")===currentScheduleId);
+      if(!opt){
+        opt=document.createElement("option");
+        opt.value=loadedObra;
+        opt.textContent=loadedObra;
+        opt.dataset.file=currentScheduleFile;
+        opt.dataset.id=currentScheduleId;
+        $("obra").appendChild(opt);
+      }
+      $("obra").value=opt.value;
+    }
 
     activities=rawActivities.map((a,index)=>{
       const dur=Number(a.dur??a.duracao??0);
@@ -2489,7 +2526,7 @@ async function loadSelectedSchedule(){
     setScheduleLoaded(true);
 
     console.info("[Cronograma] produção carregada",{
-      endpoint:"carregar_cronograma.php",
+      endpoint:source,
       id:currentScheduleId,
       obra:d.nome||d.obra||obra,
       atividades:activities.length,
@@ -2500,10 +2537,12 @@ async function loadSelectedSchedule(){
     });
 
     render();
-    showToast("success","Cronograma carregado",`${obra} • ${activities.length} atividades • produção`);
+    showToast("success","Cronograma carregado",`${loadedObra||obra} • ${activities.length} atividades • produção`);
+    return true;
   }catch(e){
     console.error(e);
     showToast("error","Falha ao carregar cronograma",String(e.message||e));
+    return false;
   }
 }
 async function persistSchedule(){
@@ -3316,8 +3355,7 @@ function applyLock(){
   if($("generateBtn"))if($("generateBtn"))$("generateBtn").disabled=locked;
   if($("finalizeBtn"))$("finalizeBtn").disabled=locked;
   if($("addBtn"))$("addBtn").disabled=locked;
-  if($("resetBtn"))$("resetBtn").disabled=locked;
-  $("draftBtn").textContent=locked?"💾 Salvar acompanhamento":"💾 Salvar rascunho";
+    $("draftBtn").textContent=locked?"💾 Salvar acompanhamento":"💾 Salvar rascunho";
 
   if(locked){
     setStatus(
@@ -3331,17 +3369,25 @@ function applyLock(){
     );
   }
 
-  if($("recalcBtn"))$("recalcBtn").disabled=!loadedSchedule||state.status==="baseline";
+  /* Recalcular é automático ao salvar/finalizar. */
+}
+
+function recalculateBeforePersist(){
+  if(!loadedSchedule || !activities.length)return;
+  const start=parseISO($("startDate").value);
+  if(start && state.status!=="baseline"){
+    calculateSchedule(activities,start,true);
+  }
+  const bounds=currentScheduleBounds(activities);
+  if(bounds.start)$("startDate").value=iso(bounds.start);
+  if(bounds.finish)$("endDate").value=iso(bounds.finish);
+  if(bounds.days)$("workDays").value=bounds.days;
 }
 
 async function saveDraft(){
   if(!validateParams())return;
 
-  /* Garante que os parâmetros refletem exatamente as atividades atuais. */
-  const bounds=currentScheduleBounds(activities);
-  if(bounds.start)$("startDate").value=iso(bounds.start);
-  if(bounds.finish)$("endDate").value=iso(bounds.finish);
-  if(bounds.days)$("workDays").value=bounds.days;
+  recalculateBeforePersist();
 
   state.draftSavedAt=new Date().toISOString();
   state.sessionDraft={
@@ -3383,6 +3429,8 @@ async function finalizeBaseline(){
 
   if(!ok)return;
 
+  recalculateBeforePersist();
+  const previousState=structuredClone(state);
   state.baseline=structuredClone(activities).map(a=>({
     id:a.id,name:a.name,dur:a.dur,resp:a.resp,pred:structuredClone(a.pred||[]),cat:a.cat,
     milestone:a.milestone,dep:a.dep,start:a.start,end:a.end,critical:a.critical
@@ -3391,8 +3439,62 @@ async function finalizeBaseline(){
   state.baselineAt=new Date().toISOString();
   state.draftSavedAt=state.baselineAt;
 
-  render();persistSchedule();
-  showToast("success","Linha de base criada","O PLAN foi congelado. O Gantt agora apresenta PLAN x REAL.");
+  render();
+  const saved=await persistSchedule();
+  if(!saved){
+    Object.assign(state,previousState);
+    render();
+    showToast("error","Finalização não concluída","O backend não confirmou a gravação. A linha de base não foi congelada.");
+    return;
+  }
+  showToast("success","Linha de base criada","Gravação confirmada no backend. O PLAN foi congelado e o Gantt agora apresenta PLAN x REAL.");
+}
+
+async function archiveSchedule(){
+  if(!loadedSchedule||!validateParams())return;
+  if(state.status!=="baseline"){
+    showToast("warning","Linha de base necessária","Finalize o planejamento e crie a linha de base antes de encerrar a obra.");
+    return;
+  }
+  const real=Math.round(realPercent()*10)/10;
+  if(real<100){
+    const proceed=await askConfirm({
+      title:"Cronograma ainda não está 100%",
+      message:`O realizado atual é ${real}%. Deseja encerrar administrativamente mesmo assim?`,
+      type:"danger",confirmText:"Encerrar mesmo assim",cancelText:"Cancelar"
+    });
+    if(!proceed)return;
+  }
+  const ok=await askConfirm({
+    title:"Encerrar obra",
+    message:"O cronograma será recalculado, salvo definitivamente e somente após a confirmação do servidor será movido para o Histórico. Esta ação retira a obra da lista de cronogramas ativos.",
+    type:"danger",confirmText:"Salvar e encerrar",cancelText:"Cancelar"
+  });
+  if(!ok)return;
+
+  recalculateBeforePersist();
+  const saved=await persistSchedule();
+  if(!saved){
+    showToast("error","Encerramento cancelado","A gravação final não foi confirmada. Nada foi movido para o Histórico.");
+    return;
+  }
+
+  try{
+    const r=await fetch(`${CRONOGRAMA_API}?action=archive`,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({arquivo:currentScheduleFile||selectedScheduleFile()}),cache:"no-store"
+    });
+    const t=await r.text();
+    if(!r.ok)throw new Error(t||`HTTP ${r.status}`);
+    const j=t.trim()?JSON.parse(t):{};
+    if(!j.ok)throw new Error(j.error||"Falha ao arquivar");
+    showToast("success","Obra encerrada","Gravação final confirmada e cronograma movido para o Histórico.");
+    setScheduleLoaded(false);
+    await loadSchedules();
+  }catch(e){
+    console.error(e);
+    showToast("error","Falha ao mover para o Histórico","A gravação final foi preservada no ativo. O cronograma NÃO foi removido. "+String(e.message||e));
+  }
 }
 
 function openEdit(id){
@@ -4700,11 +4802,11 @@ $("updateExcelBtn").onclick=()=>{
   $("updateExcelFile").click();
 };
 $("updateExcelFile").onchange=e=>updateExistingScheduleFromExcel(e.target.files?.[0]);
-$("recalcBtn").onclick=recalculateWholeSchedule;
 $("addResourceBtn").onclick=addModalResource;
 $("mResourceInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addModalResource();}});
 $("draftBtn").onclick=saveDraft;
 $("finalizeBtn").onclick=finalizeBaseline;
+$("archiveBtn").onclick=archiveSchedule;
 $("addBtn").onclick=openNew;
 $("criticalBtn").onclick=()=>{
   showCritical=!showCritical;
@@ -4766,7 +4868,6 @@ $("rowContextEditor")?.addEventListener("click",e=>e.stopPropagation());
 document.addEventListener("click",e=>{if(!e.target.closest("#rowContextMenu,#rowContextEditor,#ganttTable tbody tr")){hideRowContextMenu();hideRowContextEditor()}});
 document.addEventListener("keydown",e=>{const tag=(document.activeElement?.tagName||"").toUpperCase();const editing=["INPUT","TEXTAREA","SELECT"].includes(tag);const modalOpen=!!document.querySelector(".modal.open,.confirm-overlay.show,.row-context-editor.show");if((e.key==="Delete"||e.key==="Backspace")&&!editing&&!modalOpen&&selectedIds.size){e.preventDefault();deleteSelectedRowsByShortcut()}if(e.key==="Escape"){hideRowContextMenu();hideRowContextEditor()}});
 
-$("resetBtn").onclick=resetTemplate;
 
 $("closeModal").onclick=closeModal;
 $("cancelBtn").onclick=closeModal;
@@ -4828,12 +4929,61 @@ document.addEventListener("keydown",e=>{
   }
 });
 
+
+async function autoOpenScheduleFromQuery(){
+  const qs=new URLSearchParams(location.search);
+  const arquivo=String(qs.get("arquivo")||"").trim();
+  const visao=String(qs.get("visao")||"").trim().toLowerCase();
+  if(!arquivo)return false;
+
+  const wantedId=arquivo.replace(/^obra_/i,"").replace(/\.json$/i,"");
+
+  // Não exige que a obra já exista em listar_obras_farol.php.
+  // O próprio arquivo é a chave oficial para a abertura.
+  currentScheduleFile=arquivo;
+  currentScheduleId=wantedId;
+
+  let opt=[...$("obra").options].find(o=>
+    String(o.dataset.file||"")===arquivo ||
+    String(o.dataset.id||"")===wantedId
+  );
+
+  if(!opt){
+    // opção provisória; loadSelectedSchedule substituirá o nome pelo que está no JSON
+    opt=document.createElement("option");
+    opt.value=wantedId;
+    opt.textContent="Carregando "+wantedId+"...";
+    opt.dataset.file=arquivo;
+    opt.dataset.id=wantedId;
+    $("obra").appendChild(opt);
+  }
+
+  $("obra").value=opt.value;
+  setScheduleLoaded(false);
+
+  const opened=await loadSelectedSchedule();
+  if(!opened)return false;
+
+  if(visao==="cliente" && loadedSchedule){
+    renderClientSchedule();
+    $("clientView").classList.add("open");
+    requestAnimationFrame(scaleReferenceSheets);
+  }
+  return true;
+}
+
 /* INICIALIZAÇÃO */
 setDefaultDates();
 renderResponsibleList();
 setScheduleLoaded(false);
 carregarCoordenadoresDisponiveis();
-carregarCronogramasDisponiveis();
+(async()=>{
+  await carregarCronogramasDisponiveis();
+  const opened=await autoOpenScheduleFromQuery();
+  if(!opened){
+    setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
+  }
+})();
 window.addEventListener("resize",scaleReferenceSheets);
 setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
 
