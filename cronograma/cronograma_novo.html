@@ -2163,7 +2163,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
 
       <div class="field small"><label>Data de início</label><input id="startDate" type="date"></div>
       <div class="field small"><label>Data final</label><input id="endDate" type="date"></div>
-      <div class="field small"><label>Prazo (dias úteis)</label><input id="workDays" type="number" min="20" value="90"></div>
+      <div class="field small"><label id="workDaysLabel">Prazo (dias úteis)</label><input id="workDays" type="number" min="20" value="90"></div>
           <div class="field compact-metric-field">
             <label>PREVISTO</label>
             <div class="compact-metric-value" id="topPlannedPct">0%</div>
@@ -2240,7 +2240,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
           <option value="entrega">Entrega</option>
         </select>
       </div>
-      <div class="field"><label>Duração planejada (dias úteis)</label><input id="mDur" type="number" min="0"></div>
+      <div class="field"><label id="activityDurationLabel">Duração planejada (dias úteis)</label><input id="mDur" type="number" min="0"></div>
       <div class="field"><label>Peso da atividade (%)</label><input id="mWeight" type="number" min="0" max="100" step="0.01"><div class="muted" style="margin-top:5px">A soma das atividades que contabilizam avanço é normalizada para 100%.</div></div>
       <div class="field">
         <label>Contabiliza no avanço geral?</label>
@@ -2262,7 +2262,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
         <div class="readonly-card"><small>Caminho crítico</small><b id="rCritical">—</b></div>
       </div>
 
-      <div class="field full"><label>Recursos da atividade</label><div class="resource-add-row"><input id="mResourceInput" list="responsibleList" placeholder="Digite um recurso"><button class="btn" type="button" id="addResourceBtn">＋ Adicionar recurso</button></div><div class="resource-chip-wrap" id="resourceChips"></div><div class="muted" style="margin-top:6px">Mais recursos reduzem a duração efetiva automaticamente: duração base ÷ quantidade de recursos, mínimo de 1 dia útil.</div></div>
+      <div class="field full"><label>Recursos da atividade</label><div class="resource-add-row"><input id="mResourceInput" list="responsibleList" placeholder="Digite um recurso"><button class="btn" type="button" id="addResourceBtn">＋ Adicionar recurso</button></div><div class="resource-chip-wrap" id="resourceChips"></div><div class="muted" style="margin-top:6px">Mais recursos reduzem a duração efetiva automaticamente: duração base ÷ quantidade de recursos, mínimo de 1 dia conforme o calendário do cronograma.</div></div>
       <div class="field"><label>% Real concluído</label><input id="mPct" type="number" min="0" max="100"></div>
       <div class="field"><label>Início real</label><input id="mRealStart" type="date"></div>
       <div class="field"><label>Fim real</label><input id="mRealEnd" type="date"></div>
@@ -2512,6 +2512,107 @@ const CRONOGRAMA_LOAD_PROD=id=>CRONOGRAMA_PROD_BASE+"carregar_cronograma.php?id=
 const COORDENADORES_API="https://api.erpimpar.com.br/cronograma/listar_coordenadores.php";
 let currentScheduleFile="";
 let currentScheduleId="";
+
+/* =========================================================
+   TIPO DE PRAZO DO CONTRATO
+   - "corridos": sábado/domingo contam normalmente
+   - "uteis": mantém a regra histórica seg-sex
+   ========================================================= */
+let scheduleDayType="uteis";
+let scheduleDayTypeSource="default";
+
+function normalizeScheduleDayType(v){
+  const s=String(v||"").trim().toLocaleLowerCase("pt-BR");
+  if(s==="corridos" || s==="corrido" || s.includes("corrid"))return "corridos";
+  if(s==="uteis" || s==="úteis" || s==="util" || s==="útil" || s.includes("úte") || s.includes("ute"))return "uteis";
+  return "";
+}
+function scheduleDayLabel(){
+  return scheduleDayType==="corridos" ? "dias corridos" : "dias úteis";
+}
+function setScheduleDayType(v,source="runtime"){
+  const n=normalizeScheduleDayType(v)||"uteis";
+  scheduleDayType=n;
+  scheduleDayTypeSource=source||"runtime";
+  const a=document.getElementById("workDaysLabel");
+  const b=document.getElementById("activityDurationLabel");
+  if(a)a.textContent=`Prazo (${scheduleDayLabel()})`;
+  if(b)b.textContent=`Duração planejada (${scheduleDayLabel()})`;
+  return n;
+}
+
+async function contractDayTypeByCode(codigo,obra){
+  const code=String(codigo||"").trim().toLocaleUpperCase("pt-BR");
+  const work=String(obra||"").trim().toLocaleUpperCase("pt-BR");
+  if(!code && !work)return "";
+  try{
+    const api="https://api.erpimpar.com.br/documentos/api.php";
+    const req=async payload=>{
+      const r=await fetch(api,{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Accept":"application/json"},
+        body:JSON.stringify(payload),
+        cache:"no-store"
+      });
+      const raw=await r.text();
+      if(!r.ok)throw new Error(raw||`HTTP ${r.status}`);
+      const j=raw?JSON.parse(raw):{};
+      if(j.ok===false)throw new Error(j.error||"Falha ao consultar contrato");
+      return j;
+    };
+
+    const list=await req({action:"document_list"});
+    const docs=Array.isArray(list.documents)?list.documents:[];
+    const hit=docs.find(d=>{
+      const dc=String(d.codigo||d.code||"").trim().toLocaleUpperCase("pt-BR");
+      const dw=String(d.obra||d.nomeObra||d.contratante||"").trim().toLocaleUpperCase("pt-BR");
+      return (code && dc===code) || (work && dw===work);
+    });
+    if(!hit?.id)return "";
+
+    const detail=await req({action:"document_get",id:hit.id});
+    const form=detail?.document?.form||{};
+    return normalizeScheduleDayType(form.tipoPrazo||form.prazoTipo||detail?.document?.tipoPrazo||detail?.document?.prazoTipo||"");
+  }catch(err){
+    console.warn("[Cronograma] não foi possível consultar tipo de prazo no contrato:",err);
+    return "";
+  }
+}
+
+async function resolveScheduleDayType(scheduleData={},codigo="",obra=""){
+  const resumo=(scheduleData?.resumo&&typeof scheduleData.resumo==="object")?scheduleData.resumo:{};
+  const fromSchedule=normalizeScheduleDayType(
+    scheduleData.tipoPrazo || scheduleData.prazoTipo ||
+    resumo.tipoPrazo || resumo.prazoTipo || ""
+  );
+  if(fromSchedule){
+    setScheduleDayType(fromSchedule,"cronograma");
+    return {type:fromSchedule,source:"cronograma",legacy:false};
+  }
+
+  const qs=new URLSearchParams(location.search);
+  const fromQuery=normalizeScheduleDayType(qs.get("tipoPrazo")||qs.get("prazoTipo")||"");
+  if(fromQuery){
+    setScheduleDayType(fromQuery,"contrato-query");
+    return {type:fromQuery,source:"contrato-query",legacy:true};
+  }
+
+  const contractCode=
+    scheduleData.codigo || scheduleData.codigoContrato ||
+    scheduleData.centroCusto || scheduleData.centro_custo ||
+    codigo || scheduleData.id || "";
+  const fromContract=await contractDayTypeByCode(
+    contractCode,
+    scheduleData.obra || scheduleData.nome || obra
+  );
+  if(fromContract){
+    setScheduleDayType(fromContract,"contrato");
+    return {type:fromContract,source:"contrato",legacy:true};
+  }
+
+  setScheduleDayType("uteis","default");
+  return {type:"uteis",source:"default",legacy:false};
+}
 function selectedScheduleFile(){const opt=$("obra")?.selectedOptions?.[0];return opt?.dataset?.file||currentScheduleFile||""}
 function selectedScheduleId(){const opt=$("obra")?.selectedOptions?.[0];return opt?.dataset?.id||currentScheduleId||""}
 function normResp(v){return String(v||"").trim()}
@@ -2563,6 +2664,7 @@ async function loadSelectedSchedule(){
     if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma");
 
     const d=j.data;
+    const prazoResolvido=await resolveScheduleDayType(d,id,obra);
     const rawActivities=(Array.isArray(d.activities)&&d.activities.length)
       ? d.activities
       : (Array.isArray(d.atividades)?d.atividades:[]);
@@ -2646,6 +2748,17 @@ async function loadSelectedSchedule(){
     renderResponsibleList();
     setScheduleLoaded(true);
 
+    /* Migração automática de cronogramas antigos:
+       se o JSON ainda não tinha tipoPrazo e o contrato informa dias corridos,
+       recalcula com o MESMO prazo numérico e grava o tipo no próprio JSON. */
+    if(prazoResolvido.legacy && scheduleDayType==="corridos" && loadedStart && loadedDays>0){
+      const originalStatus=state.status;
+      state.status="draft";
+      const migrated=scaleDurations(true);
+      state.status=originalStatus;
+      if(migrated)await persistSchedule();
+    }
+
     console.info("[Cronograma] produção carregada",{
       endpoint:"carregar_cronograma.php",
       id:currentScheduleId,
@@ -2698,6 +2811,7 @@ async function persistSchedule(){
     arquivo:currentScheduleFile||selectedScheduleFile(),
     id:currentScheduleId||selectedScheduleId()||"",
     obra,coordinator,start,end,workDays,
+    tipoPrazo:scheduleDayType,prazoTipo:scheduleDayType,
     workflowStatus:state.status,
     baseline:state.baseline,baselineAt:state.baselineAt,
     clientObservations:state.clientObservations||"",
@@ -2706,8 +2820,8 @@ async function persistSchedule(){
     updatedAt:new Date().toISOString(),
 
     /* Compatibilidade com leitores antigos de /storage/data */
-    nome:obra,coordenador:coordinator,centro_custo:centroCusto,
-    resumo:{inicio:start,fim:end,dias:workDays,previsto:plan,real,status:projectStatus},
+    nome:obra,coordenador:coordinator,centro_custo:centroCusto,codigo:centroCusto,
+    resumo:{inicio:start,fim:end,dias:workDays,tipoPrazo:scheduleDayType,prazoTipo:scheduleDayType,previsto:plan,real,status:projectStatus},
     inicio:start,fim:end,dias:workDays,previsto:plan,real,status:projectStatus,
     atividades:atividadesCompat
   };
@@ -2753,8 +2867,16 @@ function datedPlanSource(){
 }
 function iso(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function addCalDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-function isWorkday(d){ const w=d.getDay(); return w!==0&&w!==6; }
-function nextWorkday(d){ let x=new Date(d); while(!isWorkday(x))x=addCalDays(x,1); return x; }
+function isWorkday(d){
+  if(scheduleDayType==="corridos")return true;
+  const w=d.getDay(); return w!==0&&w!==6;
+}
+function nextWorkday(d){
+  let x=new Date(d);
+  if(scheduleDayType==="corridos")return x;
+  while(!isWorkday(x))x=addCalDays(x,1);
+  return x;
+}
 function addWorkdays(date,days){
   let d=nextWorkday(date);
   if(days<=1)return d;
@@ -2956,7 +3078,7 @@ function scaleDurations(silent=false){
     $("workDays").value=target;
   }
   if(target<20){
-    if(!silent)showToast("warning","Prazo inválido","Informe pelo menos 20 dias úteis.");
+    if(!silent)showToast("warning","Prazo inválido",`Informe pelo menos 20 ${scheduleDayLabel()}.`);
     return false;
   }
 
@@ -3018,8 +3140,8 @@ function scaleDurations(silent=false){
       delta<=1?"success":"warning",
       "Cronograma recalculado",
       delta<=1
-        ?`Planejamento sincronizado em ${$("workDays").value} dias úteis.`
-        :`Prazo mais próximo possível: ${$("workDays").value} dias úteis para uma meta de ${target}.`
+        ?`Planejamento sincronizado em ${$("workDays").value} ${scheduleDayLabel()}.`
+        :`Prazo mais próximo possível: ${$("workDays").value} ${scheduleDayLabel()} para uma meta de ${target}.`
     );
   }
   return true;
@@ -3262,7 +3384,7 @@ function recalculateWholeSchedule(){
     return false;
   }
   if(target<1){
-    showToast("warning","Prazo inválido","Informe o prazo em dias úteis.");
+    showToast("warning","Prazo inválido",`Informe o prazo em ${scheduleDayLabel()}.`);
     return false;
   }
 
@@ -3284,7 +3406,7 @@ function recalculateWholeSchedule(){
   showToast(
     "success",
     "Cronograma recalculado por pesos",
-    `Prazo de referência: ${target} dias úteis • Conclusão calculada: ${fmt(bounds.finish)} • Pesos totalizam 100%.`
+    `Prazo de referência: ${target} ${scheduleDayLabel()} • Conclusão calculada: ${fmt(bounds.finish)} • Pesos totalizam 100%.`
   );
   return true;
 }
@@ -3567,7 +3689,7 @@ function openEdit(id){
 
   $("rPlanStart").textContent=fmt(parseISO(p.start));
   $("rPlanEnd").textContent=fmt(parseISO(p.end));
-  $("rPlanDur").textContent=p.dur===0?"MARCO":p.dur+" dias úteis";
+  $("rPlanDur").textContent=p.dur===0?"MARCO":p.dur+" "+scheduleDayLabel();
   $("rCritical").textContent=p.critical?"SIM":"NÃO";
 
   const locked=state.status==="baseline";
@@ -4687,7 +4809,7 @@ function renderClientSchedule(){
         <div class="ref-kpi-value ref-start">${fmt(planStart)}</div>
         <div class="ref-kpi-value ref-end">${fmt(planFinish)}</div>
         <div class="ref-kpi-value ref-duration">${projectDuration} DIAS</div>
-        <div class="ref-duration-sub">(${projectDuration} dias úteis)</div>
+        <div class="ref-duration-sub">(${projectDuration} ${scheduleDayLabel()})</div>
         <div class="ref-kpi-value ref-stages">${executiveStageCount}</div>
         <div class="ref-kpi-value ref-milestones">${executiveMilestoneCount}</div>
 
@@ -4720,7 +4842,7 @@ function renderClientSchedule(){
         <div class="ref-footer-value ref-critical-mask"></div>
         <div class="ref-footer-value ref-final-mask"></div>
 
-        <div class="ref-footer-value ref-phase-value">${esc(longestGroup?.name||"—")}<br>${longestGroup?.days||0} dias úteis</div>
+        <div class="ref-footer-value ref-phase-value">${esc(longestGroup?.name||"—")}<br>${longestGroup?.days||0} ${scheduleDayLabel()}</div>
         <div class="ref-footer-value ref-critical-value">${esc(criticalName)}<br>${fmt(criticalDate)}</div>
         <div class="ref-footer-value ref-final-value">${esc(finalOwner)}<br>${fmt(finalDate)}</div>
 
@@ -5130,6 +5252,8 @@ async function openNewScheduleFromDashboard(){
     return false;
   }
 
+  setScheduleDayType(q.tipoPrazo||"uteis",q.tipoPrazo?"contrato-query":"default");
+
   /* IMPORTANTE:
      nada é gravado aqui. O JSON só nasce quando o usuário clicar SALVAR. */
   const sel=$("obra");
@@ -5180,26 +5304,22 @@ async function openNewScheduleFromDashboard(){
     let start=parseISO(q.dataInicial);
     if(!start)start=nextWorkday(today());
 
-    let targetUsefulDays=0;
+    let targetDays=0;
     let targetEnd=null;
 
-    if(q.prazo>0 && q.tipoPrazo==="corridos"){
-      targetEnd=calendarDaysInclusive(start,q.prazo);
-      targetUsefulDays=workdaysBetween(start,targetEnd);
-    }else if(q.prazo>0){
-      targetUsefulDays=Math.max(1,Math.round(q.prazo));
-      targetEnd=addWorkdays(start,targetUsefulDays);
+    if(q.prazo>0){
+      targetDays=Math.max(1,Math.round(q.prazo));
     }else{
-      targetUsefulDays=baseProjectDays();
-      targetEnd=addWorkdays(start,targetUsefulDays);
+      targetDays=baseProjectDays();
     }
+    targetEnd=addWorkdays(start,targetDays);
 
     $("startDate").value=iso(start);
     $("endDate").value=iso(targetEnd);
-    $("workDays").value=targetUsefulDays;
+    $("workDays").value=targetDays;
 
     const baseDays=baseProjectDays();
-    const factor=Math.max(.05,targetUsefulDays/baseDays);
+    const factor=Math.max(.05,targetDays/baseDays);
     activities.forEach(a=>{
       if(a.milestone){a.dur=0;return;}
       a.baseDur=Math.max(1,Number(a.baseDur??a.dur??1));
@@ -5245,6 +5365,8 @@ async function autoOpenScheduleFromQuery(){
   const qs=new URLSearchParams(location.search);
   const arquivo=String(qs.get("arquivo")||"").trim();
   const visao=String(qs.get("visao")||"").trim().toLowerCase();
+  const queryTipo=normalizeScheduleDayType(qs.get("tipoPrazo")||qs.get("prazoTipo")||"");
+  if(queryTipo)setScheduleDayType(queryTipo,"contrato-query");
   if(!arquivo)return false;
 
   const wantedId=arquivo.replace(/^obra_/i,"").replace(/\.json$/i,"");
@@ -5272,6 +5394,7 @@ async function autoOpenScheduleFromQuery(){
 
 /* INICIALIZAÇÃO */
 setDefaultDates();
+setScheduleDayType("uteis","default");
 renderResponsibleList();
 setScheduleLoaded(false);
 (async()=>{
