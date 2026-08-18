@@ -1003,7 +1003,43 @@ async function saveDraft(){
 async function openDraft(id){
   try{setLoading(true,"Abrindo rascunho...","Retomando a solicitação do ponto salvo.");const j=await fetchJson(URL_DRAFTS+"?acao=abrir&id="+encodeURIComponent(id)+"&_="+Date.now(),{cache:"no-store"});const d=j.data||j;let idx=STATE.obras.findIndex(o=>norm(o.nome||o.obra||"")===norm(d.obra||""));if(idx<0&&STATE.obras[Number(d.obraIndex)])idx=Number(d.obraIndex);if(idx<0)throw new Error("Obra do rascunho não encontrada.");$("obra").value=String(idx);STATE.centroCustoValido=false;await carregarCentroCustoDaObra(STATE.obras[idx]);$("prazo").value=d.prazo||"";$("localEntrega").value=d.localEntrega||"";$("obsGeral").value=d.observacaoGeral||"";STATE.itens=Array.isArray(d.materiais)?d.materiais.map(x=>({...x})):[];STATE.rascunhoId=d.id;$("btnSalvarRascunho").classList.add("has-id");$("draftSaveStatus").textContent="Rascunho carregado";resetItemEditor();renderItems();updateSummary();openEditor();renderDrafts();toast("success","Rascunho carregado",`${d.obra} retomada do ponto salvo.`)}catch(e){toast("error","Não foi possível abrir o rascunho",String(e.message||e))}finally{setLoading(false)}
 }
-async function deleteDraft(id,quiet=false){try{await fetchJson(URL_DRAFTS+"?acao=excluir&id="+encodeURIComponent(id),{method:"DELETE"});if(STATE.rascunhoId===id){STATE.rascunhoId=null;$("btnSalvarRascunho").classList.remove("has-id");$("draftSaveStatus").textContent=""}await loadDrafts();if(!quiet)toast("success","Rascunho excluído","Rascunho removido.")}catch(e){if(!quiet)toast("error","Erro ao excluir rascunho",String(e.message||e))}}
+  
+async function deleteDraft(id,quiet=false){
+  try{
+    await fetchJson(
+      URL_DRAFTS+"?acao=excluir&id="+encodeURIComponent(id),
+      {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:id})
+      }
+    );
+
+    if(STATE.rascunhoId===id){
+      STATE.rascunhoId=null;
+      $("btnSalvarRascunho").classList.remove("has-id");
+      $("draftSaveStatus").textContent="";
+    }
+
+    await loadDrafts();
+
+    if(!quiet){
+      toast(
+        "success",
+        "Rascunho removido",
+        "Rascunho movido para a pasta de excluídos."
+      );
+    }
+  }catch(e){
+    if(!quiet){
+      toast(
+        "error",
+        "Erro ao remover rascunho",
+        String(e.message||e)
+      );
+    }
+  }
+}
 
 function limparFormularioBase(){
   STATE.itens=[];STATE.materialSelecionado=null;STATE.centroCustoValido=false;STATE.centroCustoCarregando=false;
