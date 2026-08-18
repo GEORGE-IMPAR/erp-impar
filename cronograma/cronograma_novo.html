@@ -346,17 +346,6 @@ tbody tr:hover td.meta{background:#f6faf8}
   .erp-report-dialog{width:100%!important;max-height:none!important;overflow:visible!important;padding:0!important;box-shadow:none!important;border:0!important}
   .report-actions{display:none!important}
 }
-
-/* ===== OPERAÇÃO SEGURA / PROGRESSO V5.5.2 ===== */
-.cron-safe-overlay{position:fixed;inset:0;background:rgba(8,32,45,.24);backdrop-filter:blur(3px);z-index:99990;display:none;align-items:center;justify-content:center;padding:20px}
-.cron-safe-overlay.on{display:flex}
-.cron-safe-card{width:min(520px,92vw);background:#fff;border:1px solid #d7e4ea;border-radius:18px;padding:20px;box-shadow:0 28px 80px rgba(11,43,59,.22)}
-.cron-safe-title{font-size:15px;font-weight:950;color:#0b7958}
-.cron-safe-text{font-size:11px;color:#657d8c;margin-top:6px;min-height:18px}
-.cron-safe-track{height:8px;background:#eaf1f4;border-radius:999px;overflow:hidden;margin-top:15px}
-.cron-safe-bar{height:100%;width:0;background:linear-gradient(90deg,#14b878,#2fc4d8);transition:width .3s ease;border-radius:999px}
-.cron-safe-step{font-size:9px;color:#81939d;margin-top:8px;font-weight:800}
-
 </style>
 
 <style id="erpCronogramaVrfV04PatchCss">
@@ -1995,7 +1984,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
   <section class="panel" id="setupPanel">
     <div class="panel-title">Cronograma Executivo</div>
     <div class="muted">
-      Planejamento da obra • Linha de base • Acompanhamento PLAN x REAL • Dados: /www/storage/data</div>
+      Planejamento da obra • Linha de base • Acompanhamento PLAN x REAL • Fonte única: /storage/data</div>
 
     <div class="toolbar">
       <div class="field wide">
@@ -2021,13 +2010,11 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
           </div>
 
       <div class="action-break"></div>
-
-      <button class="btn green" id="loadBtn">↧ Carregar cronograma</button>
       <button class="btn blue" id="newScheduleBtn">＋ Novo cronograma</button>
       <button class="btn" id="updateExcelBtn" type="button">📥 Atualizar via Excel</button>
       <input id="updateExcelFile" type="file" accept=".xlsx,.xls" style="display:none">
       <button class="btn green" id="draftBtn">💾 Salvar rascunho</button>
-      <button class="btn green" id="finalizeBtn">✅ Finalizar / Criar linha de base</button>
+      <button class="btn green" id="finalizeBtn">✅ Criar linha de base</button>
       <button class="btn red" id="archiveBtn">🏁 Encerrar obra</button>
       <button class="btn" id="addBtn">＋ Nova atividade</button>
       <button class="btn" id="criticalBtn">🔴 Caminho crítico</button>
@@ -2051,7 +2038,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
 
     <span class="schedule-status-badge" id="scheduleStatusBadge">RASCUNHO</span><button class="erp-toggle" id="erpToggle" type="button" title="Recolher"></button>
   </section>
-<section class="empty-state show" id="emptyState"><div class="box"><div class="ico">⌁</div><h3>Nenhum cronograma carregado</h3><p>Selecione uma obra disponível e clique em <b>Carregar cronograma</b>. A rotina sempre abre vazia para evitar edição acidental de outra obra.</p></div></section>
+<section class="empty-state show" id="emptyState"><div class="box"><div class="ico">⌁</div><h3>Nenhum cronograma carregado</h3><p>Selecione uma obra disponível. O cronograma será carregado automaticamente. A rotina sempre abre vazia para evitar edição acidental de outra obra.</p></div></section>
 
   <section class="gantt-wrap" id="ganttWrap">
     <table id="ganttTable"></table>
@@ -2276,76 +2263,7 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
 
 <div class="system-toast-stack" id="toastStack"></div>
 
-
-<div class="cron-safe-overlay" id="cronSafeOverlay" aria-hidden="true">
-  <div class="cron-safe-card">
-    <div class="cron-safe-title" id="cronSafeTitle">Processando cronograma</div>
-    <div class="cron-safe-text" id="cronSafeText">Preparando...</div>
-    <div class="cron-safe-track"><div class="cron-safe-bar" id="cronSafeBar"></div></div>
-    <div class="cron-safe-step" id="cronSafeStep">Aguarde a confirmação do servidor.</div>
-  </div>
-</div>
-
 <script>
-
-const CRON_VERSION="V5.5.2 / INTEGRAÇÃO V0.6.4";
-console.info("[ERP ÍMPAR Cronograma]",CRON_VERSION);
-
-function cronProgress(percent,text,title="Processando cronograma",step="Aguarde a confirmação do servidor."){
-  const ov=document.getElementById("cronSafeOverlay");
-  if(!ov)return;
-  document.getElementById("cronSafeTitle").textContent=title;
-  document.getElementById("cronSafeText").textContent=text||"";
-  document.getElementById("cronSafeBar").style.width=Math.max(0,Math.min(100,percent))+"%";
-  document.getElementById("cronSafeStep").textContent=step||"";
-  ov.classList.add("on");ov.setAttribute("aria-hidden","false");
-}
-function cronProgressClose(delay=250){
-  setTimeout(()=>{
-    const ov=document.getElementById("cronSafeOverlay");
-    if(ov){ov.classList.remove("on");ov.setAttribute("aria-hidden","true")}
-  },delay);
-}
-function waitMs(ms){return new Promise(r=>setTimeout(r,ms))}
-async function fetchWithRetry(url,options={},cfg={}){
-  const attempts=cfg.attempts||3;
-  let lastError=null;
-  for(let i=1;i<=attempts;i++){
-    try{
-      const r=await fetch(url,options);
-      if([502,503,504].includes(r.status)){
-        const msg=`Servidor temporariamente indisponível (${r.status}).`;
-        if(i<attempts){
-          cronProgress(
-            cfg.baseProgress?Math.min(90,cfg.baseProgress+i*7):20+i*10,
-            `${msg} Nova tentativa ${i+1}/${attempts}...`,
-            cfg.title||"Conectando ao servidor",
-            "O ERP não considerará a operação concluída sem confirmação."
-          );
-          await waitMs((cfg.delay||1200)*i);
-          continue;
-        }
-      }
-      return r;
-    }catch(e){
-      lastError=e;
-      if(i<attempts){
-        cronProgress(
-          cfg.baseProgress?Math.min(90,cfg.baseProgress+i*7):20+i*10,
-          `Falha de comunicação. Nova tentativa ${i+1}/${attempts}...`,
-          cfg.title||"Conectando ao servidor",
-          "Mantendo a operação segura enquanto o servidor responde."
-        );
-        await waitMs((cfg.delay||1200)*i);
-        continue;
-      }
-      throw e;
-    }
-  }
-  if(lastError)throw lastError;
-  throw new Error("Servidor indisponível após novas tentativas.");
-}
-
 "use strict";
 
 const COLORS={
@@ -2427,10 +2345,6 @@ let modalResources=[];
 const RESPONSIBLE_DEFAULTS=["Comercial","Projetos","Compras","Coordenador da Obra","Fornecedor","Cliente","Empreiteiro","Duteiro","Mecânico"];
 let responsibleCatalog=[...RESPONSIBLE_DEFAULTS];
 const CRONOGRAMA_API="https://api.erpimpar.com.br/cronograma/cronograma_api.php";
-const CRONOGRAMA_PROD_BASE="https://api.erpimpar.com.br/cronograma/";
-const CRONOGRAMA_LIST_PROD=CRONOGRAMA_PROD_BASE+"listar_obras_farol.php";
-const CRONOGRAMA_LIST_FALLBACK=CRONOGRAMA_PROD_BASE+"listar_obras.php";
-const CRONOGRAMA_LOAD_PROD=id=>CRONOGRAMA_PROD_BASE+"carregar_cronograma.php?id="+encodeURIComponent(id);
 const COORDENADORES_API="https://api.erpimpar.com.br/cronograma/listar_coordenadores.php";
 let currentScheduleFile="";
 let currentScheduleId="";
@@ -2471,164 +2385,35 @@ function applyManualMove(id,deltaDays){if(state.status==="baseline")return;const
 function applyManualResize(id,deltaDays,side){if(state.status==="baseline")return;const a=activities.find(x=>x.id===id);if(!a||a.milestone)return;if(a.baseDur===undefined)a.baseDur=Math.max(1,a.dur||1);if(side==="right")a.baseDur=Math.max(1,a.baseDur+deltaDays*resourceCount(a));else{const old=parseISO(a.manualStart||a.start),earliest=projectEarliestStart(a);let ns=nextWorkday(addCalDays(old,deltaDays));if(ns<earliest)ns=earliest;const shift=Math.round((ns-old)/86400000);a.manualStart=iso(ns);a.baseDur=Math.max(1,a.baseDur-shift*resourceCount(a))}a.dur=effectiveDuration(a);calculateSchedule(activities,parseISO($("startDate").value),true);render()}
 function enableGanttBarInteractions(){if(!loadedSchedule||state.status==="baseline")return;const sample=[...document.querySelectorAll("#ganttTable .gantt-cell")].find(c=>c.offsetWidth>0),weekPx=sample?.offsetWidth||62,daysPerPx=7/weekPx;document.querySelectorAll("#ganttTable .draft-bar").forEach(bar=>{const tr=bar.closest("tr[data-id]"),id=Number(tr?.dataset.id);if(!id)return;bar.classList.add("bar-segment");if(!bar.querySelector(".resize-handle.left")){bar.insertAdjacentHTML("afterbegin",'<span class="resize-handle left" data-side="left"></span>');bar.insertAdjacentHTML("beforeend",'<span class="resize-handle right" data-side="right"></span>')}bar.addEventListener("click",e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();linkActivitiesByCtrl(id)}});let mode=null,startX=0,last=0;bar.addEventListener("pointerdown",e=>{if(e.ctrlKey||e.metaKey)return;e.preventDefault();e.stopPropagation();const h=e.target.closest(".resize-handle");mode=h?h.dataset.side:"move";startX=e.clientX;last=0;bar.setPointerCapture?.(e.pointerId)});bar.addEventListener("pointermove",e=>{if(!mode)return;const dx=e.clientX-startX;last=Math.round(dx*daysPerPx);document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{if(mode==="move")seg.style.transform=`translateX(${dx}px)`;else seg.style.filter="brightness(1.08)"})});const fin=()=>{if(!mode)return;document.querySelectorAll(`#ganttTable tr[data-id="${id}"] .draft-bar`).forEach(seg=>{seg.style.transform="";seg.style.filter=""});const action=mode;mode=null;if(last!==0){if(action==="move")applyManualMove(id,last);else applyManualResize(id,last,action)}};bar.addEventListener("pointerup",fin);bar.addEventListener("pointercancel",fin)})}
 async function loadSelectedSchedule(){
-  const obra=$("obra").value;
-  const id=selectedScheduleId();
-  const file=selectedScheduleFile() || (id?`obra_${id}.json`:"");
-  if(!obra&&!file){
-    showToast("warning","Selecione uma obra","Nenhum cronograma é carregado automaticamente.");
-    return false;
-  }
+  const id=selectedScheduleId(),file=selectedScheduleFile()||(id?`obra_${id}.json`:"");
+  if(!file){setScheduleLoaded(false);return false}
   try{
-    cronProgress(12,"Localizando o arquivo oficial...","Carregando cronograma","Consultando diretamente o backend.");
-    let j=null,source="cronograma_api.php?action=get";
-
-    // FONTE PRIMÁRIA OFICIAL:
-    // abre diretamente o JSON físico informado, sem depender da lista de obras.
-    if(file){
-      try{
-        const r=await fetchWithRetry(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(file)}&_=${Date.now()}`,{cache:"no-store"},{attempts:3,title:"Carregando cronograma",baseProgress:18});
-        const t=await r.text();
-        if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
-        j=t.trim()?JSON.parse(t):{};
-        if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma pelo arquivo");
-      }catch(directError){
-        console.warn("[Cronograma] leitura direta falhou; tentando compatibilidade legada:",directError);
-      }
-    }
-
-    // Compatibilidade com obras antigas.
-    if(!j?.ok||!j?.data){
-      if(!id)throw new Error(`Cronograma ${file||""} não localizado no backend.`);
-      source="carregar_cronograma.php";
-      const r=await fetchWithRetry(`${CRONOGRAMA_LOAD_PROD(id)}&_=${Date.now()}`,{cache:"no-store"},{attempts:3,title:"Carregando cronograma",baseProgress:30});
-      const t=await r.text();
-      if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
-      j=t.trim()?JSON.parse(t):{};
-      if(!j?.ok||!j?.data)throw new Error(j?.error||"Falha ao carregar cronograma");
-    }
-
-    const d=j.data;
-    const rawActivities=(Array.isArray(d.activities)&&d.activities.length)
-      ? d.activities
-      : (Array.isArray(d.atividades)?d.atividades:[]);
-
-    if(!rawActivities.length)throw new Error("Cronograma sem atividades");
-
-    currentScheduleId=String(d.id||id||(file.replace(/^obra_/i,"").replace(/\.json$/i,""))||"");
-    currentScheduleFile=String(j.arquivo||file||(`obra_${currentScheduleId}.json`));
-
-    // Se a abertura veio por arquivo e a obra ainda não estava na listagem,
-    // cria uma opção temporária usando os próprios dados do JSON.
-    const loadedObra=String(d.obra||d.nome||obra||currentScheduleId||"").trim();
-    if(loadedObra){
-      let opt=[...$("obra").options].find(o=>String(o.dataset.file||"")===currentScheduleFile || String(o.dataset.id||"")===currentScheduleId);
-      if(!opt){
-        opt=document.createElement("option");
-        opt.value=loadedObra;
-        opt.textContent=loadedObra;
-        opt.dataset.file=currentScheduleFile;
-        opt.dataset.id=currentScheduleId;
-        $("obra").appendChild(opt);
-      }
-      $("obra").value=opt.value;
-    }
-
-    activities=rawActivities.map((a,index)=>{
-      const dur=Number(a.dur??a.duracao??0);
-      const predRaw=a.pred??a.predecessora??"";
-      const pred=Array.isArray(predRaw)
-        ? predRaw.map(Number).filter(Number.isFinite)
-        : String(predRaw).split(/\s*[,;]\s*/).filter(Boolean).map(Number).filter(Number.isFinite);
-
-      return {
-        ...a,
-        _legacyId:String(a._legacyId??a.id??index+1),
-        id:Number.isFinite(Number(a.id))?Number(a.id):(index+1),
-        name:String(a.name??a.nome??"Atividade"),
-        resp:String(a.resp??a.responsavel??""),
-        dur,
-        baseDur:Number(a.baseDur??a.dur??a.duracao??dur),
-        pred,
-        cat:String(a.cat??a.categoria??inferLegacyCategory(a)),
-        milestone:Boolean(a.milestone??a.marco??(dur===0)),
-        dep:String(a.dep??a.dependencia??"Nenhuma"),
-        pct:Number(a.pct??a.real??0),
-        planPct:Number(a.planPct??a.previsto??0),
-        realStart:String(a.realStart??a.inicioReal??""),
-        realEnd:String(a.realEnd??a.fimReal??""),
-        realStatus:String(a.realStatus??a.status??"Não iniciado"),
-        obs:String(a.obs??a.observacoes??""),
-        resources:Array.isArray(a.resources)?a.resources:[],
-        manualStart:String(a.manualStart??""),
-        start:String(a.start??a.inicio??""),
-        end:String(a.end??a.fim??""),
-        critical:Boolean(a.critical??a.critica??false),
-        clientVisible:typeof a.clientVisible==="boolean"?a.clientVisible:undefined,
-        clientGroup:String(a.clientGroup??""),
-        clientLabel:String(a.clientLabel??""),
-        clientHighlight:String(a.clientHighlight??""),
-        progressCounts:a.progressCounts,
-        weight:Number(a.weight??a.peso??0)
-      };
-    });
-
-    responsibleCatalog=Array.from(new Set([
-      ...RESPONSIBLE_DEFAULTS,
-      ...(d.responsibleCatalog||[]),
-      ...activities.map(a=>a.resp).filter(Boolean),
-      ...activities.flatMap(a=>a.resources||[])
-    ]));
-
-    /* workflow novo quando existir; legado continua editável como rascunho */
-    state.status=(d.workflowStatus==="baseline"||d.status==="baseline")?"baseline":"draft";
-    state.baseline=Array.isArray(d.baseline)&&d.baseline.length?d.baseline:null;
-    state.baselineAt=d.baselineAt||null;
-    state.clientObservations=String(d.clientObservations??d.observacoesCliente??"");
-
-    $("coordinator").value=d.coordinator??d.coordenador??"";
-
-    const storedStarts=activities.map(a=>parseISO(a.start)).filter(Boolean);
-    const storedEnds=activities.map(a=>parseISO(a.end)).filter(Boolean);
-    const resumo=(d.resumo&&typeof d.resumo==="object")?d.resumo:{};
-
-    const loadedStart=d.start||d.inicio||resumo.inicio||
-      (storedStarts.length?iso(new Date(Math.min(...storedStarts.map(x=>x.getTime())))):"");
-    const loadedEnd=d.end||d.fim||resumo.fim||
-      (storedEnds.length?iso(new Date(Math.max(...storedEnds.map(x=>x.getTime())))):"");
-
-    $("startDate").value=loadedStart;
-    $("endDate").value=loadedEnd;
-
-    const loadedDays=Number(d.workDays??d.dias??resumo.dias??0) ||
-      (loadedStart&&loadedEnd ? workdaysBetween(parseISO(loadedStart),parseISO(loadedEnd)) : 0);
-    $("workDays").value=loadedDays||"";
-
-    renderResponsibleList();
-    setScheduleLoaded(true);
-
-    console.info("[Cronograma] produção carregada",{
-      endpoint:source,
-      id:currentScheduleId,
-      obra:d.nome||d.obra||obra,
-      atividades:activities.length,
-      atividadesComDatas:activities.filter(a=>parseISO(a.start)&&parseISO(a.end)).length,
-      inicio:$("startDate").value,
-      fim:$("endDate").value,
-      prazo:$("workDays").value
-    });
-
-    render();
-    cronProgress(100,"Cronograma carregado.","Carregamento concluído",`${activities.length} atividades disponíveis.`);
-    cronProgressClose(350);
-    showToast("success","Cronograma carregado",`${loadedObra||obra} • ${activities.length} atividades • produção`);
-    return true;
-  }catch(e){
-    console.error(e);
-    cronProgress(100,"Não foi possível confirmar o carregamento.","Falha ao carregar","Verifique a resposta do backend.");
-    cronProgressClose(900);
-    showToast("error","Falha ao carregar cronograma",String(e.message||e));
-    return false;
-  }
+    const r=await fetch(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(file)}&_=${Date.now()}`,{cache:"no-store"});
+    const t=await r.text(),j=t.trim()?JSON.parse(t):{};
+    if(!r.ok||!j?.ok||!j?.data)throw new Error(j?.error||t||`HTTP ${r.status}`);
+    const d=j.data,raw=(Array.isArray(d.activities)&&d.activities.length)?d.activities:(Array.isArray(d.atividades)?d.atividades:[]);
+    if(!raw.length)throw new Error("Cronograma sem atividades");
+    currentScheduleId=String(d.id||id||file.replace(/^obra_/i,"").replace(/\.json$/i,""));currentScheduleFile=String(j.arquivo||file);
+    activities=raw.map((a,index)=>{const dur=Number(a.dur??a.duracao??0),pr=a.pred??a.predecessora??"";
+      const pred=Array.isArray(pr)?pr.map(Number).filter(Number.isFinite):String(pr).split(/\s*[,;]\s*/).filter(Boolean).map(Number).filter(Number.isFinite);
+      return {...a,_legacyId:String(a._legacyId??a.id??index+1),id:Number.isFinite(Number(a.id))?Number(a.id):(index+1),name:String(a.name??a.nome??"Atividade"),
+      resp:String(a.resp??a.responsavel??""),dur,baseDur:Number(a.baseDur??a.dur??a.duracao??dur),pred,cat:String(a.cat??a.categoria??inferLegacyCategory(a)),
+      milestone:Boolean(a.milestone??a.marco??(dur===0)),dep:String(a.dep??a.dependencia??"Nenhuma"),pct:Number(a.pct??a.real??0),planPct:Number(a.planPct??a.previsto??0),
+      realStart:String(a.realStart??a.inicioReal??""),realEnd:String(a.realEnd??a.fimReal??""),realStatus:String(a.realStatus??a.status??"Não iniciado"),
+      obs:String(a.obs??a.observacoes??""),resources:Array.isArray(a.resources)?a.resources:[],manualStart:String(a.manualStart??""),start:String(a.start??a.inicio??""),
+      end:String(a.end??a.fim??""),critical:Boolean(a.critical??a.critica??false),clientVisible:typeof a.clientVisible==="boolean"?a.clientVisible:undefined,
+      clientGroup:String(a.clientGroup??""),clientLabel:String(a.clientLabel??""),clientHighlight:String(a.clientHighlight??""),progressCounts:a.progressCounts,weight:Number(a.weight??a.peso??0)}});
+    responsibleCatalog=Array.from(new Set([...RESPONSIBLE_DEFAULTS,...(d.responsibleCatalog||[]),...activities.map(a=>a.resp).filter(Boolean),...activities.flatMap(a=>a.resources||[])]));
+    state.status=(d.workflowStatus==="baseline"||d.status==="baseline")?"baseline":"draft";state.baseline=Array.isArray(d.baseline)&&d.baseline.length?d.baseline:null;
+    state.baselineAt=d.baselineAt||null;state.clientObservations=String(d.clientObservations??d.observacoesCliente??"");
+    const obraNome=String(d.obra||d.nome||$("obra").value||currentScheduleId);let opt=[...$("obra").options].find(o=>String(o.dataset.file||"")===currentScheduleFile);
+    if(!opt){opt=document.createElement("option");opt.value=obraNome;opt.textContent=obraNome;opt.dataset.file=currentScheduleFile;opt.dataset.id=currentScheduleId;$("obra").appendChild(opt)}
+    $("obra").value=opt.value;$("coordinator").value=d.coordinator??d.coordenador??"";
+    const ss=activities.map(a=>parseISO(a.start)).filter(Boolean),ee=activities.map(a=>parseISO(a.end)).filter(Boolean),res=(d.resumo&&typeof d.resumo==="object")?d.resumo:{};
+    const ini=d.start||d.inicio||res.inicio||(ss.length?iso(new Date(Math.min(...ss.map(x=>x.getTime())))):""),fim=d.end||d.fim||res.fim||(ee.length?iso(new Date(Math.max(...ee.map(x=>x.getTime())))):"");
+    $("startDate").value=ini;$("endDate").value=fim;$("workDays").value=Number(d.workDays??d.dias??res.dias??0)||(ini&&fim?workdaysBetween(parseISO(ini),parseISO(fim)):"");
+    renderResponsibleList();setScheduleLoaded(true);render();console.info("[Cronograma] fonte única /storage/data",currentScheduleFile);return true;
+  }catch(e){console.error(e);setScheduleLoaded(false);showToast("error","Falha ao carregar cronograma",String(e.message||e));return false}
 }
 async function persistSchedule(){
   if(!loadedSchedule||!validateParams())return false;
@@ -2668,30 +2453,20 @@ async function persistSchedule(){
     atividades:atividadesCompat
   };
   try{
-    cronProgress(48,"Gravando dados no servidor...","Salvando cronograma","Aguarde a confirmação física do arquivo.");
-    const r=await fetchWithRetry(`${CRONOGRAMA_API}?action=save`,{
+    const r=await fetch(`${CRONOGRAMA_API}?action=save`,{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify(payload),cache:"no-store"
-    },{attempts:3,title:"Salvando cronograma",baseProgress:48});
+    });
     const t=await r.text();
     if(!r.ok)throw new Error(t||(`HTTP ${r.status}`));
     const j=t.trim()?JSON.parse(t):{};
     if(!j.ok)throw new Error(j.error||"Falha ao salvar");
-    currentScheduleFile=j.arquivo||currentScheduleFile||payload.arquivo;
-
-    cronProgress(82,"Confirmando arquivo gravado...","Salvando cronograma","Validando o JSON diretamente no backend.");
-    const vr=await fetchWithRetry(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(currentScheduleFile)}&_=${Date.now()}`,{cache:"no-store"},{attempts:3,title:"Confirmando gravação",baseProgress:82});
-    const vt=await vr.text();
-    if(!vr.ok)throw new Error(vt||(`HTTP ${vr.status}`));
-    const vj=vt.trim()?JSON.parse(vt):{};
-    if(!vj?.ok||!vj?.data)throw new Error(vj?.error||"O servidor não confirmou o arquivo gravado.");
-    cronProgress(100,"Gravação confirmada.","Cronograma salvo","Arquivo validado fisicamente no backend.");
+    currentScheduleFile=j.arquivo||currentScheduleFile;
+    currentScheduleId=String(j.id||currentScheduleId||selectedScheduleId()||"");
     return true;
   }catch(e){
     console.error(e);
-    cronProgress(100,"Operação não confirmada.","Falha de comunicação","Nenhuma confirmação de sucesso foi assumida.");
     showToast("error","Falha ao salvar no servidor",String(e.message||e));
-    cronProgressClose(900);
     return false;
   }
 }
@@ -2903,7 +2678,7 @@ function syncParametersFromSchedule(){
 
 function scaleDurations(silent=false){
   if(!loadedSchedule){
-    if(!silent)showToast("warning","Nenhum cronograma carregado","Selecione uma obra e clique em Carregar cronograma.");
+    if(!silent)showToast("warning","Nenhum cronograma carregado","Selecione uma obra. O carregamento é automático.");
     return false;
   }
   if(state.status==="baseline"){
@@ -3482,7 +3257,7 @@ function recalculateBeforePersist(){
 
 async function saveDraft(){
   if(!validateParams())return;
-  cronProgress(12,"Recalculando indicadores e datas...","Salvando cronograma","Preparando dados antes da gravação.");
+
   recalculateBeforePersist();
 
   state.draftSavedAt=new Date().toISOString();
@@ -3501,7 +3276,6 @@ async function saveDraft(){
   const saved=await persistSchedule();
   render();
 
-  if(saved)cronProgressClose(450);
   showToast(
     saved?"success":"warning",
     state.status==="baseline"?"Acompanhamento salvo":"Rascunho salvo",
@@ -3526,7 +3300,6 @@ async function finalizeBaseline(){
 
   if(!ok)return;
 
-  cronProgress(12,"Recalculando cronograma...","Finalizando linha de base","Preparando o PLAN antes da gravação.");
   recalculateBeforePersist();
   const previousState=structuredClone(state);
   state.baseline=structuredClone(activities).map(a=>({
@@ -3545,60 +3318,28 @@ async function finalizeBaseline(){
     showToast("error","Finalização não concluída","O backend não confirmou a gravação. A linha de base não foi congelada.");
     return;
   }
-  cronProgressClose(450);
   showToast("success","Linha de base criada","Gravação confirmada no backend. O PLAN foi congelado e o Gantt agora apresenta PLAN x REAL.");
 }
 
 async function archiveSchedule(){
-  if(!loadedSchedule||!validateParams())return;
-  if(state.status!=="baseline"){
-    showToast("warning","Linha de base necessária","Finalize o planejamento e crie a linha de base antes de encerrar a obra.");
-    return;
-  }
-  const real=Math.round(realPercent()*10)/10;
-  if(real<100){
-    const proceed=await askConfirm({
-      title:"Cronograma ainda não está 100%",
-      message:`O realizado atual é ${real}%. Deseja encerrar administrativamente mesmo assim?`,
-      type:"danger",confirmText:"Encerrar mesmo assim",cancelText:"Cancelar"
-    });
-    if(!proceed)return;
-  }
-  const ok=await askConfirm({
-    title:"Encerrar obra",
-    message:"O cronograma será recalculado, salvo definitivamente e somente após a confirmação do servidor será movido para o Histórico. Esta ação retira a obra da lista de cronogramas ativos.",
-    type:"danger",confirmText:"Salvar e encerrar",cancelText:"Cancelar"
-  });
+  if(!loadedSchedule)return;
+  const ok=await askConfirm({title:"Encerrar obra",message:"O ERP marcará todas as atividades como 100%, concluirá o cronograma, gravará a versão final e moverá a obra para o Histórico. Deseja continuar?",type:"danger",confirmText:"Encerrar obra",cancelText:"Cancelar"});
   if(!ok)return;
-
-  recalculateBeforePersist();
+  const now=new Date().toISOString(),todayIso=iso(today());
+  activities.forEach(a=>{a.pct=100;a.planPct=100;a.realStatus="Concluído";if(!a.realStart)a.realStart=a.start||todayIso;if(!a.realEnd)a.realEnd=a.end||todayIso});
+  if(state.status!=="baseline"||!Array.isArray(state.baseline)||!state.baseline.length){state.baseline=structuredClone(activities).map(a=>({...a,planPct:100}));state.status="baseline";state.baselineAt=state.baselineAt||now}
+  state.draftSavedAt=now;render();
   const saved=await persistSchedule();
-  if(!saved){
-    showToast("error","Encerramento cancelado","A gravação final não foi confirmada. Nada foi movido para o Histórico.");
-    return;
-  }
-
+  if(!saved){showToast("error","Encerramento cancelado","A gravação final não foi confirmada. O cronograma continua ativo.");return}
   try{
-    cronProgress(88,"Movendo cronograma confirmado para o Histórico...","Encerrando obra","O ativo só será retirado após confirmação.");
-    const r=await fetchWithRetry(`${CRONOGRAMA_API}?action=archive`,{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({arquivo:currentScheduleFile||selectedScheduleFile()}),cache:"no-store"
-    },{attempts:3,title:"Encerrando obra",baseProgress:88});
-    const t=await r.text();
-    if(!r.ok)throw new Error(t||`HTTP ${r.status}`);
-    const j=t.trim()?JSON.parse(t):{};
-    if(!j.ok)throw new Error(j.error||"Falha ao arquivar");
-    cronProgress(100,"Obra encerrada e arquivada.","Encerramento concluído","Histórico confirmado.");
-    cronProgressClose(500);
-    showToast("success","Obra encerrada","Gravação final confirmada e cronograma movido para o Histórico.");
-    setScheduleLoaded(false);
-    await loadSchedules();
-  }catch(e){
-    console.error(e);
-    showToast("error","Falha ao mover para o Histórico","A gravação final foi preservada no ativo. O cronograma NÃO foi removido. "+String(e.message||e));
-  }
+    const file=currentScheduleFile||selectedScheduleFile(),vr=await fetch(`${CRONOGRAMA_API}?action=get&arquivo=${encodeURIComponent(file)}&_=${Date.now()}`,{cache:"no-store"});
+    const vt=await vr.text(),vj=vt.trim()?JSON.parse(vt):{};if(!vr.ok||!vj?.ok)throw new Error(vj?.error||vt||`HTTP ${vr.status}`);
+    const r=await fetch(`${CRONOGRAMA_API}?action=archive`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({arquivo:file}),cache:"no-store"});
+    const t=await r.text(),j=t.trim()?JSON.parse(t):{};if(!r.ok||!j?.ok)throw new Error(j?.error||t||`HTTP ${r.status}`);
+    showToast("success","Obra encerrada","100% concluída, gravação final confirmada e movida para /www/storage/data/historico.");
+    setScheduleLoaded(false);await carregarCronogramasDisponiveis();
+  }catch(e){console.error(e);showToast("error","Falha ao arquivar","A gravação final foi preservada em /storage/data. "+String(e.message||e))}
 }
-
 function openEdit(id){
   const a=activities.find(x=>x.id===id);if(!a)return;
   editingId=id;
@@ -4366,133 +4107,14 @@ async function updateExistingScheduleFromExcel(file){
 }
 
 async function carregarCronogramasDisponiveis(){
-  const select=$("obra");
-  if(!select)return;
-  select.innerHTML='<option value="">Carregando cronogramas...</option>';
   try{
-    let json;
-    try{
-      const resp=await fetch(`${CRONOGRAMA_LIST_PROD}?_=${Date.now()}`,{cache:"no-store"});
-      const text=await resp.text();
-      if(!resp.ok)throw new Error(text||(`HTTP ${resp.status}`));
-      json=text.trim()?JSON.parse(text):{};
-    }catch(primaryError){
-      console.warn("listar_obras_farol.php falhou; usando fallback:",primaryError);
-      const resp=await fetch(`${CRONOGRAMA_LIST_FALLBACK}?_=${Date.now()}`,{cache:"no-store"});
-      const text=await resp.text();
-      if(!resp.ok)throw new Error(text||(`HTTP ${resp.status}`));
-      json=text.trim()?JSON.parse(text):{};
-    }
-
-    const raw=Array.isArray(json.data)?json.data:[];
-    const seen=new Set();
-    const obras=raw.map(o=>({
-      id:String(o.id??o.codigo??"").trim(),
-      obra:String(o.nome??o.obra??"").trim(),
-      coordenador:String(o.coordenador??"")
-    })).filter(o=>o.id&&o.obra&&!seen.has(o.id)&&seen.add(o.id));
-
-    cronogramasDisponiveis=obras;
-    select.innerHTML='<option value="">Selecione uma obra...</option>'+obras.map(o=>
-      `<option value="${esc(o.obra)}" data-file="${esc("obra_"+o.id+".json")}" data-id="${esc(o.id)}">${esc(o.obra)}</option>`
-    ).join("");
-
-    currentScheduleFile="";
-    currentScheduleId="";
-    setScheduleLoaded(false);
-  }catch(e){
-    console.error("Falha ao listar cronogramas:",e);
-    select.innerHTML='<option value="">Falha ao carregar obras</option>';
-    showToast("error","Falha ao listar cronogramas",String(e.message||e));
-  }
-}
-
-/* =========================================================
-   CRONOGRAMA CLIENTE
-   ========================================================= */
-
-let clientClassSelected=new Set();
-
-function parseIdExpression(expr){
-  const ids=new Set();
-  String(expr||"").split(",").map(x=>x.trim()).filter(Boolean).forEach(part=>{
-    const m=part.match(/^(\d+)\s*-\s*(\d+)$/);
-    if(m){
-      let a=Number(m[1]),b=Number(m[2]);if(a>b)[a,b]=[b,a];
-      for(let i=a;i<=b;i++)ids.add(i);
-    }else if(/^\d+$/.test(part))ids.add(Number(part));
-  });
-  return [...ids];
-}
-function renderClientClassifier(){
-  ensureClientFields();ensureActivityWeights();
-  const body=$("clientClassifyBody");if(!body)return;
-  body.innerHTML=activities.map(a=>{
-    const checked=clientClassSelected.has(a.id)?"checked":"";
-    const group=CLIENT_GROUP_LABELS[a.clientGroup]||CLIENT_GROUP_LABELS[defaultClientGroup(a)]||"—";
-    return `<tr data-id="${a.id}" class="${clientClassSelected.has(a.id)?"selected":""}">
-      <td><input class="client-row-check" type="checkbox" data-id="${a.id}" ${checked}></td>
-      <td><b>${a.id}</b></td>
-      <td><div class="taskname">${esc(a.name)}</div></td>
-      <td><span class="client-group-chip">${esc(group)}</span></td>
-      <td class="${a.clientVisible?"client-visible-yes":"client-visible-no"}">${a.clientVisible?"SIM":"NÃO"}</td>
-      <td class="client-highlight-${esc(a.clientHighlight||"normal")}">${esc((a.clientHighlight||"normal").toUpperCase())}</td>
-      <td>${a.milestone?"—":Number(a.weight||0).toFixed(1)+"%"}</td>
-    </tr>`;
-  }).join("");
-
-  body.querySelectorAll(".client-row-check").forEach(ch=>{
-    ch.onchange=()=>{
-      const id=Number(ch.dataset.id);
-      if(ch.checked)clientClassSelected.add(id);else clientClassSelected.delete(id);
-      renderClientClassifier();
-    };
-  });
-  body.querySelectorAll("tr[data-id]").forEach(tr=>{
-    tr.onclick=e=>{
-      if(e.target.matches("input"))return;
-      const id=Number(tr.dataset.id);
-      if(clientClassSelected.has(id))clientClassSelected.delete(id);else clientClassSelected.add(id);
-      renderClientClassifier();
-    };
-  });
-  $("clientClassifySummary").textContent=`${clientClassSelected.size} atividade(s) selecionada(s)`;
-  $("clientCheckAll").checked=activities.length>0&&clientClassSelected.size===activities.length;
-}
-function openClientClassifier(){
-  if(!loadedSchedule){showToast("warning","Nenhum cronograma carregado","Carregue a obra antes de classificar.");return}
-  clientClassSelected.clear();
-  renderClientClassifier();
-  $("clientClassifyModal").classList.add("open");
-}
-function closeClientClassifier(){$("clientClassifyModal")?.classList.remove("open")}
-function applyClientClassification(){
-  const typed=parseIdExpression($("clientIdsInput").value);
-  typed.forEach(id=>{if(activities.some(a=>a.id===id))clientClassSelected.add(id)});
-  if(!clientClassSelected.size){
-    showToast("warning","Nenhuma atividade selecionada","Marque atividades ou informe IDs/intervalos.");
-    return;
-  }
-  const group=$("clientGroupSelect").value;
-  const visibleMode=$("clientVisibleSelect").value;
-  const highlight=$("clientHighlightSelect").value;
-  const label=$("clientLabelInput").value.trim();
-  activities.forEach(a=>{
-    if(!clientClassSelected.has(a.id))return;
-
-    /* As dimensões são independentes. "keep" significa não tocar no valor atual. */
-    if(group!=="keep")a.clientGroup=group;
-    if(visibleMode!=="keep")a.clientVisible=visibleMode==="true";
-    if(highlight!=="keep")a.clientHighlight=highlight;
-
-    /* Nome executivo só altera quando digitado e houver uma única atividade. */
-    if(label && clientClassSelected.size===1)a.clientLabel=label;
-  });
-  $("clientIdsInput").value="";
-  $("clientLabelInput").value="";
-  renderClientClassifier();
-  render();
-  showToast("success","Classificação aplicada",`${clientClassSelected.size} atividade(s) atualizadas na Visão Cliente.`);
+    const r=await fetch(`${CRONOGRAMA_API}?action=list&_=${Date.now()}`,{cache:"no-store"}),t=await r.text(),j=t.trim()?JSON.parse(t):{};
+    if(!r.ok||!j?.ok||!Array.isArray(j.data))throw new Error(j?.error||t||`HTTP ${r.status}`);
+    const sel=$("obra"),old=sel.value;
+    sel.innerHTML='<option value="">Selecione uma obra...</option>'+j.data.map(o=>`<option value="${esc(o.obra)}" data-file="${esc(o.arquivo)}" data-id="${esc(o.id||String(o.arquivo||"").replace(/^obra_/i,"").replace(/\.json$/i,""))}">${esc(o.obra)}</option>`).join("");
+    if([...sel.options].some(o=>o.value===old))sel.value=old;
+    console.info("[Cronograma] lista fonte única",j.dir||"/storage/data",j.data.length);return j.data;
+  }catch(e){console.error(e);showToast("error","Falha ao listar cronogramas",String(e.message||e));return []}
 }
 async function saveClientClassification(){
   ensureClientFields();
@@ -4894,11 +4516,10 @@ $("erpToggle").onclick=()=>{
   $("erpToggle").title=collapsed?"Expandir":"Recolher";
 };
 
-$("loadBtn").onclick=loadSelectedSchedule;
 $("newScheduleBtn").onclick=openNewScheduleDialog;
 $("updateExcelBtn").onclick=()=>{
   if(!loadedSchedule){
-    showToast("warning","Carregue a obra primeiro","Selecione uma obra existente e clique em Carregar cronograma.");
+    showToast("warning","Carregue a obra primeiro","Selecione uma obra existente.");
     return;
   }
   $("updateExcelFile").click();
@@ -5001,7 +4622,7 @@ $("clientView").addEventListener("mousedown",e=>{
 });
 
 
-$("obra").addEventListener("change",()=>{currentScheduleFile=selectedScheduleFile();currentScheduleId=selectedScheduleId();setScheduleLoaded(false);state.status="draft";state.baseline=null;state.baselineAt=null;});
+$("obra").addEventListener("change",async()=>{currentScheduleFile=selectedScheduleFile();currentScheduleId=selectedScheduleId();setScheduleLoaded(false);state.status="draft";state.baseline=null;state.baselineAt=null;if(currentScheduleFile)await loadSelectedSchedule();});
 $("coordinator").addEventListener("change",render);
 $("startDate").addEventListener("change",()=>{
   if(state.status==="baseline")return;
@@ -5031,64 +4652,13 @@ document.addEventListener("keydown",e=>{
   }
 });
 
-
-async function autoOpenScheduleFromQuery(){
-  const qs=new URLSearchParams(location.search);
-  const arquivo=String(qs.get("arquivo")||"").trim();
-  const visao=String(qs.get("visao")||"").trim().toLowerCase();
-  if(!arquivo)return false;
-
-  const wantedId=arquivo.replace(/^obra_/i,"").replace(/\.json$/i,"");
-
-  // Não exige que a obra já exista em listar_obras_farol.php.
-  // O próprio arquivo é a chave oficial para a abertura.
-  currentScheduleFile=arquivo;
-  currentScheduleId=wantedId;
-
-  let opt=[...$("obra").options].find(o=>
-    String(o.dataset.file||"")===arquivo ||
-    String(o.dataset.id||"")===wantedId
-  );
-
-  if(!opt){
-    // opção provisória; loadSelectedSchedule substituirá o nome pelo que está no JSON
-    opt=document.createElement("option");
-    opt.value=wantedId;
-    opt.textContent="Carregando "+wantedId+"...";
-    opt.dataset.file=arquivo;
-    opt.dataset.id=wantedId;
-    $("obra").appendChild(opt);
-  }
-
-  $("obra").value=opt.value;
-  setScheduleLoaded(false);
-
-  const opened=await loadSelectedSchedule();
-  if(!opened)return false;
-
-  if(visao==="cliente" && loadedSchedule){
-    renderClientSchedule();
-    $("clientView").classList.add("open");
-    requestAnimationFrame(scaleReferenceSheets);
-  }
-  return true;
-}
-
 /* INICIALIZAÇÃO */
 setDefaultDates();
 renderResponsibleList();
 setScheduleLoaded(false);
 carregarCoordenadoresDisponiveis();
-(async()=>{
-  await carregarCronogramasDisponiveis();
-  const opened=await autoOpenScheduleFromQuery();
-  if(!opened){
-    setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
-  }
-})();
+carregarCronogramasDisponiveis();
 window.addEventListener("resize",scaleReferenceSheets);
-setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
-
 requestAnimationFrame(()=>{try{updateMainTitleStatus()}catch(e){}});
 </script>
 
