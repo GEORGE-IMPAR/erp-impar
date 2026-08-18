@@ -2068,8 +2068,58 @@ tbody tr[data-id].selected td.meta{background:#eaf8f1!important}tbody tr[data-id
 
 
 <style id="cronogramaOperacionalSimplificadoV1">
-#newScheduleBtn{display:inline-flex!important}
 #scheduleStatusBadge{display:none!important}
+</style>
+
+
+<style id="cronogramaOperacionalV11Layout">
+/* Barra de ações: todos os botões com a mesma métrica visual */
+.header .actions,
+.actions,
+.toolbar,
+.action-row{
+  align-items:center;
+}
+#draftBtn,
+#addBtn,
+#reportBtn,
+#exitBtn{
+  min-height:38px !important;
+  height:38px !important;
+  padding:0 16px !important;
+  border-radius:10px !important;
+  font-family:inherit !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+  line-height:1 !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  white-space:nowrap !important;
+  box-sizing:border-box !important;
+  vertical-align:middle !important;
+}
+.activity-filter-box{
+  min-height:38px !important;
+  height:38px !important;
+  align-self:center !important;
+  display:flex !important;
+  align-items:center !important;
+  box-sizing:border-box !important;
+}
+.activity-filter-box label{
+  font-size:12px !important;
+  font-weight:800 !important;
+  line-height:1 !important;
+}
+.activity-filter-box select{
+  height:36px !important;
+  min-height:36px !important;
+  font-family:inherit !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+  box-sizing:border-box !important;
+}
 </style>
 
 </head>
@@ -2104,7 +2154,8 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
         <label>Obra disponível</label>
         <select id="obra"><option value="">Selecione uma obra...</option></select>
       </div>
-
+      <div class="field small"><label>Centro de custo</label><input id="costCenter" type="text" style="font-weight:850"></div>
+      <div class="field small"><label>ID</label><input id="scheduleId" type="text" readonly style="background:#eef3f5;color:#607784;font-weight:950"></div>
       <div class="field medium">
         <label>Coordenador responsável pela obra</label>
         <select id="coordinator"><option value="">Carregando coordenadores...</option></select>
@@ -2123,12 +2174,9 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
           </div>
 
       <div class="action-break"></div>
-      <button class="btn blue" id="newScheduleBtn">＋ Novo cronograma</button>
-      <button class="btn" id="updateExcelBtn" type="button">📥 Atualizar via planilha</button>
       <input id="updateExcelFile" type="file" accept=".xlsx,.xls" style="display:none">
       <button class="btn green" id="draftBtn">💾 Salvar</button>
-      <button class="btn" id="addBtn">＋ Nova atividade</button>
-      <button class="btn" id="criticalBtn">🔴 Caminho crítico</button>
+      <button class="btn" id="addBtn">＋ Nova linha</button>
       <button class="btn" id="reportBtn">📄 Relatório</button>
       <button class="btn" id="exitBtn" type="button">↩ Sair</button>
       <div class="activity-filter-box">
@@ -2148,14 +2196,14 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
 
     <button class="erp-toggle" id="erpToggle" type="button" title="Recolher"></button>
   </section>
-<section class="empty-state show" id="emptyState"><div class="box"><div class="ico">⌁</div><h3>Nenhum cronograma carregado</h3><p>Selecione uma obra disponível e clique em <b>Carregar cronograma</b>. A rotina sempre abre vazia para evitar edição acidental de outra obra.</p></div></section>
+<section class="empty-state show" id="emptyState"><div class="box"><div class="ico">⌁</div><h3>Nenhum cronograma carregado</h3><p>Selecione uma obra disponível. O cronograma será carregado automaticamente.</p></div></section>
 
   <section class="gantt-wrap" id="ganttWrap">
     <table id="ganttTable"></table>
   </section>
 
   <section class="legend">
-    <div class="legend-item"><span class="plan-demo"></span> PLAN / linha de base</div>
+    <div class="legend-item"><span class="plan-demo"></span> PLAN</div>
     <div class="legend-item"><span class="real-demo"></span> REAL / execução</div>
     <div class="legend-item"><span class="dot" style="background:#0b5a86"></span> Planejamento</div>
     <div class="legend-item"><span class="dot" style="background:#ff9700"></span> Suprimentos</div>
@@ -2352,8 +2400,8 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
       <button id="reportClose">Fechar</button>
       <button class="primary" id="reportPrint">Imprimir / PDF</button>
       <button id="reportExcel">Baixar Excel</button>
-      <button id="reportClientView">Visão do cliente</button>
-      <button id="reportClientClassify">Classificar visão cliente</button>
+      <button id="reportClientView">👤 Visão do cliente</button>
+      <button id="reportClientClassify">⚙ Definir conteúdo da visão cliente</button>
     </div>
     <div class="report-summary" id="reportSummary"></div>
     <table class="report-table" id="reportTable"></table>
@@ -2438,7 +2486,7 @@ TEMPLATE.forEach(a=>{
 
 let activities=structuredClone(TEMPLATE);
 let editingId=null;
-let showCritical=false;
+let showCritical=true;
 let confirmResolve=null;
 
 const state={
@@ -2474,7 +2522,7 @@ function effectiveDuration(a){if(a.milestone)return 0;const base=Math.max(1,Numb
 function syncEffectiveDurations(){activities.forEach(a=>{if(a.milestone){a.dur=0;return}if(a.baseDur===undefined)a.baseDur=Math.max(1,Number(a.dur||1));a.dur=effectiveDuration(a)})}
 function renderResourceChips(){const w=$("resourceChips");if(!w)return;w.innerHTML=modalResources.map((r,i)=>`<span class="resource-chip">${esc(r)}<button type="button" data-resource-index="${i}">×</button></span>`).join("");w.querySelectorAll("[data-resource-index]").forEach(b=>b.onclick=()=>{modalResources.splice(Number(b.dataset.resourceIndex),1);renderResourceChips()})}
 function addModalResource(){const i=$("mResourceInput"),v=normResp(i.value);if(!v)return;rememberResponsible(v);if(!modalResources.some(x=>x.toLocaleLowerCase("pt-BR")===v.toLocaleLowerCase("pt-BR")))modalResources.push(v);i.value="";renderResourceChips()}
-function setScheduleLoaded(v){loadedSchedule=!!v;$("emptyState")?.classList.toggle("show",!loadedSchedule);if($("ganttWrap"))$("ganttWrap").style.display=loadedSchedule?"block":"none";document.querySelector(".summary")?.style.setProperty("display",loadedSchedule?"grid":"none");document.querySelector(".legend")?.style.setProperty("display",loadedSchedule?"flex":"none");["draftBtn","finalizeBtn","addBtn","criticalBtn","reportBtn","clientBtn","clientClassifyBtn","resetBtn","updateExcelBtn"].forEach(id=>{const e=$(id);if(e)e.disabled=!loadedSchedule});if(!loadedSchedule){selectedIds.clear();linkSourceId=null;updateBulkBar()}}
+function setScheduleLoaded(v){loadedSchedule=!!v;$("emptyState")?.classList.toggle("show",!loadedSchedule);if($("ganttWrap"))$("ganttWrap").style.display=loadedSchedule?"block":"none";document.querySelector(".summary")?.style.setProperty("display",loadedSchedule?"grid":"none");document.querySelector(".legend")?.style.setProperty("display",loadedSchedule?"flex":"none");["draftBtn","addBtn","reportBtn","exitBtn"].forEach(id=>{const e=$(id);if(e)e.disabled=!loadedSchedule});if(!loadedSchedule){selectedIds.clear();linkSourceId=null;updateBulkBar()}}
 function clearSelection(){selectedIds.clear();updateBulkBar();updateSelectionClasses();hideRowContextMenu();hideRowContextEditor()}
 function toggleRowSelection(id,add){if(!loadedSchedule)return;if(!add)selectedIds.clear();if(add&&selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);updateSelectionClasses();updateBulkBar()}
 function updateSelectionClasses(){document.querySelectorAll("#ganttTable tbody tr[data-id]").forEach(tr=>{const id=Number(tr.dataset.id);tr.classList.toggle("selected",selectedIds.has(id));tr.classList.toggle("link-source",linkSourceId===id)})}
@@ -2593,7 +2641,8 @@ async function loadSelectedSchedule(){
     const loadedDays=Number(d.workDays??d.dias??resumo.dias??0) ||
       (loadedStart&&loadedEnd ? workdaysBetween(parseISO(loadedStart),parseISO(loadedEnd)) : 0);
     $("workDays").value=loadedDays||"";
-
+    $("scheduleId").value=currentScheduleId;
+    $("costCenter").value=String(d.centroCusto||d.centro_custo||d.codigo||"");
     renderResponsibleList();
     setScheduleLoaded(true);
 
@@ -2616,6 +2665,14 @@ async function loadSelectedSchedule(){
   }
 }
 async function persistSchedule(){
+  if(!$("costCenter")?.value.trim()){
+    showToast("warning","Centro de custo obrigatório","Informe o centro de custo antes de gravar o cronograma.");
+    return false;
+  }
+  if(!$("scheduleId")?.value.trim()){
+    showToast("warning","ID obrigatório","O cronograma não possui ID sequencial válido.");
+    return false;
+  }
   if(!loadedSchedule||!validateParams())return false;
   const plan=Math.round(plannedPercentAt(today())*10)/10;
   const real=Math.round(realPercent()*10)/10;
@@ -2624,6 +2681,8 @@ async function persistSchedule(){
   const workDays=Number($("workDays").value||0);
   const obra=$("obra").value;
   const coordinator=$("coordinator").value;
+  const centroCusto=$("costCenter")?.value.trim()||"";
+  const scheduleId=$("scheduleId")?.value.trim()||currentScheduleId||selectedScheduleId();
   const projectStatus=real>=plan?"Em andamento":"Atrasado";
 
   const atividadesCompat=activities.map((a,idx)=>({
@@ -2647,7 +2706,7 @@ async function persistSchedule(){
     updatedAt:new Date().toISOString(),
 
     /* Compatibilidade com leitores antigos de /storage/data */
-    nome:obra,coordenador:coordinator,
+    nome:obra,coordenador:coordinator,centro_custo:centroCusto,
     resumo:{inicio:start,fim:end,dias:workDays,previsto:plan,real,status:projectStatus},
     inicio:start,fim:end,dias:workDays,previsto:plan,real,status:projectStatus,
     atividades:atividadesCompat
@@ -3431,35 +3490,23 @@ function applyLock(){
   }
 }
 async function saveDraft(options={}){
-  if(!validateParams())return false;
-
-  const requestedStart=parseISO($("startDate").value);
-  const requestedEnd=parseISO($("endDate").value);
-  const requestedDays=Math.max(1,Number($("workDays").value)||0);
-  const currentBounds=currentScheduleBounds(activities);
-  const currentEnd=currentBounds.finish?iso(currentBounds.finish):"";
-  const currentDays=Number(currentBounds.days||0);
-  const endChanged=!!requestedEnd && iso(requestedEnd)!==currentEnd;
-  const daysChanged=requestedDays!==currentDays;
-
-  /* TEMPLATE MORREU:
-     o recálculo usa somente o cronograma vivo desta obra. */
-  if(endChanged||daysChanged){
-    if(!requestedStart||!requestedEnd||requestedEnd<requestedStart){
-      showToast("warning","Datas inválidas","Confira Data Inicial e Data Final.");
-      return false;
-    }
-    $("workDays").value=workdaysBetween(requestedStart,requestedEnd);
-    const okRecalc=scaleDurations(true);
-    if(!okRecalc)return false;
-  }else{
-    const start=requestedStart||parseISO(currentBounds.start)||nextWorkday(today());
-    calculateSchedule(activities,start,true);
-    const bounds=currentScheduleBounds(activities);
-    if(bounds.start)$("startDate").value=iso(bounds.start);
-    if(bounds.finish)$("endDate").value=iso(bounds.finish);
-    if(bounds.days)$("workDays").value=bounds.days;
+  if(!$("costCenter")?.value.trim()){
+    showToast("warning","Centro de custo obrigatório","Informe o centro de custo antes de salvar.");
+    $("costCenter")?.focus(); return false;
   }
+  if(!$("scheduleId")?.value.trim()){
+    showToast("warning","ID obrigatório","O cronograma não possui ID sequencial válido."); return false;
+  }
+
+  /* O cronograma vivo é a verdade. Salvar não redistribui atividades. */
+  const bounds=currentScheduleBounds(activities);
+  if(!bounds.start||!bounds.finish){
+    showToast("warning","Cronograma incompleto","Informe as datas das atividades antes de salvar."); return false;
+  }
+  $("startDate").value=iso(bounds.start);
+  $("endDate").value=iso(bounds.finish);
+  $("workDays").value=bounds.days;
+  if(!validateParams())return false;
 
   state.status="draft";
   state.baseline=null;
@@ -3469,13 +3516,12 @@ async function saveDraft(options={}){
   const saved=await persistSchedule();
   if(!saved){
     render();
-    showToast("warning","Gravação não confirmada","O cronograma foi recalculado, mas o backend não confirmou a gravação.");
+    showToast("warning","Gravação não confirmada","O backend não confirmou a gravação. O cronograma da tela foi preservado.");
     return false;
   }
 
   const backup=await createOperationalBackup();
   const archived=await runArchiveMaintenance({backupReady:backup});
-
   render();
 
   if(archived?.currentArchived){
@@ -3483,13 +3529,8 @@ async function saveDraft(options={}){
     setScheduleLoaded(false);
     await carregarCronogramasDisponiveis();
   }else{
-    showToast(
-      backup?"success":"warning",
-      backup?"Cronograma salvo":"Cronograma salvo • atenção ao backup",
-      backup
-        ?"PLAN recalculado, JSON gravado e backup JSON + Excel gerado com timestamp."
-        :"O cronograma foi gravado, mas o backup automático não foi confirmado."
-    );
+    showToast(backup?"success":"warning",backup?"Cronograma salvo":"Cronograma salvo • atenção ao backup",
+      backup?"JSON gravado sem reescalonar datas/durações. Backup JSON + Excel gerado.":"Cronograma gravado; backup não confirmado.");
   }
   return true;
 }
@@ -4783,8 +4824,8 @@ async function shareClientSchedule(){
 /* =========================================================
    CRONOGRAMA OPERACIONAL — BACKUP AUTOMÁTICO
    ========================================================= */
-const BACKUP_API=API_BASE+"backup_cronograma.php";
-const ARCHIVE_API=API_BASE+"arquivar_concluidos.php";
+const BACKUP_API=CRONOGRAMA_PROD_BASE+"backup_cronograma.php";
+const ARCHIVE_API=CRONOGRAMA_PROD_BASE+"arquivar_concluidos.php";
 
 function operationalBackupRows(){
   syncOutputsWithCurrentSchedule();
@@ -4824,7 +4865,7 @@ function operationalExcelBase64(){
 async function createOperationalBackup(){
   const file=currentScheduleFile||selectedScheduleFile();
   const id=currentScheduleId||selectedScheduleId();
-  if(!file||!/^obra_\d+\.json$/i.test(file)){
+  if(!file||!/^obra_[A-Za-z0-9_-]+\.json$/i.test(file)){
     console.warn("[Backup] arquivo canônico ausente",file,id);
     return false;
   }
@@ -4907,8 +4948,9 @@ async function runArchiveMaintenance({backupReady=false}={}){
 }
 
 async function exitCronograma(){
-  if(loadedSchedule){
-    const ok=await saveDraft({exit:true});
+  /* Regra oficial: sair nunca grava automaticamente. */
+  if(loadedSchedule && state.dirty){
+    const ok=confirm("Existem alterações não salvas. Deseja sair e descartá-las?");
     if(!ok)return;
   }
   location.href="/menu.html";
@@ -4921,26 +4963,12 @@ $("erpToggle").onclick=()=>{
   $("erpToggle").title=collapsed?"Expandir":"Recolher";
 };
 
-$("newScheduleBtn").onclick=openNewScheduleDialog;
-$("updateExcelBtn").onclick=()=>{
-  if(!loadedSchedule){
-    showToast("warning","Carregue a obra primeiro","Selecione uma obra existente.");
-    return;
-  }
-  $("updateExcelFile").click();
-};
-$("updateExcelFile").onchange=e=>updateExistingScheduleFromExcel(e.target.files?.[0]);
 $("addResourceBtn").onclick=addModalResource;
 $("mResourceInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addModalResource();}});
 $("draftBtn").onclick=saveDraft;
 $("addBtn").onclick=openNew;
-$("criticalBtn").onclick=()=>{
-  showCritical=!showCritical;
-  $("criticalBtn").textContent=showCritical?"⚪ Ocultar críticas":"🔴 Caminho crítico";
-  render();
-};
 $("reportBtn").onclick=openReport;
-$("exitBtn").onclick=exitCronograma;
+$("exitBtn").onclick=()=>{location.href="dashboard_executivo_obras_novo.html";};
 $("reportClientView").onclick=()=>{ $("reportPage").classList.remove("open"); openClientSchedule(); };
 $("reportClientClassify").onclick=()=>{ $("reportPage").classList.remove("open"); openClientClassifier(); };
 $("clientClassifyClose").onclick=closeClientClassifier;
@@ -5068,6 +5096,151 @@ document.addEventListener("keydown",e=>{
 });
 
 
+
+function dashboardNewScheduleQuery(){
+  const qs=new URLSearchParams(location.search);
+  if(qs.get("novo")!=="1")return null;
+  return {
+    modo:String(qs.get("modo")||"").trim().toLowerCase(),
+    origem:String(qs.get("origem")||"").trim().toLowerCase(),
+    obra:String(qs.get("obra")||"").trim(),
+    codigo:String(qs.get("codigo")||"").trim(),
+    id:String(qs.get("id")||"").trim(),
+    centroCusto:String(qs.get("centroCusto")||"").trim(),
+    coordenador:String(qs.get("coordenador")||"").trim(),
+    dataInicial:String(qs.get("dataInicial")||"").trim(),
+    prazo:Number(qs.get("prazo")||0),
+    tipoPrazo:String(qs.get("tipoPrazo")||"").trim().toLowerCase()
+  };
+}
+
+function calendarDaysInclusive(start,days){
+  const d=parseISO(start);
+  if(!d||!Number(days))return null;
+  const x=new Date(d);
+  x.setDate(x.getDate()+Math.max(0,Number(days)-1));
+  return x;
+}
+
+async function openNewScheduleFromDashboard(){
+  const q=dashboardNewScheduleQuery();
+  if(!q)return false;
+  if(!q.obra){
+    showToast("warning","Nova obra","Nome da obra não informado.");
+    return false;
+  }
+
+  /* IMPORTANTE:
+     nada é gravado aqui. O JSON só nasce quando o usuário clicar SALVAR. */
+  const sel=$("obra");
+  sel.innerHTML="";
+  const opt=document.createElement("option");
+  opt.value=q.obra;
+  opt.textContent=q.obra;
+  opt.dataset.new="1";
+  opt.dataset.id=q.codigo||"";
+  opt.dataset.file=q.codigo?`obra_${q.codigo}.json`:"";
+  sel.appendChild(opt);
+  sel.value=q.obra;
+
+  currentScheduleId=q.id||"";
+  currentScheduleFile=currentScheduleId?`obra_${currentScheduleId}.json`:"";
+  $("scheduleId").value=currentScheduleId;
+  $("costCenter").value=q.centroCusto||q.codigo||"";
+
+  if(q.coordenador){
+    const c=$("coordinator");
+    const exists=[...c.options].some(o=>String(o.value)===q.coordenador);
+    if(!exists){
+      const co=document.createElement("option");
+      co.value=q.coordenador; co.textContent=q.coordenador;
+      c.appendChild(co);
+    }
+    c.value=q.coordenador;
+  }
+
+  state.status="draft";
+  state.baseline=null;
+  state.baselineAt=null;
+  state.draftSavedAt=null;
+
+  if(q.modo==="manual"){
+    activities=[novaAtividadeManual()];
+    $("startDate").value="";
+    $("endDate").value="";
+    $("workDays").value="";
+  }else if(q.modo==="excel"){
+    activities=[novaAtividadeManual()];
+    $("startDate").value="";
+    $("endDate").value="";
+    $("workDays").value="";
+  }else{
+    activities=structuredClone(TEMPLATE);
+
+    let start=parseISO(q.dataInicial);
+    if(!start)start=nextWorkday(today());
+
+    let targetUsefulDays=0;
+    let targetEnd=null;
+
+    if(q.prazo>0 && q.tipoPrazo==="corridos"){
+      targetEnd=calendarDaysInclusive(start,q.prazo);
+      targetUsefulDays=workdaysBetween(start,targetEnd);
+    }else if(q.prazo>0){
+      targetUsefulDays=Math.max(1,Math.round(q.prazo));
+      targetEnd=addWorkdays(start,targetUsefulDays);
+    }else{
+      targetUsefulDays=baseProjectDays();
+      targetEnd=addWorkdays(start,targetUsefulDays);
+    }
+
+    $("startDate").value=iso(start);
+    $("endDate").value=iso(targetEnd);
+    $("workDays").value=targetUsefulDays;
+
+    const baseDays=baseProjectDays();
+    const factor=Math.max(.05,targetUsefulDays/baseDays);
+    activities.forEach(a=>{
+      if(a.milestone){a.dur=0;return;}
+      a.baseDur=Math.max(1,Number(a.baseDur??a.dur??1));
+      a.dur=Math.max(1,Math.ceil(a.baseDur*factor));
+    });
+    calculateSchedule(activities,start,true);
+  }
+
+  activities.forEach((a,i)=>{
+    a.id=Number(a.id)||i+1;
+    if(a.baseDur===undefined)a.baseDur=Number(a.dur||0);
+    if(a.realStatus===undefined)a.realStatus=Number(a.pct||0)>=100?"Concluído":"Não iniciado";
+    if(!Array.isArray(a.pred))a.pred=[];
+    if(!Array.isArray(a.resources))a.resources=[];
+  });
+
+  responsibleCatalog=Array.from(new Set([
+    ...RESPONSIBLE_DEFAULTS,...activities.map(a=>a.resp).filter(Boolean)
+  ])).sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  renderResponsibleList();
+  setScheduleLoaded(true);
+  render();
+
+  if(q.modo==="excel"){
+    setTimeout(()=>$("excelInput")?.click(),150);
+    showToast("info","Importar planilha","Selecione o arquivo Excel e depois clique em Salvar.");
+  }else if(q.modo==="manual"){
+    showToast("info","Cronograma manual","Monte as atividades e clique em Salvar.");
+    setTimeout(()=>openEdit(activities[0]?.id),100);
+  }else{
+    if(!$("costCenter")?.value.trim() || !$("scheduleId")?.value.trim()){
+      showToast("warning","Dados obrigatórios","Centro de custo e ID precisam estar definidos antes da criação.");
+      return false;
+    }
+    const created=await persistSchedule();
+    if(created)showToast("success","Cronograma criado",`${q.obra} criada como obra_${currentScheduleId}.json. Continue ajustando e salve normalmente.`);
+  }
+
+  return true;
+}
+
 async function autoOpenScheduleFromQuery(){
   const qs=new URLSearchParams(location.search);
   const arquivo=String(qs.get("arquivo")||"").trim();
@@ -5101,11 +5274,18 @@ async function autoOpenScheduleFromQuery(){
 setDefaultDates();
 renderResponsibleList();
 setScheduleLoaded(false);
-carregarCoordenadoresDisponiveis();
 (async()=>{
+  await carregarCoordenadoresDisponiveis();
+
+  const novo=dashboardNewScheduleQuery();
+  if(novo){
+    await openNewScheduleFromDashboard();
+    return;
+  }
+
   await carregarCronogramasDisponiveis();
   const opened=await autoOpenScheduleFromQuery();
-  if(!opened)setTimeout(()=>showToast("info","Cronograma","Selecione uma obra e clique em Carregar cronograma."),350);
+  if(!opened)setTimeout(()=>showToast("info","Cronograma","Selecione uma obra."),350);
 })();
 window.addEventListener("resize",scaleReferenceSheets);
 

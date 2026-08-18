@@ -1511,19 +1511,350 @@ body.collapsed .toolbarBottom{
   <span>Visão consolidada do programa</span>
 </div>
 
-<div class="modal" id="modal"><div class="modalCard"><div class="modalHead"><div><h3>Novo cronograma</h3><p>Escolha como deseja iniciar.</p></div><button class="close" id="close">×</button></div><div class="newgrid"><div class="newopt"><div class="big">▦</div><b>Usar template</b><p>Modelo oficial já estruturado com fases e regras.</p><strong>Mais rápido →</strong></div><div class="newopt"><div class="big">▤</div><b>Importar Excel</b><p>Criar ou atualizar a partir da planilha padrão.</p><strong>Importar →</strong></div><div class="newopt"><div class="big">＋</div><b>Criar manualmente</b><p>Começar um cronograma totalmente do zero.</p><strong>Começar →</strong></div></div></div></div>
 
-<script>
-const body=document.body;
+<div class="modal" id="modal">
+  <div class="modalCard" id="newScheduleCard">
+    <div class="modalHead">
+      <div>
+        <h3 id="newScheduleTitle">Novo cronograma</h3>
+        <p id="newScheduleSub">Escolha como deseja iniciar.</p>
+      </div>
+      <button class="close" id="close" type="button">×</button>
+    </div>
 
-const modal=document.getElementById('modal');
-document.getElementById('newBtn').onclick=()=>modal.classList.add('show');
-document.getElementById('close').onclick=()=>modal.classList.remove('show');
-modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('show')});
-document.querySelectorAll('.counter').forEach(el=>{
- const target=+el.dataset.target;let n=0;const step=Math.max(1,Math.ceil(target/18));
- const t=setInterval(()=>{n=Math.min(target,n+step);el.textContent=n;if(n>=target)clearInterval(t)},45);
-});
+    <div id="newScheduleBody">
+      <div class="newgrid">
+        <div class="newopt" data-new-mode="contract">
+          <div class="big">▦</div>
+          <b>A partir do contrato</b>
+          <p>Escolha uma obra contratada e gere o cronograma automático pelo template oficial.</p>
+          <strong>Gerar automático →</strong>
+        </div>
+        <div class="newopt" data-new-mode="excel">
+          <div class="big">▤</div>
+          <b>Importar Excel</b>
+          <p>Inicie um novo cronograma a partir da planilha padrão.</p>
+          <strong>Importar →</strong>
+        </div>
+        <div class="newopt" data-new-mode="manual">
+          <div class="big">＋</div>
+          <b>Criar manualmente</b>
+          <p>Informe somente a obra e o coordenador e monte as atividades diretamente no cronograma.</p>
+          <strong>Começar →</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="erpImparNovoCronogramaDashboardV1">
+(()=>{
+"use strict";
+
+const modal=document.getElementById("modal");
+const card=document.getElementById("newScheduleCard");
+const title=document.getElementById("newScheduleTitle");
+const sub=document.getElementById("newScheduleSub");
+const body=document.getElementById("newScheduleBody");
+const close=document.getElementById("close");
+
+const DOC_API="https://api.erpimpar.com.br/documentos/api.php";
+const COORDENADORES_API="https://api.erpimpar.com.br/cronograma/listar_coordenadores.php";
+const CRON_URL="cronograma_novo.html";
+const CRON_LIST_PRIMARY="https://api.erpimpar.com.br/cronograma/listar_obras_farol.php";
+const CRON_LIST_FALLBACK="https://api.erpimpar.com.br/cronograma/listar_obras.php";
+
+let contracts=[];
+let selectedContract=null;
+
+function esc(v){
+  return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+}
+let coordinatorCache=[];
+function normCoordinatorName(v){
+  return String(v??"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+}
+async function loadOfficialCoordinators(){
+  const r=await fetch(`${COORDENADORES_API}?_=${Date.now()}`,{cache:"no-store"});
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||`HTTP ${r.status}`);
+  const j=text.trim()?JSON.parse(text):{};
+  const raw=Array.isArray(j.data)?j.data:[];
+  const seen=new Set();
+  coordinatorCache=raw
+    .map(v=>String(v??"").trim())
+    .filter(Boolean)
+    .filter(v=>{
+      const key=normCoordinatorName(v);
+      if(seen.has(key))return false;
+      seen.add(key);
+      return true;
+    });
+  return coordinatorCache;
+}
+function coordOptions(){
+  return coordinatorCache.map(v=>({value:v,label:v}));
+}
+function field(label,control){
+  return `<label style="display:block;min-width:0">
+    <span style="display:block;margin:0 0 6px;font-size:9px;font-weight:950;letter-spacing:.05em;text-transform:uppercase;color:#587181">${esc(label)}</span>
+    ${control}
+  </label>`;
+}
+function selectHtml(id,items,placeholder="Selecione..."){
+  return `<select id="${id}" style="width:100%;height:40px;border:1px solid #d7e2e8;border-radius:9px;background:#fff;padding:0 11px;font:800 12px inherit;color:#15344a">
+    <option value="">${esc(placeholder)}</option>
+    ${items.map(i=>`<option value="${esc(i.value)}">${esc(i.label)}</option>`).join("")}
+  </select>`;
+}
+function inputHtml(id,placeholder=""){
+  return `<input id="${id}" type="text" placeholder="${esc(placeholder)}" style="width:100%;height:40px;border:1px solid #d7e2e8;border-radius:9px;background:#fff;padding:0 11px;font:800 12px inherit;color:#15344a;box-sizing:border-box">`;
+}
+function footer(backLabel="Voltar", nextLabel="Continuar"){
+  return `<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+    <button class="action" id="newBack" type="button">${esc(backLabel)}</button>
+    <button class="action green" id="newContinue" type="button">${esc(nextLabel)}</button>
+  </div>`;
+}
+function showToast(msg){
+  console.info("[Novo cronograma]",msg);
+}
+function openStart(){
+  selectedContract=null;
+  title.textContent="Novo cronograma";
+  sub.textContent="Escolha como deseja iniciar.";
+  body.innerHTML=`
+    <div class="newgrid">
+      <div class="newopt" data-new-mode="contract"><div class="big">▦</div><b>A partir do contrato</b><p>Escolha uma obra contratada e gere o cronograma automático pelo template oficial.</p><strong>Gerar automático →</strong></div>
+      <div class="newopt" data-new-mode="excel"><div class="big">▤</div><b>Importar Excel</b><p>Inicie um novo cronograma a partir da planilha padrão.</p><strong>Importar →</strong></div>
+      <div class="newopt" data-new-mode="manual"><div class="big">＋</div><b>Criar manualmente</b><p>Informe somente a obra e o coordenador e monte as atividades diretamente no cronograma.</p><strong>Começar →</strong></div>
+    </div>`;
+  bindModeCards();
+}
+async function docRequest(action,payload={}){
+  const r=await fetch(DOC_API,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Accept":"application/json"},
+    body:JSON.stringify({action,...payload}),
+    cache:"no-store"
+  });
+  const text=await r.text();
+  let j={};
+  try{j=text?JSON.parse(text):{}}catch(e){throw new Error("Resposta inválida da Gestão Documental.");}
+  if(!r.ok || j.ok===false) throw new Error(j.error||`HTTP ${r.status}`);
+  return j;
+}
+function contractDisplay(d){
+  return String(d.obra||d.nomeObra||d.nome_obra||d.contratante||d.codigo||d.id||"Contrato").trim();
+}
+function detectDayType(d){
+  const raw=JSON.stringify(d||{}).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  if(/\bdias?\s+corridos?\b/.test(raw)) return "corridos";
+  if(/\bdias?\s+uteis?\b/.test(raw)) return "uteis";
+  return "";
+}
+function extractContractDetail(d){
+  const f=d?.form||{};
+  const obra=String(
+    f.nomeObra||f.obra||d.nomeObra||d.obra||
+    f.contratante?.fantasia||d.contratante||f.contratante?.nome||d.codigo||""
+  ).trim();
+  return {
+    id:String(d.id||""),
+    codigo:String(f.codigo||d.codigo||"").trim(),
+    obra,
+    dataInicial:String(f.dataISO||f.dataContrato||d.dataISO||d.dataContrato||"").trim(),
+    prazo:String(f.prazoDias||d.prazoDias||d.prazo||"").trim(),
+    tipoPrazo:detectDayType(d)
+  };
+}
+async function loadContracts(){
+  const data=await docRequest("document_list");
+  contracts=Array.isArray(data.documents)?data.documents:[];
+  return contracts;
+}
+async function renderContractMode(){
+  await loadOfficialCoordinators();
+  title.textContent="Novo cronograma • Contrato";
+  sub.textContent="Escolha a obra contratada e informe somente o coordenador.";
+  body.innerHTML=`<div style="padding:14px 16px 16px"><div style="font-size:11px;color:#69808f">Carregando contratos...</div></div>`;
+  try{
+    await loadContracts();
+    const items=contracts.map((d,i)=>({
+      value:String(i),
+      label:`${d.codigo?d.codigo+" • ":""}${contractDisplay(d)}`
+    }));
+    body.innerHTML=`<div style="padding:14px 16px 16px">
+      <div style="display:grid;grid-template-columns:minmax(0,1.6fr) minmax(220px,.7fr);gap:10px">
+        ${field("Obra / contrato",selectHtml("newContract",items,"Selecione uma obra..."))}
+        ${field("Coordenador *",selectHtml("newCoord",coordOptions()))}
+      </div>
+      <div id="contractExtra" style="margin-top:10px"></div>
+      ${footer("Voltar","Gerar cronograma")}
+    </div>`;
+    document.getElementById("newBack").onclick=openStart;
+    document.getElementById("newContract").onchange=contractSelected;
+    document.getElementById("newContinue").onclick=continueContract;
+  }catch(e){
+    body.innerHTML=`<div style="padding:16px"><b style="color:#b33">Não foi possível carregar os contratos.</b><div style="margin-top:6px;font-size:11px">${esc(e.message)}</div>${footer("Voltar","Tentar novamente")}</div>`;
+    document.getElementById("newBack").onclick=openStart;
+    document.getElementById("newContinue").onclick=renderContractMode;
+  }
+}
+async function contractSelected(){
+  const idx=Number(this.value);
+  if(!Number.isInteger(idx)||!contracts[idx]){selectedContract=null;document.getElementById("contractExtra").innerHTML="";return;}
+  const extra=document.getElementById("contractExtra");
+  extra.innerHTML=`<div style="font-size:10px;color:#69808f">Lendo dados do contrato...</div>`;
+  try{
+    const data=await docRequest("document_get",{id:contracts[idx].id});
+    selectedContract=extractContractDetail(data.document||contracts[idx]);
+    if(!selectedContract.tipoPrazo){
+      extra.innerHTML=field("Tipo de prazo *",selectHtml("newDayType",[
+        {value:"corridos",label:"Dias corridos"},
+        {value:"uteis",label:"Dias úteis"}
+      ],"Selecione..."));
+    }else{
+      extra.innerHTML=`<div style="padding:9px 11px;border:1px solid #dfe8ed;border-radius:9px;background:#f8fbfc;font-size:10px;color:#4f6877">
+        Prazo identificado no contrato: <b>${esc(selectedContract.prazo||"—")} ${selectedContract.tipoPrazo==="corridos"?"dias corridos":"dias úteis"}</b>.
+      </div>`;
+    }
+  }catch(e){
+    selectedContract=null;
+    extra.innerHTML=`<div style="font-size:10px;color:#b33">Falha ao ler contrato: ${esc(e.message)}</div>`;
+  }
+}
+
+async function nextScheduleId(){
+  let lastError=null;
+  for(const url of [CRON_LIST_PRIMARY,CRON_LIST_FALLBACK]){
+    try{
+      const r=await fetch(`${url}${url.includes("?")?"&":"?"}_=${Date.now()}`,{cache:"no-store"});
+      const text=await r.text();
+      if(!r.ok)throw new Error(text||`HTTP ${r.status}`);
+      const j=text.trim()?JSON.parse(text):{};
+      const arr=Array.isArray(j)?j:(Array.isArray(j.obras)?j.obras:(Array.isArray(j.data)?j.data:[]));
+      const ids=arr.map(o=>Number(String(o.id||o.codigo||o.arquivo||"").replace(/\D/g,""))).filter(Number.isFinite);
+      return String((ids.length?Math.max(...ids):0)+1).padStart(3,"0");
+    }catch(e){lastError=e;}
+  }
+  throw lastError||new Error("Não foi possível obter o próximo ID.");
+}
+
+function goCron(params){
+  const q=new URLSearchParams(params);
+  location.href=`${CRON_URL}?${q.toString()}`;
+}
+async function continueContract(){
+  const coord=document.getElementById("newCoord")?.value||"";
+  if(!selectedContract){alert("Selecione uma obra/contrato.");return;}
+  if(!coord){alert("Selecione o coordenador.");return;}
+
+  const centroCusto=String(selectedContract.codigo||"").trim();
+  if(!centroCusto){
+    alert("Centro de custo não localizado no contrato. Informe/corrija o contrato antes de criar o cronograma.");
+    return;
+  }
+
+  let tipo=selectedContract.tipoPrazo;
+  if(!tipo)tipo=document.getElementById("newDayType")?.value||"";
+  if(!tipo){alert("Informe se o prazo é em dias corridos ou dias úteis.");return;}
+
+  /* O ID só nasce depois de TODAS as validações acima. */
+  try{
+    const id=await nextScheduleId();
+    goCron({
+      novo:"1",modo:"template",origem:"contrato",id,
+      obra:selectedContract.obra,
+      codigo:selectedContract.codigo,
+      centroCusto,
+      coordenador:coord,
+      dataInicial:selectedContract.dataInicial,
+      prazo:selectedContract.prazo,
+      tipoPrazo:tipo
+    });
+  }catch(e){
+    alert(e.message||"Falha ao definir o próximo ID do cronograma.");
+  }
+}
+async function renderExcelMode(){
+  await loadOfficialCoordinators();
+  title.textContent="Novo cronograma • Excel";
+  sub.textContent="Informe a obra, centro de custo e coordenador.";
+  body.innerHTML=`<div style="padding:14px 16px 16px">
+    <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(180px,.65fr) minmax(220px,.7fr);gap:10px">
+      ${field("Nome da obra *",inputHtml("newExcelWork","Nome da obra"))}
+      ${field("Centro de custo *",inputHtml("newExcelCost","Ex.: AC10626"))}
+      ${field("Coordenador *",selectHtml("newExcelCoord",coordOptions()))}
+    </div>${footer("Voltar","Abrir importação")}</div>`;
+  document.getElementById("newBack").onclick=openStart;
+  document.getElementById("newContinue").onclick=async()=>{
+    const obra=document.getElementById("newExcelWork").value.trim();
+    const centroCusto=document.getElementById("newExcelCost").value.trim();
+    const coord=document.getElementById("newExcelCoord").value;
+    if(!obra){alert("Informe o nome da obra.");return;}
+    if(!centroCusto){alert("Informe o centro de custo.");return;}
+    if(!coord){alert("Selecione o coordenador.");return;}
+    /* Só agora, com tudo válido, reservamos logicamente o próximo ID. */
+    try{const id=await nextScheduleId();goCron({novo:"1",modo:"excel",origem:"dashboard",id,obra,centroCusto,coordenador:coord});}
+    catch(e){alert(e.message||"Falha ao definir o ID.");}
+  };
+}
+async function renderManualMode(){
+  await loadOfficialCoordinators();
+  title.textContent="Novo cronograma • Manual";
+  sub.textContent="Informe os dados mínimos. Datas e prazo serão calculados pelas atividades.";
+  body.innerHTML=`<div style="padding:14px 16px 16px">
+    <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(180px,.65fr) minmax(220px,.7fr) minmax(180px,.55fr);gap:10px">
+      ${field("Nome da obra *",inputHtml("newManualWork","Nome da obra"))}
+      ${field("Centro de custo *",inputHtml("newManualCost","Ex.: AC10626"))}
+      ${field("Coordenador *",selectHtml("newManualCoord",coordOptions()))}
+      ${field("Calendário *",selectHtml("newManualDayType",[{value:"corridos",label:"Dias corridos"},{value:"uteis",label:"Dias úteis"}],"Selecione..."))}
+    </div>${footer("Voltar","Criar manualmente")}</div>`;
+  document.getElementById("newBack").onclick=openStart;
+  document.getElementById("newContinue").onclick=async()=>{
+    const obra=document.getElementById("newManualWork").value.trim();
+    const centroCusto=document.getElementById("newManualCost").value.trim();
+    const coord=document.getElementById("newManualCoord").value;
+    const tipo=document.getElementById("newManualDayType").value;
+    if(!obra){alert("Informe o nome da obra.");return;}
+    if(!centroCusto){alert("Informe o centro de custo.");return;}
+    if(!coord){alert("Selecione o coordenador.");return;}
+    if(!tipo){alert("Selecione dias corridos ou dias úteis.");return;}
+    /* Só agora, com tudo válido, reservamos logicamente o próximo ID. */
+    try{const id=await nextScheduleId();goCron({novo:"1",modo:"manual",origem:"dashboard",id,obra,centroCusto,coordenador:coord,tipoPrazo:tipo});}
+    catch(e){alert(e.message||"Falha ao definir o ID.");}
+  };
+}
+function bindModeCards(){
+  body.querySelectorAll("[data-new-mode]").forEach(opt=>{
+    opt.onclick=()=>{
+      const mode=opt.dataset.newMode;
+      if(mode==="contract")renderContractMode();
+      else if(mode==="excel")renderExcelMode();
+      else renderManualMode();
+    };
+  });
+}
+function openModal(){
+  openStart();
+  modal.classList.add("show");
+}
+function closeModal(){
+  modal.classList.remove("show");
+  openStart();
+}
+
+document.getElementById("newBtn").onclick=openModal;
+close.onclick=closeModal;
+modal.addEventListener("click",e=>{if(e.target===modal)closeModal()});
+bindModeCards();
+
+window.ERPImparNovoCronogramaDashboard={
+  open:openModal,
+  close:closeModal
+};
+})();
 </script>
 <script>
 document.querySelectorAll(".count-up").forEach(el=>{
@@ -1966,7 +2297,7 @@ function bind(){
   $("filterPeriod")?.addEventListener("change",render);
   $("refreshBtn")?.addEventListener("click",loadAll);
   $("pdfBtn")?.addEventListener("click",()=>window.print());
-  qsa(".newopt").forEach((opt,i)=>opt.addEventListener("click",()=>{location.href=`cronograma_novo.html?novo=1&modo=${i===0?"template":i===1?"excel":"manual"}`}));
+  /* Novo cronograma controlado por ERPImparNovoCronogramaDashboard. */
 }
 bind(); loadAll();
 })();
