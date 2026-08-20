@@ -409,6 +409,17 @@ tbody tr:hover td.meta{background:#f6faf8}
   box-shadow:none!important;
 }
 
+
+/* ===== CRONOGRAMA VIVO — seletor simples úteis/corridos ===== */
+.prazo-tipo-field{min-width:150px!important;max-width:170px!important}
+.prazo-tipo-toggle{height:42px;display:flex!important;align-items:center;gap:8px;padding:0 10px;border:1px solid #c9d9e2;border-radius:10px;background:#fff;cursor:pointer;text-transform:none!important;letter-spacing:0!important}
+.prazo-tipo-toggle input{position:absolute;opacity:0;pointer-events:none}
+.prazo-tipo-switch{width:32px;height:18px;border-radius:99px;background:#cbd8de;position:relative;flex:0 0 auto;transition:.18s}
+.prazo-tipo-switch:after{content:"";position:absolute;width:14px;height:14px;left:2px;top:2px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px #17384d30}
+.prazo-tipo-toggle input:checked + .prazo-tipo-switch{background:#18b978}
+.prazo-tipo-toggle input:checked + .prazo-tipo-switch:after{transform:translateX(14px)}
+.prazo-tipo-toggle b{font-size:11px;color:#173f51;white-space:nowrap}
+
 </style>
 
 <style id="erpCronogramaVrfV04PatchCss">
@@ -2226,7 +2237,15 @@ const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
 
       <div class="field small"><label>Data de início</label><input id="startDate" type="date"></div>
       <div class="field small"><label>Data final</label><input id="endDate" type="date"></div>
-      <div class="field small"><label id="workDaysLabel">Prazo (dias úteis)</label><input id="workDays" type="number" min="20" value="90"></div>
+      <div class="field small"><label id="workDaysLabel">Prazo (dias úteis)</label><input id="workDays" type="number" min="1" value="90"></div>
+      <div class="field prazo-tipo-field">
+        <label>Contagem do prazo</label>
+        <label class="prazo-tipo-toggle" title="Desmarcado = dias úteis • Marcado = dias corridos">
+          <input id="scheduleDayTypeToggle" type="checkbox">
+          <span class="prazo-tipo-switch"></span>
+          <b id="scheduleDayTypeText">Dias úteis</b>
+        </label>
+      </div>
           <div class="field compact-metric-field">
             <label>PREVISTO</label>
             <div class="compact-metric-value" id="topPlannedPct">0%</div>
@@ -2599,8 +2618,12 @@ function setScheduleDayType(v,source="runtime"){
   scheduleDayTypeSource=source||"runtime";
   const a=document.getElementById("workDaysLabel");
   const b=document.getElementById("activityDurationLabel");
+  const toggle=document.getElementById("scheduleDayTypeToggle");
+  const text=document.getElementById("scheduleDayTypeText");
   if(a)a.textContent=`Prazo (${scheduleDayLabel()})`;
   if(b)b.textContent=`Duração planejada (${scheduleDayLabel()})`;
+  if(toggle)toggle.checked=n==="corridos";
+  if(text)text.textContent=n==="corridos"?"Dias corridos":"Dias úteis";
   return n;
 }
 
@@ -2810,6 +2833,7 @@ async function loadSelectedSchedule(){
     $("costCenter").value=String(d.centroCusto||d.centro_custo||d.codigo||"");
     renderResponsibleList();
     setScheduleLoaded(true);
+    syncRealDatesWithPlan();
 
     /* Migração automática de cronogramas antigos:
        se o JSON ainda não tinha tipoPrazo e o contrato informa dias corridos,
@@ -3319,6 +3343,53 @@ function ensureActivityWeights(){
   });
   activities.filter(a=>a.milestone || a.progressCounts===false).forEach(a=>a.weight=0);
 }
+
+function recalculateWeightsFromDurations(){
+  const productive=activities.filter(a=>!a.milestone && a.progressCounts!==false);
+  if(!productive.length)return;
+  const total=productive.reduce((s,a)=>s+Math.max(1,Number(a.dur||a.baseDur||1)),0)||productive.length;
+  let running=0;
+  productive.forEach((a,i)=>{
+    if(i===productive.length-1){
+      a.weight=Math.max(0,Math.round((100-running)*100)/100);
+    }else{
+      a.weight=Math.round((Math.max(1,Number(a.dur||a.baseDur||1))/total*100)*100)/100;
+      running+=a.weight;
+    }
+  });
+  activities.filter(a=>a.milestone || a.progressCounts===false).forEach(a=>a.weight=0);
+}
+function syncRealDatesWithPlan(){
+  activities.forEach(a=>{
+    a.realStart=a.start||"";
+    a.realEnd=a.end||"";
+  });
+}
+function replanLivingSchedule({reweight=true}={}){
+  if(!loadedSchedule)return false;
+  const start=parseISO($("startDate").value);
+  const target=Math.max(1,Number($("workDays").value)||0);
+  if(!start||!target)return false;
+
+  /* Nesta fase o cronograma é a verdade: pesos acompanham as durações atuais. */
+  if(reweight)recalculateWeightsFromDurations();
+  else ensureActivityWeights();
+
+  /* Redistribui o prazo pelos pesos e preserva essa proporção no ajuste global. */
+  applyWeightsToTargetDays(target);
+  activities.forEach(a=>a.manualStart="");
+  scaleDurations(true);
+
+  /* O valor digitado pelo usuário continua sendo a referência oficial. */
+  $("startDate").value=iso(start);
+  $("workDays").value=target;
+  $("endDate").value=iso(addWorkdays(start,target));
+
+  syncRealDatesWithPlan();
+  ensureActivityWeights();
+  return true;
+}
+
 function normalizeWeightsKeeping(fixedId=null,fixedWeight=null){
   const productive=activities.filter(a=>!a.milestone && a.progressCounts!==false);
   if(!productive.length)return;
@@ -3664,7 +3735,7 @@ function updateSummary(startPlan,finish){
 }
 
 function applyLock(){
-  ["obra","coordinator","startDate","endDate","workDays"].forEach(id=>$(id).disabled=false);
+  ["obra","coordinator","startDate","endDate","workDays","scheduleDayTypeToggle"].forEach(id=>{if($(id))$(id).disabled=false});
   if($("addBtn"))$("addBtn").disabled=!loadedSchedule;
   if($("draftBtn"))$("draftBtn").textContent="💾 Salvar";
   if(state.draftSavedAt){
@@ -3682,16 +3753,15 @@ async function saveDraft(options={}){
   if(!$("scheduleId")?.value.trim()){
     showToast("warning","ID obrigatório","O cronograma não possui ID sequencial válido."); return false;
   }
-
-  /* O cronograma vivo é a verdade. Salvar não redistribui atividades. */
-  const bounds=currentScheduleBounds(activities);
-  if(!bounds.start||!bounds.finish){
-    showToast("warning","Cronograma incompleto","Informe as datas das atividades antes de salvar."); return false;
-  }
-  $("startDate").value=iso(bounds.start);
-  $("endDate").value=iso(bounds.finish);
-  $("workDays").value=bounds.days;
   if(!validateParams())return false;
+
+  /* REGRA OFICIAL DESTA FASE:
+     o cronograma da tela é a verdade. Prazo + tipo + durações atuais comandam
+     a redistribuição; contrato/template não voltam a interferir. */
+  if(!replanLivingSchedule({reweight:true})){
+    showToast("warning","Cronograma incompleto","Informe data inicial e prazo antes de salvar.");
+    return false;
+  }
 
   state.status="draft";
   state.baseline=null;
@@ -3715,7 +3785,7 @@ async function saveDraft(options={}){
     await carregarCronogramasDisponiveis();
   }else{
     showToast(backup?"success":"warning",backup?"Cronograma salvo":"Cronograma salvo • atenção ao backup",
-      backup?"JSON gravado sem reescalonar datas/durações. Backup JSON + Excel gerado.":"Cronograma gravado; backup não confirmado.");
+      backup?`Prazo salvo em ${$("workDays").value} ${scheduleDayLabel()} • pesos redistribuídos • PLAN e REAL sincronizados. Backup JSON + Excel gerado.`:"Cronograma gravado; backup não confirmado.");
   }
   return true;
 }
@@ -3839,25 +3909,14 @@ async function saveActivity(){
   if(editingId){
     const a=activities.find(x=>x.id===editingId);
     if(a && Number(a.pct)>=100)a.realStatus="Concluído";
-    if(a&&!a.milestone)normalizeWeightsKeeping(a.id,data.weight);
-  }else{
-    ensureActivityWeights();
   }
 
   ensureClientFields();
 
-  /* Se o planejamento ainda não virou linha de base, alterações de duração,
-     predecessora ou atividade precisam recalcular a rede antes de persistir. */
-  if(state.status!=="baseline"){
-    const scheduleStart=parseISO($("startDate").value);
-    if(scheduleStart && activities.length){
-      calculateSchedule(activities,scheduleStart,true);
-      const bounds=currentScheduleBounds(activities);
-      if(bounds.start)$("startDate").value=iso(bounds.start);
-      if(bounds.finish)$("endDate").value=iso(bounds.finish);
-      if(bounds.days)$("workDays").value=bounds.days;
-    }
-  }
+  /* Nova/alterada atividade muda a composição do cronograma.
+     A duração informada passa a participar do peso de TODAS as atividades. */
+  recalculateWeightsFromDurations();
+  replanLivingSchedule({reweight:false});
 
   closeModal();
   render();
@@ -5267,6 +5326,13 @@ $("endDate").addEventListener("change",()=>{
 
 $("workDays").addEventListener("change",()=>{
   if(state.status==="baseline")return;
+  const s=parseISO($("startDate").value);
+  const n=Math.max(1,Number($("workDays").value)||0);
+  if(s&&n)$("endDate").value=iso(addWorkdays(s,n));
+});
+
+$("scheduleDayTypeToggle").addEventListener("change",e=>{
+  setScheduleDayType(e.target.checked?"corridos":"uteis","cronograma-ui");
   const s=parseISO($("startDate").value);
   const n=Math.max(1,Number($("workDays").value)||0);
   if(s&&n)$("endDate").value=iso(addWorkdays(s,n));
