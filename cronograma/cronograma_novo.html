@@ -6424,5 +6424,239 @@ document.addEventListener("DOMContentLoaded",()=>{
 });
 </script>
 
+
+
+<!-- ===== ERP ÍMPAR V5.5 — COLAR DO EXCEL: ATIVIDADE / INÍCIO / FIM ===== -->
+<style id="erpExcelPasteV55Style">
+#ganttTable td.excel-paste-anchor{
+  box-shadow:inset 0 0 0 2px #18b978!important;
+  background:rgba(24,185,120,.08)!important;
+}
+</style>
+
+<script id="erpExcelPasteV55">
+(function(){
+  let anchor=null; // {id, col}
+
+  function excelDate(value){
+    const raw=String(value??"").trim();
+    if(!raw)return null;
+
+    let m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
+    if(m){
+      let y=Number(m[3]); if(y<100)y+=2000;
+      const d=new Date(y,Number(m[2])-1,Number(m[1]),12);
+      return Number.isNaN(d.getTime())?null:d;
+    }
+
+    m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(m){
+      const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12);
+      return Number.isNaN(d.getTime())?null:d;
+    }
+
+    const serial=Number(raw.replace(",","."));
+    if(Number.isFinite(serial)&&serial>20000&&serial<100000){
+      const utc=Math.round((serial-25569)*86400000);
+      const x=new Date(utc);
+      return new Date(x.getUTCFullYear(),x.getUTCMonth(),x.getUTCDate(),12);
+    }
+
+    return null;
+  }
+
+  function clearAnchor(){
+    document
+      .querySelectorAll("#ganttTable td.excel-paste-anchor")
+      .forEach(x=>x.classList.remove("excel-paste-anchor"));
+  }
+
+  function colFromCell(td){
+    if(td.classList.contains("actcol")) return "activity";
+
+    /* Preparado para quando Início/Fim estiverem expostos como colunas físicas.
+       Também permite setAnchor via API. */
+    if(td.classList.contains("startcol") || td.dataset.field==="start") return "start";
+    if(td.classList.contains("endcol")   || td.dataset.field==="end")   return "end";
+
+    return null;
+  }
+
+  document.addEventListener("click",e=>{
+    const td=e.target.closest("#ganttTable tbody tr[data-id] td");
+    if(!td)return;
+
+    const col=colFromCell(td);
+    if(!col)return;
+
+    clearAnchor();
+    td.classList.add("excel-paste-anchor");
+
+    anchor={
+      id:Number(td.closest("tr").dataset.id),
+      col
+    };
+  },true);
+
+  function editable(el){
+    const tag=(el?.tagName||"").toUpperCase();
+    return ["INPUT","TEXTAREA","SELECT"].includes(tag)||el?.isContentEditable;
+  }
+
+  function clipboardValues(e){
+    const text=e.clipboardData?.getData("text/plain")||"";
+    if(!text.trim())return [];
+
+    return text
+      .replace(/\r/g,"")
+      .split("\n")
+      .filter(x=>x.trim()!=="")
+      .map(line=>line.split("\t")[0]);
+  }
+
+  function recalcDurationFromDates(a){
+    const s=parseISO(a.start);
+    const f=parseISO(a.end);
+    if(!s||!f||f<s)return false;
+
+    const dur=
+      (typeof scheduleUsesCalendarDays==="function" && scheduleUsesCalendarDays())
+        ? Math.max(1,Math.round((f-s)/86400000)+1)
+        : (typeof workdaysBetween==="function"
+            ? Math.max(1,workdaysBetween(s,f))
+            : Math.max(1,Math.round((f-s)/86400000)+1));
+
+    a.dur=a.milestone?0:dur;
+    a.baseDur=a.milestone
+      ? 0
+      : dur*(typeof resourceCount==="function"?resourceCount(a):1);
+
+    return true;
+  }
+
+  document.addEventListener("paste",function(e){
+    if(editable(e.target))return;
+    if(!anchor)return;
+    if(typeof loadedSchedule!=="undefined"&&!loadedSchedule)return;
+
+    if(typeof state!=="undefined"&&state.status==="baseline"){
+      showToast?.(
+        "warning",
+        "Linha de base bloqueada",
+        "A colagem do Excel só pode ser feita no cronograma em edição."
+      );
+      return;
+    }
+
+    const vals=clipboardValues(e);
+    if(!vals.length)return;
+
+    const visible=
+      (typeof activitiesForCurrentFilter==="function"
+        ? activitiesForCurrentFilter()
+        : activities) || [];
+
+    const first=visible.findIndex(a=>a.id===anchor.id);
+    if(first<0)return;
+
+    e.preventDefault();
+
+    let applied=0;
+    let invalid=0;
+    const touched=[];
+
+    vals.forEach((raw,i)=>{
+      const a=visible[first+i];
+      if(!a)return;
+
+      if(anchor.col==="activity"){
+        const value=String(raw??"").trim();
+        if(!value){invalid++;return;}
+        a.name=value;
+        applied++;
+        touched.push(a);
+        return;
+      }
+
+      const d=excelDate(raw);
+      if(!d){invalid++;return;}
+
+      if(anchor.col==="start"){
+        a.start=iso(d);
+        a.manualStart=iso(d);
+
+        /* Sem linha de base: plan e real nascem iguais. */
+        if(typeof state!=="undefined"&&state.status!=="baseline"){
+          a.realStart=a.start;
+        }
+
+        applied++;
+        touched.push(a);
+        return;
+      }
+
+      if(anchor.col==="end"){
+        const s=parseISO(a.start);
+        if(s&&d<s){invalid++;return;}
+
+        a.end=iso(d);
+
+        if(typeof state!=="undefined"&&state.status!=="baseline"){
+          a.realEnd=a.end;
+        }
+
+        applied++;
+        touched.push(a);
+      }
+    });
+
+    if(!applied)return;
+
+    /* Datas coladas passam a ser verdade.
+       Quando início e fim já existem, recalcula duração e peso. */
+    if(anchor.col==="start" || anchor.col==="end"){
+      touched.forEach(a=>recalcDurationFromDates(a));
+
+      if(typeof recalculateWeightsFromDurations==="function")
+        recalculateWeightsFromDurations();
+
+      if(typeof syncParametersFromSchedule==="function")
+        syncParametersFromSchedule();
+    }
+
+    if(typeof render==="function")render();
+    if(typeof persistSchedule==="function")persistSchedule();
+
+    const label =
+      anchor.col==="activity"
+        ? "Atividade"
+        : anchor.col==="start"
+          ? "Data início"
+          : "Data fim";
+
+    showToast?.(
+      invalid?"warning":"success",
+      "Colagem do Excel",
+      `${applied} valor(es) colado(s) em ${label}${invalid?`; ${invalid} ignorado(s)`:""}.`
+    );
+  },true);
+
+  /* API pública para ancorar a colagem também por código.
+     Exemplo:
+       ERPExcelPasteV55.setAnchor(12,"start")
+       ERPExcelPasteV55.setAnchor(12,"end")
+       ERPExcelPasteV55.setAnchor(12,"activity")
+  */
+  window.ERPExcelPasteV55={
+    setAnchor(id,col){
+      clearAnchor();
+      anchor={id:Number(id),col:String(col)};
+    },
+    getAnchor(){
+      return anchor?{...anchor}:null;
+    }
+  };
+})();
+</script>
 </body>
 </html>
