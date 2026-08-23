@@ -384,46 +384,6 @@ input:focus,select:focus,textarea:focus{
 </style>
 
 
-<style id="vidaObraToastConfirmV11">
-.ts{
-  left:20px!important;
-  right:auto!important;
-  top:20px!important;
-  width:min(420px,calc(100vw - 40px))!important;
-}
-.toast.confirm{
-  grid-template-columns:38px minmax(0,1fr)!important;
-  border-left:5px solid var(--a,#e99a00)!important;
-  padding:14px!important;
-  box-shadow:0 18px 46px rgba(20,55,74,.22)!important;
-}
-.toast.confirm.danger{
-  border-left-color:var(--r,#df4657)!important;
-}
-.toast.confirm .toast-ico{
-  width:32px;height:32px;border-radius:10px;
-  display:grid;place-items:center;
-  background:#fff3dc;color:#a46b00;font-size:16px;font-weight:950;
-}
-.toast.confirm.danger .toast-ico{
-  background:#fff0f2;color:#c93d4d;
-}
-.toast.confirm b{font-size:11px!important;color:#17364a}
-.toast.confirm p{font-size:9px!important;line-height:1.5!important;margin-top:5px!important;white-space:pre-line}
-.toast-confirm-actions{display:flex;gap:7px;margin-top:11px;justify-content:flex-start;flex-wrap:wrap}
-.toast-confirm-actions button{
-  height:32px;padding:0 12px;border-radius:8px;border:1px solid #cbdbe4;
-  background:#f7fafb;color:#17384e;font-size:8px;font-weight:950;cursor:pointer;
-}
-.toast-confirm-actions button.yes{
-  background:var(--g,#13ad74);border-color:var(--g,#13ad74);color:#fff;
-}
-.toast.confirm.danger .toast-confirm-actions button.yes{
-  background:var(--r,#df4657);border-color:var(--r,#df4657);
-}
-.toast-confirm-actions button:hover{transform:translateY(-1px)}
-@media(max-width:620px){.ts{left:10px!important;top:10px!important;width:calc(100vw - 20px)!important}}
-</style>
 
 
 <style id="erpImparConfirmModalV12">
@@ -595,7 +555,7 @@ input:focus,select:focus,textarea:focus{
     </div>
     <div class="preview" id="previewWrap">
       <div class="paper" id="paper"></div>
-      <iframe id="pdfFrame" title="Visualizador integrado" style="display:none;width:100%;height:72vh;border:0;border-radius:8px;background:#fff"></iframe>
+      <iframe id="pdfFrame" src="about:blank" title="Visualizador integrado" style="display:none;width:100%;height:72vh;border:0;border-radius:8px;background:#fff"></iframe>
     </div>
   </div>
 </div>
@@ -681,23 +641,25 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 function toast(t,a,b){const d=document.createElement("div");d.className="toast "+t;d.innerHTML=`<div>${t==="success"?"✓":t==="error"?"×":t==="warning"?"!":"i"}</div><div><b>${esc(a)}</b><p>${esc(b)}</p></div>`;$("ts").appendChild(d);setTimeout(()=>d.remove(),4200)}
 function confirmDialog({title,message,confirmText="SIM",cancelText="CANCELAR",danger=false}){
   return new Promise(resolve=>{
-    const ov=$("confirmOv"), yes=$("confirmYes"), no=$("confirmNo");
-    $("confirmTitle").textContent=title||"Confirmação";
-    $("confirmMessage").textContent=message||"";
-    $("confirmIcon").textContent=danger?"!":"?";
+    const ov=$("confirmOv"),yes=$("confirmYes"),no=$("confirmNo"),ttl=$("confirmTitle"),msg=$("confirmMessage"),ico=$("confirmIcon");
+    if(!ov||!yes||!no||!ttl||!msg||!ico){
+      toast("error","Falha na confirmação","Não foi possível abrir a caixa de confirmação.");
+      resolve(false);
+      return;
+    }
+    ttl.textContent=title||"Confirmação";
+    msg.textContent=message||"";
+    ico.textContent=danger?"!":"?";
     yes.textContent=confirmText;
     no.textContent=cancelText;
     yes.className="btn "+(danger?"danger":"g");
     ov.classList.toggle("danger",!!danger);
     ov.classList.add("on");
     ov.setAttribute("aria-hidden","false");
-
     const finish=v=>{
       ov.classList.remove("on","danger");
       ov.setAttribute("aria-hidden","true");
-      yes.onclick=null;
-      no.onclick=null;
-      ov.onclick=null;
+      yes.onclick=null;no.onclick=null;ov.onclick=null;
       document.removeEventListener("keydown",onKey);
       resolve(v);
     };
@@ -709,7 +671,7 @@ function confirmDialog({title,message,confirmText="SIM",cancelText="CANCELAR",da
     no.onclick=()=>finish(false);
     ov.onclick=e=>{if(e.target===ov)finish(false)};
     document.addEventListener("keydown",onKey);
-    setTimeout(()=>yes.focus(),0);
+    requestAnimationFrame(()=>yes.focus());
   });
 }
 async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b),cache:"no-store"});const t=await r.text();let j;try{j=t?JSON.parse(t):{}}catch(e){throw new Error(t||`HTTP ${r.status}`)}if(!r.ok||j.ok===false)throw new Error(j.error||`HTTP ${r.status}`);return j}
@@ -720,7 +682,7 @@ function ad(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}function 
 function aw(d,n){let x=nw(d);if(n<=1)return x;let c=1;while(c<n){x=ad(x,1);if(wd(x))c++}return x}function wb(a,b){let d=new Date(a),c=0;while(d<=b){if(wd(d))c++;d=ad(d,1)}return c}
 async function load(show=false){try{const j=await oa("project_list");projects=j.projects||[];render();if(show)toast("success","Atualizado",`${projects.length} obra(s) carregada(s).`)}catch(e){console.error("[Vida da Obra] backend",e);toast("error","Backend de Obras indisponível",e.message+" • Verifique /obras/api.php no KingHost.")}}
 function render(){$("count").textContent=projects.length;$("k1").textContent=projects.length;$("k2").textContent=projects.filter(x=>x.kickoffAt).length;$("k3").textContent=projects.reduce((n,p)=>n+Object.keys(p.documents||{}).length,0);$("k4").textContent=projects.reduce((n,p)=>n+(p.filesCount||0),0);$("plist").innerHTML=projects.map(p=>`<div class="pc ${sel?.id===p.id?"on":""}" onclick="openP('${esc(p.id)}')"><b>${esc(p.name||p.code)}</b><small>${esc(p.code)} • ${esc(p.coordinator||"Sem coordenador")}</small><small>${esc(p.status||"Kickoff")}</small></div>`).join("")}
-async function openP(id){try{const j=await oa("project_get",{id});sel=j.project;render();draw()}catch(e){toast("error","Falha ao abrir",e.message)}}
+async function openP(id){try{const j=await oa("project_get",{id});sel=j.project;render();draw();auditLog("OBRA_ACESSADA",{project_id:sel?.id||id,project_code:sel?.code||id,project_name:sel?.name||"",message:"Obra aberta para consulta na Vida da Obra."},"info")}catch(e){toast("error","Falha ao abrir",e.message)}}
 function normCat(v){const x=String(v||"geral").toLowerCase();if(["projeto","projetos"].includes(x))return"projetos";if(["comercial","commercial"].includes(x))return"comercial";if(["obra","geral","campo"].includes(x))return"obra";return x}
 function filesByCategory(c){return (sel?.files||[]).filter(f=>normCat(f.category)===normCat(c))}
 function folderCard(c,ico,title,desc,klass){const n=filesByCategory(c).length;return `<div class="repo-folder ${klass}"><span class="folder-count">${n}</span><div class="ico">${ico}</div><h3>${title}</h3><p>${desc}</p><div class="actions"><button class="mini b" onclick="chooseUpload('${c}')">ANEXAR</button><button class="mini" onclick="openFolder('${c}')">CONSULTAR</button></div></div>`}
@@ -791,14 +753,13 @@ function closeMaterials(){$('materialsOv').classList.remove('on')}
 
 
 function getAuditUser(){
-  try{
-    const u=JSON.parse(localStorage.getItem("ERPIMPAR_USER")||localStorage.getItem("usuarioLogado")||"{}");
-    return {
-      nome:u.nome||u.Nome||u.name||u.displayName||"Usuário não identificado",
-      email:u.email||u.Email||"",
-      id:u.id||u.userId||u.uid||""
-    };
-  }catch(e){return{nome:"Usuário não identificado",email:"",id:""}}
+  const injected=(window.ERPIMPAR_USER && typeof window.ERPIMPAR_USER==="object")?window.ERPIMPAR_USER:{};
+  const q=new URLSearchParams(location.search);
+  return {
+    nome:injected.nome||injected.Nome||injected.name||q.get("usuario_nome")||q.get("user_name")||"",
+    email:injected.email||injected.Email||q.get("usuario_email")||q.get("user_email")||"",
+    id:injected.id||injected.userId||injected.uid||q.get("usuario_id")||q.get("user_id")||""
+  };
 }
 async function auditLog(action,detail={},level="info"){
   try{
@@ -813,7 +774,21 @@ async function auditLog(action,detail={},level="info"){
       detail,
       client_time:new Date().toISOString()
     };
-    await post(AUDIT_API,{action:"append",event:payload});
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),3500);
+    try{
+      const r=await fetch(AUDIT_API,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"append",event:payload}),
+        cache:"no-store",
+        
+        signal:ctrl.signal
+      });
+      const t=await r.text();
+      let j={};try{j=t?JSON.parse(t):{}}catch(_){}
+      if(!r.ok||j.ok===false)throw new Error(j.error||t||`HTTP ${r.status}`);
+    }finally{clearTimeout(timer)}
   }catch(e){console.warn("[Auditoria] Falha ao registrar",e)}
 }
 function auditRepoCard(){
@@ -848,6 +823,20 @@ async function loadAudit(showToast=false){
 function existingProjectFor(code){
   const c=String(code||"").trim().toUpperCase();
   return (projects||[]).find(p=>String(p.code||p.id||"").trim().toUpperCase()===c)||null;
+}
+async function existingProjectFromBackend(code){
+  const c=String(code||"").trim();
+  if(!c)return null;
+  try{
+    const j=await oa("project_get",{id:c});
+    if(j?.project)return j.project;
+  }catch(e){
+    const msg=String(e?.message||"").toLowerCase();
+    if(!msg.includes("não encontr")&&!msg.includes("nao encontr")&&!msg.includes("not found")&&!msg.includes("404")){
+      console.warn("[Vida da Obra] verificação project_get:",e);
+    }
+  }
+  return existingProjectFor(c);
 }
 async function confirmReinitialize(existing){
   if(!existing)return true;
@@ -920,7 +909,28 @@ function fileIcon(name){const e=String(name||'').split('.').pop().toLowerCase();
 function openFolder(c){activeFolder=normCat(c);const m=FOLDER_META[activeFolder]||{title:activeFolder,icon:'📁',sub:'Documentos anexados nesta pasta.'};$('folderTitle').textContent=m.title;$('folderIcon').textContent=m.icon;$('folderSubtitle').textContent=m.sub;$('folderAdd').onclick=()=>chooseUpload(activeFolder);renderFolderList();$('folderOv').classList.add('on')}
 function closeFolder(){$('folderOv').classList.remove('on')}
 function renderFolderList(){const a=filesByCategory(activeFolder);$('folderList').innerHTML=a.length?a.map(f=>`<div class="file-card"><div class="file-ext">${fileIcon(f.originalName)}</div><div class="file-main"><b>${esc(f.originalName)}</b><small>${esc(f.uploadedAtBr||'')} • ${esc((FOLDER_META[normCat(f.category)]||{}).title||f.category||'')}</small></div><div class="file-icons"><a class="icon-btn" href="${esc(f.url)}" target="_blank" title="Abrir">👁</a><a class="icon-btn download" href="${esc(f.url)}" download title="Baixar">⬇</a><button class="icon-btn delete" onclick="deleteFile('${esc(f.id)}')" title="Excluir">🗑</button></div></div>`).join(''):`<div class="folder-empty"><div style="font-size:30px;margin-bottom:8px">${(FOLDER_META[activeFolder]||{}).icon||'📁'}</div><b>Nenhum arquivo nesta pasta</b><div style="font-size:8px;margin-top:5px">Use “Anexar” para incluir o primeiro documento.</div></div>`}
-async function deleteFile(fileId){if(!sel||!fileId)return;if(!confirm('Excluir este arquivo da obra?'))return;try{await oa('file_delete',{project_id:sel.id,file_id:fileId});toast('success','Arquivo excluído','O anexo foi removido da pasta.');await openP(sel.id);renderFolderList();await load()}catch(e){toast('error','Falha ao excluir',e.message)}}
+async function deleteFile(fileId){
+  if(!sel||!fileId)return;
+  const ok=await confirmDialog({
+    title:"EXCLUIR ARQUIVO",
+    message:"Tem certeza que deseja excluir este arquivo da obra?\n\nEsta ação removerá o anexo do repositório da obra.",
+    confirmText:"SIM, EXCLUIR",
+    cancelText:"CANCELAR",
+    danger:true
+  });
+  if(!ok)return;
+  try{
+    await auditLog("EXCLUSAO_ARQUIVO_CONFIRMADA",{project_id:sel.id,project_code:sel.code,project_name:sel.name,message:"Exclusão de arquivo confirmada.",file_id:fileId},"danger");
+    await oa('file_delete',{project_id:sel.id,file_id:fileId});
+    toast('success','Arquivo excluído','O anexo foi removido da pasta.');
+    await openP(sel.id);
+    renderFolderList();
+    await load();
+  }catch(e){
+    await auditLog("EXCLUSAO_ARQUIVO_FALHOU",{project_id:sel.id,project_code:sel.code,project_name:sel.name,message:"Falha ao excluir arquivo.",file_id:fileId,erro:e.message||String(e)},"danger");
+    toast('error','Falha ao excluir',e.message);
+  }
+}
 function chooseUpload(c){if(!sel)return;$("up").dataset.c=c;$("up").click()}$("up").onchange=async e=>{for(const file of [...e.target.files]){const fd=new FormData();fd.append("action","upload");fd.append("project_id",sel.id);fd.append("category",$("up").dataset.c||"obra");fd.append("file",file);try{const r=await fetch(OAPI,{method:"POST",body:fd});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error);toast("success","Arquivo anexado",file.name)}catch(x){toast("error","Falha no upload",x.message)}}e.target.value="";await openP(sel.id);await load()}
 let commercialContracts=[];
 function closeContractPicker(){$("contractOv").classList.remove("on")}
@@ -1072,7 +1082,7 @@ function kickoff(p){
 function executive(p,s){const G={planejamento:["Mobilização","#0b4f82"],suprimentos:["Suprimentos","#f39a00"],civil:["Preparação Civil","#2ca317"],climatizacao:["Climatização","#1c72c7"],dutos:["Dutos","#6857f0"],entrega:["Entrega","#e70058"]},st=pd(p.startDate),en=pd(s.endDate),tot=Math.max(1,en-st),rows=Object.entries(G).map(([cat,[n,c]])=>{const a=s.activities.filter(x=>x.cat===cat);if(!a.length)return"";const x=new Date(Math.min(...a.map(v=>pd(v.start).getTime()))),y=new Date(Math.max(...a.map(v=>pd(v.end).getTime()))),l=((x-st)/tot)*100,w=Math.max(2,((y-x)/tot)*100),ms=a.filter(v=>v.milestone).map(v=>`${v.name.replace(/^MARCO\s*[–-]\s*/i,"")} (${v.end.split("-").reverse().join("/")})`).join(" • ");return `<div class="gr"><div class="gn">${n}</div><div><div class="bw"><div class="bar" style="background:${c};margin-left:${l}%;width:${w}%"></div></div><div class="ms">${esc(ms)}</div></div></div>`}).join("");return `<div class="exec"><div class="eh"><div><small>GESTÃO EXECUTIVA</small><h2>${esc(p.code)} • ${esc(p.name)}</h2></div><div class="ek"><small>INÍCIO</small><b>${p.startDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>CONCLUSÃO</small><b>${s.endDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>DURAÇÃO</small><b>${p.workDays} DIAS</b></div><div class="ek"><small>COORDENADOR</small><b style="font-size:13px">${esc(p.coordinator)}</b></div></div>${rows}</div>`}
 const INSTALL_STEP_DELAY=650;
 function installPause(ms=INSTALL_STEP_DELAY){return new Promise(r=>setTimeout(r,ms))}
-async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira coordenador, data de início e prazo.");const existing=existingProjectFor(code);if(existing&&!(await confirmReinitialize(existing)))return;$("confirm").disabled=true;beginInstallView();try{installerProgress(8,"dossie","Criando o dossiê da obra","Vinculando o contrato comercial e abrindo a estrutura operacional.");await installPause();let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});installerProgress(24,"cronograma","Gerando o cronograma oficial","Montando datas, atividades-base e marcos da execução.");await installPause();const sc=autos(start,days),cj=await saveCron(p,sc);p.scheduleFile=cj.arquivo;p.endDate=sc.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(38,"resumo","Conectando o resumo executivo","Preparando a visão gerencial vinculada ao cronograma.");await installPause();p.documents.executive={type:"cronograma",title:"Resumo Executivo",file:cj.arquivo,status:"done"};installerProgress(52,"os","Montando a Ordem de Serviço","Preenchendo a OS com os dados originados do contrato.");await installPause();p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};installerProgress(65,"checklist","Preparando o Guia / Checklist","Criando o roteiro operacional inicial do coordenador.");await installPause();p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};installerProgress(77,"kickoff","Gerando o Termo de Kickoff","Formalizando a passagem de bastão Comercial → Obras.");await installPause();p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(87,"pastas","Organizando as pastas digitais","Preparando Comercial, Projetos e Obra para receber os anexos.");await installPause(700);installerProgress(95,"timeline","Finalizando a Vida da Obra","Gravando documentos, timeline e estrutura final no backend.");await installPause(750);await oa("project_save",{project:p});await auditLog(existing?"OBRA_REINICIADA":"OBRA_INICIADA",{project_code:code,project_name:name,message:existing?"Obra reiniciada e estrutura operacional recriada.":"Obra iniciada pela primeira vez.",summary:`Coordenador: ${coordinator} • Início: ${start} • Prazo: ${days} dias úteis • Cronograma: ${p.scheduleFile||"gerado"}`},"ok");installerDone();toast("success",existing?"Obra reiniciada":"Obra iniciada",`${code} criada e pronta para operação.`);setTimeout(async()=>{installRunning=false;$("startOv").classList.remove("on");resetInstaller();await load();await openP(code)},1400)}catch(e){console.error(e);await auditLog(existing?"REINICIO_FALHOU":"INICIO_FALHOU",{project_code:code,project_name:name,message:"Falha durante a implantação.",summary:e.message||String(e)},"danger");installRunning=false;$("startCloseBtn").disabled=false;$("installerFooter").style.display="flex";$("installerFooter").innerHTML='<div class="hint" style="color:#c63b4a">A implantação foi interrompida. Você pode voltar e tentar novamente.</div><div><button class="btn" onclick="closeStart()">Fechar</button><button class="btn g" onclick="resetInstaller()">TENTAR NOVAMENTE</button></div>';toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
+async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira coordenador, data de início e prazo.");const existing=await existingProjectFromBackend(code);if(existing&&!(await confirmReinitialize(existing)))return;$("confirm").disabled=true;beginInstallView();try{installerProgress(8,"dossie","Criando o dossiê da obra","Vinculando o contrato comercial e abrindo a estrutura operacional.");await installPause();let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});installerProgress(24,"cronograma","Gerando o cronograma oficial","Montando datas, atividades-base e marcos da execução.");await installPause();const sc=autos(start,days),cj=await saveCron(p,sc);p.scheduleFile=cj.arquivo;p.endDate=sc.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(38,"resumo","Conectando o resumo executivo","Preparando a visão gerencial vinculada ao cronograma.");await installPause();p.documents.executive={type:"cronograma",title:"Resumo Executivo",file:cj.arquivo,status:"done"};installerProgress(52,"os","Montando a Ordem de Serviço","Preenchendo a OS com os dados originados do contrato.");await installPause();p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};installerProgress(65,"checklist","Preparando o Guia / Checklist","Criando o roteiro operacional inicial do coordenador.");await installPause();p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};installerProgress(77,"kickoff","Gerando o Termo de Kickoff","Formalizando a passagem de bastão Comercial → Obras.");await installPause();p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(87,"pastas","Organizando as pastas digitais","Preparando Comercial, Projetos e Obra para receber os anexos.");await installPause(700);installerProgress(95,"timeline","Finalizando a Vida da Obra","Gravando documentos, timeline e estrutura final no backend.");await installPause(750);await oa("project_save",{project:p});await auditLog(existing?"OBRA_REINICIADA":"OBRA_INICIADA",{project_code:code,project_name:name,message:existing?"Obra reiniciada e estrutura operacional recriada.":"Obra iniciada pela primeira vez.",summary:`Coordenador: ${coordinator} • Início: ${start} • Prazo: ${days} dias úteis • Cronograma: ${p.scheduleFile||"gerado"}`},"ok");installerDone();toast("success",existing?"Obra reiniciada":"Obra iniciada",`${code} criada e pronta para operação.`);setTimeout(async()=>{installRunning=false;$("startOv").classList.remove("on");resetInstaller();await load();await openP(code)},1400)}catch(e){console.error(e);await auditLog(existing?"REINICIO_FALHOU":"INICIO_FALHOU",{project_code:code,project_name:name,message:"Falha durante a implantação.",summary:e.message||String(e)},"danger");installRunning=false;$("startCloseBtn").disabled=false;$("installerFooter").style.display="flex";$("installerFooter").innerHTML='<div class="hint" style="color:#c63b4a">A implantação foi interrompida. Você pode voltar e tentar novamente.</div><div><button class="btn" onclick="closeStart()">Fechar</button><button class="btn g" onclick="resetInstaller()">TENTAR NOVAMENTE</button></div>';toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
 
 
 function scheduleIdFromFile(){
@@ -1155,6 +1165,12 @@ $("pdf").onclick=savePdf;
 $("viewerFullBtn").onclick=()=>{
   $("docOv").classList.toggle("full-viewer");
   $("viewerFullBtn").textContent=$("docOv").classList.contains("full-viewer")?"RESTAURAR":"TELA CHEIA";
-};$("confirm").onclick=startProject;$("refresh").onclick=()=>load(true);$("new").onclick=()=>{const id=new URLSearchParams(location.search).get("contrato");id?begin(id):openContractPicker()};$("contractSearch").oninput=renderContractPicker;$("contractRefresh").onclick=()=>loadCommercialContracts(true);
+};
+const confirmBtn=$("confirm");
+if(confirmBtn){
+  confirmBtn.onclick=null;
+  confirmBtn.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();startProject()});
+}
+$("refresh").onclick=()=>load(true);$("new").onclick=()=>{const id=new URLSearchParams(location.search).get("contrato");id?begin(id):openContractPicker()};$("contractSearch").oninput=renderContractPicker;$("contractRefresh").onclick=()=>loadCommercialContracts(true);
 (async()=>{try{await loadMaterialRequests()}catch(e){}await load();const id=new URLSearchParams(location.search).get("contrato");if(id)begin(id)})();
 </script></body></html>
