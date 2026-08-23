@@ -508,6 +508,31 @@ function renderContractPicker(){const q=String($("contractSearch")?.value||"").t
 async function loadCommercialContracts(showMessage=false){try{const j=await post(DAPI,{action:"document_list"});commercialContracts=Array.isArray(j.documents)?j.documents:[];renderContractPicker();if(showMessage)toast("success","Contratos atualizados",`${commercialContracts.length} contrato(s) carregado(s) da Gestão Documental.`)}catch(e){console.error("[Comercial] contratos",e);toast("error","Falha ao carregar contratos","Não foi possível consultar a Gestão Documental: "+e.message)}}
 async function openContractPicker(){await loadCommercialContracts(false);$("contractOv").classList.add("on");setTimeout(()=>$("contractSearch")?.focus(),80)}
 function selectCommercialContract(id){closeContractPicker();begin(id)}
+
+function maskContractValues(html){
+  const box=document.createElement("div");
+  box.innerHTML=String(html||"");
+  const money=/R\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})?|R\$\s*\d+(?:,\d{2})?/gi;
+  const valueWords=/(valor(?:\s+total|\s+global|\s+da\s+(?:obra|proposta|contrata[cç][aã]o|contrato)|\s+contratado)?|pre[cç]o(?:\s+total|\s+global)?|investimento|remunera[cç][aã]o|contrapresta[cç][aã]o)/i;
+  const nodes=[...box.querySelectorAll("body *:not(script):not(style), div, p, span, td, th, li")];
+  nodes.forEach(el=>{
+    if(el.children.length) return;
+    const txt=el.textContent||"";
+    if(money.test(txt) || valueWords.test(txt)){
+      money.lastIndex=0;
+      el.innerHTML=el.innerHTML.replace(money,'<span style="display:inline-block;background:#000;color:#000;border-radius:1px;padding:0 .35em;line-height:1.15;user-select:none;vertical-align:baseline">████████████</span>');
+      if(valueWords.test(txt) && !/████/.test(el.textContent||"")){
+        el.style.background="#000";
+        el.style.color="#000";
+        el.style.borderRadius="1px";
+        el.style.userSelect="none";
+      }
+    }
+    money.lastIndex=0;
+  });
+  return box.innerHTML;
+}
+
 async function openCommercialSource(){
   const id=sel?.contractId||sel?.documents?.contract?.sourceId;
   if(!id)return toast("warning","Origem não encontrada","Este projeto não possui contrato comercial vinculado.");
@@ -527,7 +552,7 @@ async function openCommercialSource(){
 
     const temp=document.createElement("div");
     temp.style.cssText="width:794px;background:#fff;padding:56px 60px;font:13px/1.45 Arial;color:#111;";
-    temp.innerHTML=doc.finalHtml;
+    temp.innerHTML=maskContractValues(doc.finalHtml);
     document.body.appendChild(temp);
 
     const worker=html2pdf().set({
