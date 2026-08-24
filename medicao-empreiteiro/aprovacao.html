@@ -20,15 +20,37 @@
 .sys-toast{position:fixed;right:18px;top:18px;z-index:150;display:none;max-width:420px;background:#fff;border:1px solid #d5e1e7;border-left:5px solid #14b878;border-radius:11px;padding:12px 14px;box-shadow:0 18px 45px rgba(17,52,72,.22);font-size:10px;font-weight:800;color:#173247}.sys-toast.show{display:block}.sys-toast.error{border-left-color:#e65361}
 .media-layer{position:fixed;inset:0;z-index:140;display:none;align-items:center;justify-content:center;background:rgba(13,36,48,.68);backdrop-filter:blur(8px);padding:18px}.media-layer.show{display:flex}.media-card{width:min(1100px,96vw);height:min(820px,92vh);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 28px 80px rgba(0,0,0,.30);display:flex;flex-direction:column}.media-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid #dce6eb;background:#f8fbfc}.media-head h2{margin:0;font-size:13px;color:#087451;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-close{width:34px;height:34px;border:1px solid #cbd9e1;border-radius:9px;background:#fff;color:#35586a;font-weight:950;cursor:pointer}.media-body{flex:1;min-height:0;background:#1e2428;display:grid;place-items:center;padding:10px}.media-body img,.media-body video{max-width:100%;max-height:100%;object-fit:contain}.media-error{color:#fff;text-align:center;font-size:11px}.evidence-link{display:block;text-decoration:none;color:#173247;border:1px solid #dce6eb;border-radius:9px;padding:9px;background:#fff;cursor:pointer}.evidence-link:hover{border-color:#8fd2b4;background:#f4fcf8}
 
+
+.load-progress{margin:18px auto 0;width:min(520px,80%)}.load-track{height:8px;background:#e7eef2;border-radius:999px;overflow:hidden}.load-bar{height:100%;width:0;background:linear-gradient(90deg,#14b878,#0f8c63);transition:width .35s ease}.load-text{text-align:center;margin-top:7px;font-size:8px;color:#718694;font-weight:900}
+
 @media(max-width:760px){.wrap{padding:0}.card{width:100%;min-height:100vh;border-radius:0}.meta{grid-template-columns:1fr 1fr}.head{align-items:flex-start}.actions{flex-direction:column}.btn{width:100%}}
 </style></head>
-<body><div class="wrap"><main class="card"><header class="head"><div><small>ERP ÍMPAR • WORKFLOW</small><h1 id="title">Aprovação de Medição</h1></div><span class="badge" id="stage">CARREGANDO</span></header><section class="body" id="body"><div class="state">Carregando medição...</div></section></main></div>
+<body><div class="wrap"><main class="card"><header class="head"><div><small>ERP ÍMPAR • WORKFLOW</small><h1 id="title">Aprovação de Medição</h1></div><span class="badge" id="stage">CARREGANDO</span></header><section class="body" id="body"><div class="state">
+  <div style="font-weight:950;color:#173247">Carregando medição...</div>
+  <div class="load-progress">
+    <div class="load-track"><div class="load-bar" id="loadBar"></div></div>
+    <div class="load-text" id="loadText">Iniciando...</div>
+  </div>
+</div></section></main></div>
 <script>
 const API="https://api.erpimpar.com.br/medicoes/api.php";
 const token=new URLSearchParams(location.search).get("token")||"";
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const brl=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+
+
+function setLoadProgress(p,msg){
+  const bar=document.getElementById("loadBar"),txt=document.getElementById("loadText");
+  if(bar)bar.style.width=Math.max(0,Math.min(100,p))+"%";
+  if(txt)txt.textContent=msg||"";
+}
+function bindStaticUi(){
+  const close=document.getElementById("mediaClose");
+  const layer=document.getElementById("mediaLayer");
+  if(close)close.onclick=closeMedia;
+  if(layer)layer.addEventListener("click",e=>{if(e.target===layer)closeMedia()});
+}
 
 function sysToast(msg,error=false){
   const el=document.getElementById("sysToast");
@@ -62,8 +84,6 @@ function openEvidence(url,mime,name){
   body.appendChild(el);
   layer.classList.add("show");
 }
-document.getElementById("mediaClose").onclick=closeMedia;
-document.getElementById("mediaLayer").addEventListener("click",e=>{if(e.target.id==="mediaLayer")closeMedia()});
 
 async function post(payload){const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),cache:"no-store"});const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{}if(!r.ok||j.ok===false)throw new Error(j.error||t||("HTTP "+r.status));return j}
 function dt(v){try{return new Date(v).toLocaleString("pt-BR")}catch{return v||"—"}}
@@ -104,11 +124,27 @@ async function decide(decision){
   }
 }
 async function load(){
-  if(!token){$("body").innerHTML='<div class="state error"><h2>Link inválido</h2><p>O token de aprovação não foi informado.</p></div>';return}
-  try{const j=await post({action:"approval_get",token});render(j.medicao,j.etapa)}
-  catch(e){$("body").innerHTML=`<div class="state error"><h2>Não foi possível abrir</h2><p>${esc(e.message)}</p></div>`}
+  bindStaticUi();
+  setLoadProgress(12,"Validando link de aprovação...");
+  if(!token){
+    setLoadProgress(100,"Link inválido.");
+    $("body").innerHTML='<div class="state error"><h2>Link inválido</h2><p>O token de aprovação não foi informado.</p></div>';
+    return;
+  }
+  try{
+    await new Promise(r=>setTimeout(r,120));
+    setLoadProgress(34,"Consultando a medição no ERP...");
+    const j=await post({action:"approval_get",token});
+    setLoadProgress(68,"Carregando itens, histórico e evidências...");
+    await new Promise(r=>setTimeout(r,120));
+    render(j.medicao,j.etapa);
+    setLoadProgress(100,"Pronto.");
+  }catch(e){
+    setLoadProgress(100,"Falha ao carregar.");
+    $("body").innerHTML=`<div class="state error"><h2>Não foi possível abrir</h2><p>${esc(e.message)}</p></div>`;
+  }
 }
-load();
+if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",load,{once:true})}else{load()}
 </script><div class="proc" id="proc"><div class="proc-card"><div class="proc-icon">⚙</div><h2 id="procTitle">Processando</h2><p id="procMsg">Registrando decisão...</p><div class="proc-progress"><div class="proc-bar" id="procBar"></div></div><div class="proc-pct" id="procPct">0%</div></div></div>
 <div class="sys-toast" id="sysToast"></div>
 <div class="media-layer" id="mediaLayer">
