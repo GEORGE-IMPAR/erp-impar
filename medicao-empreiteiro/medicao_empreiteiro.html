@@ -229,9 +229,9 @@ function render(){
   $("work").innerHTML=`<div class="meta"><div><small>OBRA</small><b>${esc(obra)}</b></div><div><small>EMPREITEIRO</small><b>${esc(emp)}</b></div><div><small>CONTRATO</small><b>${esc(code)}</b></div><div><small>MEDIÇÕES</small><b>${measurements.length}</b></div></div>
   <div style="margin:0 0 7px;font-size:8px;color:#6f8798"><span class="edit-hint">✎ CAMPO EDITÁVEL</span> O percentual em verde é o campo principal da medição. A comprovação pode ser ajustada antes do envio.</div>
   <div class="table"><table><thead><tr><th>Item</th><th>Descrição</th><th>Valor item</th><th>% anterior</th><th>% desta medição</th><th>% acumulado</th><th>Valor desta medição</th><th>Saldo após</th><th>Comprovação / observação</th></tr></thead><tbody>
-  ${items.map((x,i)=>{const id=String(x.item||i+1),prev=p[id]||0,v=itemValue(x),locked=prev>=99.999;return `<tr><td>${esc(id)}</td><td class="desc">${esc(x.descricao||"")}${locked?'<span class="lock-badge">✓ ITEM CONCLUÍDO</span>':""}</td><td>${brl(v)}</td><td>${fmtPct(prev)}</td><td><input class="pct ${locked?"locked":""}" data-i="${i}" inputmode="decimal" autocomplete="off" value="${fmtPct(0)}" ${locked?"disabled":""}></td><td class="acc">${fmtPct(prev)}</td><td class="now">${brl(0)}</td><td class="balance">${brl(v*(1-prev/100))}</td><td><input class="proof" data-proof="${i}" autocomplete="off" placeholder="${locked?"Item já concluído":"Comprovação da medição..."}" disabled></td></tr>`}).join("")}
+  ${items.map((x,i)=>{const id=String(x.item||i+1),prev=p[id]||0,v=itemValue(x),locked=prev>=99.999;return `<tr><td>${esc(id)}</td><td class="desc">${esc(x.descricao||"")}${locked?'<span class="lock-badge">✓ ITEM CONCLUÍDO</span>':""}</td><td>${brl(v)}</td><td>${fmtPct(prev)}</td><td><input class="pct ${locked?"locked":""}" data-i="${i}" data-locked="${locked?"1":"0"}" inputmode="decimal" autocomplete="off" value="${locked?fmtPct(prev):fmtPct(0)}" ${locked?"disabled":""}></td><td class="acc">${fmtPct(prev)}</td><td class="now">${brl(0)}</td><td class="balance">${brl(v*(1-prev/100))}</td><td><input class="proof" data-proof="${i}" autocomplete="off" placeholder="${locked?"Item já concluído":"Comprovação da medição..."}" disabled></td></tr>`}).join("")}
   </tbody></table></div>
-  <section class="evidence"><div class="evidence-head"><div><h3>Evidências da medição • Fotos e vídeos</h3><small>Anexe registros que comprovem a execução medida.</small></div><label class="upload-btn">＋ ANEXAR FOTO / VÍDEO<input id="evidenceInput" type="file" accept="image/*,video/*" multiple hidden></label></div><div class="evidence-list" id="evidenceList"><div style="font-size:9px;color:#6f8798;padding:4px">Nenhuma evidência anexada.</div></div></section>
+  <section class="evidence"><div class="evidence-head"><div><h3>Evidências DESTA medição • Fotos e vídeos</h3><small>Os arquivos ficam vinculados exclusivamente à medição que será confirmada nesta tela.</small></div><label class="upload-btn">＋ ANEXAR FOTO / VÍDEO<input id="evidenceInput" type="file" accept="image/*,video/*" multiple hidden></label></div><div class="evidence-list" id="evidenceList"><div style="font-size:9px;color:#6f8798;padding:4px">Nenhuma evidência anexada.</div></div></section>
   <div class="actions"><button class="btn primary" id="send">GERAR PRÉVIA →</button></div>
   <section class="history"><div class="history-head"><h3>Workflow e histórico de medições</h3><button class="mini-btn" id="historyReport">RELATÓRIO DO HISTÓRICO</button></div>${measurements.length?measurements.slice().reverse().map(m=>`<div class="measure-card"><div class="measure-top"><time>${esc(new Date(m.criado_em||m.criadoEm||Date.now()).toLocaleString("pt-BR"))}</time><span class="status-pill ${statusClass(m.status)}">${esc(statusLabel(m.status))}</span><strong class="measure-value">${brl(m.valor_total||0)}</strong><button class="mini-btn" data-report-one="${esc(m.id||"")}">DETALHES</button></div>${workflowHtml(m)}</div>`).join(""):'<div class="hrow"><span>—</span><span>Nenhuma medição anterior</span><b>—</b></div>'}</section>`;
   document.querySelectorAll("input.pct").forEach(inp=>{
@@ -254,14 +254,15 @@ function calculate(){
   const already=measurements.filter(m=>!["REPROVADA_DIRETOR","CANCELADA","RASCUNHO"].includes(String(m.status||"").toUpperCase())).reduce((a,m)=>a+Number(m.valor_total||0),0);
   let current=0;
   document.querySelectorAll("input.pct").forEach(inp=>{
-    const i=Number(inp.dataset.i),x=items[i],id=String(x.item||i+1),prev=p[id]||0,max=Math.max(0,100-prev),pct=Math.max(0,Math.min(max,parsePct(inp.value))),v=itemValue(x),row=inp.closest("tr"),now=v*pct/100,proof=row.querySelector(".proof");
+    const i=Number(inp.dataset.i),x=items[i],id=String(x.item||i+1),prev=p[id]||0,max=Math.max(0,100-prev),locked=inp.dataset.locked==="1",pct=locked?0:Math.max(0,Math.min(max,parsePct(inp.value))),v=itemValue(x),row=inp.closest("tr"),now=v*pct/100,proof=row.querySelector(".proof");
     current+=now;
     row.querySelector(".acc").textContent=fmtPct(prev+pct);
     row.querySelector(".now").textContent=brl(now);
     row.querySelector(".balance").textContent=brl(v*(1-(prev+pct)/100));
-    proof.disabled=pct<=0;
-    proof.classList.toggle("active",pct>0);
-    if(pct<=0){proof.value="";delete proof.dataset.manual}
+    proof.disabled=locked||pct<=0;
+    proof.classList.toggle("active",!locked&&pct>0);
+    if(locked){proof.value="Item já concluído";proof.dataset.manual="1"}
+    else if(pct<=0){proof.value="";delete proof.dataset.manual}
     else if(proof.dataset.manual!=="1"){proof.value=proofSuggestion(x,pct)}
   });
   $("kAtual").textContent=brl(current);$("kSaldo").textContent=brl(contractValue-already-current);
@@ -272,6 +273,7 @@ function collectDraft(){
   const p=previousMap(),items=contractItems(selected);
   let rows=[],total=0,invalidProof=false,invalidPct=false;
   document.querySelectorAll("input.pct").forEach(inp=>{
+    if(inp.dataset.locked==="1"||inp.disabled)return;
     const i=Number(inp.dataset.i),x=items[i],id=String(x.item||i+1),prev=p[id]||0,max=Math.max(0,100-prev),pct=parsePct(inp.value),v=itemValue(x),proof=inp.closest("tr").querySelector(".proof")?.value.trim()||"";
     if(pct<0||pct>max+0.0001)invalidPct=true;
     if(pct>0){
@@ -302,7 +304,7 @@ function renderPreview(){
     <div class="preview-table"><table><thead><tr><th>Item</th><th>Descrição</th><th>% anterior</th><th>% desta medição</th><th>% acumulado</th><th>Valor</th><th>Comprovação</th></tr></thead><tbody>
       ${d.rows.map(x=>`<tr><td>${esc(x.item)}</td><td>${esc(x.descricao)}</td><td>${fmtPct(x.percentual_anterior)}</td><td><b>${fmtPct(x.percentual_medicao)}</b></td><td>${fmtPct(x.percentual_acumulado)}</td><td>${brl(x.valor_medicao)}</td><td>${esc(x.comprovacao)}</td></tr>`).join("")}
     </tbody></table></div>
-    <div class="preview-evidence"><b>Evidências anexadas:</b> ${evidenceFiles.length} arquivo(s)${evidenceFiles.length?` — ${evidenceFiles.map(f=>esc(f.name)).join(", ")}`:""}</div>
+    <div class="preview-evidence"><b>Evidências vinculadas a esta medição:</b> ${evidenceFiles.length} arquivo(s)${evidenceFiles.length?` — ${evidenceFiles.map(f=>esc(f.name)).join(", ")}`:""}</div>
     <div class="preview-total"><span>VALOR TOTAL DESTA MEDIÇÃO</span><b>${brl(d.total)}</b></div>`;
   modal("previewModal",true);
   return true;
