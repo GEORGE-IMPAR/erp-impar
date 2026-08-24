@@ -473,6 +473,47 @@ input:focus,select:focus,textarea:focus{
 }
 </style>
 
+
+<style id="vidaObraRelatorioInternoV13">
+#docOv.report-mode .dlg{
+  width:min(1180px,96vw)!important;
+  height:min(900px,94vh)!important;
+  max-height:94vh!important;
+  overflow:hidden!important;
+  display:flex!important;
+  flex-direction:column!important;
+}
+#docOv.report-mode .preview{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  overflow:auto!important;
+  background:#eef3f5!important;
+  padding:18px!important;
+}
+#docOv.report-mode #paper{
+  display:block!important;
+  width:794px!important;
+  max-width:100%!important;
+  min-height:1123px!important;
+  margin:0 auto!important;
+  background:#fff!important;
+  padding:44px 48px!important;
+  box-shadow:0 8px 24px rgba(32,55,67,.12)!important;
+}
+.internal-report-head{border-bottom:3px solid #159b68;padding-bottom:12px;margin-bottom:18px}
+.internal-report-head small{font-size:8px;font-weight:950;letter-spacing:.10em;color:#159b68;text-transform:uppercase}
+.internal-report-head h1{margin:5px 0 0;font-size:22px;color:#173247}
+.internal-report-head p{margin:5px 0 0;font-size:9px;color:#6b8291}
+.audit-report-table{width:100%;border-collapse:collapse;font-size:9px}
+.audit-report-table th{padding:8px;background:#edf4f6;color:#47677a;text-align:left;border:1px solid #d9e4e9}
+.audit-report-table td{padding:8px;border:1px solid #e0e8ec;color:#355568;vertical-align:top}
+.audit-report-table td b{display:block;color:#173247}
+.audit-report-table td small{display:block;margin-top:3px;color:#78909e}
+.audit-report-event-danger td:first-child{border-left:4px solid #df4657}
+.audit-report-event-ok td:first-child{border-left:4px solid #13ad74}
+.audit-report-event-info td:first-child{border-left:4px solid #168cca}
+</style>
+
 </head><body>
 <div class="app">
 <section class="p top"><div><h1>VIDA DA OBRA</h1><p>Dossiê digital • Kickoff • Cronograma • Documentos • Timeline end-to-end</p></div><div class="sp"></div><button class="btn" id="refresh">↻ Atualizar</button><button class="btn g" id="new">🚀 Iniciar obra</button></section>
@@ -567,7 +608,7 @@ input:focus,select:focus,textarea:focus{
     <div class="mat-kpis"><div class="mat-kpi"><small>Solicitações</small><b id="mkReq">0</b></div><div class="mat-kpi"><small>Itens solicitados</small><b id="mkItems">0</b></div><div class="mat-kpi"><small>Materiais distintos</small><b id="mkDistinct">0</b></div></div>
     <div class="mat-layout"><section class="mat-left"><div class="mat-left-title">Solicitações • mais recentes primeiro</div><div class="mat-list" id="materialsList"></div></section><section class="mat-right" id="materialsDetail"><div class="mat-empty"><div><div style="font-size:34px">📦</div><b>Selecione uma solicitação</b></div></div></section></div>
   </div>
-</div>
+</div></div>
 
 
 <div class="ov audit-modal" id="auditOv"><div class="dlg">
@@ -638,6 +679,7 @@ const TEMPLATE=[
 ];
 let projects=[],sel=null,pending=null,docHtml="",docName="";const $=id=>document.getElementById(id);
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function nextPaint(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 function toast(t,a,b){const d=document.createElement("div");d.className="toast "+t;d.innerHTML=`<div>${t==="success"?"✓":t==="error"?"×":t==="warning"?"!":"i"}</div><div><b>${esc(a)}</b><p>${esc(b)}</p></div>`;$("ts").appendChild(d);setTimeout(()=>d.remove(),4200)}
 function confirmDialog({title,message,confirmText="SIM",cancelText="CANCELAR",danger=false}){
   return new Promise(resolve=>{
@@ -656,6 +698,7 @@ function confirmDialog({title,message,confirmText="SIM",cancelText="CANCELAR",da
     ov.classList.toggle("danger",!!danger);
     ov.classList.add("on");
     ov.setAttribute("aria-hidden","false");
+    void ov.offsetHeight;
     const finish=v=>{
       ov.classList.remove("on","danger");
       ov.setAttribute("aria-hidden","true");
@@ -737,7 +780,22 @@ function showMaterialsSummary(){
  <table class="mat-summary-table"><thead><tr><th>Material</th><th>Total solicitado</th><th>UND</th><th>Lançamentos</th><th>Datas</th><th>Solicitações</th></tr></thead><tbody>${rows||'<tr><td colspan="6">Nenhum material solicitado para esta obra.</td></tr>'}</tbody></table>`;
  document.querySelectorAll('#materialsList .mat-request').forEach(x=>x.classList.remove('on'));
 }
-function printMaterialsView(){window.print()}
+function printMaterialsView(){
+  if(!sel)return;
+  const mode=$("materialsDetail").dataset.mode||"request";
+  const body=$("materialsDetail").innerHTML;
+  const title=mode==="summary"?"Resumo por material da obra":"Solicitação de Materiais";
+  const file=mode==="summary"
+    ?`Resumo_Materiais_${sel.code||"obra"}`
+    :`Solicitacao_Materiais_${sel.code||"obra"}`;
+  const report=`<div class="internal-report-head">
+      <small>ERP ÍMPAR • VIDA DA OBRA</small>
+      <h1>${esc(title)}</h1>
+      <p>${esc(sel.code||"")} • ${esc(sel.name||"")}</p>
+    </div>${body}`;
+  $("materialsOv").classList.remove("on");
+  openInternalReport(title,report,file);
+}
 async function shareMaterialsView(){
  const mode=$('materialsDetail').dataset.mode||'request';
  const title=mode==='summary'?`Resumo de materiais • ${sel?.code||''}`:`Solicitação de materiais • ${sel?.code||''}`;
@@ -792,32 +850,70 @@ async function auditLog(action,detail={},level="info"){
   }catch(e){console.warn("[Auditoria] Falha ao registrar",e)}
 }
 function auditRepoCard(){
-  return `<div class="repo-folder audit-card"><div class="ico">🧾</div><h3>Auditoria</h3><p>Rastreio de reinícios, alterações críticas e ações destrutivas.</p><div class="actions"><button class="mini" onclick="openAudit()">CONSULTAR</button></div></div>`
+  return `<div class="repo-folder audit-card"><div class="ico">🧾</div><h3>Auditoria</h3><p>Rastreio de reinícios, alterações críticas e ações destrutivas.</p><div class="actions"><button class="mini" onclick="openAudit()">ABRIR</button></div></div>`
 }
-async function openAudit(){if(!sel)return;$("auditOv").classList.add("on");await loadAudit(false)}
-function closeAudit(){$("auditOv").classList.remove("on")}
 function auditFmt(v){try{return new Date(v).toLocaleString("pt-BR")}catch(e){return String(v||"—")}}
+function closeAudit(){
+  $("auditOv")?.classList.remove("on");
+}
+async function fetchAuditEvents(){
+  if(!sel)return [];
+  const j=await post(AUDIT_API,{action:"list",project_code:sel.code||sel.id||"",limit:500});
+  return Array.isArray(j.events)?j.events:[];
+}
+function auditReportHtml(events){
+  const rows=events.map(ev=>{
+    const user=ev.user||{},detail=ev.detail||{};
+    const level=ev.level==="danger"?"danger":ev.level==="ok"?"ok":"info";
+    const desc=detail.message||detail.description||detail.reason||ev.action||"Ação registrada";
+    return `<tr class="audit-report-event-${level}">
+      <td><b>${esc(auditFmt(ev.server_time||ev.client_time))}</b><small>${esc(ev.action||"")}</small></td>
+      <td><b>${esc(user.nome||"Usuário não identificado")}</b><small>${esc(user.email||"")}</small></td>
+      <td><b>${esc(desc)}</b><small>${esc(detail.summary||"")}</small></td>
+      <td><b>${esc(ev.project_code||"")}</b><small>${ev.ip?"IP registrado":""}</small></td>
+    </tr>`;
+  }).join("");
+  return `<div class="internal-report-head">
+    <small>ERP ÍMPAR • VIDA DA OBRA</small>
+    <h1>Auditoria da Obra</h1>
+    <p>${esc(sel?.code||"")} • ${esc(sel?.name||"")} • ${events.length} evento(s)</p>
+  </div>
+  <table class="audit-report-table">
+    <thead><tr><th>Data / Ação</th><th>Usuário</th><th>Descrição</th><th>Obra</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="4">Nenhum evento de auditoria registrado para esta obra.</td></tr>'}</tbody>
+  </table>`;
+}
+async function openAudit(){
+  if(!sel)return;
+  const title=`Auditoria • ${sel.code||""}`;
+  const file=`Auditoria_${sel.code||"obra"}`;
+  openInternalReport(
+    title,
+    `<div class="internal-report-head"><small>ERP ÍMPAR • VIDA DA OBRA</small><h1>Auditoria da Obra</h1><p>${esc(sel.code||"")} • ${esc(sel.name||"")}</p></div><div style="padding:34px;text-align:center;color:#78909e"><div style="font-size:28px">🧾</div><b>Carregando auditoria...</b></div>`,
+    file
+  );
+  await nextPaint();
+  try{
+    const events=await fetchAuditEvents();
+    const html=auditReportHtml(events);
+    docHtml=html;
+    $("paper").innerHTML=html;
+  }catch(e){
+    const html=`<div class="internal-report-head"><small>ERP ÍMPAR • VIDA DA OBRA</small><h1>Auditoria da Obra</h1><p>${esc(sel.code||"")} • ${esc(sel.name||"")}</p></div><div style="padding:34px;text-align:center;color:#b13d4b"><b>Não foi possível carregar a auditoria.</b><div style="margin-top:6px;font-size:9px">${esc(e.message||"Falha de comunicação.")}</div></div>`;
+    docHtml=html;
+    $("paper").innerHTML=html;
+    toast("error","Falha ao abrir auditoria",e.message||"Não foi possível carregar o relatório.");
+  }
+}
 async function loadAudit(showToast=false){
   if(!sel)return;
-  $("auditSubtitle").textContent=`${sel.code||""} • ${sel.name||""}`;
-  $("auditList").innerHTML='<div class="audit-empty">Carregando auditoria...</div>';
   try{
-    const j=await post(AUDIT_API,{action:"list",project_code:sel.code||sel.id||"",limit:300});
-    const a=Array.isArray(j.events)?j.events:[];
-    $("auditList").innerHTML=a.length?a.map(ev=>{
-      const user=ev.user||{}, detail=ev.detail||{};
-      const cls=ev.level==="danger"?"audit-danger":ev.level==="ok"?"audit-ok":"audit-info";
-      const desc=detail.message||detail.description||detail.reason||ev.action||"Ação registrada";
-      return `<div class="audit-row ${cls}">
-        <div><b>${esc(auditFmt(ev.server_time||ev.client_time))}</b><small>${esc(ev.action||"")}</small></div>
-        <div><b>${esc(user.nome||"Usuário")}</b><small>${esc(user.email||"")}</small></div>
-        <div><span class="audit-action">${esc(desc)}</span><small>${esc(detail.summary||"")}</small></div>
-        <div><b>${esc(ev.project_code||"")}</b><small>${esc(ev.ip?"IP registrado":"")}</small></div>
-      </div>`
-    }).join(""):'<div class="audit-empty"><div style="font-size:28px">🧾</div><b>Nenhum evento registrado para esta obra.</b></div>';
-    if(showToast)toast("success","Auditoria atualizada",`${a.length} evento(s) carregado(s).`);
+    const events=await fetchAuditEvents();
+    if(showToast)toast("success","Auditoria atualizada",`${events.length} evento(s) carregado(s).`);
+    return events;
   }catch(e){
-    $("auditList").innerHTML='<div class="audit-empty"><b>Não foi possível carregar a auditoria.</b><div style="font-size:8px;margin-top:5px">'+esc(e.message)+'</div></div>';
+    if(showToast)toast("error","Falha na auditoria",e.message);
+    return [];
   }
 }
 function existingProjectFor(code){
@@ -1082,7 +1178,7 @@ function kickoff(p){
 function executive(p,s){const G={planejamento:["Mobilização","#0b4f82"],suprimentos:["Suprimentos","#f39a00"],civil:["Preparação Civil","#2ca317"],climatizacao:["Climatização","#1c72c7"],dutos:["Dutos","#6857f0"],entrega:["Entrega","#e70058"]},st=pd(p.startDate),en=pd(s.endDate),tot=Math.max(1,en-st),rows=Object.entries(G).map(([cat,[n,c]])=>{const a=s.activities.filter(x=>x.cat===cat);if(!a.length)return"";const x=new Date(Math.min(...a.map(v=>pd(v.start).getTime()))),y=new Date(Math.max(...a.map(v=>pd(v.end).getTime()))),l=((x-st)/tot)*100,w=Math.max(2,((y-x)/tot)*100),ms=a.filter(v=>v.milestone).map(v=>`${v.name.replace(/^MARCO\s*[–-]\s*/i,"")} (${v.end.split("-").reverse().join("/")})`).join(" • ");return `<div class="gr"><div class="gn">${n}</div><div><div class="bw"><div class="bar" style="background:${c};margin-left:${l}%;width:${w}%"></div></div><div class="ms">${esc(ms)}</div></div></div>`}).join("");return `<div class="exec"><div class="eh"><div><small>GESTÃO EXECUTIVA</small><h2>${esc(p.code)} • ${esc(p.name)}</h2></div><div class="ek"><small>INÍCIO</small><b>${p.startDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>CONCLUSÃO</small><b>${s.endDate.split("-").reverse().join("/")}</b></div><div class="ek"><small>DURAÇÃO</small><b>${p.workDays} DIAS</b></div><div class="ek"><small>COORDENADOR</small><b style="font-size:13px">${esc(p.coordinator)}</b></div></div>${rows}</div>`}
 const INSTALL_STEP_DELAY=650;
 function installPause(ms=INSTALL_STEP_DELAY){return new Promise(r=>setTimeout(r,ms))}
-async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira coordenador, data de início e prazo.");const existing=await existingProjectFromBackend(code);if(existing&&!(await confirmReinitialize(existing)))return;$("confirm").disabled=true;beginInstallView();try{installerProgress(8,"dossie","Criando o dossiê da obra","Vinculando o contrato comercial e abrindo a estrutura operacional.");await installPause();let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});installerProgress(24,"cronograma","Gerando o cronograma oficial","Montando datas, atividades-base e marcos da execução.");await installPause();const sc=autos(start,days),cj=await saveCron(p,sc);p.scheduleFile=cj.arquivo;p.endDate=sc.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(38,"resumo","Conectando o resumo executivo","Preparando a visão gerencial vinculada ao cronograma.");await installPause();p.documents.executive={type:"cronograma",title:"Resumo Executivo",file:cj.arquivo,status:"done"};installerProgress(52,"os","Montando a Ordem de Serviço","Preenchendo a OS com os dados originados do contrato.");await installPause();p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};installerProgress(65,"checklist","Preparando o Guia / Checklist","Criando o roteiro operacional inicial do coordenador.");await installPause();p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};installerProgress(77,"kickoff","Gerando o Termo de Kickoff","Formalizando a passagem de bastão Comercial → Obras.");await installPause();p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(87,"pastas","Organizando as pastas digitais","Preparando Comercial, Projetos e Obra para receber os anexos.");await installPause(700);installerProgress(95,"timeline","Finalizando a Vida da Obra","Gravando documentos, timeline e estrutura final no backend.");await installPause(750);await oa("project_save",{project:p});await auditLog(existing?"OBRA_REINICIADA":"OBRA_INICIADA",{project_code:code,project_name:name,message:existing?"Obra reiniciada e estrutura operacional recriada.":"Obra iniciada pela primeira vez.",summary:`Coordenador: ${coordinator} • Início: ${start} • Prazo: ${days} dias úteis • Cronograma: ${p.scheduleFile||"gerado"}`},"ok");installerDone();toast("success",existing?"Obra reiniciada":"Obra iniciada",`${code} criada e pronta para operação.`);setTimeout(async()=>{installRunning=false;$("startOv").classList.remove("on");resetInstaller();await load();await openP(code)},1400)}catch(e){console.error(e);await auditLog(existing?"REINICIO_FALHOU":"INICIO_FALHOU",{project_code:code,project_name:name,message:"Falha durante a implantação.",summary:e.message||String(e)},"danger");installRunning=false;$("startCloseBtn").disabled=false;$("installerFooter").style.display="flex";$("installerFooter").innerHTML='<div class="hint" style="color:#c63b4a">A implantação foi interrompida. Você pode voltar e tentar novamente.</div><div><button class="btn" onclick="closeStart()">Fechar</button><button class="btn g" onclick="resetInstaller()">TENTAR NOVAMENTE</button></div>';toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
+async function startProject(){const coordinator=$("coord").value.trim(),name=$("name").value.trim(),code=$("code").value.trim(),start=$("start").value,days=+$("days").value||0;if(!coordinator)return toast("warning","Coordenador obrigatório","Selecione o coordenador da obra.");if(!name||!code||!start||days<=0)return toast("warning","Dados incompletos","Confira coordenador, data de início e prazo.");let existing=existingProjectFor(code);if(!existing)existing=await existingProjectFromBackend(code);if(existing&&!(await confirmReinitialize(existing)))return;$("confirm").disabled=true;beginInstallView();try{installerProgress(8,"dossie","Criando o dossiê da obra","Vinculando o contrato comercial e abrindo a estrutura operacional.");await installPause();let p={id:code,code,name,coordinator,startDate:start,workDays:days,address:$("address").value.trim(),scope:$("scope").value.trim(),designer:$("designer").value.trim(),installType:$("type").value.trim(),cno:$("cno").value.trim(),status:"Kickoff liberado",kickoffAt:new Date().toISOString(),contractId:pending.id,contract:pending,documents:{contract:{type:"contract",title:"Contrato",sourceId:pending.id,status:"done"}},timeline:[{label:"Contrato finalizado",status:"done",date:start},{label:"Kickoff liberado",status:"done",date:new Date().toLocaleDateString("pt-BR")},{label:"Cronograma",status:"current",note:"Gerando..."},{label:"Ordem de Serviço",status:"wait"},{label:"Checklist",status:"wait"},{label:"Execução",status:"wait"},{label:"Entrega",status:"wait"}]};await oa("project_save",{project:p});installerProgress(24,"cronograma","Gerando o cronograma oficial","Montando datas, atividades-base e marcos da execução.");await installPause();const sc=autos(start,days),cj=await saveCron(p,sc);p.scheduleFile=cj.arquivo;p.endDate=sc.endDate;p.documents.schedule={type:"schedule",title:"Cronograma",file:cj.arquivo,status:"done"};p.timeline[2]={label:"Cronograma gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(38,"resumo","Conectando o resumo executivo","Preparando a visão gerencial vinculada ao cronograma.");await installPause();p.documents.executive={type:"cronograma",title:"Resumo Executivo",file:cj.arquivo,status:"done"};installerProgress(52,"os","Montando a Ordem de Serviço","Preenchendo a OS com os dados originados do contrato.");await installPause();p.documents.os={type:"html",title:"Ordem de Serviço",html:os(p),status:"done"};installerProgress(65,"checklist","Preparando o Guia / Checklist","Criando o roteiro operacional inicial do coordenador.");await installPause();p.documents.guide={type:"html",title:"Guia / Checklist",html:guide(p),status:"done"};installerProgress(77,"kickoff","Gerando o Termo de Kickoff","Formalizando a passagem de bastão Comercial → Obras.");await installPause();p.documents.kickoff={type:"html",title:"Termo de Kickoff",html:kickoff(p),status:"done"};p.timeline[3]={label:"OS gerada",status:"done",date:new Date().toLocaleDateString("pt-BR")};p.timeline[4]={label:"Checklist gerado",status:"done",date:new Date().toLocaleDateString("pt-BR")};installerProgress(87,"pastas","Organizando as pastas digitais","Preparando Comercial, Projetos e Obra para receber os anexos.");await installPause(700);installerProgress(95,"timeline","Finalizando a Vida da Obra","Gravando documentos, timeline e estrutura final no backend.");await installPause(750);await oa("project_save",{project:p});await auditLog(existing?"OBRA_REINICIADA":"OBRA_INICIADA",{project_code:code,project_name:name,message:existing?"Obra reiniciada e estrutura operacional recriada.":"Obra iniciada pela primeira vez.",summary:`Coordenador: ${coordinator} • Início: ${start} • Prazo: ${days} dias úteis • Cronograma: ${p.scheduleFile||"gerado"}`},"ok");installerDone();toast("success",existing?"Obra reiniciada":"Obra iniciada",`${code} criada e pronta para operação.`);setTimeout(async()=>{installRunning=false;$("startOv").classList.remove("on");resetInstaller();await load();await openP(code)},1400)}catch(e){console.error(e);await auditLog(existing?"REINICIO_FALHOU":"INICIO_FALHOU",{project_code:code,project_name:name,message:"Falha durante a implantação.",summary:e.message||String(e)},"danger");installRunning=false;$("startCloseBtn").disabled=false;$("installerFooter").style.display="flex";$("installerFooter").innerHTML='<div class="hint" style="color:#c63b4a">A implantação foi interrompida. Você pode voltar e tentar novamente.</div><div><button class="btn" onclick="closeStart()">Fechar</button><button class="btn g" onclick="resetInstaller()">TENTAR NOVAMENTE</button></div>';toast("error","Falha ao iniciar obra",e.message)}finally{$("confirm").disabled=false}}
 
 
 function scheduleIdFromFile(){
@@ -1115,11 +1211,11 @@ function openExecutive(){
     CURL+"?arquivo="+encodeURIComponent(file)+"&visao=cliente&embed=1"
   );
 }
-function openDoc(k,pdf=false){
+async function openDoc(k,pdf=false){
   const d=sel?.documents?.[k];
   if(!d)return;
   if(k==="contract"){openCommercialSource();return}
-  if(k==="executive"){openExecutive();return}
+  if(k==="executive"){await openExecutive();return}
 
   $("docDialog").classList.remove("viewer-integrado");
   $("docOv").classList.remove("full-viewer");
@@ -1137,7 +1233,7 @@ function openDoc(k,pdf=false){
   if(pdf)setTimeout(savePdf,180)
 }
 function closeDoc(){
-  $("docOv").classList.remove("on","full-viewer");
+  $("docOv").classList.remove("on","full-viewer","report-mode");
   $("docDialog").classList.remove("viewer-integrado");
   $("pdfFrame").src="about:blank";
   $("pdfFrame").style.display="none";
@@ -1148,6 +1244,24 @@ function closeDoc(){
     URL.revokeObjectURL(window.__contractPdfUrl);
     window.__contractPdfUrl=null;
   }
+}
+
+function openInternalReport(title,html,filename){
+  $("docOv").classList.remove("full-viewer");
+  $("docOv").classList.add("on","report-mode");
+  $("docDialog").classList.remove("viewer-integrado");
+  $("viewerFullBtn").style.display="none";
+  $("pdfFrame").style.display="none";
+  $("pdfFrame").src="about:blank";
+  $("paper").style.display="";
+  $("paper").className="paper";
+  $("dtitle").textContent=title;
+  $("pdf").style.display="";
+  $("pdf").textContent="SALVAR PDF";
+  docHtml=html;
+  docName=filename||title.replace(/\s+/g,"_");
+  $("paper").innerHTML=html;
+  void $("docOv").offsetHeight;
 }
 function savePdf(){
   html2pdf().set({
@@ -1160,7 +1274,7 @@ function savePdf(){
   }).from($("paper")).save()
 }
 
-window.openFolder=openFolder;window.closeFolder=closeFolder;window.deleteFile=deleteFile;window.openMaterials=openMaterials;window.closeMaterials=closeMaterials;window.selectMaterialRequest=selectMaterialRequest;window.showMaterialsSummary=showMaterialsSummary;window.printMaterialsView=printMaterialsView;window.shareMaterialsView=shareMaterialsView;window.openAudit=openAudit;window.closeAudit=closeAudit;window.loadAudit=loadAudit;
+window.openSchedule=openSchedule;window.openExecutive=openExecutive;window.openFolder=openFolder;window.closeFolder=closeFolder;window.deleteFile=deleteFile;window.openMaterials=openMaterials;window.closeMaterials=closeMaterials;window.selectMaterialRequest=selectMaterialRequest;window.showMaterialsSummary=showMaterialsSummary;window.printMaterialsView=printMaterialsView;window.shareMaterialsView=shareMaterialsView;window.openAudit=openAudit;window.closeAudit=closeAudit;window.loadAudit=loadAudit;
 $("pdf").onclick=savePdf;
 $("viewerFullBtn").onclick=()=>{
   $("docOv").classList.toggle("full-viewer");
@@ -1169,7 +1283,7 @@ $("viewerFullBtn").onclick=()=>{
 const confirmBtn=$("confirm");
 if(confirmBtn){
   confirmBtn.onclick=null;
-  confirmBtn.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();startProject()});
+  confirmBtn.addEventListener("click",async e=>{e.preventDefault();e.stopPropagation();if(confirmBtn.dataset.busy==="1")return;confirmBtn.dataset.busy="1";try{await startProject()}finally{confirmBtn.dataset.busy=""}});
 }
 $("refresh").onclick=()=>load(true);$("new").onclick=()=>{const id=new URLSearchParams(location.search).get("contrato");id?begin(id):openContractPicker()};$("contractSearch").oninput=renderContractPicker;$("contractRefresh").onclick=()=>loadCommercialContracts(true);
 (async()=>{try{await loadMaterialRequests()}catch(e){}await load();const id=new URLSearchParams(location.search).get("contrato");if(id)begin(id)})();
