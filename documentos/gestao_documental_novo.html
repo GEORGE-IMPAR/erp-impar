@@ -1064,6 +1064,10 @@ body:has(#docWizardForm:not([style*="display: none"])) #gerar{
 
 <script id="gestaoDocumentalBackendConfig">
 window.GESTAO_DOC_API = window.GESTAO_DOC_API || "https://api.erpimpar.com.br/documentos/api.php";
+window.GESTAO_OBRAS_API = window.GESTAO_OBRAS_API || "https://api.erpimpar.com.br/obras/api.php";
+window.CRON_LIST_PRIMARY = window.CRON_LIST_PRIMARY || "https://api.erpimpar.com.br/cronograma/listar_obras_farol.php";
+window.CRON_LIST_FALLBACK = window.CRON_LIST_FALLBACK || "https://api.erpimpar.com.br/cronograma/listar_obras.php";
+window.EMPRESA_DOCUMENTOS_API = window.EMPRESA_DOCUMENTOS_API || "https://api.erpimpar.com.br/documentos/empresa_documentos.php";
 </script>
 
 
@@ -1369,6 +1373,115 @@ body:has(#docWizardForm:not([style*="display: none"])) #docWizardForm{
 }
 </style>
 
+
+<style id="empresaImportReceitaPdfV12">
+#btnImportarReceitaPdf{
+  margin-right:auto!important;
+  min-width:205px;
+}
+#btnImportarReceitaPdf.is-loading{
+  opacity:.65;
+  pointer-events:none;
+}
+#empModal .empresa-actions{
+  align-items:center!important;
+}
+@media(max-width:720px){
+  #empModal .empresa-actions{flex-wrap:wrap!important}
+  #btnImportarReceitaPdf{width:100%;margin-right:0!important}
+}
+</style>
+
+
+<style id="empresaDocumentosV15">
+#empModal .empresa-box{
+  width:min(1120px,96vw)!important;
+  max-height:94vh!important;
+  overflow:auto!important;
+}
+.company-docs-block{
+  grid-column:1/-1;
+  margin-top:4px;
+  border:1px solid #d9e4e9;
+  border-radius:13px;
+  background:#f8fbfc;
+  overflow:hidden;
+}
+.company-docs-head{
+  min-height:48px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:9px 11px;
+  background:#fff;
+  border-bottom:1px solid #e1eaee;
+}
+.company-docs-head b{font-size:12px;color:#173247}
+.company-docs-head small{display:block;margin-top:2px;font-size:9px;color:#718895}
+.company-docs-head .sp{flex:1}
+.company-docs-controls{
+  display:grid;
+  grid-template-columns:210px auto;
+  gap:7px;
+  align-items:center;
+}
+.company-docs-controls select{
+  height:34px!important;
+  border:1px solid #cfdce3!important;
+  border-radius:9px!important;
+  background:#fff!important;
+  padding:0 8px!important;
+  font-size:10px!important;
+  font-weight:850!important;
+}
+.company-docs-controls .btn{height:34px!important;font-size:9px!important}
+.company-docs-body{padding:9px}
+.company-docs-note{
+  padding:12px;
+  border:1px dashed #cbd9e0;
+  border-radius:9px;
+  background:#fff;
+  color:#6b8291;
+  font-size:10px;
+  text-align:center;
+}
+.company-docs-list{display:grid;gap:6px}
+.company-doc-row{
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr) 120px auto;
+  gap:8px;
+  align-items:center;
+  padding:7px 8px;
+  background:#fff;
+  border:1px solid #dce6eb;
+  border-radius:9px;
+}
+.company-doc-icon{
+  width:34px;height:34px;border-radius:8px;
+  display:grid;place-items:center;
+  background:#edf7f2;color:#087451;font-weight:950;font-size:11px
+}
+.company-doc-main{min-width:0}
+.company-doc-main b{
+  display:block;font-size:10px;color:#173247;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+.company-doc-main small{display:block;margin-top:3px;font-size:8px;color:#718895}
+.company-doc-type{
+  font-size:8px;font-weight:900;color:#456579;
+  background:#f2f6f8;border:1px solid #d8e3e9;border-radius:99px;
+  padding:4px 7px;text-align:center
+}
+.company-doc-actions{display:flex;gap:5px}
+.company-doc-actions .btn{height:29px!important;padding:0 8px!important;font-size:8px!important}
+@media(max-width:780px){
+  .company-docs-head{align-items:flex-start;flex-wrap:wrap}
+  .company-docs-controls{width:100%;grid-template-columns:1fr auto}
+  .company-doc-row{grid-template-columns:34px minmax(0,1fr) auto}
+  .company-doc-type{grid-column:2}
+}
+</style>
+
 </head><body>
 <div class="wrap" id="appWrap">
 <section class="panel" id="setupPanel">
@@ -1459,6 +1572,14 @@ body:has(#docWizardForm:not([style*="display: none"])) #docWizardForm{
       <div class="f">
         <label>Contratada</label>
         <select id="gContratada"></select>
+      </div>
+
+      <div class="f full" id="gObraEmpreiteiroWrap" hidden>
+        <label>Obra *</label>
+        <select id="gObraEmpreiteiro">
+          <option value="">Carregando obras...</option>
+        </select>
+        <div class="signature-note" id="gObraEmpreiteiroInfo">Selecione a obra onde o empreiteiro irá atuar.</div>
       </div>
 
       <div class="f">
@@ -1643,7 +1764,7 @@ body:has(#docWizardForm:not([style*="display: none"])) #docWizardForm{
 
 <div class="f"><label>CPF/CNPJ</label><input id="eCnpj" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00"></div>
 <div class="f"><label>Contato</label><input id="eContato" autocomplete="name"></div>
-<div class="f"><label>CPF contato</label><input id="eCpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00"></div>
+<div class="f"><label>CPF contato <span style="font-weight:650;color:#8a9ba6">(opcional)</span></label><input id="eCpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00"></div>
 
 <div class="f"><label>Telefone</label><input id="eTel" inputmode="tel" maxlength="15" placeholder="(00) 00000-0000"></div>
 <div class="f"><label>E-mail</label><input id="eMail" type="email" autocomplete="email" placeholder="nome@empresa.com.br"></div>
@@ -1667,8 +1788,41 @@ body:has(#docWizardForm:not([style*="display: none"])) #docWizardForm{
   <label class="role-check"><input type="checkbox" class="role" data-r="Parceiro"><span>Parceiro</span></label>
 </div>
 <div class="roles" id="roles"></div></div>
+
+<div class="company-docs-block" id="companyDocsBlock">
+  <div class="company-docs-head">
+    <div>
+      <b>DOCUMENTOS DA EMPRESA</b>
+      <small>Receita Federal, proprietário, contrato social, PCMSO, PGR, certidões e outros.</small>
+    </div>
+    <div class="sp"></div>
+    <div class="company-docs-controls">
+      <select id="companyDocType">
+        <option value="receita_federal">Receita Federal</option>
+        <option value="proprietario">Proprietário / Representante</option>
+        <option value="contrato_social">Contrato Social</option>
+        <option value="pcmso">PCMSO</option>
+        <option value="pgr">PGR</option>
+        <option value="certidao">Certidão</option>
+        <option value="outros">Outros</option>
+      </select>
+      <input id="companyDocFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" hidden>
+      <button class="btn s" id="companyDocUploadBtn" type="button">+ ANEXAR</button>
+    </div>
+  </div>
+  <div class="company-docs-body">
+    <div id="companyDocsList" class="company-docs-list">
+      <div class="company-docs-note">Salve a empresa para liberar os anexos.</div>
+    </div>
+  </div>
 </div>
-<div class="empresa-actions"><button class="btn s" onclick="closeEmp()">Cancelar</button><button class="btn p" id="saveEmp">Salvar</button></div></div></div>
+</div>
+<div class="empresa-actions">
+  <input id="empresaReceitaPdfInput" type="file" accept="application/pdf,.pdf" hidden>
+  <button class="btn s" id="btnImportarReceitaPdf" type="button">IMPORTAR PDF RECEITA FEDERAL</button>
+  <button class="btn s" onclick="closeEmp()">Cancelar</button>
+  <button class="btn p" id="saveEmp">Salvar</button>
+</div></div></div>
 
 <div class="modal" id="tplModal"><div class="box" style="width:min(1280px,98vw);height:94vh;max-height:94vh"><div class="mhead"><div><h2 id="tplModalTitle">Contrato Padrão ÍMPAR</h2><div class="sub" id="tplModalSub">Editor de Template • Jurídico</div></div><div class="sp"></div><button class="btn s" id="resetTpl">Restaurar</button><button class="btn p" id="saveTpl">Salvar</button><button class="icon" id="closeTpl">×</button></div>
 <div class="editor"><div class="left"><div class="etools"><button data-cmd="bold"><b>B</b></button><button data-cmd="italic"><i>I</i></button><button data-cmd="underline"><u>U</u></button><button data-cmd="justifyLeft">≡</button><button data-cmd="justifyCenter">≣</button><button data-cmd="justifyFull">☷</button><button data-cmd="insertUnorderedList">•</button></div><div class="scroll"><div class="paper" id="editor" contenteditable="true"><p>CONTRATO <span class="var" data-var="codigo" contenteditable="false">[codigo]</span> PARA  FORNECIMENTO DE MÃO DE OBRA E MATERIAIS PARA A EXECUÇÃO DO SERVIÇO DE <span class="var" data-var="servico" contenteditable="false">[servico]</span>.</p>
@@ -1922,6 +2076,7 @@ let currentTemplateId="contrato_padrao_impar";
 const varMeta={"cepContratada": {"category": "Contratada", "label": "CEP"}, "cepContratante": {"category": "Contratante", "label": "CEP"}, "codigo": {"category": "Projeto", "label": "Código"}, "contatoContratada": {"category": "Contratada", "label": "Contato"}, "contatoContratante": {"category": "Contratante", "label": "Contato"}, "cpfCnpjContratada": {"category": "Contratada", "label": "CPF/CNPJ"}, "cpfCnpjContratante": {"category": "Contratante", "label": "CPF/CNPJ"}, "cpfContatoContratada": {"category": "Contratada", "label": "CPF do contato"}, "cpfContatoContratante": {"category": "Contratante", "label": "CPF do contato"}, "dataExtenso": {"category": "Contrato", "label": "Data por extenso"}, "enderecoContratadaCompleto": {"category": "Contratada", "label": "Endereço completo"}, "enderecoContratanteCompleto": {"category": "Contratante", "label": "Endereço completo"}, "enderecoObra": {"category": "Projeto", "label": "Endereço da obra"}, "nomeContratada": {"category": "Contratada", "label": "Nome / Razão social"}, "nomeContratante": {"category": "Contratante", "label": "Nome / Razão social"}, "prazoDias": {"category": "Contrato", "label": "Prazo (dias)"}, "servico": {"category": "Projeto", "label": "Serviço"}, "valor": {"category": "Contrato", "label": "Valor"}, "valorExtenso": {"category": "Contrato", "label": "Valor por extenso"}};
 const roleNames=["Cliente","Contratante","Contratada","Empreiteiro","Fornecedor","Parceiro"];
 let empresas=[];
+let obrasContrato=[];
 
 function onlyDigits(v){return String(v||"").replace(/\D/g,"")}
 
@@ -1958,6 +2113,219 @@ function maskCep(v){
   let d=onlyDigits(v).slice(0,8);
   return d.replace(/^(\d{5})(\d)/,"$1-$2");
 }
+
+let __pdfjsPromise=null;
+async function ensurePdfJs(){
+  if(window.pdfjsLib)return window.pdfjsLib;
+  if(!__pdfjsPromise){
+    __pdfjsPromise=import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs")
+      .then(mod=>{
+        if(mod?.GlobalWorkerOptions){
+          mod.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+        }
+        window.pdfjsLib=mod;
+        return mod;
+      });
+  }
+  return await __pdfjsPromise;
+}
+
+function normalizePdfText(v){
+  return String(v||"")
+    .replace(/\u00a0/g," ")
+    .replace(/[ \t]+/g," ")
+    .replace(/\r/g,"")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
+}
+
+function firstPdfMatch(text,patterns){
+  for(const p of patterns){
+    const m=text.match(p);
+    if(m?.[1])return String(m[1]).trim();
+  }
+  return "";
+}
+
+function cleanReceitaValue(v){
+  return String(v||"")
+    .replace(/\s+/g," ")
+    .replace(/^[\s:;-]+|[\s:;-]+$/g,"")
+    .trim();
+}
+
+function parseReceitaFederalPdf(text){
+  const t=normalizePdfText(text);
+  const flat=t.replace(/\n/g," ");
+
+  const cnpj=firstPdfMatch(t,[
+    /N[ÚU]MERO DE INSCRI[CÇ][ÃA]O\s*\n?\s*([0-9.\-\/]{14,18})/i,
+    /CNPJ\s*:?\s*([0-9.\-\/]{14,18})/i,
+    /\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/
+  ]);
+
+  const nome=firstPdfMatch(t,[
+    /NOME EMPRESARIAL\s*\n+\s*([^\n]+)/i,
+    /RAZ[ÃA]O SOCIAL\s*\n+\s*([^\n]+)/i
+  ]);
+
+  const fantasia=firstPdfMatch(t,[
+    /T[ÍI]TULO DO ESTABELECIMENTO \(NOME DE FANTASIA\)\s*\n+\s*([^\n]+)/i,
+    /NOME DE FANTASIA\s*\n+\s*([^\n]+)/i
+  ]);
+
+  const logradouro=firstPdfMatch(t,[
+    /LOGRADOURO\s*\n+\s*([^\n]+)/i
+  ]);
+  const numero=firstPdfMatch(t,[
+    /N[ÚU]MERO\s*\n+\s*([^\n]+)/i
+  ]);
+  const complemento=firstPdfMatch(t,[
+    /COMPLEMENTO\s*\n+\s*([^\n]+)/i
+  ]);
+  const cep=firstPdfMatch(t,[
+    /CEP\s*\n+\s*([0-9.\-]{8,10})/i,
+    /\b(\d{5}-?\d{3})\b/
+  ]);
+  const bairro=firstPdfMatch(t,[
+    /BAIRRO\/DISTRITO\s*\n+\s*([^\n]+)/i
+  ]);
+  const cidade=firstPdfMatch(t,[
+    /MUNIC[ÍI]PIO\s*\n+\s*([^\n]+)/i
+  ]);
+  const uf=firstPdfMatch(t,[
+    /\bUF\s*\n+\s*([A-Z]{2})\b/i
+  ]);
+  const email=firstPdfMatch(t,[
+    /ENDERE[CÇ]O ELETR[ÔO]NICO\s*\n+\s*([^\s\n]+@[^\s\n]+)/i,
+    /\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i
+  ]);
+  const telefone=firstPdfMatch(t,[
+    /TELEFONE\s*\n+\s*([0-9()\-\s]{8,20})/i,
+    /\b(\(?\d{2}\)?\s*\d{4,5}-?\d{4})\b/
+  ]);
+
+  return {
+    cnpj:cleanReceitaValue(cnpj),
+    nome:cleanReceitaValue(nome),
+    fantasia:cleanReceitaValue(fantasia).replace(/^N[ÃA]O INFORMADO$/i,""),
+    log:cleanReceitaValue(logradouro),
+    num:cleanReceitaValue(numero).replace(/^SN$/i,"S/N"),
+    comp:cleanReceitaValue(complemento).replace(/^N[ÃA]O INFORMADO$/i,""),
+    cep:cleanReceitaValue(cep),
+    bairro:cleanReceitaValue(bairro),
+    cidade:cleanReceitaValue(cidade),
+    uf:cleanReceitaValue(uf).toUpperCase(),
+    mail:cleanReceitaValue(email),
+    tel:cleanReceitaValue(telefone)
+  };
+}
+
+function setEmpresaFieldFromPdf(id,value,formatter=null){
+  const el=document.getElementById(id);
+  if(!el || !String(value||"").trim())return false;
+  el.value=formatter?formatter(value):value;
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+  el.dispatchEvent(new Event("change",{bubbles:true}));
+  return true;
+}
+
+async function extractTextFromPdfFile(file){
+  const pdfjs=await ensurePdfJs();
+  const buffer=await file.arrayBuffer();
+  const doc=await pdfjs.getDocument({data:buffer}).promise;
+  const pages=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);
+    const content=await page.getTextContent();
+    const lines=[];
+    let lastY=null,line=[];
+    for(const item of content.items||[]){
+      const y=Math.round(item.transform?.[5]||0);
+      if(lastY!==null && Math.abs(y-lastY)>3){
+        if(line.length)lines.push(line.join(" "));
+        line=[];
+      }
+      line.push(item.str||"");
+      lastY=y;
+    }
+    if(line.length)lines.push(line.join(" "));
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n\n");
+}
+
+async function importarEmpresaReceitaPdf(file){
+  const btn=document.getElementById("btnImportarReceitaPdf");
+  if(!file)return;
+  if(btn){
+    btn.classList.add("is-loading");
+    btn.textContent="LENDO PDF...";
+  }
+  try{
+    showToast("info","Importando Receita Federal","Lendo os dados cadastrais do PDF...");
+    const text=await extractTextFromPdfFile(file);
+    if(!text || text.length<30)throw new Error("O PDF não possui texto legível. Baixe novamente o comprovante diretamente da Receita Federal.");
+
+    const d=parseReceitaFederalPdf(text);
+    if(!d.cnpj && !d.nome)throw new Error("Não reconheci um comprovante cadastral da Receita Federal neste PDF.");
+
+    let count=0;
+    count+=setEmpresaFieldFromPdf("eNome",d.nome)?1:0;
+    count+=setEmpresaFieldFromPdf("eFantasia",d.fantasia)?1:0;
+    count+=setEmpresaFieldFromPdf("eCnpj",d.cnpj,maskCpfCnpj)?1:0;
+    count+=setEmpresaFieldFromPdf("eTel",d.tel,maskPhone)?1:0;
+    count+=setEmpresaFieldFromPdf("eMail",d.mail)?1:0;
+    count+=setEmpresaFieldFromPdf("eCep",d.cep,maskCep)?1:0;
+    count+=setEmpresaFieldFromPdf("eLog",d.log)?1:0;
+    count+=setEmpresaFieldFromPdf("eNum",d.num)?1:0;
+    count+=setEmpresaFieldFromPdf("eComp",d.comp)?1:0;
+    count+=setEmpresaFieldFromPdf("eBairro",d.bairro)?1:0;
+    count+=setEmpresaFieldFromPdf("eCidade",d.cidade)?1:0;
+    count+=setEmpresaFieldFromPdf("eUf",d.uf)?1:0;
+
+    // Se CEP estiver completo, consulta ViaCEP apenas para complementar campos que faltaram.
+    const cepDigits=onlyDigits(d.cep);
+    if(cepDigits.length===8){
+      const missing=["eLog","eBairro","eCidade","eUf"].some(id=>!document.getElementById(id)?.value.trim());
+      if(missing){
+        try{await buscarCepEmpresa(cepDigits)}catch(_){}
+      }
+    }
+
+    showToast(
+      "success",
+      "Dados importados",
+      `${count} campo(s) preenchido(s) a partir do comprovante da Receita Federal. Confira os dados, informe o contato responsável e selecione os papéis da empresa.`,
+      6500
+    );
+
+    const contato=document.getElementById("eContato");
+    if(contato && !contato.value.trim())setTimeout(()=>contato.focus(),100);
+  }catch(err){
+    console.error("[Receita Federal PDF]",err);
+    showToast("error","Falha ao importar PDF",err.message||"Não foi possível ler o comprovante da Receita Federal.",7000);
+  }finally{
+    if(btn){
+      btn.classList.remove("is-loading");
+      btn.textContent="IMPORTAR PDF RECEITA FEDERAL";
+    }
+  }
+}
+
+function bindEmpresaReceitaPdf(){
+  const btn=document.getElementById("btnImportarReceitaPdf");
+  const input=document.getElementById("empresaReceitaPdfInput");
+  if(!btn||!input||btn.dataset.bound==="1")return;
+  btn.dataset.bound="1";
+  btn.onclick=()=>input.click();
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    input.value="";
+    if(file)await importarEmpresaReceitaPdf(file);
+  };
+}
+
 function bindEmpresaMasks(){
   const cnpj=document.getElementById("eCnpj");
   const cpf=document.getElementById("eCpf");
@@ -2040,7 +2408,7 @@ function requiredField(id,msg){
 function empresaFormValido(){
   const required=[
     ["eNome","Informe a razão social / nome."],["eCnpj","Informe o CNPJ da empresa."],
-    ["eContato","Informe o contato / responsável."],["eCpf","Informe o CPF do contato / responsável."],
+    ["eContato","Informe o contato / responsável."],
     ["eTel","Informe o telefone."],["eMail","Informe o e-mail."],["eCep","Informe o CEP."],
     ["eLog","Informe o logradouro."],["eNum","Informe o número do endereço."],["eBairro","Informe o bairro."],
     ["eCidade","Informe a cidade."],["eUf","Informe a UF."]
@@ -2048,7 +2416,7 @@ function empresaFormValido(){
   for(const [id,msg] of required)if(!requiredField(id,msg))return false;
   const cnpj=document.getElementById("eCnpj"),cpf=document.getElementById("eCpf"),tel=document.getElementById("eTel"),email=document.getElementById("eMail"),cep=document.getElementById("eCep"),uf=document.getElementById("eUf");
   if(!isValidCNPJ(cnpj.value)){markFieldError(cnpj);showToast("warning","CNPJ inválido","Revise o CNPJ informado.");cnpj.focus();return false}
-  if(!isValidCPF(cpf.value)){markFieldError(cpf);showToast("warning","CPF inválido","Revise o CPF do responsável.");cpf.focus();return false}
+  if(cpf.value.trim() && !isValidCPF(cpf.value)){markFieldError(cpf);showToast("warning","CPF inválido","Revise o CPF do responsável ou deixe o campo vazio.");cpf.focus();return false}
   if(onlyDigits(tel.value).length<10){markFieldError(tel);showToast("warning","Telefone inválido","Informe DDD e telefone completos.");tel.focus();return false}
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())){markFieldError(email);showToast("warning","E-mail inválido","Revise o endereço de e-mail.");email.focus();return false}
   if(onlyDigits(cep.value).length!==8){markFieldError(cep);showToast("warning","CEP inválido","Informe um CEP válido com 8 dígitos.");cep.focus();return false}
@@ -2087,6 +2455,166 @@ async function loadEmpresasBackend(){
     showToast("error","Backend indisponível",err.message||"Não foi possível carregar as empresas. Nenhum dado local será usado.",6500);return false;
   }
 }
+
+
+let activeEmpresaDocId="";
+let activeEmpresaDocItems=[];
+
+const COMPANY_DOC_LABELS={
+  receita_federal:"Receita Federal",
+  proprietario:"Proprietário / Representante",
+  contrato_social:"Contrato Social",
+  pcmso:"PCMSO",
+  pgr:"PGR",
+  certidao:"Certidão",
+  outros:"Outros"
+};
+
+async function empresaDocsRequest(action,fields={}){
+  const fd=new FormData();
+  fd.append("action",action);
+  Object.entries(fields).forEach(([k,v])=>{
+    if(v!==undefined && v!==null)fd.append(k,v);
+  });
+  const r=await fetch(window.EMPRESA_DOCUMENTOS_API,{method:"POST",body:fd,cache:"no-store"});
+  const text=await r.text();
+  let j={};
+  try{j=text?JSON.parse(text):{}}catch(_){throw new Error(`Resposta inválida do dossiê documental (HTTP ${r.status}).`)}
+  if(!r.ok || j.ok===false)throw new Error(j.error||`HTTP ${r.status}`);
+  return j;
+}
+
+function companyDocExt(name=""){
+  const x=String(name).split(".").pop().toUpperCase();
+  return x && x.length<=5?x:"ARQ";
+}
+
+function renderEmpresaDocuments(){
+  const box=document.getElementById("companyDocsList");
+  const up=document.getElementById("companyDocUploadBtn");
+  const type=document.getElementById("companyDocType");
+  if(!box)return;
+
+  if(!activeEmpresaDocId){
+    if(up)up.disabled=true;
+    if(type)type.disabled=true;
+    box.innerHTML='<div class="company-docs-note">Salve a empresa para liberar os anexos.</div>';
+    return;
+  }
+
+  if(up)up.disabled=false;
+  if(type)type.disabled=false;
+
+  if(!activeEmpresaDocItems.length){
+    box.innerHTML='<div class="company-docs-note">Nenhum documento anexado para esta empresa.</div>';
+    return;
+  }
+
+  box.innerHTML=activeEmpresaDocItems.map(d=>`
+    <div class="company-doc-row">
+      <div class="company-doc-icon">${esc(companyDocExt(d.originalName||d.name||""))}</div>
+      <div class="company-doc-main">
+        <b>${esc(d.originalName||d.name||"Documento")}</b>
+        <small>${esc(d.uploadedAtBr||d.uploadedAt||"")}</small>
+      </div>
+      <div class="company-doc-type">${esc(COMPANY_DOC_LABELS[d.category]||d.category||"Documento")}</div>
+      <div class="company-doc-actions">
+        <button class="btn s" type="button" onclick="openEmpresaDocument('${esc(d.url||"")}','${esc(d.originalName||d.name||"Documento")}')">ABRIR</button>
+        <button class="btn danger" type="button" onclick="deleteEmpresaDocument('${esc(d.id||"")}')">EXCLUIR</button>
+      </div>
+    </div>`).join("");
+}
+
+async function loadEmpresaDocuments(){
+  if(!activeEmpresaDocId){
+    activeEmpresaDocItems=[];
+    renderEmpresaDocuments();
+    return;
+  }
+  const box=document.getElementById("companyDocsList");
+  if(box)box.innerHTML='<div class="company-docs-note">Carregando documentos...</div>';
+  try{
+    const j=await empresaDocsRequest("list",{company_id:activeEmpresaDocId});
+    activeEmpresaDocItems=Array.isArray(j.documents)?j.documents:[];
+    renderEmpresaDocuments();
+  }catch(err){
+    console.error("[Empresa Docs] listar",err);
+    activeEmpresaDocItems=[];
+    if(box)box.innerHTML=`<div class="company-docs-note" style="color:#b43b4b">Falha ao carregar documentos: ${esc(err.message)}</div>`;
+  }
+}
+
+async function uploadEmpresaDocument(file){
+  if(!activeEmpresaDocId){
+    showToast("warning","Salve a empresa","É necessário salvar o cadastro para criar o ID antes de anexar documentos.");
+    return;
+  }
+  const category=document.getElementById("companyDocType")?.value||"outros";
+  try{
+    showToast("info","Enviando documento",file.name);
+    await empresaDocsRequest("upload",{company_id:activeEmpresaDocId,category,file});
+    await loadEmpresaDocuments();
+    showToast("success","Documento anexado",`${file.name} foi gravado no servidor.`);
+  }catch(err){
+    console.error("[Empresa Docs] upload",err);
+    showToast("error","Falha no anexo",err.message||"Não foi possível gravar o documento.");
+  }
+}
+
+async function deleteEmpresaDocument(id){
+  const d=activeEmpresaDocItems.find(x=>String(x.id)===String(id));
+  if(!d)return;
+  const ok=await erpConfirm(
+    "Excluir documento",
+    `Deseja excluir ${d.originalName||d.name||"este documento"} do dossiê da empresa?`,
+    {type:"warning",okText:"Excluir",cancelText:"Cancelar"}
+  );
+  if(!ok)return;
+  try{
+    await empresaDocsRequest("delete",{company_id:activeEmpresaDocId,document_id:id});
+    await loadEmpresaDocuments();
+    showToast("success","Documento excluído","Arquivo removido do servidor.");
+  }catch(err){
+    showToast("error","Falha ao excluir",err.message||"Não foi possível excluir o documento.");
+  }
+}
+
+function openEmpresaDocument(url,name){
+  if(!url)return showToast("warning","Documento indisponível","O arquivo não possui URL para abertura.");
+  if(docPdfObjectUrl){
+    try{URL.revokeObjectURL(docPdfObjectUrl)}catch(_){}
+    docPdfObjectUrl=null;
+  }
+  docPdfCurrentBlob=null;
+  const modal=document.getElementById("docPdfModal");
+  const frame=document.getElementById("docPdfFrame");
+  const ttl=document.getElementById("docPdfTitle");
+  if(ttl)ttl.textContent=name||"Documento da empresa";
+  if(frame)frame.src=url;
+  modal?.classList.add("on");
+  modal?.setAttribute("aria-hidden","false");
+}
+
+function bindEmpresaDocuments(){
+  const btn=document.getElementById("companyDocUploadBtn");
+  const input=document.getElementById("companyDocFile");
+  if(!btn||!input||btn.dataset.bound==="1")return;
+  btn.dataset.bound="1";
+  btn.onclick=()=>{
+    if(!activeEmpresaDocId){
+      showToast("warning","Salve a empresa","Salve o cadastro antes de anexar documentos.");
+      return;
+    }
+    input.click();
+  };
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    input.value="";
+    if(file)await uploadEmpresaDocument(file);
+  };
+}
+window.openEmpresaDocument=openEmpresaDocument;
+window.deleteEmpresaDocument=deleteEmpresaDocument;
 
 async function saveEmpresaBackend(e){
   const data=await backendRequest("company_save",{company:e});
@@ -2158,15 +2686,18 @@ function roles(selected){
   box.innerHTML=roleNames.map(r=>`<label class="role-check"><input type="checkbox" class="role" data-r="${r}" ${selected.includes(r)?"checked":""}><span>${r}</span></label>`).join("");
   bindEmpresaRolePicker();
 }
-function openEmp(i=-1){bindEmpresaRolePicker();editIdx=i;let e=i>=0?empresas[i]:{nome:"",fantasia:"",cnpj:"",contato:"",cpf:"",tel:"",mail:"",cep:"",log:"",num:"",comp:"",bairro:"",cidade:"",uf:"",papeis:[]};empTitle.textContent=i>=0?"Editar empresa":"Nova empresa";let m={eNome:"nome",eFantasia:"fantasia",eCnpj:"cnpj",eContato:"contato",eCpf:"cpf",eTel:"tel",eMail:"mail",eCep:"cep",eLog:"log",eNum:"num",eComp:"comp",eBairro:"bairro",eCidade:"cidade",eUf:"uf"};Object.entries(m).forEach(([id,k])=>document.getElementById(id).value=e[k]||"");roles(e.papeis);
+function openEmp(i=-1){bindEmpresaRolePicker();bindEmpresaReceitaPdf();bindEmpresaDocuments();editIdx=i;let e=i>=0?empresas[i]:{nome:"",fantasia:"",cnpj:"",contato:"",cpf:"",tel:"",mail:"",cep:"",log:"",num:"",comp:"",bairro:"",cidade:"",uf:"",papeis:[]};empTitle.textContent=i>=0?"Editar empresa":"Nova empresa";let m={eNome:"nome",eFantasia:"fantasia",eCnpj:"cnpj",eContato:"contato",eCpf:"cpf",eTel:"tel",eMail:"mail",eCep:"cep",eLog:"log",eNum:"num",eComp:"comp",eBairro:"bairro",eCidade:"cidade",eUf:"uf"};Object.entries(m).forEach(([id,k])=>document.getElementById(id).value=e[k]||"");roles(e.papeis);
   document.getElementById("eCnpj").value=maskCpfCnpj(document.getElementById("eCnpj").value);
   document.getElementById("eCpf").value=maskCpf(document.getElementById("eCpf").value);
   document.getElementById("eTel").value=maskPhone(document.getElementById("eTel").value);
   document.getElementById("eCep").value=maskCep(document.getElementById("eCep").value);
   document.getElementById("eUf").value=(document.getElementById("eUf").value||"").toUpperCase();
-  bindEmpresaMasks();bindEmpresaRolePicker();
-  empModal.classList.add("on")
-}window.openEmp=openEmp;newEmp.onclick=()=>openEmp();window.closeEmp=()=>empModal.classList.remove("on");
+  bindEmpresaMasks();bindEmpresaRolePicker();bindEmpresaDocuments();
+  activeEmpresaDocId=String(e.id||"");
+  activeEmpresaDocItems=[];
+  empModal.classList.add("on");
+  loadEmpresaDocuments();
+}window.openEmp=openEmp;newEmp.onclick=()=>openEmp();window.closeEmp=()=>{empModal.classList.remove("on");activeEmpresaDocId="";activeEmpresaDocItems=[]};
 saveEmp.onclick=async()=>{
   if(!empresaFormValido())return;
   let m={nome:"eNome",fantasia:"eFantasia",cnpj:"eCnpj",contato:"eContato",cpf:"eCpf",tel:"eTel",mail:"eMail",cep:"eCep",log:"eLog",num:"eNum",comp:"eComp",bairro:"eBairro",cidade:"eCidade",uf:"eUf"};
@@ -2183,6 +2714,7 @@ saveEmp.onclick=async()=>{
   try{
     const saved=await saveEmpresaBackend(e);
     if(editIdx>=0)empresas[editIdx]=saved;else empresas.push(saved);
+    activeEmpresaDocId=String(saved?.id||"");
     closeEmp();renderEmp();fillSelects();
     showToast("success","Empresa salva","Cadastro gravado no backend.");
   }catch(err){
@@ -2235,6 +2767,38 @@ async function ensureTemplateLoaded(id,{silent=false}={}){
   return templateStore[id];
 }
 
+
+function normalizeTemplateEditorContent(ed){
+  if(!ed)return;
+
+  // O documento inteiro é editável.
+  ed.setAttribute("contenteditable","true");
+  ed.contentEditable="true";
+
+  // Corrige templates que tenham sido salvos por versões antigas com
+  // contenteditable=false espalhado no texto normal.
+  ed.querySelectorAll("[contenteditable]").forEach(node=>{
+    if(node.classList?.contains("var") || node.matches?.("[data-contractor-composition-placeholder]")){
+      node.setAttribute("contenteditable","false");
+      node.contentEditable="false";
+    }else{
+      node.removeAttribute("contenteditable");
+    }
+  });
+
+  // Variáveis continuam protegidas como chips.
+  ed.querySelectorAll(".var").forEach(node=>{
+    node.setAttribute("contenteditable","false");
+    node.contentEditable="false";
+  });
+
+  // O marcador da tabela é estrutural; a tabela real vem do formulário.
+  ed.querySelectorAll("[data-contractor-composition-placeholder]").forEach(node=>{
+    node.setAttribute("contenteditable","false");
+    node.contentEditable="false";
+  });
+}
+
 async function openTemplateEditor(id="contrato_padrao_impar"){
   currentTemplateId=id;
   const def=TEMPLATE_DEFS[id]||TEMPLATE_DEFS.contrato_padrao_impar;
@@ -2244,7 +2808,8 @@ async function openTemplateEditor(id="contrato_padrao_impar"){
   document.getElementById("tplModalTitle").textContent=def.nome;
   document.getElementById("tplModalSub").textContent=id==="contrato_empreiteiro"?"Editor de Template • Empreiteiro / Medição":"Editor de Template • Jurídico";
   ed.innerHTML=templateHTML;
-  ed.setAttribute("contenteditable","true");ed.contentEditable="true";ed.setAttribute("spellcheck","true");ed.tabIndex=0;ed.style.userSelect="text";ed.style.webkitUserSelect="text";ed.style.pointerEvents="auto";
+  normalizeTemplateEditorContent(ed);
+  ed.setAttribute("spellcheck","true");ed.tabIndex=0;ed.style.userSelect="text";ed.style.webkitUserSelect="text";ed.style.pointerEvents="auto";
   tplModal.classList.add("on");
   setTimeout(()=>{bindEditorInteractions();editorHistory=[];editorHistoryIndex=-1;snapshotEditor(true);ed.focus();const range=document.createRange();const selection=window.getSelection();range.selectNodeContents(ed);range.collapse(false);selection.removeAllRanges();selection.addRange(range);lastRange=range.cloneRange();},30);
 }
@@ -2254,6 +2819,7 @@ closeTpl.onclick=()=>tplModal.classList.remove("on");
 async function salvarTemplateBackend(){
   try{
     const def=TEMPLATE_DEFS[currentTemplateId]||TEMPLATE_DEFS.contrato_padrao_impar;
+    normalizeTemplateEditorContent(editor);
     templateHTML=editor.innerHTML;templateStore[currentTemplateId]=templateHTML;
     await backendRequest("template_save",{id:currentTemplateId,nome:def.nome,html:templateHTML});
     showToast("success","Template salvo",`${def.nome} atualizado no backend.`);
@@ -2263,7 +2829,7 @@ saveTpl.onclick=salvarTemplateBackend;
 resetTpl.onclick=async()=>{
   const def=TEMPLATE_DEFS[currentTemplateId]||TEMPLATE_DEFS.contrato_padrao_impar;
   if(await erpConfirm("Restaurar template",`Deseja restaurar o conteúdo original de ${def.nome}?`,{type:"warning",okText:"Restaurar"})){
-    templateStore[currentTemplateId]=def.original;templateHTML=def.original;editor.innerHTML=def.original;snapshotEditor(true);showToast("success","Template restaurado","O conteúdo original foi restaurado.");
+    templateStore[currentTemplateId]=def.original;templateHTML=def.original;editor.innerHTML=def.original;normalizeTemplateEditorContent(editor);snapshotEditor(true);showToast("success","Template restaurado","O conteúdo original foi restaurado.");
   }
 };
 
@@ -2310,7 +2876,10 @@ function injectContractorComposition(container,items=compositionPayload()){
   if(ph)ph.replaceWith(temp.firstElementChild);else container.insertAdjacentHTML("beforeend",compositionHTML(items));
 }
 function syncContractorMode(){
-  const block=document.getElementById("contractorComposition");if(block)block.hidden=!isContractorTemplate();
+  const contractor=isContractorTemplate();
+  const block=document.getElementById("contractorComposition");if(block)block.hidden=!contractor;
+  const obraWrap=document.getElementById("gObraEmpreiteiroWrap");if(obraWrap)obraWrap.hidden=!contractor;
+  if(contractor && !obrasContrato.length)loadObrasContrato();
   currentTemplateId=document.getElementById("gTemplate")?.value||"contrato_padrao_impar";
   templateHTML=templateStore[currentTemplateId]||TEMPLATE_DEFS[currentTemplateId]?.original||ORIGINAL;
   fillSelects();if(isContractorTemplate())renderContractorItems();
@@ -2321,20 +2890,268 @@ async function importContractorExcel(file){
   try{
     const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
     if(!rows.length)throw new Error("A planilha não possui linhas de dados.");
-    const pick=(r,names)=>{const keys=Object.keys(r);for(const n of names){const k=keys.find(x=>String(x).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")===n);if(k)return r[k];}return "";};
-    const money=v=>{if(typeof v==="number")return v;let t=String(v||"").replace(/R\$/gi,"").replace(/\s/g,"");if(t.includes(","))t=t.replace(/\./g,"").replace(",",".");return Number(t)||0;};
-    const parsed=rows.map((r,i)=>normalizeContractorItem({item:pick(r,["item","codigo"])||i+1,descricao:pick(r,["descricao","atividade","servico","item descricao"]),quantidade:Number(String(pick(r,["quantidade","qtde","qtd"])).replace(",","."))||0,valorUnitario:money(pick(r,["valor unitario","unitario","valor un","valor_unitario"]))},i)).filter(x=>x.descricao||x.quantidade||x.valorUnitario);
-    if(!parsed.length)throw new Error("Não reconheci as colunas. Use: Item, Descrição, Quantidade e Valor Unitário.");
-    contractorItems=parsed;contractorItems.forEach((x,i)=>x.item=String(i+1));renderContractorItems();showToast("success","Excel importado",`${contractorItems.length} item(ns) carregado(s).`);
+    const normHeader=v=>String(v||"").trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[_\.\-\/]+/g," ")
+      .replace(/\s+/g," ")
+      .trim();
+
+    const pick=(r,names)=>{
+      const keys=Object.keys(r);
+      const normalized=keys.map(k=>({key:k,n:normHeader(k)}));
+
+      // 1. correspondência exata
+      for(const name of names){
+        const target=normHeader(name);
+        const hit=normalized.find(x=>x.n===target);
+        if(hit)return r[hit.key];
+      }
+
+      // 2. correspondência por conteúdo do cabeçalho
+      for(const name of names){
+        const target=normHeader(name);
+        const hit=normalized.find(x=>x.n.includes(target) || target.includes(x.n));
+        if(hit)return r[hit.key];
+      }
+      return "";
+    };
+
+    const money=v=>{
+      if(typeof v==="number" && Number.isFinite(v))return v;
+      let t=String(v??"").trim();
+      if(!t)return 0;
+      t=t.replace(/R\$/gi,"").replace(/[^0-9,\.\-]/g,"");
+      if(!t)return 0;
+
+      // pt-BR: 1.234,56 | 42000,00
+      if(t.includes(",")){
+        t=t.replace(/\./g,"").replace(",",".");
+      }else{
+        // evita interpretar 42.000 como 42 quando a origem é moeda pt-BR
+        const dots=(t.match(/\./g)||[]).length;
+        if(dots===1 && /^-?\d{1,3}\.\d{3}$/.test(t))t=t.replace(".","");
+        else if(dots>1)t=t.replace(/\./g,"");
+      }
+      const n=Number(t);
+      return Number.isFinite(n)?n:0;
+    };
+
+    const numberValue=v=>{
+      if(typeof v==="number" && Number.isFinite(v))return v;
+      let t=String(v??"").trim().replace(/\s/g,"");
+      if(!t)return 0;
+      if(t.includes(","))t=t.replace(/\./g,"").replace(",",".");
+      const n=Number(t);
+      return Number.isFinite(n)?n:0;
+    };
+
+    const parsed=rows.map((r,i)=>{
+      const values=Object.values(r||{}).map(v=>normHeader(v));
+      const totalRow=values.some(v=>["total","total geral","somatorio","somatório"].includes(v));
+
+      const rawItem=pick(r,[
+        "item","codigo","código","cod","n","nº","numero","número"
+      ]);
+
+      const item=rawItem||i+1;
+
+      const descricao=pick(r,[
+        "descricao","descrição","atividade","servico","serviço",
+        "item descricao","item descrição","material","etapa"
+      ]);
+
+      const quantidade=numberValue(pick(r,[
+        "quantidade","qtde","qtd","quant","qde"
+      ]))||1;
+
+      let valorUnitario=money(pick(r,[
+        "valor unitario","valor unitário","unitario","unitário",
+        "valor un","valor und","valor unid","valor_unitario",
+        "preco unitario","preço unitário","preco un","preço un",
+        "vlr unitario","vlr unitário","vlr un","v unitario",
+        "valor","preco","preço"
+      ]));
+
+      const valorTotal=money(pick(r,[
+        "valor total","total","total item","total do item",
+        "valor item","valor do item","vlr total","subtotal",
+        "preco total","preço total"
+      ]));
+
+      // Se a planilha só traz TOTAL, calcula o unitário pela quantidade.
+      if(!valorUnitario && valorTotal){
+        valorUnitario=quantidade>0 ? valorTotal/quantidade : valorTotal;
+      }
+
+      // Linhas de somatório da própria planilha não são itens do contrato.
+      if(totalRow && !String(descricao||"").trim())return null;
+
+      return normalizeContractorItem({
+        item,
+        descricao,
+        quantidade,
+        valorUnitario
+      },i);
+    }).filter(x=>x && (x.descricao||x.quantidade||x.valorUnitario));
+
+    if(!parsed.length)throw new Error(
+      "Não reconheci as colunas da planilha. O ERP aceita Item, Descrição, Quantidade, Valor/Valor Unitário ou Valor Total."
+    );
+    contractorItems=parsed;
+    contractorItems.forEach((x,i)=>x.item=String(i+1));
+    renderContractorItems();
+
+    const contractValue=contractorContractValue();
+    const itemsTotal=contractorItemsValue();
+    const difference=contractValue-itemsTotal;
+    const closes=contractValue>0 && Math.abs(difference)<0.01;
+
+    if(!contractValue){
+      showToast(
+        "warning",
+        "Excel importado",
+        `${contractorItems.length} item(ns) carregado(s), totalizando ${brl(itemsTotal)}. Informe o valor do contrato para fazer a conferência.`,
+        6500
+      );
+    }else if(closes){
+      showToast(
+        "success",
+        "Composição fechada",
+        `${contractorItems.length} item(ns) importado(s). Total dos itens ${brl(itemsTotal)} = valor do contrato ${brl(contractValue)}.`,
+        6500
+      );
+    }else{
+      showToast(
+        "warning",
+        "Composição não fecha",
+        `${contractorItems.length} item(ns) importado(s). Itens: ${brl(itemsTotal)} • Contrato: ${brl(contractValue)} • Diferença: ${brl(difference)}. O contrato não poderá ser finalizado enquanto a diferença não zerar.`,
+        8500
+      );
+    }
   }catch(err){console.error("[Empreiteiro Excel]",err);showToast("error","Falha ao importar Excel",err.message||"Não foi possível ler a planilha.");}
 }
 function bindContractorComposition(){
   document.getElementById("gTemplate")?.addEventListener("change",syncContractorMode);
+  document.getElementById("gObraEmpreiteiro")?.addEventListener("change",syncObraContratoInfo);
   document.getElementById("btnAddContractorItem")?.addEventListener("click",()=>addContractorItem());
   const input=document.getElementById("contractorExcelInput");document.getElementById("btnImportContractorExcel")?.addEventListener("click",()=>input?.click());
   if(input)input.onchange=async()=>{const f=input.files?.[0];await importContractorExcel(f);input.value="";};
   document.getElementById("gValor")?.addEventListener("input",()=>setTimeout(renderContractorSummary,0));
   syncContractorMode();
+}
+
+
+async function obrasRequest(action,payload={}){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    const res=await fetch(window.GESTAO_OBRAS_API,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body:JSON.stringify({action,...payload}),
+      cache:"no-store",
+      signal:controller.signal
+    });
+    const raw=await res.text();
+    let data={};
+    try{data=raw?JSON.parse(raw):{}}catch(_){throw new Error(`Resposta inválida da Gestão de Obras (HTTP ${res.status}).`)}
+    if(!res.ok || data.ok===false)throw new Error(data.error||`Gestão de Obras HTTP ${res.status}`);
+    return data;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+function obraLabel(o){
+  const code=String(o?.code||o?.id||"").trim();
+  const name=String(o?.name||"").trim();
+  return [code,name].filter(Boolean).join(" • ") || "Obra sem identificação";
+}
+
+function selectedObraContrato(){
+  const sel=document.getElementById("gObraEmpreiteiro");
+  if(!sel?.value)return null;
+  return obrasContrato.find(o=>String(o.id||o.code)===String(sel.value))||null;
+}
+
+function renderObrasContrato(selectedValue=""){
+  const sel=document.getElementById("gObraEmpreiteiro");
+  if(!sel)return;
+  const current=String(selectedValue||sel.value||"");
+  sel.innerHTML='<option value="">Selecione a obra...</option>'+
+    obrasContrato.map(o=>{
+      const val=String(o.id||o.code||"");
+      return `<option value="${esc(val)}">${esc(obraLabel(o))}</option>`;
+    }).join("");
+  if(current && [...sel.options].some(x=>x.value===current))sel.value=current;
+  syncObraContratoInfo();
+}
+
+function syncObraContratoInfo(){
+  const info=document.getElementById("gObraEmpreiteiroInfo");
+  if(!info)return;
+  const o=selectedObraContrato();
+  info.textContent=o
+    ? `${o.code||o.id||""} • ${o.name||"Obra"}${o.coordinator?` • Coordenador: ${o.coordinator}`:""}`
+    : "Selecione a obra onde o empreiteiro irá atuar.";
+}
+
+function normalizeObraOption(o){
+  const code=String(o?.id??o?.codigo??o?.code??o?.arquivo??"")
+    .replace(/^obra_/i,"").replace(/\.json$/i,"").trim();
+  const name=String(o?.nome??o?.obra??o?.name??o?.titulo??code).trim();
+  return {
+    ...o,
+    id:code,
+    code,
+    name,
+    coordinator:String(o?.coordenador??o?.coordinator??"").trim()
+  };
+}
+
+async function fetchCronList(url){
+  const r=await fetch(`${url}${url.includes("?")?"&":"?"}_=${Date.now()}`,{cache:"no-store"});
+  const text=await r.text();
+  if(!r.ok)throw new Error(text||`HTTP ${r.status}`);
+  const j=text.trim()?JSON.parse(text):{};
+  return Array.isArray(j?.data)?j.data:(Array.isArray(j?.obras)?j.obras:(Array.isArray(j)?j:[]));
+}
+
+async function loadObrasContrato(selectedValue=""){
+  const sel=document.getElementById("gObraEmpreiteiro");
+  if(sel)sel.innerHTML='<option value="">Carregando obras ativas...</option>';
+
+  try{
+    let raw=[];
+    try{
+      raw=await fetchCronList(window.CRON_LIST_PRIMARY);
+    }catch(primaryErr){
+      console.warn("[Contrato Empreiteiro] listar_obras_farol.php falhou; usando listar_obras.php",primaryErr);
+      raw=await fetchCronList(window.CRON_LIST_FALLBACK);
+    }
+
+    const seen=new Set();
+    obrasContrato=raw
+      .map(normalizeObraOption)
+      .filter(o=>{
+        const key=String(o.id||o.code||"").trim();
+        if(!key||key==="0"||seen.has(key))return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a,b)=>obraLabel(a).localeCompare(obraLabel(b),"pt-BR"));
+
+    if(!obrasContrato.length)throw new Error("Nenhuma obra ativa foi retornada pela lista oficial do Cronograma.");
+
+    renderObrasContrato(selectedValue);
+    return true;
+  }catch(err){
+    console.error("[Contrato Empreiteiro] Obras oficiais:",err);
+    obrasContrato=[];
+    if(sel)sel.innerHTML='<option value="">Não foi possível carregar as obras</option>';
+    showToast("error","Falha ao carregar obras",err.message||"Não foi possível consultar a lista oficial do Cronograma.",6000);
+    return false;
+  }
 }
 
 function companyHasRole(e,role){
@@ -3210,6 +4027,12 @@ function contractFormData(){
     templateId:document.getElementById("gTemplate")?.value||"contrato_padrao_impar",
     templateNome:(TEMPLATE_DEFS[document.getElementById("gTemplate")?.value||"contrato_padrao_impar"]||TEMPLATE_DEFS.contrato_padrao_impar).nome,
     tipoContrato:isContractorTemplate()?"empreiteiro":"padrao",
+    obra:isContractorTemplate() && selectedObraContrato()?{
+      id:selectedObraContrato().id||selectedObraContrato().code||"",
+      code:selectedObraContrato().code||selectedObraContrato().id||"",
+      name:selectedObraContrato().name||"",
+      coordinator:selectedObraContrato().coordinator||""
+    }:null,
     composicaoMedicao:isContractorTemplate()?compositionPayload():[],
     codigo:document.getElementById("gCodigo")?.value.trim()||"",
     servico:document.getElementById("gServico")?.value.trim()||"",
@@ -3399,12 +4222,18 @@ async function abrirContratoSalvo(id){
     const f=d.form||{};
     const templateId=f.templateId||"contrato_padrao_impar";
     const templateSel=document.getElementById("gTemplate");if(templateSel)templateSel.value=templateId;
+    if(templateId==="contrato_empreiteiro"){
+      const savedObra=f.obra||{};
+      const savedObraValue=String(savedObra.id||savedObra.code||"");
+      await loadObrasContrato(savedObraValue);
+    }
     contractorItems=Array.isArray(f.composicaoMedicao)?f.composicaoMedicao.map((x,i)=>normalizeContractorItem(x,i)):[];
     currentTemplateId=templateId;templateHTML=await ensureTemplateLoaded(templateId,{silent:true});
     const ctIdx=addOrSelectCompany(f.contratante||{});
     const cdIdx=addOrSelectCompany(f.contratada||{});
     fillSelects();
     const contractorBlock=document.getElementById("contractorComposition");if(contractorBlock)contractorBlock.hidden=templateId!=="contrato_empreiteiro";
+    const obraWrap=document.getElementById("gObraEmpreiteiroWrap");if(obraWrap)obraWrap.hidden=templateId!=="contrato_empreiteiro";
     if(templateId==="contrato_empreiteiro")renderContractorItems();
 
     document.getElementById("gContratante").value=String(ctIdx);
@@ -3502,6 +4331,8 @@ function iniciarNovoContrato(){
   setPrazoTipo("corridos");
   const templateSel=document.getElementById("gTemplate");if(templateSel)templateSel.value="contrato_padrao_impar";
   contractorItems=[];currentTemplateId="contrato_padrao_impar";templateHTML=templateStore.contrato_padrao_impar||ORIGINAL;
+  const obraSel=document.getElementById("gObraEmpreiteiro");if(obraSel)obraSel.value="";
+  const obraWrap=document.getElementById("gObraEmpreiteiroWrap");if(obraWrap)obraWrap.hidden=true;
   const contractorBlock=document.getElementById("contractorComposition");if(contractorBlock)contractorBlock.hidden=true;
   document.getElementById("docWizardForm").style.display="block";
   document.getElementById("docPreviewStage").style.display="none";
@@ -3728,7 +4559,7 @@ document.getElementById("docPdfModal")?.addEventListener("click",e=>{
 
 [
   ["renderEmp",()=>renderEmp()], ["renderVars",()=>renderVars()], ["fillSelects",()=>fillSelects()],
-  ["bindEmpresaMasks",()=>bindEmpresaMasks()], ["bindGerarDocumento",()=>bindGerarDocumentoV04()],
+  ["bindEmpresaMasks",()=>bindEmpresaMasks()], ["bindReceitaPdf",()=>bindEmpresaReceitaPdf()], ["bindGerarDocumento",()=>bindGerarDocumentoV04()],
   ["bindEditor",()=>bindEditorInteractions()], ["bindAssinaturas",()=>bindAssinaturaPartes()],
   ["bindPreview",()=>bindPreviewToolbar()], ["bindBackend",()=>bindBackendDocumentos()], ["bindEmpreiteiro",()=>bindContractorComposition()], ["bindLegado",()=>bindLegacyImport()]
 ].forEach(([nome,fn])=>{try{fn()}catch(e){console.error(`[Gestão Documental] ${nome}`,e);setTimeout(()=>showToast("error","Falha ao iniciar módulo",`${nome}: ${e.message}`,6500),0)}});
@@ -3893,6 +4724,15 @@ async function gerarPreviaFinal(){
   if(moneyNumberBR(valor.value)<=0){markFieldError(valor);showToast("warning","Valor inválido","Informe um valor maior que zero.");valor.focus();return}
   const sigChecks=[["gAssinaturaContratanteTipo","gGovContratanteNome","gGovContratanteCpf","Contratante"],["gAssinaturaContratadaTipo","gGovContratadaNome","gGovContratadaCpf","Contratada"]];
   for(const [tipoId,nomeId,cpfId,label] of sigChecks){if(document.getElementById(tipoId)?.value==="govbr"){const nome=document.getElementById(nomeId),cpf=document.getElementById(cpfId);if(!nome?.value.trim()){markFieldError(nome);showToast("warning","Assinatura incompleta",`Informe o responsável Gov.br da ${label}.`);nome?.focus();return}if(!isValidCPF(cpf?.value||"")){markFieldError(cpf);showToast("warning","CPF inválido",`Revise o CPF do responsável da ${label}.`);cpf?.focus();return}}}
+  if(isContractorTemplate()){
+    const obraSel=document.getElementById("gObraEmpreiteiro");
+    if(!obraSel?.value){
+      markFieldError(obraSel);
+      showToast("warning","Obra obrigatória","Selecione a obra onde o empreiteiro irá atuar.");
+      obraSel?.focus();
+      return;
+    }
+  }
   if(!contractorCompositionValid(true))return;
   await refreshTemplateFromBackend(document.getElementById("gTemplate")?.value||"contrato_padrao_impar");
   const contratante=empresas[+document.getElementById("gContratante").value]||{};
