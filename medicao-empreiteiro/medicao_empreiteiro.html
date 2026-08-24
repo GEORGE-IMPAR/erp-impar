@@ -54,18 +54,45 @@ async function post(url,payload){const r=await fetch(url,{method:"POST",headers:
 function contractItems(c){return c?.form?.composicaoMedicao||c?.form?.contractorItems||c?.composicaoMedicao||[]}
 async function loadContracts(){
   const j=await post(DOC_API,{action:"document_list"});
-  const docs=j.documents||j.data||[];
+  const docs=Array.isArray(j.documents)?j.documents:(Array.isArray(j.data)?j.data:[]);
+
+  // document_list da Gestão Documental retorna SOMENTE o resumo do contrato.
+  // O formulário completo (tipoContrato, obra e composicaoMedicao) vem em document_get.
   contracts=docs.filter(x=>{
-    const t=String(x.form?.tipoContrato||x.tipoContrato||x.form?.template_id||x.template_id||"").toLowerCase();
-    return t.includes("empreiteiro") || contractItems(x).length>0;
+    const template=String(x.templateNome||x.template_name||x.templateId||"").toLowerCase();
+    return template.includes("empreiteiro");
   });
-  $("contracts").innerHTML=contracts.length?contracts.map((c,i)=>`<div class="contract" data-i="${i}"><b>${esc(c.form?.obra?.name||c.form?.obra?.nome||c.form?.codigo||c.id)}</b><small>${esc(c.form?.contratada?.nome||c.form?.contratado?.nome||"Empreiteiro")} • ${esc(c.form?.codigo||c.id||"")}</small></div>`).join(""):'<div class="empty">Nenhum contrato de empreiteiro encontrado.</div>';
+
+  $("contracts").innerHTML=contracts.length?contracts.map((c,i)=>`
+    <div class="contract" data-i="${i}">
+      <b>${esc(c.codigo||c.id||"Contrato de Empreiteiro")}</b>
+      <small>${esc(c.contratada||"Empreiteiro")} • ${esc(c.servico||c.templateNome||"Contrato de Empreiteiro")}</small>
+    </div>`).join(""):'<div class="empty">Nenhum contrato de empreiteiro encontrado.</div>';
+
   $("contracts").onclick=e=>{const x=e.target.closest("[data-i]");if(x)openContract(Number(x.dataset.i))}
 }
+
 async function openContract(i){
-  selected=contracts[i];
+  const summary=contracts[i];
   document.querySelectorAll(".contract").forEach((x,n)=>x.classList.toggle("active",n===i));
-  const j=await post(MED_API,{action:"list",contract_id:selected.id||selected.form?.codigo});
+
+  // Busca o contrato COMPLETO pelo mesmo endpoint usado pela Gestão Documental.
+  const detail=await post(DOC_API,{action:"document_get",id:summary.id});
+  const full=detail.document;
+  if(!full)throw new Error("Contrato de empreiteiro não encontrado.");
+
+  selected=full;
+
+  // Validação defensiva: aceita o template ou o tipo gravado no formulário.
+  const f=selected.form||{};
+  const isContractor=
+    String(f.tipoContrato||"").toLowerCase()==="empreiteiro" ||
+    String(f.templateId||"").toLowerCase()==="contrato_empreiteiro" ||
+    String(summary.templateNome||"").toLowerCase().includes("empreiteiro");
+  if(!isContractor)throw new Error("O documento selecionado não é um contrato de empreiteiro.");
+
+  const contractId=selected.id||f.codigo||summary.id;
+  const j=await post(MED_API,{action:"list",contract_id:contractId});
   measurements=j.medicoes||[];
   render();
 }
