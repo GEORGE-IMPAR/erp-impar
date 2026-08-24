@@ -13,6 +13,9 @@
 .table{overflow:auto;border:1px solid var(--line);border-radius:10px}table{width:100%;border-collapse:collapse;min-width:760px}th{background:#eaf1f5;color:#526b7b;font-size:8px;padding:8px;text-align:left}td{padding:8px;border-top:1px solid #e8eff3;font-size:9px}.note{margin-top:12px}.note label{display:block;font-size:9px;color:var(--muted);font-weight:950;margin-bottom:5px}.note textarea{width:100%;min-height:82px;resize:vertical;border:1px solid #c8d8e1;border-radius:9px;padding:9px;font:inherit}
 .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:13px}.btn{height:41px;border-radius:9px;padding:0 15px;font-size:10px;font-weight:950;cursor:pointer}.reject{background:#fff2f3;color:#b33b48;border:1px solid #efc0c6}.approve{background:var(--g);color:#fff;border:1px solid var(--g)}.pay{background:#1683c4;color:#fff;border:1px solid #1683c4}.btn:disabled{opacity:.45}
 .state{padding:42px;text-align:center;color:var(--muted)}.state h2{color:var(--g2)}.error{color:#b33b48}.timeline{margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}.timeline h3{margin:0;padding:9px 11px;background:#f8fbfc;color:var(--g2);font-size:10px}.event{display:grid;grid-template-columns:160px 1fr;gap:9px;padding:8px 11px;border-top:1px solid #edf2f5;font-size:9px}.event time{color:var(--muted)}
+
+.proc{position:fixed;inset:0;z-index:99;display:none;align-items:center;justify-content:center;background:rgba(14,40,53,.52);backdrop-filter:blur(7px);padding:18px}.proc.show{display:flex}.proc-card{width:min(480px,94vw);background:#fff;border-radius:16px;padding:22px;box-shadow:0 24px 70px rgba(12,39,53,.28);text-align:center}.proc-icon{width:60px;height:60px;margin:0 auto 12px;border-radius:18px;background:#eaf8f1;color:#087451;display:grid;place-items:center;font-size:26px}.proc h2{margin:0;font-size:17px;color:#173247}.proc p{margin:6px 0 0;color:#6f8798;font-size:10px}.proc-progress{height:9px;background:#e8eff2;border-radius:999px;overflow:hidden;margin:18px 0 7px}.proc-bar{height:100%;width:0;background:linear-gradient(90deg,#14b878,#0f8c63);transition:width .35s ease}.proc-pct{font-size:8px;color:#718694;font-weight:950}
+
 @media(max-width:760px){.wrap{padding:0}.card{width:100%;min-height:100vh;border-radius:0}.meta{grid-template-columns:1fr 1fr}.head{align-items:flex-start}.actions{flex-direction:column}.btn{width:100%}}
 </style></head>
 <body><div class="wrap"><main class="card"><header class="head"><div><small>ERP ÍMPAR • WORKFLOW</small><h1 id="title">Aprovação de Medição</h1></div><span class="badge" id="stage">CARREGANDO</span></header><section class="body" id="body"><div class="state">Carregando medição...</div></section></main></div>
@@ -29,18 +32,35 @@ function render(m,etapa){
   const items=m.itens||[];
   $("body").innerHTML=`<div class="meta"><div><small>OBRA</small><b>${esc(m.obra?.name||m.obra?.nome||"—")}</b></div><div><small>EMPREITEIRO</small><b>${esc(m.empreiteiro?.nome||"—")}</b></div><div><small>CONTRATO</small><b>${esc(m.contract_code||m.contract_id||"—")}</b></div><div><small>STATUS</small><b>${esc(m.status||"—")}</b></div></div>
   <div class="total"><span>VALOR DESTA MEDIÇÃO</span><b>${brl(m.valor_total)}</b></div>
-  <div class="table"><table><thead><tr><th>Item</th><th>Descrição</th><th>% anterior</th><th>% desta medição</th><th>% acumulado</th><th>Valor</th></tr></thead><tbody>${items.map(x=>`<tr><td>${esc(x.item)}</td><td>${esc(x.descricao)}</td><td>${Number(x.percentual_anterior||0).toFixed(2)}%</td><td><b>${Number(x.percentual_medicao||0).toFixed(2)}%</b></td><td>${Number(x.percentual_acumulado||0).toFixed(2)}%</td><td>${brl(x.valor_medicao)}</td></tr>`).join("")}</tbody></table></div>
+  <div class="table"><table><thead><tr><th>Item</th><th>Descrição</th><th>% anterior</th><th>% desta medição</th><th>% acumulado</th><th>Valor</th><th>Comprovação</th></tr></thead><tbody>${items.map(x=>`<tr><td>${esc(x.item)}</td><td>${esc(x.descricao)}</td><td>${Number(x.percentual_anterior||0).toFixed(2)}%</td><td><b>${Number(x.percentual_medicao||0).toFixed(2)}%</b></td><td>${Number(x.percentual_acumulado||0).toFixed(2)}%</td><td>${brl(x.valor_medicao)}</td><td>${esc(x.comprovacao||"—")}</td></tr>`).join("")}</tbody></table></div>
+  ${(m.anexos||[]).length?`<div style="margin-top:12px;border:1px solid #d5e1e7;border-radius:10px;overflow:hidden"><div style="padding:9px 11px;background:#f8fbfc;color:#087451;font-size:10px;font-weight:950">Evidências anexadas • ${(m.anexos||[]).length}</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;padding:10px">${m.anexos.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener" style="display:block;text-decoration:none;color:#173247;border:1px solid #dce6eb;border-radius:9px;padding:9px;background:#fff"><b style="display:block;font-size:9px">${String(x.mime||"").startsWith("video/")?"🎬":"📷"} ${esc(x.nome_original||"Evidência")}</b><small style="font-size:8px;color:#6f8798">Abrir evidência</small></a>`).join("")}</div></div>`:""}
   <div class="note"><label>${diretor?"OBSERVAÇÃO / MOTIVO DA REJEIÇÃO":"OBSERVAÇÃO DO PAGAMENTO (OPCIONAL)"}</label><textarea id="obs" placeholder="${diretor?"Preencha se houver alguma observação. Para rejeitar, informe o motivo.":"Ex.: pago via banco, lote financeiro, observação interna..."}"></textarea></div>
   <div class="actions">${diretor?'<button class="btn reject" id="reject">REJEITAR</button><button class="btn approve" id="approve">APROVAR MEDIÇÃO</button>':'<button class="btn pay" id="pay">CONFIRMAR PAGAMENTO</button>'}</div>
   <section class="timeline"><h3>Rastreabilidade</h3>${(m.historico||[]).slice().reverse().map(e=>`<div class="event"><time>${esc(dt(e.data))}</time><b>${esc(e.evento||e.event||"EVENTO")}</b></div>`).join("")||'<div class="event"><time>—</time><span>Sem eventos registrados.</span></div>'}</section>`;
   if(diretor){$("approve").onclick=()=>decide("aprovar");$("reject").onclick=()=>decide("rejeitar")}else{$("pay").onclick=()=>decide("pagar")}
 }
+function progress(p,msg,title="Processando"){document.getElementById("proc").classList.add("show");document.getElementById("procBar").style.width=p+"%";document.getElementById("procPct").textContent=Math.round(p)+"%";document.getElementById("procMsg").textContent=msg;document.getElementById("procTitle").textContent=title}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function leaveApproval(){await sleep(1100);try{window.close()}catch{}await sleep(350);if(document.visibilityState!=="hidden"){if(history.length>1)history.back();else location.replace("https://www.erpimpar.com.br/menu_novo.html")}}
 async function decide(decision){
   const obs=$("obs")?.value.trim()||"";
   if(decision==="rejeitar"&&!obs){alert("Informe o motivo da rejeição.");return}
   document.querySelectorAll(".btn").forEach(b=>b.disabled=true);
-  try{const j=await post({action:"approval_decide",token,decision,observacao:obs});$("body").innerHTML=`<div class="state"><h2>${esc(j.message||"Operação registrada.")}</h2><p>Esta ação ficou registrada no histórico do ERP ÍMPAR.</p></div>`}
-  catch(e){document.querySelectorAll(".btn").forEach(b=>b.disabled=false);alert(e.message)}
+  const etapaAtual=document.getElementById("stage").textContent.includes("FINANCEIRO")?"financeiro":"diretor";
+  if(decision==="aprovar"){progress(20,"Registrando aprovação do Diretor...","Aprovando medição");await sleep(220);progress(52,"Preparando encaminhamento ao Financeiro...","Aprovando medição")}
+  else if(decision==="rejeitar"){progress(28,"Registrando reprovação e encerrando o fluxo...","Reprovando medição")}
+  else{progress(30,"Registrando pagamento no ERP ÍMPAR...","Confirmando pagamento")}
+  try{
+    const j=await post({action:"approval_decide",token,decision,observacao:obs});
+    if(decision==="aprovar"){progress(78,"Enviando e-mail ao Financeiro...","Aprovação registrada");await sleep(300);progress(100,"E-mail enviado. A tela será encerrada.","Fluxo encaminhado")}
+    else if(decision==="rejeitar"){progress(100,"Reprovação registrada. A tela será encerrada.","Fluxo encerrado")}
+    else{progress(100,"Pagamento registrado. A tela será encerrada.","Ciclo concluído")}
+    await leaveApproval();
+  }catch(e){
+    document.getElementById("proc").classList.remove("show");
+    document.querySelectorAll(".btn").forEach(b=>b.disabled=false);
+    alert(e.message);
+  }
 }
 async function load(){
   if(!token){$("body").innerHTML='<div class="state error"><h2>Link inválido</h2><p>O token de aprovação não foi informado.</p></div>';return}
@@ -48,4 +68,4 @@ async function load(){
   catch(e){$("body").innerHTML=`<div class="state error"><h2>Não foi possível abrir</h2><p>${esc(e.message)}</p></div>`}
 }
 load();
-</script></body></html>
+</script><div class="proc" id="proc"><div class="proc-card"><div class="proc-icon">⚙</div><h2 id="procTitle">Processando</h2><p id="procMsg">Registrando decisão...</p><div class="proc-progress"><div class="proc-bar" id="procBar"></div></div><div class="proc-pct" id="procPct">0%</div></div></div></body></html>
