@@ -514,6 +514,32 @@ input:focus,select:focus,textarea:focus{
 .audit-report-event-info td:first-child{border-left:4px solid #168cca}
 </style>
 
+
+<style id="vidaObraPdfShareOverlayV14">
+#previewWrap{position:relative!important}
+#pdfShareBtn{
+  display:none;
+  position:absolute;
+  z-index:8;
+  top:20px;
+  right:108px;
+  height:30px;
+  padding:0 10px;
+  border:0;
+  border-radius:5px;
+  background:#3c4043;
+  color:#fff;
+  font:800 11px system-ui,-apple-system,"Segoe UI",sans-serif;
+  cursor:pointer;
+  box-shadow:0 1px 2px rgba(0,0,0,.25);
+}
+#pdfShareBtn:hover{background:#4b5054}
+#docOv.pdf-native-mode #pdfShareBtn{display:flex;align-items:center;gap:5px}
+@media(max-width:900px){
+  #pdfShareBtn{right:92px;top:18px;padding:0 8px;font-size:10px}
+}
+</style>
+
 </head><body>
 <div class="app">
 <section class="p top"><div><h1>VIDA DA OBRA</h1><p>Dossiê digital • Kickoff • Cronograma • Documentos • Timeline end-to-end</p></div><div class="sp"></div><button class="btn" id="refresh">↻ Atualizar</button><button class="btn g" id="new">🚀 Iniciar obra</button></section>
@@ -596,6 +622,7 @@ input:focus,select:focus,textarea:focus{
     </div>
     <div class="preview" id="previewWrap">
       <div class="paper" id="paper"></div>
+      <button id="pdfShareBtn" type="button" title="Compartilhar">↗ COMPARTILHAR</button>
       <iframe id="pdfFrame" src="about:blank" title="Visualizador integrado" style="display:none;width:100%;height:72vh;border:0;border-radius:8px;background:#fff"></iframe>
     </div>
   </div>
@@ -780,7 +807,7 @@ function showMaterialsSummary(){
  <table class="mat-summary-table"><thead><tr><th>Material</th><th>Total solicitado</th><th>UND</th><th>Lançamentos</th><th>Datas</th><th>Solicitações</th></tr></thead><tbody>${rows||'<tr><td colspan="6">Nenhum material solicitado para esta obra.</td></tr>'}</tbody></table>`;
  document.querySelectorAll('#materialsList .mat-request').forEach(x=>x.classList.remove('on'));
 }
-function printMaterialsView(){
+async function printMaterialsView(){
   if(!sel)return;
   const mode=$("materialsDetail").dataset.mode||"request";
   const body=$("materialsDetail").innerHTML;
@@ -794,7 +821,11 @@ function printMaterialsView(){
       <p>${esc(sel.code||"")} • ${esc(sel.name||"")}</p>
     </div>${body}`;
   $("materialsOv").classList.remove("on");
-  openInternalReport(title,report,file);
+  try{
+    await openHtmlAsPdfViewer(title,report,file);
+  }catch(e){
+    toast("error","Falha ao abrir relatório",e.message||"Não foi possível gerar o PDF.");
+  }
 }
 async function shareMaterialsView(){
  const mode=$('materialsDetail').dataset.mode||'request';
@@ -887,21 +918,10 @@ async function openAudit(){
   if(!sel)return;
   const title=`Auditoria • ${sel.code||""}`;
   const file=`Auditoria_${sel.code||"obra"}`;
-  openInternalReport(
-    title,
-    `<div class="internal-report-head"><small>ERP ÍMPAR • VIDA DA OBRA</small><h1>Auditoria da Obra</h1><p>${esc(sel.code||"")} • ${esc(sel.name||"")}</p></div><div style="padding:34px;text-align:center;color:#78909e"><div style="font-size:28px">🧾</div><b>Carregando auditoria...</b></div>`,
-    file
-  );
-  await nextPaint();
   try{
     const events=await fetchAuditEvents();
-    const html=auditReportHtml(events);
-    docHtml=html;
-    $("paper").innerHTML=html;
+    await openHtmlAsPdfViewer(title,auditReportHtml(events),file);
   }catch(e){
-    const html=`<div class="internal-report-head"><small>ERP ÍMPAR • VIDA DA OBRA</small><h1>Auditoria da Obra</h1><p>${esc(sel.code||"")} • ${esc(sel.name||"")}</p></div><div style="padding:34px;text-align:center;color:#b13d4b"><b>Não foi possível carregar a auditoria.</b><div style="margin-top:6px;font-size:9px">${esc(e.message||"Falha de comunicação.")}</div></div>`;
-    docHtml=html;
-    $("paper").innerHTML=html;
     toast("error","Falha ao abrir auditoria",e.message||"Não foi possível carregar o relatório.");
   }
 }
@@ -1119,7 +1139,7 @@ async function openCommercialSource(){
 
     if(window.__contractPdfUrl)URL.revokeObjectURL(window.__contractPdfUrl);
     window.__contractPdfUrl=URL.createObjectURL(blob);
-    $("pdfFrame").src=window.__contractPdfUrl;
+    $("pdfFrame").src=window.__contractPdfUrl;setPdfNativeMode(true);
   }catch(e){
     console.error("[Origem Comercial]",e);
     toast("error","Falha ao abrir contrato",e.message||"Não foi possível gerar a visualização PDF.");
@@ -1205,15 +1225,126 @@ function scheduleIdFromFile(){
   const f=String(sel?.scheduleFile||sel?.documents?.schedule?.file||"");
   return f.replace(/^obra_/,"").replace(/\.json$/i,"");
 }
+
+let __reportPdfUrl=null;
+let __reportPdfBlob=null;
+let __reportPdfName="";
+
+function revokeReportPdf(){
+  if(__reportPdfUrl){
+    try{URL.revokeObjectURL(__reportPdfUrl)}catch(_){}
+    __reportPdfUrl=null;
+  }
+  __reportPdfBlob=null;
+  __reportPdfName="";
+}
+
+function setPdfNativeMode(on=true){
+  $("docOv").classList.toggle("pdf-native-mode",!!on);
+}
+
+async function openHtmlAsPdfViewer(title,html,filename,options={}){
+  revokeReportPdf();
+
+  const ov=$("docOv"), frame=$("pdfFrame"), paper=$("paper");
+  ov.classList.remove("full-viewer","report-mode");
+  setPdfNativeMode(false);
+
+  $("docDialog").classList.add("viewer-integrado");
+  $("dtitle").textContent=title;
+  $("pdf").style.display="none";
+  $("viewerFullBtn").style.display="none";
+  paper.style.display="block";
+  frame.style.display="none";
+  frame.src="about:blank";
+
+  paper.className="paper";
+  paper.innerHTML='<div style="min-height:520px;display:grid;place-items:center;text-align:center;color:#718895"><div><div style="font-size:28px">📄</div><b>Preparando relatório...</b></div></div>';
+  ov.classList.add("on");
+  void ov.offsetHeight;
+  await nextPaint();
+
+  const temp=document.createElement("div");
+  temp.style.cssText="width:794px;background:#fff;padding:42px 46px;font:13px/1.45 Arial;color:#111;";
+  temp.innerHTML=html;
+  document.body.appendChild(temp);
+
+  try{
+    const worker=html2pdf().set({
+      margin:options.margin||[8,8,8,8],
+      filename:(filename||title.replace(/\s+/g,"_"))+".pdf",
+      image:{type:"jpeg",quality:.98},
+      html2canvas:{scale:2,useCORS:true},
+      jsPDF:{unit:"mm",format:"a4",orientation:options.orientation||"portrait"},
+      pagebreak:{mode:["css","legacy"],avoid:["tr","table"]}
+    }).from(temp).toPdf();
+
+    const pdf=await worker.get("pdf");
+    const blob=pdf.output("blob");
+    __reportPdfBlob=blob;
+    __reportPdfName=(filename||title.replace(/\s+/g,"_"))+".pdf";
+    __reportPdfUrl=URL.createObjectURL(blob);
+
+    paper.style.display="none";
+    frame.style.display="block";
+    frame.src=__reportPdfUrl;
+    $("viewerFullBtn").style.display="";
+    $("viewerFullBtn").textContent="TELA CHEIA";
+    setPdfNativeMode(true);
+  }catch(e){
+    paper.innerHTML='<div style="padding:45px;text-align:center;color:#b13d4b"><b>Não foi possível gerar o relatório.</b><div style="margin-top:6px;font-size:10px">'+esc(e.message||"Falha ao gerar PDF.")+'</div></div>';
+    throw e;
+  }finally{
+    temp.remove();
+  }
+}
+
+async function shareCurrentPdf(){
+  try{
+    if(!__reportPdfBlob){
+      const src=$("pdfFrame")?.src||"";
+      if(src && !src.startsWith("about:") && !src.startsWith("blob:")){
+        if(navigator.share){
+          await navigator.share({title:$("dtitle")?.textContent||"Documento",text:"Documento da Vida da Obra",url:src});
+          return;
+        }
+        await navigator.clipboard?.writeText(src);
+        toast("success","Link copiado","O endereço do documento foi copiado.");
+        return;
+      }
+      return toast("warning","Compartilhamento indisponível","Este documento não possui arquivo compartilhável.");
+    }
+
+    const file=new File([__reportPdfBlob],__reportPdfName||"relatorio.pdf",{type:"application/pdf"});
+    if(navigator.canShare?.({files:[file]}) && navigator.share){
+      await navigator.share({files:[file],title:$("dtitle")?.textContent||"Relatório"});
+      return;
+    }
+    if(navigator.share){
+      await navigator.share({title:$("dtitle")?.textContent||"Relatório",text:"Relatório ERP ÍMPAR"});
+      return;
+    }
+    const a=document.createElement("a");
+    a.href=__reportPdfUrl;
+    a.download=__reportPdfName||"relatorio.pdf";
+    a.click();
+  }catch(e){
+    if(e?.name!=="AbortError")toast("warning","Compartilhamento indisponível","Não foi possível compartilhar este PDF neste navegador.");
+  }
+}
+
 function openIntegratedViewer(title,url){
+  revokeReportPdf();
   $("dtitle").textContent=title;
   $("pdf").style.display="none";
   $("viewerFullBtn").style.display="";
+  $("viewerFullBtn").textContent="TELA CHEIA";
   $("paper").style.display="none";
   $("pdfFrame").style.display="block";
   $("pdfFrame").src=url;
   $("docDialog").classList.add("viewer-integrado");
   $("docOv").classList.add("on");
+  setPdfNativeMode(true);
 }
 function openSchedule(){
   const file=sel?.scheduleFile||sel?.documents?.schedule?.file;
@@ -1237,23 +1368,18 @@ async function openDoc(k,pdf=false){
   if(k==="contract"){openCommercialSource();return}
   if(k==="executive"){await openExecutive();return}
 
-  $("docDialog").classList.remove("viewer-integrado");
-  $("docOv").classList.remove("full-viewer");
-  $("viewerFullBtn").style.display="none";
-  $("pdf").style.display="";
-  $("pdfFrame").style.display="none";
-  $("pdfFrame").src="about:blank";
-  $("paper").style.display="";
-  docHtml=d.html||"";
-  docName=`${sel.code}_${d.title.replace(/\s+/g,"_")}`;
-  $("dtitle").textContent=d.title;
-  $("paper").className="paper";
-  $("paper").innerHTML=docHtml;
-  $("docOv").classList.add("on");
-  if(pdf)setTimeout(savePdf,180)
+  const html=d.html||"";
+  if(!html)return toast("warning","Documento indisponível","Este documento não possui conteúdo para visualização.");
+
+  const filename=`${sel.code}_${d.title.replace(/\s+/g,"_")}`;
+  try{
+    await openHtmlAsPdfViewer(d.title,html,filename);
+  }catch(e){
+    toast("error","Falha ao abrir documento",e.message||"Não foi possível gerar o PDF.");
+  }
 }
 function closeDoc(){
-  $("docOv").classList.remove("on","full-viewer","report-mode");
+  $("docOv").classList.remove("on","full-viewer","report-mode","pdf-native-mode");revokeReportPdf();
   $("docDialog").classList.remove("viewer-integrado");
   $("pdfFrame").src="about:blank";
   $("pdfFrame").style.display="none";
@@ -1294,8 +1420,8 @@ function savePdf(){
   }).from($("paper")).save()
 }
 
-window.openSchedule=openSchedule;window.openExecutive=openExecutive;window.openAttachedFile=openAttachedFile;window.openFolder=openFolder;window.closeFolder=closeFolder;window.deleteFile=deleteFile;window.openMaterials=openMaterials;window.closeMaterials=closeMaterials;window.selectMaterialRequest=selectMaterialRequest;window.showMaterialsSummary=showMaterialsSummary;window.printMaterialsView=printMaterialsView;window.shareMaterialsView=shareMaterialsView;window.openAudit=openAudit;window.closeAudit=closeAudit;window.loadAudit=loadAudit;
-$("pdf").onclick=savePdf;
+window.shareCurrentPdf=shareCurrentPdf;window.openSchedule=openSchedule;window.openExecutive=openExecutive;window.openAttachedFile=openAttachedFile;window.openFolder=openFolder;window.closeFolder=closeFolder;window.deleteFile=deleteFile;window.openMaterials=openMaterials;window.closeMaterials=closeMaterials;window.selectMaterialRequest=selectMaterialRequest;window.showMaterialsSummary=showMaterialsSummary;window.printMaterialsView=printMaterialsView;window.shareMaterialsView=shareMaterialsView;window.openAudit=openAudit;window.closeAudit=closeAudit;window.loadAudit=loadAudit;
+$("pdf").onclick=savePdf;$("pdfShareBtn").onclick=shareCurrentPdf;
 $("viewerFullBtn").onclick=()=>{
   $("docOv").classList.toggle("full-viewer");
   $("viewerFullBtn").textContent=$("docOv").classList.contains("full-viewer")?"RESTAURAR":"TELA CHEIA";
