@@ -1,4 +1,4 @@
-const CACHE_NAME = "erp-impar-mobile-v1.3-hotfix";
+const CACHE_NAME = "erp-impar-mobile-v1.4-executivo";
 const APP_SHELL = [
   "./",
   "./index.html",
