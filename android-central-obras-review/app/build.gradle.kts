@@ -1,7 +1,12 @@
-plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
 android {
     namespace = "br.com.erpimpar.centralobras"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "br.com.erpimpar.centralobras"
         minSdk = 24
@@ -9,6 +14,19 @@ android {
         versionCode = 1
         versionName = "1.0.0-review"
     }
-    buildTypes { release { isMinifyEnabled = false } }
-    kotlinOptions { jvmTarget = "17" }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+    }
 }
