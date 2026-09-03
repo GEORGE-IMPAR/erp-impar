@@ -1,227 +1,267 @@
 
 const CFG=window.GEORGE_CONFIG||{};
+const REALTIME_URL=CFG.REALTIME_SESSION_URL;
 const API=CFG.API_URL;
-const CHUNK_MS=Number(CFG.AUDIO_CHUNK_MS||6000);
 
-let sessionId=null;
-let stream=null;
-let recorder=null;
-let voiceActive=false;
-let speaking=false;
-let transcribeQueue=Promise.resolve();
-let rollingText='';
-let lastTrigger='';
-let typingEl=null;
+let pc=null, dc=null, micStream=null, remoteAudio=null;
+let voiceActive=false, sessionId=null, typingEl=null;
+let assistantBuffer="", assistantShown="";
+let inputDeltaByItem=new Map();
 
 const $=id=>document.getElementById(id);
-const chat=$('chat'), anchor=$('systemAnchor'), manual=$('manual');
-const btnMic=$('btnMic'), btnVoiceTop=$('btnVoiceTop'), listenStrip=$('listenStrip');
-const meetingText=$('meetingText'), btnFinish=$('btnFinish');
+const chat=$("chat"), anchor=$("typingAnchor"), manual=$("manual");
+const btnVoice=$("btnVoice"), btnMic=$("btnMic"), strip=$("meetingStrip"),
+      meetingStatus=$("meetingStatus"), btnFinish=$("btnFinish");
 
 function scrollDown(){requestAnimationFrame(()=>chat.scrollTop=chat.scrollHeight)}
 function addMessage(side,text,label){
-  const wrap=document.createElement('div');wrap.className='msg '+(side==='me'?'me':'george');
-  const b=document.createElement('div');b.className='bubble';
-  if(side==='george'){const w=document.createElement('div');w.className='who';w.textContent=label||'GEORGE';b.appendChild(w)}
-  const d=document.createElement('div');d.textContent=text;b.appendChild(d);wrap.appendChild(b);
-  chat.insertBefore(wrap,anchor);scrollDown();return wrap;
+  if(!text||!String(text).trim())return;
+  const w=document.createElement("div"); w.className="msg "+(side==="me"?"me":"george");
+  const b=document.createElement("div"); b.className="bubble";
+  if(side!=="me"){const who=document.createElement("div");who.className="who";who.textContent=label||"GEORGE";b.appendChild(who)}
+  const d=document.createElement("div"); d.textContent=String(text).trim(); b.appendChild(d); w.appendChild(b);
+  chat.insertBefore(w,anchor); scrollDown();
 }
-function system(text){
-  const d=document.createElement('div');d.className='system';d.textContent=text;chat.insertBefore(d,anchor);scrollDown();
-}
+function system(text){const d=document.createElement("div");d.className="system";d.textContent=text;chat.insertBefore(d,anchor);scrollDown()}
 function showTyping(){
   hideTyping();
-  const w=document.createElement('div');w.className='msg george';w.innerHTML='<div class="bubble"><div class="who">GEORGE</div><div class="typing"><i></i><i></i><i></i></div></div>';
+  const w=document.createElement("div");w.className="msg george";
+  w.innerHTML='<div class="bubble"><div class="who">GEORGE</div><div class="typing"><i></i><i></i><i></i></div></div>';
   chat.insertBefore(w,anchor);typingEl=w;scrollDown();
 }
 function hideTyping(){if(typingEl){typingEl.remove();typingEl=null}}
-function setVoiceUi(){
-  btnMic.classList.toggle('live',voiceActive);
-  btnVoiceTop.classList.toggle('off',!voiceActive);
-  listenStrip.classList.toggle('live',voiceActive);
-  meetingText.textContent=!sessionId?'Reunião ainda não iniciada':(voiceActive?'Modo voz ativo • escutando a reunião':'Reunião ativa • escuta pausada');
-  btnFinish.classList.toggle('hidden',!sessionId);
+function setUi(){
+  btnVoice.classList.toggle("off",!voiceActive);
+  btnMic.classList.toggle("live",voiceActive);
+  strip.classList.toggle("live",voiceActive);
+  meetingStatus.textContent=!sessionId?"Modo voz desligado":(voiceActive?"Modo reunião ativo • George está escutando":"Reunião ativa • microfone pausado");
+  btnFinish.classList.toggle("hidden",!sessionId);
 }
-async function apiJson(action,payload={}){
-  const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...payload}),cache:'no-store'});
-  const j=await r.json().catch(()=>({ok:false,error:'Resposta inválida do backend'}));
-  if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));return j;
+function normalize(s){return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()}
+function calledGeorge(s){
+  const n=normalize(s);
+  return /\b(george|jorge|jod|jody|georgie|giorge|djorge|jorji)\b/.test(n);
 }
-async function health(){
-  const j=await apiJson('health');
-  if(!j.key_configured)throw new Error('A chave da OpenAI ainda não foi configurada no backend.');
-  return j;
+async function api(action,payload={}){
+  const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...payload}),cache:"no-store"});
+  const j=await r.json().catch(()=>({ok:false,error:"Resposta inválida do backend"}));
+  if(!r.ok||!j.ok)throw new Error(j.error||("HTTP "+r.status)); return j;
 }
-async function startSession(){
-  if(sessionId)return;
-  await health();
-  const j=await apiJson('start');sessionId=j.session_id;system('Reunião iniciada');setVoiceUi();
+async function logTurn(role,text){
+  if(!sessionId||!text)return;
+  try{await api("log",{session_id:sessionId,role,text})}catch(e){console.warn("log",e)}
 }
-function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}
-function isWake(s){return /\b(george|jorge|jod|jody|georgie|giorge|djorge|jorji)\b/.test(norm(s))}
-function isOpening(s){
-  const n=norm(s);
-  return isWake(n)&&(
-    /(apresent|explica|conta).*(rafa|rafael)/.test(n)||
-    /(rafa|rafael).*(discuss|ideia|erp|impar)/.test(n)||
-    /(apresent|explica).*(discuss|erp|impar)/.test(n)
-  );
+function sendEvent(event){
+  if(dc?.readyState==="open")dc.send(JSON.stringify(event));
 }
-function pickMime(){
-  const opts=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
-  return opts.find(x=>window.MediaRecorder&&MediaRecorder.isTypeSupported(x))||'';
+function requestResponse(){
+  showTyping();
+  assistantBuffer="";
+  sendEvent({type:"response.create"});
 }
-async function transcribeBlob(blob){
-  if(!sessionId||blob.size<1000)return '';
-  const fd=new FormData();
-  fd.append('action','transcribe');
-  fd.append('session_id',sessionId);
-  fd.append('audio',blob,'meeting.'+(blob.type.includes('mp4')?'mp4':'webm'));
-  const r=await fetch(API,{method:'POST',body:fd,cache:'no-store'});
-  const j=await r.json().catch(()=>({ok:false,error:'Resposta inválida na transcrição'}));
-  if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
-  return String(j.text||'').trim();
-}
-async function processTranscript(text){
-  if(!text)return;
-  addMessage('me',text);
-  rollingText=(rollingText+' '+text).slice(-1200);
-  const candidate=rollingText.trim();
-
-  if(isOpening(candidate) && lastTrigger!==candidate){
-    lastTrigger=candidate;rollingText='';
-    await presentOpening();
-    return;
-  }
-  if(isWake(text) && lastTrigger!==text){
-    lastTrigger=text;rollingText='';
-    await askGeorge(text,false);
-  }
-}
-async function requestMic(){
-  if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este navegador não oferece captura de microfone.');
-  try{
-    return await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
-      video:false
-    });
-  }catch(e){
-    if(e?.name==='NotAllowedError'||e?.name==='SecurityError'){
-      throw new Error('Microfone bloqueado. No Chrome, abra as permissões deste site e marque Microfone = Permitir.');
-    }
-    throw new Error('Não consegui abrir o microfone: '+(e?.message||e?.name||'erro'));
-  }
-}
-async function startVoice(){
-  if(voiceActive)return;
-  try{
-    await startSession();
-    stream=await requestMic();
-    const mime=pickMime();
-    recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
-    recorder.ondataavailable=e=>{
-      if(!voiceActive||speaking||!e.data||e.data.size<1000)return;
-      const blob=e.data;
-      transcribeQueue=transcribeQueue.then(async()=>{
-        try{
-          const text=await transcribeBlob(blob);
-          await processTranscript(text);
-        }catch(err){
-          system('Áudio: '+err.message);
-        }
-      });
-    };
-    recorder.onerror=e=>system('Gravação: '+(e.error?.message||'erro'));
-    recorder.start(CHUNK_MS);
-    voiceActive=true;setVoiceUi();
-  }catch(e){
-    system(e.message);
-    voiceActive=false;setVoiceUi();
-  }
-}
-function stopTracks(){try{stream?.getTracks().forEach(t=>t.stop())}catch(e){}stream=null}
-async function pauseVoice(){
-  voiceActive=false;
-  try{if(recorder&&recorder.state!=='inactive')recorder.stop()}catch(e){}
-  recorder=null;stopTracks();setVoiceUi();
-}
-async function resumeVoice(){await startVoice()}
-function chooseVoice(){
-  const voices=speechSynthesis.getVoices();
-  return voices.find(v=>/^pt-BR/i.test(v.lang))||voices.find(v=>/^pt/i.test(v.lang))||voices[0];
-}
-async function speak(text){
-  const restart=voiceActive;
-  if(restart){
-    voiceActive=false;
-    try{recorder?.pause()}catch(e){}
-    setVoiceUi();
-  }
-  speaking=true;speechSynthesis.cancel();
-  await new Promise(resolve=>{
-    const u=new SpeechSynthesisUtterance(text),v=chooseVoice();
-    if(v)u.voice=v;u.lang=v?.lang||'pt-BR';u.rate=.98;u.pitch=.96;
-    u.onend=resolve;u.onerror=resolve;speechSynthesis.speak(u);
+function sendTextToRealtime(text){
+  sendEvent({
+    type:"conversation.item.create",
+    item:{type:"message",role:"user",content:[{type:"input_text",text}]}
   });
-  speaking=false;
-  if(restart&&recorder&&recorder.state==='paused'){
-    try{recorder.resume()}catch(e){}
-    voiceActive=true;setVoiceUi();
+  sendEvent({type:"response.create"});
+}
+
+function extractResponseText(evt){
+  try{
+    const parts=[];
+    const output=evt?.response?.output||[];
+    for(const item of output){
+      for(const c of (item?.content||[])){
+        if(typeof c?.transcript==="string")parts.push(c.transcript);
+        else if(typeof c?.text==="string")parts.push(c.text);
+      }
+    }
+    return parts.join("\n").trim();
+  }catch(e){return ""}
+}
+
+function handleEvent(evt){
+  const t=evt?.type||"";
+
+  if(t==="input_audio_buffer.speech_started"){
+    meetingStatus.textContent="Escutando...";
+  }
+  if(t==="input_audio_buffer.speech_stopped"){
+    meetingStatus.textContent="Entendendo...";
+  }
+
+  if(t==="conversation.item.input_audio_transcription.delta"){
+    const id=evt.item_id||"current";
+    inputDeltaByItem.set(id,(inputDeltaByItem.get(id)||"")+(evt.delta||""));
+  }
+
+  if(t==="conversation.item.input_audio_transcription.completed"){
+    const id=evt.item_id||"current";
+    const text=String(evt.transcript||inputDeltaByItem.get(id)||"").trim();
+    inputDeltaByItem.delete(id);
+    if(text){
+      addMessage("me",text);
+      logTurn("user",text);
+      if(calledGeorge(text))requestResponse();
+    }
+  }
+
+  // Compatibilidade com nomes de eventos de transcript de saída.
+  if(["response.output_audio_transcript.delta","response.audio_transcript.delta","response.output_text.delta","response.text.delta"].includes(t)){
+    assistantBuffer += evt.delta||"";
+  }
+
+  if(["response.output_audio_transcript.done","response.audio_transcript.done","response.output_text.done","response.text.done"].includes(t)){
+    const text=String(evt.transcript||evt.text||assistantBuffer||"").trim();
+    if(text && text!==assistantShown){
+      hideTyping();addMessage("george",text);assistantShown=text;logTurn("assistant",text);
+    }
+    assistantBuffer="";
+  }
+
+  if(t==="response.done"){
+    hideTyping();
+    const text=extractResponseText(evt)||assistantBuffer.trim();
+    if(text && text!==assistantShown){
+      addMessage("george",text);assistantShown=text;logTurn("assistant",text);
+    }
+    assistantBuffer="";
+    meetingStatus.textContent="Modo reunião ativo • George está escutando";
+  }
+
+  if(t==="error"){
+    hideTyping();
+    const msg=evt?.error?.message||"Erro na sessão de voz";
+    system("George: "+msg);
   }
 }
-async function presentOpening(){
-  try{
-    if(!sessionId)await startSession();
-    showTyping();
-    const j=await apiJson('opening',{session_id:sessionId});
-    hideTyping();addMessage('george',j.text);await speak(j.text);
-  }catch(e){hideTyping();addMessage('george','Não consegui apresentar: '+e.message,'SISTEMA')}
+
+async function startAppSession(){
+  if(sessionId)return;
+  const h=await api("health");
+  if(!h.key_configured)throw new Error("A chave da OpenAI não está configurada.");
+  const s=await api("start");
+  sessionId=s.session_id;
+  system("Reunião iniciada");
 }
-async function askGeorge(text,addUser=true){
-  try{
-    if(!sessionId)await startSession();
-    if(addUser)addMessage('me',text);
-    showTyping();
-    const j=await apiJson('ask',{session_id:sessionId,text});
-    hideTyping();addMessage('george',j.text);await speak(j.text);
-  }catch(e){hideTyping();addMessage('george','Não consegui responder: '+e.message,'SISTEMA')}
+
+async function connectRealtime(){
+  if(voiceActive)return;
+  await startAppSession();
+
+  micStream=await navigator.mediaDevices.getUserMedia({
+    audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false
+  });
+
+  pc=new RTCPeerConnection();
+  remoteAudio=document.createElement("audio");
+  remoteAudio.autoplay=true;
+  remoteAudio.playsInline=true;
+  pc.ontrack=e=>{
+    remoteAudio.srcObject=e.streams[0];
+    remoteAudio.play().catch(()=>{});
+  };
+
+  const track=micStream.getAudioTracks()[0];
+  pc.addTrack(track,micStream);
+
+  dc=pc.createDataChannel("oai-events");
+  dc.addEventListener("message",e=>{
+    try{handleEvent(JSON.parse(e.data))}catch(err){console.warn(err)}
+  });
+  dc.addEventListener("open",()=>{
+    voiceActive=true;setUi();
+    system("George conectado em voz contínua");
+  });
+  dc.addEventListener("close",()=>{
+    voiceActive=false;setUi();
+  });
+
+  const offer=await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const r=await fetch(REALTIME_URL,{
+    method:"POST",
+    headers:{"Content-Type":"application/sdp"},
+    body:offer.sdp,
+    cache:"no-store"
+  });
+  const answerSdp=await r.text();
+  if(!r.ok)throw new Error(answerSdp||("Falha Realtime HTTP "+r.status));
+
+  await pc.setRemoteDescription({type:"answer",sdp:answerSdp});
 }
-async function finishMeeting(){
-  if(!sessionId)return;
-  await pauseVoice();
-  try{
-    system('Organizando a ata da reunião...');
-    showTyping();
-    const j=await apiJson('finish',{session_id:sessionId});
-    hideTyping();addMessage('george',j.text,'ATA DA REUNIÃO');system('Reunião encerrada');
-  }catch(e){hideTyping();addMessage('george','Não consegui gerar a ata: '+e.message,'SISTEMA')}
+
+function disconnectRealtime(){
+  try{dc?.close()}catch(e){}
+  try{pc?.close()}catch(e){}
+  try{micStream?.getTracks().forEach(t=>t.stop())}catch(e){}
+  dc=null;pc=null;micStream=null;voiceActive=false;setUi();
 }
+
+async function toggleVoice(){
+  try{
+    if(voiceActive){disconnectRealtime();system("Microfone pausado")}
+    else await connectRealtime();
+  }catch(e){
+    disconnectRealtime();
+    system(e?.name==="NotAllowedError"?
+      "Microfone bloqueado. Permita o microfone nas configurações deste site.":
+      "Não consegui iniciar a voz: "+(e.message||e));
+  }
+}
+
 async function sendManual(){
-  const t=manual.value.trim();if(!t)return;
-  manual.value='';autosize();await askGeorge(t,true);
+  const text=manual.value.trim(); if(!text)return;
+  manual.value="";autosize();addMessage("me",text);await logTurn("user",text);
+  try{
+    if(!voiceActive)await connectRealtime();
+    showTyping();assistantBuffer="";sendTextToRealtime(text);
+  }catch(e){hideTyping();system("Não consegui enviar: "+e.message)}
 }
-function autosize(){manual.style.height='auto';manual.style.height=Math.min(manual.scrollHeight,102)+'px'}
-manual.addEventListener('input',autosize);
-manual.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendManual()}});
-$('btnSend').onclick=sendManual;
-btnMic.onclick=()=>voiceActive?pauseVoice():startVoice();
-btnVoiceTop.onclick=()=>voiceActive?pauseVoice():startVoice();
+function autosize(){manual.style.height="auto";manual.style.height=Math.min(manual.scrollHeight,120)+"px"}
+manual.addEventListener("input",autosize);
+manual.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendManual()}});
+
+async function presentOpening(){
+  const text="George, apresenta pro Rafa a discussão que a gente teve e o que estamos imaginando pro ERP ÍMPAR.";
+  addMessage("me",text);await logTurn("user",text);
+  try{
+    if(!voiceActive)await connectRealtime();
+    showTyping();assistantBuffer="";sendTextToRealtime(text);
+  }catch(e){hideTyping();system("Não consegui iniciar a apresentação: "+e.message)}
+}
+
+async function finishMeeting(){
+  disconnectRealtime();
+  if(!sessionId)return;
+  system("Organizando a ata...");
+  showTyping();
+  try{
+    const j=await api("finish",{session_id:sessionId});
+    hideTyping();addMessage("george",j.text,"ATA DA REUNIÃO");system("Reunião encerrada");
+  }catch(e){hideTyping();system("Não consegui gerar a ata: "+e.message)}
+}
+
+btnMic.onclick=toggleVoice;
+btnVoice.onclick=toggleVoice;
+$("btnSend").onclick=sendManual;
 btnFinish.onclick=finishMeeting;
 
-const sheet=$('sheet'),backdrop=$('sheetBackdrop');
-function openSheet(){sheet.classList.remove('hidden');backdrop.classList.remove('hidden')}
-function closeSheet(){sheet.classList.add('hidden');backdrop.classList.add('hidden')}
-btnVoiceTop.addEventListener('contextmenu',e=>{e.preventDefault();openSheet()});
-$('btnOpening').onclick=()=>{closeSheet();presentOpening()};
-$('btnPause').onclick=()=>{closeSheet();pauseVoice()};
-$('btnResume').onclick=()=>{closeSheet();resumeVoice()};
-$('btnFinishSheet').onclick=()=>{closeSheet();finishMeeting()};
-$('btnCloseSheet').onclick=closeSheet;backdrop.onclick=closeSheet;
+// Opções por toque longo no botão VOZ
+const sheet=$("sheet"),backdrop=$("backdrop");
+function openSheet(){sheet.classList.remove("hidden");backdrop.classList.remove("hidden")}
+function closeSheet(){sheet.classList.add("hidden");backdrop.classList.add("hidden")}
+let hold=null;
+btnVoice.addEventListener("pointerdown",()=>hold=setTimeout(openSheet,650));
+btnVoice.addEventListener("pointerup",()=>{clearTimeout(hold);hold=null});
+btnVoice.addEventListener("pointercancel",()=>{clearTimeout(hold);hold=null});
+$("btnOpening").onclick=()=>{closeSheet();presentOpening()};
+$("btnPause").onclick=()=>{closeSheet();disconnectRealtime()};
+$("btnResume").onclick=()=>{closeSheet();connectRealtime()};
+$("btnFinishSheet").onclick=()=>{closeSheet();finishMeeting()};
+$("btnCloseSheet").onclick=closeSheet;
+backdrop.onclick=closeSheet;
 
-// Long press the voice pill opens options
-let pressTimer=null;
-btnVoiceTop.addEventListener('pointerdown',()=>pressTimer=setTimeout(openSheet,650));
-btnVoiceTop.addEventListener('pointerup',()=>{clearTimeout(pressTimer);pressTimer=null});
-btnVoiceTop.addEventListener('pointercancel',()=>{clearTimeout(pressTimer);pressTimer=null});
-
-setVoiceUi();
+setUi();

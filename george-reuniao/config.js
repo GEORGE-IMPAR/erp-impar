@@ -1,6 +1,6 @@
 window.GEORGE_CONFIG = Object.freeze({
+  API_BASE: "https://api.erpimpar.com.br/george-reuniao",
+  REALTIME_SESSION_URL: "https://api.erpimpar.com.br/george-reuniao/realtime.php",
   API_URL: "https://api.erpimpar.com.br/george-reuniao/api.php",
-  APP_NAME: "George",
-  VERSION: "0.4-audio-chat",
-  AUDIO_CHUNK_MS: 6000
+  VERSION: "0.5-realtime"
 });
