@@ -2,6 +2,7 @@
 const CFG=window.GEORGE_CONFIG||{};
 const REALTIME_URL=CFG.REALTIME_SESSION_URL;
 const API=CFG.API_URL;
+const PDF_URL=CFG.PDF_URL;
 
 let pc=null, dc=null, micStream=null, remoteAudio=null;
 let voiceActive=false, sessionId=null, typingEl=null;
@@ -14,12 +15,19 @@ const btnVoice=$("btnVoice"), btnMic=$("btnMic"), strip=$("meetingStrip"),
       meetingStatus=$("meetingStatus"), btnFinish=$("btnFinish");
 
 function scrollDown(){requestAnimationFrame(()=>chat.scrollTop=chat.scrollHeight)}
+function cleanDisplay(text){
+  return String(text||"")
+    .replace(/^\s{0,3}#{1,6}\s*/gm,"")
+    .replace(/\*\*/g,"")
+    .replace(/__/g,"")
+    .replace(/`/g,"");
+}
 function addMessage(side,text,label){
   if(!text||!String(text).trim())return;
   const w=document.createElement("div"); w.className="msg "+(side==="me"?"me":"george");
   const b=document.createElement("div"); b.className="bubble";
   if(side!=="me"){const who=document.createElement("div");who.className="who";who.textContent=label||"GEORGE";b.appendChild(who)}
-  const d=document.createElement("div"); d.textContent=String(text).trim(); b.appendChild(d); w.appendChild(b);
+  const d=document.createElement("div"); d.textContent=cleanDisplay(String(text).trim()); b.appendChild(d); w.appendChild(b);
   chat.insertBefore(w,anchor); scrollDown();
 }
 function system(text){const d=document.createElement("div");d.className="system";d.textContent=text;chat.insertBefore(d,anchor);scrollDown()}
@@ -233,6 +241,65 @@ async function presentOpening(){
   }catch(e){hideTyping();system("Não consegui iniciar a apresentação: "+e.message)}
 }
 
+
+function addPdfActions(file,url){
+  const w=document.createElement("div");w.className="msg george";
+  const b=document.createElement("div");b.className="bubble";
+  const who=document.createElement("div");who.className="who";who.textContent="ATA EM PDF";b.appendChild(who);
+  const txt=document.createElement("div");txt.textContent="PDF pronto para compartilhar.";b.appendChild(txt);
+  const row=document.createElement("div");row.style.cssText="display:flex;gap:9px;flex-wrap:wrap;margin-top:12px";
+  const share=document.createElement("button");
+  share.textContent="Compartilhar PDF";
+  share.style.cssText="border:0;border-radius:12px;padding:12px 14px;background:#18b978;color:#fff;font-size:16px;font-weight:900";
+  share.onclick=()=>sharePdfFile(file,url);
+  const open=document.createElement("a");
+  open.textContent="Abrir / baixar";
+  open.href=url;open.target="_blank";open.rel="noopener";
+  open.style.cssText="text-decoration:none;border-radius:12px;padding:12px 14px;background:#edf3f5;color:#173a4b;font-size:16px;font-weight:900";
+  row.appendChild(share);row.appendChild(open);b.appendChild(row);w.appendChild(b);chat.insertBefore(w,anchor);scrollDown();
+}
+
+async function buildPdfFile(){
+  if(!sessionId||!PDF_URL)throw new Error("PDF não configurado.");
+  const url=PDF_URL+"?session_id="+encodeURIComponent(sessionId)+"&_="+Date.now();
+  const r=await fetch(url,{cache:"no-store"});
+  if(!r.ok)throw new Error((await r.text())||("PDF HTTP "+r.status));
+  const blob=await r.blob();
+  if(blob.type!=="application/pdf" && blob.size<100)throw new Error("PDF inválido.");
+  const file=new File([blob],"Ata_ERP_IMPAR.pdf",{type:"application/pdf"});
+  return {file,url};
+}
+
+async function sharePdfFile(file,url){
+  try{
+    if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+      await navigator.share({
+        title:"Ata da reunião - ERP ÍMPAR",
+        text:"Ata gerada pelo George.",
+        files:[file]
+      });
+      return true;
+    }
+  }catch(e){
+    if(e?.name==="AbortError")return false;
+    console.warn("share",e);
+  }
+  window.open(url,"_blank","noopener");
+  return false;
+}
+
+async function generateAndSharePdf(){
+  try{
+    system("Gerando PDF da ata...");
+    const {file,url}=await buildPdfFile();
+    addPdfActions(file,url);
+    const shared=await sharePdfFile(file,url);
+    if(shared)system("Compartilhamento da ata aberto");
+  }catch(e){
+    system("Não consegui gerar/compartilhar o PDF: "+e.message);
+  }
+}
+
 async function finishMeeting(){
   disconnectRealtime();
   if(!sessionId)return;
@@ -241,6 +308,7 @@ async function finishMeeting(){
   try{
     const j=await api("finish",{session_id:sessionId});
     hideTyping();addMessage("george",j.text,"ATA DA REUNIÃO");system("Reunião encerrada");
+    await generateAndSharePdf();
   }catch(e){hideTyping();system("Não consegui gerar a ata: "+e.message)}
 }
 
