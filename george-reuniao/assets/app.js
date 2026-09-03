@@ -6,6 +6,7 @@ const PDF_URL=CFG.PDF_URL;
 
 let pc=null, dc=null, micStream=null, remoteAudio=null;
 let voiceActive=false, sessionId=null, typingEl=null;
+let georgeSpeaking=false;
 let assistantBuffer="", assistantShown="";
 let inputDeltaByItem=new Map();
 
@@ -62,17 +63,20 @@ async function logTurn(role,text){
 function sendEvent(event){
   if(dc?.readyState==="open")dc.send(JSON.stringify(event));
 }
+function setMicTransmission(enabled){
+  try{micStream?.getAudioTracks().forEach(t=>t.enabled=!!enabled)}catch(e){}
+}
 function requestResponse(){
   showTyping();
   assistantBuffer="";
-  sendEvent({type:"response.create"});
+  sendEvent({type:"response.create",response:{max_output_tokens:"inf"}});
 }
 function sendTextToRealtime(text){
   sendEvent({
     type:"conversation.item.create",
     item:{type:"message",role:"user",content:[{type:"input_text",text}]}
   });
-  sendEvent({type:"response.create"});
+  sendEvent({type:"response.create",response:{max_output_tokens:"inf"}});
 }
 
 function extractResponseText(evt){
@@ -92,6 +96,12 @@ function extractResponseText(evt){
 function handleEvent(evt){
   const t=evt?.type||"";
 
+  if(t==="response.created" || t==="response.output_audio.delta" || t==="response.audio.delta"){
+    georgeSpeaking=true;
+    setMicTransmission(false);
+    meetingStatus.textContent="George está falando...";
+  }
+
   if(t==="input_audio_buffer.speech_started"){
     meetingStatus.textContent="Escutando...";
   }
@@ -108,7 +118,7 @@ function handleEvent(evt){
     const id=evt.item_id||"current";
     const text=String(evt.transcript||inputDeltaByItem.get(id)||"").trim();
     inputDeltaByItem.delete(id);
-    if(text){
+    if(text && !georgeSpeaking){
       addMessage("me",text);
       logTurn("user",text);
       if(calledGeorge(text))requestResponse();
@@ -129,6 +139,8 @@ function handleEvent(evt){
   }
 
   if(t==="response.done"){
+    georgeSpeaking=false;
+    setMicTransmission(true);
     hideTyping();
     const text=extractResponseText(evt)||assistantBuffer.trim();
     if(text && text!==assistantShown){
@@ -259,9 +271,9 @@ function addPdfActions(file,url){
   row.appendChild(share);row.appendChild(open);b.appendChild(row);w.appendChild(b);chat.insertBefore(w,anchor);scrollDown();
 }
 
-async function buildPdfFile(){
+async function buildPdfFile(preferredUrl=null){
   if(!sessionId||!PDF_URL)throw new Error("PDF não configurado.");
-  const url=PDF_URL+"?session_id="+encodeURIComponent(sessionId)+"&_="+Date.now();
+  const url=(preferredUrl||PDF_URL+"?session_id="+encodeURIComponent(sessionId))+"&_="+Date.now();
   const r=await fetch(url,{cache:"no-store"});
   if(!r.ok)throw new Error((await r.text())||("PDF HTTP "+r.status));
   const blob=await r.blob();
@@ -288,10 +300,10 @@ async function sharePdfFile(file,url){
   return false;
 }
 
-async function generateAndSharePdf(){
+async function generateAndSharePdf(preferredUrl=null){
   try{
     system("Gerando PDF da ata...");
-    const {file,url}=await buildPdfFile();
+    const {file,url}=await buildPdfFile(preferredUrl);
     addPdfActions(file,url);
     const shared=await sharePdfFile(file,url);
     if(shared)system("Compartilhamento da ata aberto");
@@ -308,7 +320,7 @@ async function finishMeeting(){
   try{
     const j=await api("finish",{session_id:sessionId});
     hideTyping();addMessage("george",j.text,"ATA DA REUNIÃO");system("Reunião encerrada");
-    await generateAndSharePdf();
+    await generateAndSharePdf(j.pdf_url||null);
   }catch(e){hideTyping();system("Não consegui gerar a ata: "+e.message)}
 }
 
