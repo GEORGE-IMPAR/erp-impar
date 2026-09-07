@@ -1,1 +1,149 @@
-<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ERP ÍMPAR — Bootstrap Dia Atual</title><style>body{margin:0;padding:22px;background:#07111f;color:#e5e7eb;font-family:Segoe UI,sans-serif}.wrap{max-width:1100px;margin:auto}.box{background:#0b1b2d;border:1px solid #27445a;border-radius:16px;padding:18px;margin-bottom:14px}button{border:0;border-radius:999px;padding:12px 18px;background:#22c55e;font-weight:900;cursor:pointer}pre{white-space:pre-wrap;word-break:break-word;background:#020617;border:1px solid #334155;border-radius:14px;padding:16px;min-height:300px}.ok{color:#86efac}.warn{color:#fde68a}.err{color:#fda4af}</style><body><div class="wrap"><div class="box"><h2>Agenda do Dia V2 — Preview do rascunho real de 07/09/2026</h2><p>Esta tela lê o draft atual do servidor legado. <b>Não grava nada</b> e <b>não relê a Agenda Semanal</b>.</p><button id="go">Analisar rascunho do dia 07</button><div id="status"></div></div><pre id="out"></pre></div><script>const API='https://api.erpimpar.com.br/db-v2/agenda/bootstrap_dia_atual.php?data=2026-09-07&t=';async function run(){status.textContent='Lendo...';status.className='warn';out.textContent='';try{const r=await fetch(API+Date.now(),{cache:'no-store'});const t=await r.text();let j;try{j=JSON.parse(t)}catch(e){throw new Error(t)}out.textContent=JSON.stringify(j,null,2);status.textContent=j.status+' • gravou_dados='+(j.gravou_dados?'true':'false');status.className=j.ok?'ok':'err'}catch(e){status.textContent='ERRO';status.className='err';out.textContent=e.stack||String(e)}}go.onclick=run;run();</script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07111f">
+<title>ERP ÍMPAR — Bootstrap Dia 07 V0.2</title>
+<style>
+:root{
+  --bg:#07111f;--panel:#0b1b2d;--line:#27445a;--ink:#e5e7eb;
+  --muted:#9fb3c8;--ok:#86efac;--warn:#fde68a;--err:#fda4af;
+  --green:#22c55e;--blue:#38bdf8
+}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;background:var(--bg);color:var(--ink);font-family:Segoe UI,system-ui,sans-serif}
+.wrap{max-width:1100px;margin:auto}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px}
+h1{font-size:clamp(25px,6vw,42px);line-height:1.08;margin:0 0 14px}
+p{font-size:16px;line-height:1.45;color:#d8e1e8}
+button{border:0;border-radius:999px;padding:13px 20px;background:var(--green);font-weight:900;font-size:16px;cursor:pointer}
+.step{margin-top:14px;padding:12px;border-radius:14px;background:#071827;border:1px solid #1f3a4c}
+.step b{display:block;margin-bottom:5px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
+pre{white-space:pre-wrap;word-break:break-word;background:#020617;border:1px solid #334155;border-radius:14px;padding:16px;min-height:260px;font-size:12px;line-height:1.42}
+.small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="box">
+    <h1>Agenda do Dia V2 — rascunho real de 07/09/2026</h1>
+    <p>
+      V0.2: agora o navegador lê o <b>endpoint oficial do rascunho atual</b>,
+      exatamente como a Agenda do Dia já faz. Não tentamos mais adivinhar
+      o caminho físico do JSON no KingHost.
+    </p>
+    <p><b>Não grava nada. Não relê a Agenda Semanal. Não cria o dia 08.</b></p>
+    <button id="go">Analisar rascunho do dia 07</button>
+
+    <div class="step">
+      <b>1. Estado oficial do dia</b>
+      <span id="sStatus" class="warn">Aguardando...</span>
+    </div>
+    <div class="step">
+      <b>2. Draft oficial do dia</b>
+      <span id="sDraft" class="warn">Aguardando...</span>
+    </div>
+    <div class="step">
+      <b>3. Normalização contra o Banco V2</b>
+      <span id="sMap" class="warn">Aguardando...</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <b>Resultado final</b>
+    <div class="small">Envie este conteúdo/print após o teste.</div>
+    <pre id="out">Aguardando análise...</pre>
+  </div>
+</div>
+
+<script>
+const DATA = '2026-09-07';
+const LEGACY = 'https://api.erpimpar.com.br/agenda/';
+const NORMALIZAR = 'https://api.erpimpar.com.br/db-v2/agenda/bootstrap_normalizar.php';
+
+async function fetchJson(url,opt){
+  const r=await fetch(url,opt||{cache:'no-store'});
+  const t=await r.text();
+  let j;
+  try{ j=t?JSON.parse(t):{}; }
+  catch(e){ throw new Error('JSON inválido em '+url+'\\n'+t.slice(0,600)); }
+  if(!r.ok) throw new Error('HTTP '+r.status+' em '+url+'\\n'+JSON.stringify(j,null,2));
+  return j;
+}
+
+function set(id,text,cls){
+  const el=document.getElementById(id);
+  el.textContent=text;
+  el.className=cls||'';
+}
+
+async function run(){
+  out.textContent='Analisando...';
+  set('sStatus','Lendo endpoint oficial...','warn');
+  set('sDraft','Aguardando estado...','warn');
+  set('sMap','Aguardando draft...','warn');
+
+  const final={
+    data:DATA,
+    gravou_dados:false,
+    releu_agenda_semanal:false
+  };
+
+  try{
+    const statusUrl=LEGACY+'atividade_dia_status.php?data='+encodeURIComponent(DATA)+'&t='+Date.now();
+    const status=await fetchJson(statusUrl,{cache:'no-store'});
+    final.status_oficial=status;
+    set('sStatus','OK — endpoint respondeu.','ok');
+
+    const draftUrl=LEGACY+'atividade_dia_draft_get.php?data='+encodeURIComponent(DATA)+'&t='+Date.now();
+    set('sDraft','Lendo atividade_dia_draft_get.php...','warn');
+    const draft=await fetchJson(draftUrl,{cache:'no-store'});
+    final.draft_oficial=draft;
+
+    const atividades =
+      Array.isArray(draft?.data?.atividades) ? draft.data.atividades :
+      Array.isArray(draft?.atividades) ? draft.atividades :
+      Array.isArray(draft) ? draft : [];
+
+    final.atividades_encontradas=atividades.length;
+
+    if(!atividades.length){
+      set('sDraft','ATENÇÃO — endpoint respondeu, mas não trouxe atividades.','warn');
+      set('sMap','Não normalizado porque o draft veio vazio.','warn');
+      out.textContent=JSON.stringify(final,null,2);
+      return;
+    }
+
+    set('sDraft','OK — '+atividades.length+' atividade(s) lida(s) do draft oficial.','ok');
+
+    set('sMap','Mapeando colaboradores/obras/veículos no Banco V2...','warn');
+    const normalizado=await fetchJson(NORMALIZAR,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      cache:'no-store',
+      body:JSON.stringify({
+        data:DATA,
+        fonte:'DRAFT_LEGADO_OFICIAL',
+        payload:draft
+      })
+    });
+
+    final.normalizacao_v2=normalizado;
+    set('sMap',normalizado.ok ? 'OK — normalização concluída sem gravar.' : 'ERRO na normalização.','ok');
+    out.textContent=JSON.stringify(final,null,2);
+
+  }catch(e){
+    final.erro=String(e?.message||e);
+    if(!final.status_oficial) set('sStatus','ERRO — veja resultado final.','err');
+    else if(!final.draft_oficial) set('sDraft','ERRO — veja resultado final.','err');
+    else set('sMap','ERRO — veja resultado final.','err');
+    out.textContent=JSON.stringify(final,null,2);
+  }
+}
+go.onclick=run;
+run();
+</script>
+</body>
+</html>
