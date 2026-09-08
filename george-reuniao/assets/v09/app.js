@@ -59,11 +59,70 @@ input.addEventListener('focus',()=>{
  if(state.recording?.mode==='kickoff'){showStatus('Kickoff está gravando sem responder. Encerre-o para conversar.','kickoff');return;}
  if(!state.recording){state.mode='text';setActive('');voice.pause();normalStatus();}
 });
+function agendaReportButtons(result,bubble){
+ const row=document.createElement('div');row.className='pdf-actions';bubble.append(row);
+ const file=new File([result.blob],result.filename,{type:'application/pdf'});
+ const share=smallButton('Compartilhar PDF',async()=>{
+   try{
+     if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+       await navigator.share({title:'ERP ÍMPAR — Agenda do Dia',text:'Relatório oficial da Agenda do Dia de '+result.date_br+'.',files:[file]});
+     }else saveBlob(result.blob,result.filename);
+   }catch(e){if(e.name!=='AbortError')error(e);}
+ });
+ const open=smallButton('Abrir / imprimir',()=>{
+   try{
+     const url=URL.createObjectURL(result.blob);
+     $('reportFrame').src=url;
+     $('reportDialog').showModal();
+     state.pdfUrl=url;
+   }catch(e){error(e);}
+ });
+ const download=smallButton('Baixar PDF',()=>saveBlob(result.blob,result.filename));
+ row.append(share,open,download);
+}
+async function logDirectTurn(record,role,text,id){
+ try{await request('log_turn',{record_id:record,role,text,event_id:id});}
+ catch(e){console.warn('log_turn',e);}
+}
 function queueQuestion(text,source='text',id=eventId()){
  if(!text.trim()||!requireAuth())return;
  if(state.recording?.mode==='kickoff'){notice('O Kickoff permanece somente ouvindo. Encerre a gravação para conversar.');return;}
  const record=state.recording?.id||state.record;const speak=state.mode==='audio'||state.recording?.mode==='meeting';
  message('me',text);
+
+ // Capability oficial de relatório: não passa pela IA e não recria template.
+ if(window.GeorgeAgendaReport?.matches?.(text)){
+   state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
+     const indicator=notice('Gerando o relatório pela Agenda do Dia oficial…');
+     state.busy=true;voice.pauseTransmit();
+     await logDirectTurn(record,'user',text,id);
+     try{
+       const result=await window.GeorgeAgendaReport.build(text);
+       indicator.remove();
+       const reply=result.wants_share
+         ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado. Toque em Compartilhar PDF para abrir o compartilhamento do aparelho.`
+         : result.wants_print
+         ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado. Use Abrir / imprimir para visualizar e imprimir o mesmo documento.`
+         : `PDF oficial da Agenda do Dia de ${result.date_br} gerado pelo próprio módulo da Agenda.`;
+       const m=message('george',reply,'RELATÓRIO DA AGENDA');
+       m.row.dataset.sources=result.source;
+       agendaReportButtons(result,m.bubble);
+       await logDirectTurn(record,'assistant',reply,eventId());
+       if(speak&&!state.recording?.stopping)await voice.speak(reply);
+     }catch(e){
+       indicator.remove();
+       const reply=e.message||String(e);
+       const m=message('george',reply,'RELATÓRIO DA AGENDA');
+       m.row.dataset.sources='agenda_do_dia_novo.html';
+       await logDirectTurn(record,'assistant',reply,eventId());
+       showStatus(reply,'warning');
+     }finally{
+       state.busy=false;voice.resumeTransmit();normalStatus();
+     }
+   });
+   return;
+ }
+
  state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
    const indicator=notice('Consultando o contexto e as fontes do ERP…');state.busy=true;voice.pauseTransmit();
    try{const j=await request('chat',{record_id:record,text,event_id:id});indicator.remove();const m=message('george',j.text);
