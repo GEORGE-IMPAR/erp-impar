@@ -16,6 +16,7 @@ let inputDeltaByItem=new Map();
 let currentMode="audio"; // DEFAULT OFICIAL DE EXPERIÊNCIA
 let autoAttempted=false;
 let suppressResponses=false;
+let attachmentOpen=false; // V0.8.1: panel lifecycle, not a new session.
 
 /* vídeo */
 let cameraStream=null, mediaRecorder=null, recordedChunks=[];
@@ -113,7 +114,7 @@ async function logTurn(role,text){
 }
 function sendEvent(event){if(dc?.readyState==="open")dc.send(JSON.stringify(event))}
 function setMicTransmission(enabled){
-  try{micStream?.getAudioTracks().forEach(t=>t.enabled=!!enabled)}catch(e){}
+  try{micStream?.getAudioTracks().forEach(t=>t.enabled=!!enabled && !attachmentOpen)}catch(e){}
 }
 function requestResponse(){
   if(suppressResponses||currentMode==="kickoff")return;
@@ -153,6 +154,10 @@ function markActive(mode){
 }
 
 function applyModeStatus(){
+  if(attachmentOpen){
+    setStatus("Anexos abertos • microfone pausado", "warning");
+    return;
+  }
   if(currentMode==="audio"){
     setStatus(voiceActive?"Áudio ligado • George está ouvindo":"Áudio selecionado • toque para ativar o microfone",voiceActive?"audio":"warning");
   }else if(currentMode==="meeting"){
@@ -285,6 +290,7 @@ function disconnectRealtime(){
 }
 
 async function ensureVoice(){
+  if(attachmentOpen)return false;
   try{
     await connectRealtime();return true;
   }catch(e){
@@ -358,14 +364,10 @@ manual.addEventListener("keydown",e=>{
 });
 $("btnSend").onclick=sendManual;
 
-/* ANEXAR: já operacional para texto e áudio usando a sessão atual */
-btnAttach.onclick=()=>filePicker.click();
-
-filePicker.addEventListener("change",async()=>{
-  const file=filePicker.files?.[0];
-  filePicker.value="";
+/* ANEXAR V0.8.1: seleção e retorno no mesmo documento.
+   Processamento de arquivo mantido igual à V0.8; sem API nova. */
+async function processSelectedAttachment(file){
   if(!file)return;
-
   const type=file.type||"";
   const name=file.name||"arquivo";
 
@@ -388,6 +390,29 @@ filePicker.addEventListener("change",async()=>{
   }
 
   system("Anexar: o backend atual já processa texto e áudio. Este formato ("+(type||"desconhecido")+") ainda precisa do endpoint de análise documental/visual.");
+
+}
+
+const attachmentPanel = new window.GeorgeAttachmentPanel({
+  trigger: btnAttach,
+  picker: filePicker,
+  scrollContainer: chat,
+  onOpen(){
+    attachmentOpen=true;
+    setMicTransmission(false);
+    applyModeStatus();
+  },
+  onClose(){
+    attachmentOpen=false;
+    // Do not call startAppSession/connectRealtime or reset sessionId here.
+    // Return to the same live connection, if it is still available.
+    setMicTransmission(voiceActive && currentMode!=="text" && !georgeSpeaking);
+    applyModeStatus();
+  },
+  async onFile(file){
+    try{await processSelectedAttachment(file);}
+    catch(e){system("Não consegui processar o anexo: "+(e.message||e));}
+  }
 });
 
 /* Alimenta um arquivo de áudio na sessão Realtime atual para transcrição/análise */
