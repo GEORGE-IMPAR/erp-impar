@@ -3,5 +3,5 @@ window.GEORGE_CONFIG = Object.freeze({
   REALTIME_SESSION_URL: "https://api.erpimpar.com.br/george-reuniao/realtime.php",
   API_URL: "https://api.erpimpar.com.br/george-reuniao/api.php",
   PDF_URL: "https://api.erpimpar.com.br/george-reuniao/pdf.php",
-  VERSION: "0.7-afternoon"
+  VERSION: "0.8-production-candidate"
 });
