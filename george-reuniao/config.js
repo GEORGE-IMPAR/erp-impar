@@ -5,3 +5,4 @@ window.GEORGE_CONFIG = Object.freeze({
   PDF_URL: "https://api.erpimpar.com.br/george-reuniao/pdf.php",
   VERSION: "0.8-production-candidate"
 });
+
