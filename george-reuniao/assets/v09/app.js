@@ -244,7 +244,7 @@ async function uploadFile(file){
  finally{state.upload=false;state.uploadId=null;state.uploadAbort=null;voice.resumeTransmit();}
 }
 let chosen=null;
-function openAttach(){if(!requireAuth())return;saveDraft();chosen=null;$('filePicker').value='';$('attachName').textContent='Nenhum arquivo selecionado.';$('attachStatus').textContent='Original preservado. Vídeos compatíveis podem ser preparados neste aparelho; documentos e imagens serão convertidos em texto.';$('attachSend').disabled=true;$('attachDialog').showModal();}
+function openAttach(){if(!requireAuth())return;saveDraft();chosen=null;$('filePicker').value='';$('attachName').textContent='Nenhum arquivo selecionado.';$('attachStatus').textContent='Para exportações do WhatsApp, o George lê primeiro o texto, depois os áudios e por último os vídeos. Imagens e documentos do ZIP são ignorados.';$('attachSend').disabled=true;$('attachDialog').showModal();}
 $('btnAttach').onclick=openAttach;
 $('attachChoose').onclick=()=>{$('filePicker').click();};
 $('filePicker').addEventListener('cancel',()=>{$('attachStatus').textContent='Seleção cancelada. Você continua no George.';});
@@ -258,7 +258,7 @@ $('attachSend').onclick=async()=>{
  catch(e){$('attachStatus').textContent=e.name==='AbortError'?'Envio interrompido.':e.message;}
  finally{$('attachSend').disabled=!chosen;$('attachChoose').disabled=false;}
 };
-function taskText(j){const map={derived_processing:'Interpretando os trechos de áudio e imagens amostradas…',uploaded:'Arquivo salvo • verificando faixa de áudio…',transcription_ready:'Transcrição salva • preparando a ata…',summarizing:`Gerando ata • ${j.report_parts_done}/${j.report_parts_total} partes`,consolidating:'Consolidando todas as partes da ata…',rendering:'Aplicando o template executivo oficial…',ready:'Ata e transcrição prontas.'};return j.state==='transcribing'?`Transcrevendo áudio • ${j.segments_done}/${j.segments_total} trechos`:map[j.state]||j.state;}
+function taskText(j){const map={derived_processing:'Interpretando os trechos de áudio e imagens amostradas…',uploaded:'Arquivo salvo • verificando o conteúdo…',whatsapp_extracting:'Abrindo a conversa do WhatsApp…',whatsapp_processing:'Processando conversa do WhatsApp…',transcription_ready:'Transcrição salva • preparando a ata…',summarizing:`Gerando ata • ${j.report_parts_done}/${j.report_parts_total} partes`,consolidating:'Consolidando todas as partes da ata…',rendering:'Aplicando o template executivo oficial…',ready:'Ata e transcrição prontas.'};if(j.state==='whatsapp_processing'){const stage={texto:'texto',audio:'áudios',video:'vídeos'}[j.batch_stage]||'arquivos';return `Lendo ${stage} • ${j.batch_done}/${j.batch_total}${j.batch_current?' • '+j.batch_current:''}${j.batch_failed?' • '+j.batch_failed+' não lido(s)':''}`;}return j.state==='transcribing'?`Transcrevendo áudio • ${j.segments_done}/${j.segments_total} trechos`:map[j.state]||j.state;}
 async function processJob(id){
  if(state.jobRunning.has(id))return;state.jobRunning.add(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');
  try{let j=await request('job',{record_id:id});while(j.state!=='ready'){if(['cancelled','deleted'].includes(j.state)){n.text.textContent=j.state==='deleted'?'Arquivo excluído.':'Arquivo retirado da fila.';return;}if(j.state==='uploading')throw new Error('O upload não foi finalizado. Reenvie o arquivo original para concluir.');n.text.textContent=taskText(j);j=await request('step',{record_id:id},195000);}
@@ -446,6 +446,7 @@ async function prepareInBrowser(id,file,statusNode){
 async function prepareOrProcess(id,file){
  const ext=file.name.split('.').pop().toLowerCase();const video=file.type.startsWith('video/')||['mp4','mov','mkv','webm','mpeg'].includes(ext);
  const audio=file.type.startsWith('audio/')||['mp3','mpga','m4a','wav','ogg','aac'].includes(ext);
+ if(ext==='zip'){await processJob(id);return;}
  if(video||(audio&&!(state.caps?.ffmpeg&&state.caps?.ffprobe)&&(file.size>24*1024*1024||!['mp3','mpga','m4a','wav','webm','mp4','mpeg'].includes(ext)))){
   const m=message('george','Original salvo. Preparando o áudio e imagens amostradas neste aparelho…','MÍDIAS');
   try{await prepareInBrowser(id,file,m.text);}catch(e){m.text.textContent=e.message;m.bubble.append(smallButton('Retomar preparação',async()=>{try{await prepareInBrowser(id,file,m.text);await processJob(id);}catch(e){error(e);}}),smallButton('Tentar processar no servidor',()=>processJob(id)));return;}
