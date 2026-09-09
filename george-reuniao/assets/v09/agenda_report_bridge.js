@@ -32,8 +32,7 @@ function dateFromText(text){
   if(m)return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
   const n=norm(s);
   if(/\bontem\b/.test(n))return shiftISO(-1);
-  if(/\bhoje\b/.test(n))return todayISO();
-  return todayISO();
+  return null; // Sem histórico/data explícita, usar o único draft ativo.
 }
 function br(iso){
   const [y,m,d]=String(iso).split('-');
@@ -115,7 +114,7 @@ async function waitDate(win,date){
 }
 
 async function build(text){
-  const date=dateFromText(text);
+  let date=dateFromText(text);
   const f=await ensureFrame();
   const win=f.contentWindow;
   await waitApi(win);
@@ -124,7 +123,7 @@ async function build(text){
   try{
     // V315 consulta o draft/histórico pelo atividade_dia_estado_novo.php.
     // Para histórico, abre somente leitura. Para data futura, bloqueia.
-    await win.AgendaDiaV315.openDate(date);
+    if(date)await win.AgendaDiaV315.openDate(date);else{await win.AgendaDiaV315.openDraft();date=String(win.__AGENDA_DIA_CURRENT_DATE__||'');if(!/^20\d{2}-\d{2}-\d{2}$/.test(date))throw new Error('O módulo oficial não confirmou a data do draft ativo.');}
     const exact=await waitDate(win,date);
     if(!exact){
       const current=String(win.__AGENDA_DIA_CURRENT_DATE__||'');
@@ -169,6 +168,6 @@ window.GeorgeAgendaReport=Object.freeze({
   dateFromText,
   build,
   source:OFFICIAL_URL,
-  version:'0.9.3'
+  version:'0.9.7-rc1'
 });
 })();
