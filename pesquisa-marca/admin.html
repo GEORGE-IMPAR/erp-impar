@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resultados — Pesquisa IMPAR</title>
+<link rel="stylesheet" href="styles.css"><script src="config.js"></script>
+<style>
+.admin-hero{padding:52px 0 34px;background:#061829;color:#fff}.admin-hero h1{font-size:48px;margin:8px 0}
+.login{display:flex;gap:10px;max-width:580px}.login input{background:#fff}.dash{display:none;padding:40px 0 80px}
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:20px 0 32px}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:19px}.metric b{display:block;font-size:30px}
+.result-card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:22px;margin:16px 0}
+.bar{height:12px;background:#e9eef2;border-radius:20px;overflow:hidden;margin:8px 0 4px}.bar i{display:block;height:100%;background:var(--gold)}
+.rows{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.small{font-size:12px;color:#718293}
+@media(max-width:850px){.metric-grid,.rows{grid-template-columns:1fr 1fr}}@media(max-width:520px){.metric-grid,.rows{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<section class="admin-hero"><div class="wrap"><div class="eyebrow">Painel restrito</div><h1>Resultados da pesquisa</h1><p>As opções são identificadas no painel para permitir a leitura real dos resultados. Os respondentes nunca veem “atual” ou “proposta”.</p>
+<div class="login"><input type="password" id="adminKey" placeholder="Chave administrativa"><button class="btn gold" id="load">Abrir painel</button></div><div id="msg" class="status"></div></div></section>
+<section class="dash" id="dash"><div class="wrap">
+<div class="metric-grid" id="metrics"></div>
+<div class="rows"><div class="result-card"><h3>Preferência consolidada — site</h3><div id="siteOverall"></div></div><div class="result-card"><h3>Preferência consolidada — logo</h3><div id="logoOverall"></div></div></div>
+<div class="result-card"><h3>Site — atributos</h3><div id="siteAttr"></div></div>
+<div class="result-card"><h3>Logo — atributos</h3><div id="logoAttr"></div></div>
+<div class="rows"><div class="result-card"><h3>Perfil dos respondentes</h3><div id="roles"></div></div><div class="result-card"><h3>Conhecimento prévio da IMPAR</h3><div id="fam"></div></div></div>
+<div class="result-card"><h3>Percepção após o vídeo</h3><div id="videoMetrics"></div></div>
+<div class="nav-actions"><a class="btn" id="csv" href="#">Exportar CSV</a><span></span></div>
+</div></section>
+<script>
+const C=window.IMPAR_SURVEY_CONFIG||{};
+const pct=(n,d)=>d?Math.round(n*100/d):0;
+function bars(obj){
+ const total=Object.values(obj).reduce((a,b)=>a+b,0)||1;
+ return Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div><b>${k}</b> <span class="small">${v} (${pct(v,total)}%)</span><div class="bar"><i style="width:${pct(v,total)}%"></i></div></div>`).join("");
+}
+document.querySelector("#load").onclick=async()=>{
+ const key=document.querySelector("#adminKey").value; const msg=document.querySelector("#msg");
+ try{
+  const r=await fetch(`${C.API_BASE}/results.php`,{headers:{"X-Admin-Key":key}});
+  const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||"erro");
+  document.querySelector("#dash").style.display="block";
+  document.querySelector("#metrics").innerHTML=[
+   ["Respostas",j.total],["Site: proposta",j.overall.site.proposed_pct+"%"],["Logo: proposta",j.overall.logo.proposed_pct+"%"],["Consideração média",j.averages.consideration+"/10"]
+  ].map(([a,b])=>`<div class="metric"><span class="small">${a}</span><b>${b}</b></div>`).join("");
+  document.querySelector("#siteOverall").innerHTML=bars(j.overall.site.counts);
+  document.querySelector("#logoOverall").innerHTML=bars(j.overall.logo.counts);
+  document.querySelector("#siteAttr").innerHTML=Object.entries(j.attributes.site).map(([k,v])=>`<h4>${k}</h4>${bars(v)}`).join("");
+  document.querySelector("#logoAttr").innerHTML=Object.entries(j.attributes.logo).map(([k,v])=>`<h4>${k}</h4>${bars(v)}`).join("");
+  document.querySelector("#roles").innerHTML=bars(j.respondents.roles);
+  document.querySelector("#fam").innerHTML=bars(j.respondents.familiarity);
+  document.querySelector("#videoMetrics").innerHTML=`<p><b>Confiança média:</b> ${j.averages.video_trust}/10</p><p><b>Capacidade para projetos complexos:</b> ${j.averages.video_complexity}/10</p><p><b>Tempo médio assistido:</b> ${j.averages.watched_seconds}s</p>`;
+  document.querySelector("#csv").href=`${C.API_BASE}/export_csv.php?key=${encodeURIComponent(key)}`;
+ }catch(e){msg.className="status error";msg.textContent="Chave inválida ou API indisponível.";}
+};
+</script>
+</body></html>
