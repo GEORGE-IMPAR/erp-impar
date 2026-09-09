@@ -262,23 +262,57 @@ function taskText(j){const map={derived_processing:'Interpretando os trechos de 
 async function processJob(id){
  if(state.jobRunning.has(id))return;state.jobRunning.add(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');
  try{let j=await request('job',{record_id:id});while(j.state!=='ready'){if(['cancelled','deleted'].includes(j.state)){n.text.textContent=j.state==='deleted'?'Arquivo excluído.':'Arquivo retirado da fila.';return;}if(j.state==='uploading')throw new Error('O upload não foi finalizado. Reenvie o arquivo original para concluir.');n.text.textContent=taskText(j);j=await request('step',{record_id:id},195000);}
-   n.text.textContent='Documento gerado. Consulte o texto das fontes: ele identifica áudio, imagens amostradas e eventuais limites da extração.';await reportActions(id,n.bubble);
+   n.text.textContent='Documento gerado. Conferindo o PDF…';const ready=await reportActions(id,n.bubble);n.text.textContent=ready?'Seu PDF está pronto.':'Documento gerado. Ainda não consegui carregar o PDF.';
  }catch(e){n.text.textContent=e.message+' Seu arquivo continua salvo.';const b=smallButton('Retomar processamento',()=>{n.row.remove();processJob(id);});n.bubble.append(b,smallButton('Preparar neste aparelho',async()=>{try{const original=await downloadBlob(id,'source');const j=await request('job',{record_id:id});await prepareInBrowser(id,new File([original],j.name),n.text);await processJob(id);}catch(e){error(e);}}),smallButton('Baixar original',async()=>{try{saveBlob(await downloadBlob(id,'source'),'Original_George');}catch(e){error(e);}}));}
  finally{state.jobRunning.delete(id);normalStatus();}
 }
 function smallButton(text,fn){const b=document.createElement('button');b.type='button';b.className='g09-button';b.textContent=text;b.onclick=fn;return b;}
-async function downloadBlob(id,kind){const r=await fetch(BASE+'download.php?record_id='+encodeURIComponent(id)+'&kind='+kind,{credentials:'include',cache:'no-store'});if(!r.ok){let j;try{j=await r.json();}catch{}throw new Error(j?.error||'Arquivo ainda não disponível.');}const blob=await r.blob();if(kind==='pdf'){if(r.headers.get('X-George-Record')!==id)throw new Error('Este PDF não corresponde ao documento solicitado.');await window.GeorgePdf.validate(blob,{sha256:r.headers.get('X-George-SHA256'),bytes:Number(r.headers.get('X-George-Bytes'))||0});}return blob;}
+async function downloadBlob(id,kind){
+ const url=new URL('download.php',BASE);url.searchParams.set('record_id',id);url.searchParams.set('kind',kind);
+ const r=await fetch(url.href,{credentials:'include',cache:'no-store',redirect:'error'});
+ if(!r.ok){let j;try{j=await r.json();}catch{}throw new ApiError(j?.error||'Arquivo ainda não disponível.',j?.status,r.status);}
+ const blob=await r.blob();
+ if(kind==='pdf'){
+  const record=r.headers.get('X-George-Record');
+  // Older production PHP binds downloads to the authenticated record but sends no X-George metadata.
+  // Missing metadata is different from an explicitly mismatched record or digest.
+  if(record!==null&&record!==id)throw new Error('Este PDF não corresponde ao documento solicitado.');
+  if(r.url){const received=new URL(r.url);if(received.origin!==url.origin||received.pathname!==url.pathname||received.searchParams.get('record_id')!==id||received.searchParams.get('kind')!=='pdf')throw new Error('O servidor não retornou o PDF solicitado.');}
+  await window.GeorgePdf.validate(blob,{sha256:r.headers.get('X-George-SHA256'),bytes:Number(r.headers.get('X-George-Bytes'))||0});
+  if(record===null){
+   const job=await request('job',{record_id:id});
+   if(job.record_id!==id)throw new Error('Este PDF não corresponde ao documento solicitado.');
+   if(job.state!=='ready'||job.pdf_ready!==true)throw new Error('O PDF ainda está sendo preparado. Tente carregar novamente em instantes.');
+  }
+ }
+ return blob;
+}
 function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 async function reportActions(id,bubble){
  const row=document.createElement('div');row.className='pdf-actions';bubble.append(row);
- let pdfFile=null;
- const share=smallButton('Compartilhar PDF',async()=>{try{
-   if(!pdfFile)throw new Error('Aguarde o carregamento do PDF.');
-   if(navigator.canShare?.({files:[pdfFile]})&&navigator.share)await navigator.share({title:'Ata executiva — ERP ÍMPAR',files:[pdfFile]});
-   else saveBlob(pdfFile,pdfFile.name);
- }catch(e){if(e.name!=='AbortError')error(e);}});share.disabled=true;
- row.append(share,smallButton('Obras relacionadas',async()=>{try{const j=await request('document_works',{record_id:id});message('george',j.obras.length?'Encontrei estas referências no cadastro atual:\n'+j.obras.map(w=>w.nome+' — '+(w.responsavel||'responsável não informado')).join('\n'):'Não encontrei uma correspondência exata entre este documento e as obras cadastradas.');}catch(e){error(e);}}),smallButton('Gerar nova versão',async()=>{try{const j=await request('document_create',{record_id:state.record,source_ids:[id],title:'Nova versão do documento',event_id:eventId()});await processJob(j.record_id);}catch(e){error(e);}}),smallButton('Abrir PDF',async()=>{try{const b=pdfFile||await downloadBlob(id,'pdf');await window.GeorgePdf.open(b);}catch(e){error(e);}}),smallButton('Baixar transcrição',async()=>{try{saveBlob(await downloadBlob(id,'text'),'Transcricao_George.txt');}catch(e){error(e);}}));
- try{const b=await downloadBlob(id,'pdf');pdfFile=new File([b],'Documento_ERP_IMPAR_George.pdf',{type:'application/pdf'});share.disabled=false;}catch(e){error(e);}
+ const main=document.createElement('div');main.className='pdf-primary-actions';
+ const status=document.createElement('p');status.className='pdf-action-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+ let pdfFile=null,loading=null;
+ const fail=e=>{status.textContent=e.message||'Não consegui carregar o PDF. Tente novamente.';status.classList.add('is-error');if(e.http===401)showLogin();};
+ const loadPdf=()=>{
+  if(pdfFile)return Promise.resolve(pdfFile);if(loading)return loading;
+  status.textContent='Carregando PDF…';status.classList.remove('is-error');retry.hidden=true;
+  loading=(async()=>{try{
+   const b=await downloadBlob(id,'pdf');pdfFile=new File([b],'Documento_ERP_IMPAR_George.pdf',{type:'application/pdf'});
+   share.textContent=navigator.share&&navigator.canShare?.({files:[pdfFile]})?'Compartilhar PDF':'Baixar PDF';share.disabled=false;status.textContent='';return pdfFile;
+  }catch(e){fail(e);retry.hidden=false;throw e;}finally{loading=null;}})();return loading;
+ };
+ const open=smallButton('Abrir PDF',async()=>{if(open.disabled)return;open.disabled=true;try{await window.GeorgePdf.open(await loadPdf());}catch(e){fail(e);}finally{open.disabled=false;}});open.classList.add('primary');
+ const share=smallButton('Compartilhar PDF',async()=>{if(!pdfFile)return;try{
+  if(navigator.share&&navigator.canShare?.({files:[pdfFile]}))await navigator.share({title:'Documento — ERP ÍMPAR',files:[pdfFile]});else saveBlob(pdfFile,pdfFile.name);
+ }catch(e){if(e.name!=='AbortError')fail(e);}});share.disabled=true;
+ const retry=smallButton('Tentar carregar novamente',()=>loadPdf().catch(()=>{}));retry.hidden=true;
+ main.append(open,share);
+ const more=document.createElement('details');more.className='pdf-more-options';const label=document.createElement('summary');label.textContent='Outras opções';const options=document.createElement('div');
+ const regenerate=smallButton('Gerar nova versão',async()=>{if(regenerate.disabled)return;regenerate.disabled=true;try{const j=await request('document_create',{record_id:state.record,source_ids:[id],title:'Nova versão do documento',event_id:eventId()});await processJob(j.record_id);}catch(e){fail(e);}finally{regenerate.disabled=false;}});
+ options.append(smallButton('Obras relacionadas',async()=>{try{const j=await request('document_works',{record_id:id});message('george',j.obras.length?'Encontrei estas referências no cadastro atual:\n'+j.obras.map(w=>w.nome+' — '+(w.responsavel||'responsável não informado')).join('\n'):'Não encontrei uma correspondência exata entre este documento e as obras cadastradas.');}catch(e){fail(e);}}),regenerate,smallButton('Baixar transcrição',async()=>{try{saveBlob(await downloadBlob(id,'text'),'Transcricao_George.txt');}catch(e){fail(e);}}));
+ more.append(label,options);row.append(main,status,retry,more);
+ try{await loadPdf();return true;}catch{return false;}
 }
 $('reportDialog').addEventListener('cancel',()=>window.GeorgePdf.close());
 $('reportBack').onclick=()=>{$('reportDialog').close();window.GeorgePdf.close();};
@@ -427,46 +461,138 @@ $('retakePhoto').onclick=()=>{photoBlob=null;$('photoPreview').hidden=true;$('ph
 $('usePhoto').onclick=async()=>{if(!photoBlob||state.upload)return;$('usePhoto').disabled=true;try{const file=new File([photoBlob],`Foto_${Date.now()}.jpg`,{type:'image/jpeg'});const id=await uploadFile(file);$('photoDialog').close();clearPhoto();message('me','Foto salva.');await processJob(id);}catch(e){$('photoStatus').textContent=e.message;}finally{$('usePhoto').disabled=false;}};
 $('closePhoto').onclick=()=>{if(state.upload)return;clearPhoto();$('photoDialog').close();};$('photoDialog').addEventListener('cancel',e=>{if(state.upload){e.preventDefault();return;}clearPhoto();});
 
+// Presentation only: requests, permissions and operational actions remain unchanged.
+function toolIcon(kind){
+ const paths={documents:'M8 3h8l4 4v14H8z M16 3v5h4 M4 7v14 M11 12h6 M11 16h6',new:'M12 5v14 M5 12h14',pause:'M9 5v14 M15 5v14',files:'M3 7h7l2-3h9v16H3z'};
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+ const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[kind]||paths.documents);svg.append(path);return svg;
+}
+function setupConversationTools(){
+ const header=document.querySelector('.topbar'),tray=$('toolsTray'),panel=$('toolsPanel'),toggle=$('toolsToggle'),tools=$('conversationTools');
+ if(!header||!tray||!panel||!toggle)return;
+ let open=false,gesture=null,suppressClickUntil=0;
+ const setOpen=value=>{
+  open=Boolean(value);tray.classList.toggle('is-open',open);panel.inert=!open;panel.toggleAttribute('inert',!open);panel.setAttribute('aria-hidden',String(!open));
+  toggle.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-label',open?'Esconder opções do George':'Mostrar opções do George');
+  toggle.title=open?'Arraste para cima ou toque para esconder':'Arraste para baixo ou toque para abrir';
+  if(!open&&panel.contains(document.activeElement))toggle.focus({preventScroll:true});
+ };
+ toggle.onclick=()=>setOpen(!open);
+ header.addEventListener('pointerdown',e=>{
+  if(e.isPrimary===false||(e.pointerType==='mouse'&&e.button!==0)||e.target.closest('select'))return;
+  gesture={id:e.pointerId,x:e.clientX,y:e.clientY,dragged:false};
+ });
+ header.addEventListener('pointermove',e=>{
+  if(!gesture||gesture.id!==e.pointerId)return;
+  const dy=e.clientY-gesture.y,dx=e.clientX-gesture.x;
+  if(Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)*1.2){
+   gesture.dragged=true;if(e.cancelable)e.preventDefault();
+   try{header.setPointerCapture(e.pointerId);}catch(_){}
+  }
+ });
+ header.addEventListener('pointerup',e=>{
+  if(!gesture||gesture.id!==e.pointerId)return;
+  const dy=e.clientY-gesture.y,dx=e.clientX-gesture.x;
+  if(gesture.dragged){suppressClickUntil=Date.now()+350;if(Math.abs(dy)>=32&&Math.abs(dy)>Math.abs(dx)*1.2)setOpen(dy>0);}
+  try{if(header.hasPointerCapture?.(e.pointerId))header.releasePointerCapture(e.pointerId);}catch(_){}
+  gesture=null;
+ });
+ header.addEventListener('pointercancel',()=>{gesture=null;});
+ header.addEventListener('click',e=>{if(e.detail!==0&&Date.now()<suppressClickUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
+ tools.addEventListener('click',e=>{if(e.target.closest('button')&&!e.defaultPrevented)setOpen(false);});
+ tools.addEventListener('change',e=>{if(e.target.matches('select'))setOpen(false);});
+ document.addEventListener('pointerdown',e=>{if(open&&!header.contains(e.target))setOpen(false);},{passive:true});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&open&&!document.querySelector('dialog[open]')){e.preventDefault();setOpen(false);toggle.focus({preventScroll:true});}});
+ setOpen(false);
+}
+function decorateConversationTools(){
+ for(const [id,kind] of [['documentSources','documents'],['newConversation','new'],['stopGeorge','pause'],['mediaQueueButton','files']]){
+  const button=$(id);if(!button||button.dataset.toolStyled)return;
+  const label=document.createElement('span');label.textContent=button.textContent;button.replaceChildren(toolIcon(kind),label);button.classList.add('tool-option');button.dataset.toolStyled='true';
+ }
+}
+function createToolsSheet(kind,title,description){
+ const dlg=document.createElement('dialog');dlg.className='g09-dialog g09-tools-sheet '+kind;dlg.setAttribute('aria-labelledby',kind+'Title');
+ const head=document.createElement('header');head.className='tools-sheet-head';
+ const heading=document.createElement('div');const eyebrow=document.createElement('span');eyebrow.className='tools-sheet-eyebrow';eyebrow.textContent='GEORGE';
+ const h=document.createElement('h2');h.id=kind+'Title';h.textContent=title;const help=document.createElement('p');help.textContent=description;heading.append(eyebrow,h,help);
+ let removed=false;const cleanup=()=>{if(removed)return;removed=true;dlg.remove();if(!document.querySelector('dialog[open]'))$('toolsToggle')?.focus({preventScroll:true});};
+ const close=()=>{dlg.close();cleanup();};
+ const x=smallButton('×',close);x.className='tools-sheet-close';x.setAttribute('aria-label','Fechar '+title.toLowerCase());head.append(heading,x);
+ const status=document.createElement('p');status.className='tools-sheet-status';status.setAttribute('role','status');status.hidden=true;
+ const list=document.createElement('div');list.className='tools-sheet-list';list.setAttribute('aria-label',title);list.tabIndex=0;
+ const loading=document.createElement('p');loading.className='tools-sheet-empty';loading.textContent='Carregando…';list.append(loading);
+ const footer=document.createElement('footer');footer.className='tools-sheet-footer';footer.hidden=true;
+ dlg.append(head,status,list,footer);document.body.append(dlg);dlg.addEventListener('close',cleanup,{once:true});dlg.showModal();
+ return {dlg,list,footer,close,showError(e){status.textContent=e.message||String(e);status.hidden=false;status.setAttribute('role','alert');if(e.http===401)showLogin();},clearError(){status.hidden=true;}};
+}
 async function chooseDocuments(){
- if(!requireAuth())return;
- const j=await request('conversation_list',{limit:100});const dlg=document.createElement('dialog');dlg.className='source-picker';
- const title=document.createElement('h3');title.textContent='Conversas e documentos';dlg.append(title);
- const form=document.createElement('form');const list=document.createElement('div');list.style.cssText='max-height:55vh;overflow:auto';form.append(list);
- for(const r of j.records){const label=document.createElement('label');label.style.cssText='display:block;padding:10px';const box=document.createElement('input');box.type='checkbox';box.value=r.id;label.append(box,document.createTextNode(' '+r.title+' • '+new Date(r.updated_at).toLocaleString('pt-BR')+' • '+r.turn_count+' mensagens'));list.append(label);}
- const fmt=document.createElement('select');for(const [value,label] of [['document','Documento'],['minutes','Ata']]){const o=document.createElement('option');o.value=value;o.textContent=label;fmt.append(o);}form.append(fmt);
- form.append(smallButton('Gerar PDF das fontes selecionadas',async()=>{try{const ids=[...list.querySelectorAll('input:checked')].map(x=>x.value);if(!ids.length)throw new Error('Selecione ao menos uma fonte.');const r=await request('document_create',{record_id:state.recording?.id||state.record,source_ids:ids,format:fmt.value,title:'Documento George',event_id:eventId()});dlg.close();dlg.remove();await processJob(r.record_id);}catch(e){error(e);}}));
- form.append(smallButton('Fechar',()=>{dlg.close();dlg.remove();}));dlg.append(form);document.body.append(dlg);dlg.showModal();
+ if(!requireAuth()||document.querySelector('.source-picker[open]'))return;
+ const sheet=createToolsSheet('source-picker','Conversas e documentos','Escolha o que você quer reunir em um PDF.');const {dlg,list,footer}=sheet;
+ try{
+  const j=await request('conversation_list',{limit:100});if(!dlg.open)return;if(!Array.isArray(j.records))throw new Error('Não consegui carregar suas conversas. Feche esta janela e tente novamente.');list.replaceChildren();
+  for(const r of j.records){
+   const label=document.createElement('label');label.className='source-option';const box=document.createElement('input');box.type='checkbox';box.value=r.id;
+   const copy=document.createElement('span');copy.className='source-copy';const name=document.createElement('strong');name.textContent=r.title;
+   const meta=document.createElement('span');meta.className='source-meta';const badge=document.createElement('span');badge.className='source-kind';badge.textContent=({conversation:'Conversa',meeting:'Reunião',kickoff:'Kickoff',media:'Arquivo',text:'Documento'})[r.kind]||'Documento';
+   const date=new Date(r.updated_at);const details=document.createElement('span');details.textContent=Number.isNaN(date.getTime())?'Data não informada':date.toLocaleDateString('pt-BR')+' · '+date.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+   meta.append(badge,details);
+   if(r.kind==='conversation'){const count=document.createElement('span');count.textContent=r.turn_count>0?r.turn_count+' '+(r.turn_count===1?'mensagem':'mensagens'):'Sem mensagens';meta.append(count);}
+   copy.append(name,meta);label.append(box,copy);list.append(label);
+  }
+  if(!j.records.length){const empty=document.createElement('p');empty.className='tools-sheet-empty';empty.textContent='Suas conversas e documentos aparecerão aqui.';list.append(empty);}
+  const options=document.createElement('div');options.className='source-format-row';const formatLabel=document.createElement('label');formatLabel.className='source-format-label';formatLabel.textContent='Formato';
+  const fmt=document.createElement('select');fmt.setAttribute('aria-label','Formato do PDF');for(const [value,label] of [['document','Documento'],['minutes','Ata']]){const o=document.createElement('option');o.value=value;o.textContent=label;fmt.append(o);}formatLabel.append(fmt);
+  const selected=document.createElement('span');selected.className='source-selection-count';selected.setAttribute('role','status');selected.setAttribute('aria-live','polite');options.append(formatLabel,selected);
+  let busy=false;const generate=smallButton('Gerar PDF',async()=>{
+   const ids=[...list.querySelectorAll('input:checked')].map(x=>x.value);if(busy||!ids.length)return;busy=true;generate.disabled=true;generate.textContent='Preparando PDF…';sheet.clearError();
+   try{const r=await request('document_create',{record_id:state.recording?.id||state.record,source_ids:ids,format:fmt.value,title:'Documento George',event_id:eventId()});sheet.close();await processJob(r.record_id);}
+   catch(e){if(dlg.open)sheet.showError(e);else error(e);}
+   finally{busy=false;generate.textContent='Gerar PDF';updateSelection();}
+  });generate.classList.add('primary');generate.id='generateSourcesPdf';
+  function updateSelection(){const boxes=[...list.querySelectorAll('input')];const total=boxes.filter(x=>x.checked).length;for(const box of boxes)box.closest('label').classList.toggle('selected',box.checked);selected.textContent=total?total+' '+(total===1?'selecionado':'selecionados'):'Nenhum selecionado';generate.disabled=busy||total===0;}
+  list.addEventListener('change',updateSelection);updateSelection();footer.append(options,generate);footer.hidden=false;
+ }catch(e){list.replaceChildren();sheet.showError(e);}
 }
 async function showMediaQueue(){
- const j=await request('media_queue',{include_removed:true}),dlg=document.createElement('dialog');dlg.className='g09-dialog';
- const title=document.createElement('h2');title.textContent='Fila de arquivos';dlg.append(title);const list=document.createElement('div');dlg.append(list);
- const refresh=async()=>{dlg.close();dlg.remove();await showMediaQueue();};
- const change=async(ids,operation)=>{if(ids.includes(state.recording?.id))throw new Error('Encerre a gravação antes de retirar este arquivo.');if(ids.includes(state.uploadId))state.uploadAbort?.abort();await request('media_queue_change',{record_ids:ids,operation});await refresh();};
- if(!j.jobs.length){const p=document.createElement('p');p.textContent='Sua fila está vazia.';list.append(p);}
- for(const job of j.jobs){const row=document.createElement('div');row.className='media-queue-row';const name=document.createElement('strong');name.textContent=job.name;const status=document.createElement('p');status.textContent=job.state==='uploading'?'Envio incompleto':job.state==='cancelled'?'Retirado da fila — original preservado':taskText(job);row.append(name,status);
-  if(job.state!=='cancelled')row.append(smallButton('Retirar da fila',()=>change([job.record_id],'cancel').catch(error)));
-  row.append(smallButton('Excluir arquivo',async()=>{if(!confirm('Excluir “'+job.name+'” e seus arquivos de processamento?'))return;try{await change([job.record_id],'delete');}catch(e){error(e);}}));list.append(row);
- }
- const pending=j.jobs.filter(x=>x.state!=='cancelled'&&x.record_id!==state.recording?.id);
- if(pending.length)dlg.append(smallButton('Limpar fila ('+pending.length+')',()=>change(pending.map(x=>x.record_id),'cancel').catch(error)));
- dlg.append(smallButton('Fechar',()=>{dlg.close();dlg.remove();}));document.body.append(dlg);dlg.showModal();
+ if(!requireAuth()||document.querySelector('.queue-picker[open]'))return;
+ const sheet=createToolsSheet('queue-picker','Fila de arquivos','Acompanhe os arquivos que você enviou ao George.');const {dlg,list,footer}=sheet;
+ try{
+  const j=await request('media_queue',{include_removed:true});if(!dlg.open)return;if(!Array.isArray(j.jobs))throw new Error('Não consegui carregar seus arquivos. Feche esta janela e tente novamente.');list.replaceChildren();
+  const refresh=async()=>{sheet.close();await showMediaQueue();};let changing=false;
+  const change=async(ids,operation)=>{
+   if(changing)return;if(ids.includes(state.recording?.id))throw new Error('Encerre a gravação antes de retirar este arquivo.');changing=true;sheet.clearError();
+   const buttons=[...list.querySelectorAll('button'),...footer.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
+   try{if(ids.includes(state.uploadId))state.uploadAbort?.abort();await request('media_queue_change',{record_ids:ids,operation});await refresh();}
+   finally{changing=false;buttons.forEach(b=>b.disabled=false);}
+  };
+  if(!j.jobs.length){const p=document.createElement('p');p.className='tools-sheet-empty';p.textContent='Sua fila está vazia.';list.append(p);}
+  for(const job of j.jobs){const row=document.createElement('div');row.className='media-queue-row';const name=document.createElement('strong');name.textContent=job.name;const status=document.createElement('p');status.className='queue-status';status.textContent=job.state==='uploading'?'Envio incompleto':job.state==='cancelled'?'Retirado da fila · original preservado':taskText(job);row.append(name,status);
+   const actions=document.createElement('div');actions.className='queue-row-actions';
+   if(job.state!=='cancelled')actions.append(smallButton('Retirar da fila',()=>change([job.record_id],'cancel').catch(sheet.showError)));
+   const remove=smallButton('Excluir arquivo',async()=>{if(!confirm('Excluir “'+job.name+'” e seus arquivos de processamento?'))return;try{await change([job.record_id],'delete');}catch(e){sheet.showError(e);}});remove.classList.add('subtle-danger');actions.append(remove);row.append(actions);list.append(row);
+  }
+  const pending=j.jobs.filter(x=>x.state!=='cancelled'&&x.record_id!==state.recording?.id);
+  if(pending.length){const clear=smallButton('Limpar fila ('+pending.length+')',()=>change(pending.map(x=>x.record_id),'cancel').catch(sheet.showError));footer.append(clear);footer.hidden=false;}
+ }catch(e){list.replaceChildren();sheet.showError(e);}
 }
 async function initialize(){
  try{const j=await request('resume');state.record=j.record_id;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
   if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
   else message('george','Oi! Eu sou o George. Como posso te ajudar hoje?');
-  if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';sources.style.margin='6px';$('conversationTools').append(sources);}
+  if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
   if(!$('mediaQueueButton')){const b=smallButton('Fila de arquivos',()=>showMediaQueue().catch(error));b.id='mediaQueueButton';$('conversationTools').append(b);}
   if(!$('newConversation')){const b=smallButton('Nova conversa',async()=>{try{if(state.recording||state.upload)throw new Error('Conclua a captura ou envio antes de iniciar outra conversa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();await request('conversation_new');await initialize();}catch(e){error(e);}});b.id='newConversation';$('documentSources').after(b);}
   try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
+  decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
   if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify(h,null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id)));}}
   state.mode='text';setActive('');normalStatus();
  }catch(e){error(e);}
 }
+setupConversationTools();
 (async()=>{try{setActive('');if(await authenticate())await initialize();}catch(e){error(e);}})();
 })();
-
