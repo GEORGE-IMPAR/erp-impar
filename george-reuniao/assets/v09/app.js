@@ -28,7 +28,8 @@ function normalStatus(){
  if(state.mode==='audio')showStatus(voice.live?'Áudio ligado • George está ouvindo':'Áudio selecionado • toque em Áudio para conversar',voice.live?'audio':'warning');
  else showStatus('Áudio desligado • modo escrita','text');
 }
-function scroll(){requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight;});}
+let followChat=true;chat.addEventListener('scroll',()=>{followChat=chat.scrollHeight-chat.scrollTop-chat.clientHeight<100;},{passive:true});
+function scroll(force=false){if(force||followChat)requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight;});}
 function avatar(side){const a=document.createElement('div');a.className='msg-avatar';if(side==='me')a.textContent=(state.user?.nome||'GE').split(/\s/)[0].slice(0,2).toUpperCase();else{const im=document.createElement('img');im.src='assets/v09/logo_george.png';im.alt='George';a.append(im);}return a;}
 function message(side,text,label='GEORGE',at=now()){
  const row=document.createElement('div');row.className='msg '+side;const a=avatar(side);const b=document.createElement('div');b.className='bubble';
@@ -70,10 +71,7 @@ function agendaReportButtons(result,bubble){
  });
  const open=smallButton('Abrir / imprimir',()=>{
    try{
-     const url=URL.createObjectURL(result.blob);
-     $('reportFrame').src=url;
-     $('reportDialog').showModal();
-     state.pdfUrl=url;
+     window.GeorgePdf.open(result.blob,'Agenda do Dia').catch(error);
    }catch(e){error(e);}
  });
  const download=smallButton('Baixar PDF',()=>saveBlob(result.blob,result.filename));
@@ -83,11 +81,11 @@ async function logDirectTurn(record,role,text,id){
  try{await request('log_turn',{record_id:record,role,text,event_id:id});}
  catch(e){throw new Error('Não foi possível confirmar esta mensagem no servidor. '+e.message);}
 }
-function queueQuestion(text,source='text',id=eventId()){
+function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(!text.trim()||!requireAuth())return;
  if(handleLocalIntent(text,source,id))return;
- const record=state.recording?.id||state.record;const speak=state.mode==='audio'||state.recording?.mode==='meeting';
- message('me',text);
+ const record=retryRecord||state.recording?.id||state.record;const speak=state.mode==='audio'||state.recording?.mode==='meeting';
+ message('me',text);scroll(true);
 
  // Capability oficial de relatório: não passa pela IA e não recria template.
  if(window.GeorgeAgendaReport?.matches?.(text)){
@@ -127,13 +125,14 @@ function queueQuestion(text,source='text',id=eventId()){
    try{await state.logQueue;const j=await request('chat',{record_id:record,text,event_id:id});indicator.remove();const m=message('george',j.text);
       if(j.sources?.length)m.row.dataset.sources=j.sources.join(' | ');
       if(speak&&!state.recording?.stopping)await voice.speak(j.text);
-   }catch(e){indicator.remove();error(e);}finally{state.busy=false;voice.resumeTransmit();normalStatus();}
+   }catch(e){indicator.remove();error(e);const m=message('george','Você pode retomar este pedido para conferir como ficou.');m.bubble.append(smallButton('Retomar pedido',()=>{m.row.remove();queueQuestion(text,source,id,record);}));}finally{state.busy=false;voice.resumeTransmit();normalStatus();}
  });
 }
 function sendText(){const text=input.value.trim();if(!text||!requireAuth())return;if(state.recording&&state.recording.mode!=='meeting'){notice('Encerre a gravação para conversar. Seu texto foi mantido.');return;}input.value='';autosize();saveDraft();queueQuestion(text);}
 $('btnSend').onclick=sendText;
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}});
 const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+const stopSpeechIntent=s=>/^(?:(?:ei|oi|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$/.test(normalized(s));
 const called=s=>/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)\b/.test(normalized(s));
 
 // The WebRTC connection transcribes and voices validated server answers only.
@@ -148,7 +147,7 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
    this.connecting=(async()=>{
     if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Microfone requer acesso HTTPS em um navegador compatível.');
     this.stream=retained||await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
-    this.pc=new RTCPeerConnection();this.audio=new Audio();this.audio.autoplay=true;this.audio.playsInline=true;
+    this.pc=new RTCPeerConnection();this.audio=new Audio();this.audio.muted=true;this.audio.autoplay=true;this.audio.playsInline=true;
     this.pc.ontrack=e=>{this.audio.srcObject=e.streams[0];this.audio.play().catch(()=>showStatus('Toque em Áudio para liberar a reprodução.','warning'));};
     this.sender=this.pc.addTrack(this.stream.getAudioTracks()[0],this.stream);this.dc=this.pc.createDataChannel('oai-events');
     let resolveOpen,rejectOpen;const open=new Promise((a,b)=>{resolveOpen=a;rejectOpen=b;});open.catch(()=>{});const timer=setTimeout(()=>rejectOpen(new Error('A conexão de voz não foi estabelecida.')),70000);
@@ -163,10 +162,13 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
    })();
    try{return await this.connecting;}finally{this.connecting=null;}
  },
+partialTranscripts:new Map(),interruptedItems:new Set(),interruptionOnly:new Set(),tts:null,ttsAbort:null,speechTicket:0,pausedSpeech:null,
 transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
  event(e){
   const t=e.type||'';
+  if(t==='input_audio_buffer.speech_started'&&this.speaking)this.interruptionOnly.add(e.item_id);
+  if(t==='conversation.item.input_audio_transcription.delta'){const part=(this.partialTranscripts.get(e.item_id)||'')+(e.delta||'');this.partialTranscripts.set(e.item_id,part);if(this.speaking&&stopSpeechIntent(part)){this.interruptedItems.add(e.item_id);this.stopSpeaking();}}
   if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();}
   if(t==='conversation.item.input_audio_transcription.completed'){if(this.seen.has(e.item_id))return;this.transcriptFinals.set(e.item_id,e);if(!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();return;}
   if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
@@ -177,27 +179,47 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  },
  acceptTranscript(e){
     const text=String(e.transcript||'').trim(),id=e.item_id||eventId();
-    if(!text||this.seen.has(id))return;this.seen.add(id);
+    if(!text||this.seen.has(id))return;this.seen.add(id);this.partialTranscripts.delete(id);
+    if(this.interruptedItems.delete(id)||stopSpeechIntent(text)){this.stopSpeaking();message('me',text);const rid=state.recording?.id||state.record;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);return;}
+    const startedDuringSpeech=this.interruptionOnly.delete(id);const duringSpeech=this.speaking||startedDuringSpeech;
+    if(duringSpeech){if(state.recording?.mode==='meeting'&&!called(text)){const rid=state.recording.id;message('me',text);state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);}return;}
     if(state.recording?.mode==='meeting'){
-      if(called(text)||meetingProposal&&/^(pode falar|sim pode|autorizado)[.! ]*$/i.test(text))queueQuestion(text,'audio',id);
+      if(called(text))queueQuestion(text,'audio',id);
       else{message('me',text);const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);}
     }else if(state.mode==='audio'&&!state.recording)queueQuestion(text,'audio',id);
  },
  send(e){if(this.dc?.readyState!=='open')throw new Error('Áudio ainda não está conectado.');this.dc.send(JSON.stringify(e));},
- async speak(text){
+ async speak(text,full=false){
    if(state.mode==='text'&&!state.recording)return;
-   await this.connect();
-   this.speaking=true;this.pauseTransmit();this.markSpeaking(true);showStatus('George está falando…','audio');
-   await new Promise(resolve=>{const watchdog=setTimeout(()=>{this.speaking=false;this.markSpeaking(false);resolve();},Math.max(15000,Math.min(180000,text.length*85)));
-      this.speakDone=()=>{clearTimeout(watchdog);this.speaking=false;resolve();};
-      this.send({type:'response.create',response:{conversation:'none',instructions:'Leia com pronúncia brasileira natural, ritmo conversacional acolhedor, sem sotaque americano, fielmente e sem acrescentar dados, apenas o TEXTO_VALIDADO_PARA_LEITURA. Não responda à pergunta original.',input:[{type:'message',role:'user',content:[{type:'input_text',text:'TEXTO_VALIDADO_PARA_LEITURA:\n'+text}]}],output_modalities:['audio']}});
-   });
+   await this.connect();this.stopSpeaking(false);this.pausedSpeech=null;
+   const plain=String(text).replace(/[*#`]/g,'').trim();
+   const sentences=plain.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[plain];
+   let spoken=full?plain:sentences.slice(0,2).join(' ').trim();
+   let remainder='';const limit=full?2800:480;if(spoken.length>limit){const prefix=spoken.slice(0,limit-30),cut=prefix.lastIndexOf(' ');remainder=full?spoken.slice(cut).trim():'';spoken=prefix.slice(0,cut)+'.';}
+   if(spoken.length<plain.length&&!full)spoken+=' Se quiser, eu leio os detalhes.';
+   this.lastSpeech=plain;this.speaking=true;this.markSpeaking(true);this.audio&&(this.audio.muted=true);
+   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('George está falando • diga “George, só um minuto” para pausar','audio');
+   try{
+     const response=await fetch(BASE+'speech.php',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-George-CSRF':state.csrf},body:JSON.stringify({text:spoken}),signal:this.ttsAbort.signal});
+     if(!response.ok){let j;try{j=await response.json();}catch{}throw new Error(j?.error||'Não consegui falar agora. Minha resposta está na conversa.');}
+     const blob=await response.blob();if(ticket!==this.speechTicket)return;
+     const url=URL.createObjectURL(blob),a=new Audio(url);this.tts=a;a.playsInline=true;
+     try{await new Promise((resolve,reject)=>{const watchdog=setTimeout(()=>reject(new Error('A reprodução não terminou. A resposta está na conversa.')),120000);this.speakDone=()=>{clearTimeout(watchdog);resolve();};a.onended=this.speakDone;a.onerror=()=>{clearTimeout(watchdog);reject(new Error('Não consegui reproduzir a voz. Minha resposta está na conversa.'));};a.play().catch(reject);});}
+     finally{a.pause();URL.revokeObjectURL(url);}
+     if(remainder&&ticket===this.speechTicket)await this.speak(remainder,true);
+   }catch(e){if(e.name!=='AbortError')notice(e.message);}
+   finally{if(ticket===this.speechTicket){this.speaking=false;this.tts=null;this.ttsAbort=null;this.speakDone=null;this.markSpeaking(false);this.resumeTransmit();normalStatus();}}
+ },
+ stopSpeaking(keep=true){
+   const was=this.speaking;if(keep&&was)this.pausedSpeech=this.lastSpeech;this.speechTicket++;this.ttsAbort?.abort();this.tts?.pause();if(this.audio)this.audio.muted=true;
+   try{if(this.remoteSpeaking&&this.dc?.readyState==='open'){this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}}catch{}
+   this.speakDone?.();this.speakDone=null;this.tts=null;this.speaking=false;this.markSpeaking(false);this.resumeTransmit();if(keep&&was)showStatus(state.recording?'Fala pausada • reunião continua gravando':'Fala pausada • pode falar','audio');
  },
  markSpeaking(on){document.querySelectorAll('.msg-avatar.speaking').forEach(x=>x.classList.remove('speaking'));if(on){const av=[...document.querySelectorAll('.msg.george .msg-avatar')].pop();av?.classList.add('speaking');}},
  trackQueue:Promise.resolve(),
- pauseTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
- resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&!this.speaking&&!state.busy&&!state.upload&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
- pause(){this.wanted=false;this.pauseTransmit();if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
+ pauseTransmit(force=false){if(!force&&this.wanted&&(this.speaking||state.recording&&!state.recording.stopping))return this.resumeTransmit();this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
+ resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&(this.speaking||state.recording&&!state.recording.stopping||!state.busy&&!state.upload)&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
+ pause(){this.wanted=false;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
  close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
@@ -214,12 +236,12 @@ async function uploadChunk(id,index,blob,signal){
  const r=await fetch(API,{method:'POST',credentials:'include',headers:{'X-George-CSRF':state.csrf},body:fd,signal:signal?AbortSignal.any([signal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000)});let j;try{j=await r.json();}catch{throw new Error(`O bloco não foi recebido corretamente (HTTP ${r.status}).`);}if(!r.ok||!j.ok)throw new ApiError(j.error||'Upload não confirmado',j.status,r.status);return j;
 }
 async function uploadFile(file){
- const j=await request('media_start',{name:file.name,mime:file.type,size:file.size,kind:'media',parent_record_id:state.recording?.id||state.record});const id=j.record_id;let i=0;const c=new AbortController();state.uploadAbort=c;state.upload=true;voice.pauseTransmit();
+ const j=await request('media_start',{name:file.name,mime:file.type,size:file.size,kind:'media',parent_record_id:state.recording?.id||state.record});const id=j.record_id;state.uploadId=id;let i=0;const c=new AbortController();state.uploadAbort=c;state.upload=true;voice.pauseTransmit();
  try{for(let pos=0;pos<file.size;pos+=j.chunk_bytes){const chunk=file.slice(pos,pos+j.chunk_bytes);let sent=false;
    for(let attempt=0;attempt<3&&!sent;attempt++){try{await uploadChunk(id,i,chunk,c.signal);sent=true;}catch(e){if(c.signal.aborted||attempt===2)throw e;await wait(700*(attempt+1));}}
    i++;$('attachStatus').textContent='Enviando '+Math.min(100,Math.round((pos+chunk.size)/file.size*100))+'% • o chat continua preservado.';
  }await request('upload_finish',{record_id:id,chunks:i});return id;}
- finally{state.upload=false;state.uploadAbort=null;voice.resumeTransmit();}
+ finally{state.upload=false;state.uploadId=null;state.uploadAbort=null;voice.resumeTransmit();}
 }
 let chosen=null;
 function openAttach(){if(!requireAuth())return;saveDraft();chosen=null;$('filePicker').value='';$('attachName').textContent='Nenhum arquivo selecionado.';$('attachStatus').textContent='Original preservado. Vídeos compatíveis podem ser preparados neste aparelho; documentos e imagens serão convertidos em texto.';$('attachSend').disabled=true;$('attachDialog').showModal();}
@@ -232,20 +254,20 @@ $('attachBack').onclick=closeAttach;
 $('attachDialog').addEventListener('cancel',e=>{e.preventDefault();closeAttach();});
 $('attachSend').onclick=async()=>{
  if(!chosen||state.upload)return;const file=chosen;$('attachSend').disabled=true;$('attachChoose').disabled=true;
- try{const id=await uploadFile(file);$('attachDialog').close();message('me','Arquivo enviado e confirmado no servidor: '+file.name);await prepareOrProcess(id,file);}
+ try{const id=await uploadFile(file);$('attachDialog').close();message('me','Arquivo anexado: '+file.name);await prepareOrProcess(id,file);}
  catch(e){$('attachStatus').textContent=e.name==='AbortError'?'Envio interrompido.':e.message;}
  finally{$('attachSend').disabled=!chosen;$('attachChoose').disabled=false;}
 };
 function taskText(j){const map={derived_processing:'Interpretando os trechos de áudio e imagens amostradas…',uploaded:'Arquivo salvo • verificando faixa de áudio…',transcription_ready:'Transcrição salva • preparando a ata…',summarizing:`Gerando ata • ${j.report_parts_done}/${j.report_parts_total} partes`,consolidating:'Consolidando todas as partes da ata…',rendering:'Aplicando o template executivo oficial…',ready:'Ata e transcrição prontas.'};return j.state==='transcribing'?`Transcrevendo áudio • ${j.segments_done}/${j.segments_total} trechos`:map[j.state]||j.state;}
 async function processJob(id){
  if(state.jobRunning.has(id))return;state.jobRunning.add(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');
- try{let j=await request('job',{record_id:id});while(j.state!=='ready'){if(j.state==='uploading')throw new Error('O upload não foi finalizado. Reenvie o arquivo original para concluir.');n.text.textContent=taskText(j);j=await request('step',{record_id:id},195000);}
+ try{let j=await request('job',{record_id:id});while(j.state!=='ready'){if(['cancelled','deleted'].includes(j.state)){n.text.textContent=j.state==='deleted'?'Arquivo excluído.':'Arquivo retirado da fila.';return;}if(j.state==='uploading')throw new Error('O upload não foi finalizado. Reenvie o arquivo original para concluir.');n.text.textContent=taskText(j);j=await request('step',{record_id:id},195000);}
    n.text.textContent='Documento gerado. Consulte o texto das fontes: ele identifica áudio, imagens amostradas e eventuais limites da extração.';await reportActions(id,n.bubble);
- }catch(e){n.text.textContent=e.message+' O que já foi confirmado permanece no servidor.';const b=smallButton('Retomar processamento',()=>{n.row.remove();processJob(id);});n.bubble.append(b,smallButton('Preparar neste aparelho',async()=>{try{const original=await downloadBlob(id,'source');const j=await request('job',{record_id:id});await prepareInBrowser(id,new File([original],j.name),n.text);await processJob(id);}catch(e){error(e);}}),smallButton('Baixar original',async()=>{try{saveBlob(await downloadBlob(id,'source'),'Original_George');}catch(e){error(e);}}));}
+ }catch(e){n.text.textContent=e.message+' Seu arquivo continua salvo.';const b=smallButton('Retomar processamento',()=>{n.row.remove();processJob(id);});n.bubble.append(b,smallButton('Preparar neste aparelho',async()=>{try{const original=await downloadBlob(id,'source');const j=await request('job',{record_id:id});await prepareInBrowser(id,new File([original],j.name),n.text);await processJob(id);}catch(e){error(e);}}),smallButton('Baixar original',async()=>{try{saveBlob(await downloadBlob(id,'source'),'Original_George');}catch(e){error(e);}}));}
  finally{state.jobRunning.delete(id);normalStatus();}
 }
 function smallButton(text,fn){const b=document.createElement('button');b.type='button';b.className='g09-button';b.textContent=text;b.onclick=fn;return b;}
-async function downloadBlob(id,kind){const r=await fetch(BASE+'download.php?record_id='+encodeURIComponent(id)+'&kind='+kind,{credentials:'include',cache:'no-store'});if(!r.ok){let j;try{j=await r.json();}catch{}throw new Error(j?.error||'Arquivo ainda não disponível.');}return r.blob();}
+async function downloadBlob(id,kind){const r=await fetch(BASE+'download.php?record_id='+encodeURIComponent(id)+'&kind='+kind,{credentials:'include',cache:'no-store'});if(!r.ok){let j;try{j=await r.json();}catch{}throw new Error(j?.error||'Arquivo ainda não disponível.');}const blob=await r.blob();if(kind==='pdf'){if(r.headers.get('X-George-Record')!==id)throw new Error('Este PDF não corresponde ao documento solicitado.');await window.GeorgePdf.validate(blob,{sha256:r.headers.get('X-George-SHA256'),bytes:Number(r.headers.get('X-George-Bytes'))||0});}return blob;}
 function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 async function reportActions(id,bubble){
  const row=document.createElement('div');row.className='pdf-actions';bubble.append(row);
@@ -255,19 +277,21 @@ async function reportActions(id,bubble){
    if(navigator.canShare?.({files:[pdfFile]})&&navigator.share)await navigator.share({title:'Ata executiva — ERP ÍMPAR',files:[pdfFile]});
    else saveBlob(pdfFile,pdfFile.name);
  }catch(e){if(e.name!=='AbortError')error(e);}});share.disabled=true;
- row.append(share,smallButton('Gerar nova versão',async()=>{try{const j=await request('document_create',{record_id:state.record,source_ids:[id],title:'Nova versão do documento',event_id:eventId()});await processJob(j.record_id);}catch(e){error(e);}}),smallButton('Abrir PDF',async()=>{try{const b=pdfFile||await downloadBlob(id,'pdf');const u=URL.createObjectURL(b);$('reportFrame').src=u;$('reportDialog').showModal();state.pdfUrl=u;}catch(e){error(e);}}),smallButton('Baixar transcrição',async()=>{try{saveBlob(await downloadBlob(id,'text'),'Transcricao_George.txt');}catch(e){error(e);}}));
+ row.append(share,smallButton('Obras relacionadas',async()=>{try{const j=await request('document_works',{record_id:id});message('george',j.obras.length?'Encontrei estas referências no cadastro atual:\n'+j.obras.map(w=>w.nome+' — '+(w.responsavel||'responsável não informado')).join('\n'):'Não encontrei uma correspondência exata entre este documento e as obras cadastradas.');}catch(e){error(e);}}),smallButton('Gerar nova versão',async()=>{try{const j=await request('document_create',{record_id:state.record,source_ids:[id],title:'Nova versão do documento',event_id:eventId()});await processJob(j.record_id);}catch(e){error(e);}}),smallButton('Abrir PDF',async()=>{try{const b=pdfFile||await downloadBlob(id,'pdf');await window.GeorgePdf.open(b);}catch(e){error(e);}}),smallButton('Baixar transcrição',async()=>{try{saveBlob(await downloadBlob(id,'text'),'Transcricao_George.txt');}catch(e){error(e);}}));
  try{const b=await downloadBlob(id,'pdf');pdfFile=new File([b],'Documento_ERP_IMPAR_George.pdf',{type:'application/pdf'});share.disabled=false;}catch(e){error(e);}
 }
-$('reportBack').onclick=()=>{$('reportDialog').close();$('reportFrame').src='about:blank';if(state.pdfUrl)URL.revokeObjectURL(state.pdfUrl);};
+$('reportDialog').addEventListener('cancel',()=>window.GeorgePdf.close());
+$('reportBack').onclick=()=>{$('reportDialog').close();window.GeorgePdf.close();};
 
 // Recording uses the same durable upload path. Fragments are reassembled before decoding.
 function recorderMime(video=false){const types=video?['video/webm;codecs=vp8,opus','video/mp4','video/webm']:['audio/webm;codecs=opus','audio/mp4','audio/webm'];return types.find(t=>window.MediaRecorder?.isTypeSupported(t))||'';}
 async function beginCapture(stream,mode,isVideo=false){
  if(!window.MediaRecorder)throw new Error('Este navegador não oferece gravação. Anexe um arquivo gravado no celular.');
- const mime=recorderMime(isVideo),ext=mime.includes('mp4')?'mp4':'webm';const name=`${mode}_${new Date().toISOString().slice(0,10)}.${ext}`;
+ if(!stream?.active||!stream.getAudioTracks().some(t=>t.readyState==='live')||isVideo&&!stream.getVideoTracks().some(t=>t.readyState==='live'))throw new Error('Câmera ou microfone não estão prontos. Reabra Mídias e tente novamente.');
+ const preferred=recorderMime(isVideo);let rec;try{rec=new MediaRecorder(stream,{...(preferred?{mimeType:preferred}:{}),audioBitsPerSecond:64000,...(isVideo?{videoBitsPerSecond:1400000}:{})});}catch{rec=new MediaRecorder(stream);}
+ const mime=rec.mimeType||preferred;if(!mime)throw new Error('Este navegador não informou o formato da gravação. Use a câmera do celular e anexe o vídeo.');const ext=mime.includes('mp4')?'mp4':'webm';const name=`${mode}_${new Date().toISOString().slice(0,10)}.${ext}`;
  const start=await request('media_start',{name,mime,live:true,parent_record_id:state.record,kind:mode==='meeting'?'meeting':'media'});
- const rec=new MediaRecorder(stream,mime?{mimeType:mime,audioBitsPerSecond:64000}:{});
- const r={id:start.record_id,mode,rec,stream,index:0,queue:Promise.resolve(),started:Date.now(),pending:0,error:null,stopping:false,ownStream:isVideo,derivedError:null,sidecar:null,frameCount:0,frameQueue:Promise.resolve(),frameTimer:null};state.recording=r;
+ const r={id:start.record_id,mode,rec,stream,index:0,queue:Promise.resolve(),started:Date.now(),pending:0,error:null,stopping:false,ownStream:isVideo,derivedError:null,sidecar:null,frameCount:0,frameQueue:Promise.resolve(),frameTimer:null};state.recording=r;meetingProposal=null;lastReview=0;
  rec.ondataavailable=e=>{
   if(!e.data?.size)return;const data=e.data;r.pending+=data.size;
   if(r.pending>16*1024*1024&&rec.state==='recording'){rec.pause();notice('Rede lenta: gravação pausada enquanto os blocos são enviados.');}
@@ -281,7 +305,7 @@ async function beginCapture(stream,mode,isVideo=false){
  catch(e){notice('Preparação paralela indisponível: '+e.message+' O original será gravado e poderá exigir preparação após encerrar.');}
  if(isVideo){r.frameCount=1;r.frameQueue=GeorgeMedia.frame($('cameraVideo')).then(blob=>uploadDerived(r.id,blob,'frame',0,0)).catch(e=>{r.derivedError=e;error(e);});r.frameTimer=setInterval(()=>{if(r.stopping||rec.state!=='recording'||r.frameCount>=96)return;const i=r.frameCount++,at=(Date.now()-r.started)/1000;r.frameQueue=r.frameQueue.then(()=>GeorgeMedia.frame($('cameraVideo'))).then(blob=>uploadDerived(r.id,blob,'frame',i,at)).catch(e=>{r.derivedError=e;error(e);});},15000);}
  for(const track of stream.getTracks())track.addEventListener('ended',()=>{if(!r.stopping){r.error=new Error('A captura foi interrompida pelo aparelho. Os blocos confirmados estão preservados.');error(r.error);normalStatus();}});
- rec.start(4000);await keepAwake.acquire();normalStatus();return r;
+ try{rec.start(4000);}catch(e){state.recording=null;clearInterval(r.frameTimer);await r.sidecar?.stop().catch(()=>{});throw new Error('Não consegui iniciar a filmagem neste navegador. Use a câmera do celular e anexe o vídeo.');}await keepAwake.acquire();normalStatus();return r;
 }
 async function endCapture(){
  const r=state.recording;if(!r||r.stopping)return;r.stopping=true;clearInterval(r.frameTimer);voice.pauseTransmit();
@@ -291,7 +315,7 @@ async function endCapture(){
  await r.queue;await state.logQueue;await state.chatQueue;await keepAwake.release();
  if(r.ownStream)r.stream.getTracks().forEach(t=>t.stop());state.recording=null;setActive('');state.mode='text';voice.pause();
  if(r.error){error(new Error('Gravação incompleta: '+r.error.message+' Os blocos confirmados foram mantidos; nenhum PDF foi publicado.'));return;}
- try{await request('upload_finish',{record_id:r.id,chunks:r.index});if(r.derivedError)notice('O original foi confirmado. A preparação paralela não terminou: '+r.derivedError.message);if(prepared?.audio_count&&!r.derivedError)await request('derived_finish',{record_id:r.id,audio_count:prepared.audio_count,frame_count:r.frameCount});notice('Gravação confirmada no servidor. Mantenha esta página aberta durante o processamento.');await processJob(r.id);}catch(e){error(e);}
+ try{await request('upload_finish',{record_id:r.id,chunks:r.index});if(r.derivedError)notice('O original foi confirmado. A preparação paralela não terminou: '+r.derivedError.message);if(prepared?.audio_count&&!r.derivedError)await request('derived_finish',{record_id:r.id,audio_count:prepared.audio_count,frame_count:r.frameCount});notice('Gravação salva. Estou preparando o documento; mantenha esta página aberta.');await processJob(r.id);}catch(e){error(e);}
  normalStatus();
 }
 async function recordingButton(mode){
@@ -307,8 +331,10 @@ $('chooseFilm').onclick=async()=>{
  try{voice.pause();camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}},audio:true});$('cameraVideo').srcObject=camera;$('cameraModal').classList.remove('hidden');await $('cameraVideo').play();$('cameraInfo').textContent='Pronto para gravar. Serão interpretados o áudio e imagens amostradas.';}
  catch(e){error(e);}
 };
-$('btnStartFilm').onclick=async()=>{try{await beginCapture(camera,'film',true);$('btnStartFilm').disabled=true;$('btnStopFilm').disabled=false;$('cameraInfo').textContent='Gravando e enviando os blocos…';}catch(e){error(e);}};
-$('btnStopFilm').onclick=async()=>{$('cameraModal').classList.add('hidden');await endCapture();camera=null;$('btnStartFilm').disabled=false;$('btnStopFilm').disabled=true;};
+$('btnStartFilm').onclick=async()=>{$('btnStartFilm').disabled=true;try{await beginCapture(camera,'film',true);$('btnStopFilm').disabled=false;$('cameraInfo').textContent='Gravando…';}catch(e){$('btnStartFilm').disabled=false;$('cameraInfo').textContent=e.message;error(e);}};
+$('btnStopFilm').onclick=async()=>{$('btnStopFilm').disabled=true;try{await endCapture();}catch(e){error(e);}finally{camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');$('btnStartFilm').disabled=false;}};
+$('nativeFilm').onclick=()=>{$('btnCloseCamera').click();$('nativeVideoPicker').click();};
+$('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;try{const id=await uploadFile(file);message('me','Vídeo anexado: '+file.name);await prepareOrProcess(id,file);}catch(e){error(e);}finally{$('nativeVideoPicker').value='';}};
 $('btnCloseCamera').onclick=()=>{if(state.recording?.mode==='film'){$('cameraInfo').textContent='Use Parar para finalizar e preservar a gravação.';return;}camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');};
 window.addEventListener('beforeunload',e=>{if(state.recording||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{voice.close();camera?.getTracks().forEach(t=>t.stop());});
@@ -325,27 +351,45 @@ const keepAwake={lock:null,pending:null,
  async release(){const l=this.lock;this.lock=null;try{await l?.release();}catch{}}
 };
 document.addEventListener('visibilitychange',()=>{if(state.recording){if(document.visibilityState==='visible'){keepAwake.acquire();const tracks=state.recording.stream.getTracks();if(tracks.some(t=>t.readyState!=='live')){state.recording.error=new Error('O aparelho interrompeu a captura. Há uma lacuna na reunião.');error(state.recording.error);}else notice('Página visível novamente. Confira a continuidade da gravação; o sistema pode suspender a captura em segundo plano.');}else{showStatus('Página oculta • a captura pode ser suspensa pelo aparelho','warning');const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log_turn',{record_id:rid,role:'assistant',text:'[Registro técnico] Página ficou oculta; pode haver uma lacuna de captura a partir deste instante.',event_id:eventId()})).catch(error);}}});
-let meetingProposal='',lastReview=0,reviewBusy=false;
+let meetingProposal=null,lastReview=0,reviewBusy=false;
+function meetingIntent(text){
+ const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').trim();
+ if(/^(?:agora nao|nao agora|depois|aguarda|aguarde|espera|espere|segura a pergunta|nao pode falar|nao pode perguntar)\b/.test(n))return 'defer';
+ if(/^(?:(?:agora |ja |sim,? )?(?:pode (?:falar|perguntar|participar)|esta (?:liberado|autorizado))|libero (?:voce|a pergunta)|autorizado)[.! ]*(?:por favor)?[.! ]*$/.test(n))return 'grant';
+ if(/^(?:dispensa|dispense|cancela|cancele) (?:essa |a )?pergunta[.! ]*$/.test(n))return 'dismiss';
+ return null;
+}
 async function reviewMeeting(){
  if(!state.recording||state.recording.mode!=='meeting'||state.recording.stopping||state.busy||meetingProposal||reviewBusy||Date.now()-lastReview<90000)return;
  lastReview=Date.now();reviewBusy=true;
- try{const r=state.recording,j=await request('meeting_review',{record_id:r.id},45000);if(!j.proposal||state.recording!==r||r.stopping)return;meetingProposal=j.proposal;const m=message('george','Tenho uma pergunta sobre o que foi discutido. Posso falar?','REUNIÃO');m.bubble.append(smallButton('Pode falar',()=>grantProposal()),smallButton('Agora não',()=>{meetingProposal='';notice('Tudo bem. Continuo acompanhando.');}));if(!voice.speaking&&!state.busy)await voice.speak('Tenho uma pergunta sobre o que foi discutido. Posso falar?');}
- catch(e){notice('A revisão da reunião não ficou disponível agora. A gravação segue ativa.');}finally{reviewBusy=false;}
+ try{const r=state.recording,j=await request('meeting_review',{record_id:r.id},45000);if(state.recording!==r||r.stopping)return;meetingProposal=j.question&&['offered','deferred'].includes(j.question.state)?j.question:null;if(!j.proposal)return;
+  const m=message('george','Tenho uma pergunta sobre o que foi discutido. Posso falar?','REUNIÃO');
+  m.bubble.append(smallButton('Pode falar',()=>controlProposal('grant','Pode falar').catch(error)),smallButton('Agora não',()=>controlProposal('defer','Agora não').catch(error)));
+  if(!voice.speaking&&!state.busy)await voice.speak('Tenho uma pergunta sobre o que foi discutido. Posso falar?');
+ }catch(e){notice('A revisão da reunião não ficou disponível agora. A gravação segue ativa.');}finally{reviewBusy=false;}
 }
-async function grantProposal(){const text=meetingProposal;if(!text||!state.recording)return;meetingProposal='';const rid=state.recording.id;message('george',text,'REUNIÃO');await logDirectTurn(rid,'assistant',text,eventId());await voice.speak(text);}
+async function controlProposal(control,text,id=eventId()){
+ const r=state.recording;if(!r||r.mode!=='meeting')return;
+ const j=await request('meeting_control',{record_id:r.id,control,text,event_id:id});
+ if(state.recording!==r)return;meetingProposal=j.question&&['offered','deferred'].includes(j.question.state)?j.question:null;
+ message('george',j.text,'REUNIÃO');if(!j.cached&&!r.stopping)await voice.speak(j.text);
+}
+async function grantProposal(){return controlProposal('grant','Pode falar');}
 function handleLocalIntent(text,source,id){
+ if(stopSpeechIntent(text)){voice.stopSpeaking();message('me',text);return true;}
+ if((voice.pausedSpeech||voice.lastSpeech)&&called(text)&&/\b(pode continuar|continua|leia os detalhes|le os detalhes)\b/.test(normalized(text))){const pending=voice.pausedSpeech||voice.lastSpeech;voice.pausedSpeech=null;voice.speak(pending,true);return true;}
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').trim();
  if(state.recording?.mode==='meeting'&&/^(?:encerrar|encerra|finalizar|finaliza|terminar|termina|parar|para)(?: a)? reuniao(?: por favor)?[.! ]*$/.test(n)){message('me',text);endCapture().catch(error);return true;}
- if(meetingProposal&&/^(?:pode falar|sim pode|autorizado|sim)[.! ]*$/.test(n)){message('me',text);grantProposal().catch(error);return true;}
- if(meetingProposal&&/^(?:agora nao|nao|depois)[.! ]*$/.test(n)){meetingProposal='';message('me',text);notice('Tudo bem. Continuo acompanhando.');return true;}
+ const control=state.recording?.mode==='meeting'?meetingIntent(text):null;
+ if(control){message('me',text);state.chatQueue=state.chatQueue.catch(()=>{}).then(()=>controlProposal(control,text,id)).catch(error);return true;}
  if(/^(?:copi[ae]|compartilh[ae]) (?:a |essa |esta )?(?:ultima |essa |esta )?(?:mensagem|resposta|balao)/.test(n)){const row=[...chat.querySelectorAll('.msg.george')].pop();row?.querySelector('.bubble-tools>button')?.click();notice('Use Copiar ou Compartilhar na mensagem selecionada.');return true;}
- const isDoc=/\b(pdf|documento|ata)\b/.test(n)&&/\b(gera\w*|refaz\w*|regen\w*|unific\w*|junt\w*|compartilh\w*|export\w*)\b/.test(n);
+ const isDoc=/\b(pdf|documento|ata|conversas)\b/.test(n)&&/\b(gera\w*|refaz\w*|regen\w*|unific\w*|junt\w*|compartilh\w*|export\w*)\b/.test(n);
  if(isDoc&&!window.GeorgeAgendaReport?.matches?.(text)){
   if(/agenda semanal|visao cliente|cronograma/.test(n)){return false;}
   message('me',text);const record=state.recording?.id||state.record;
   state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{try{await state.logQueue;
     let ids=[record],last=0;
-    if(/ultim[ao]s? (tres|3) (conversas|mensagens|respostas)/.test(n))last=/conversas/.test(n)?6:3;
+    if(/ultim[ao]s? (tres|3) conversas/.test(n)){const list=await request('conversation_list',{kind:'conversation',limit:3});ids=list.records.filter(x=>x.turn_count>0).map(x=>x.id);if(ids.length<3)throw new Error('Encontrei '+ids.length+' conversa(s) salva(s). Selecione as conversas pelo botão Conversas e documentos.');}else if(/ultim[ao]s? (tres|3) (mensagens|respostas)/.test(n))last=3;
     if(/unific|junt/.test(n)){const current=await request('record',{record_id:record});const docs=(current.documents||[]).slice(-2);const attachments=docs.length===2?docs:(current.attachments||[]).slice(-2);if(attachments.length<2)throw new Error('Preciso de duas partes vinculadas à conversa para unificar. Anexe as partes ou indique os registros.');ids=attachments.map(x=>x.id);}
     const result=await request('document_create',{record_id:record,source_ids:ids,last_turns:last,title:state.recording?'Ata parcial da reunião':'Documento George',format:/\bata\b/.test(n)?'minutes':'document',event_id:id});
     await processJob(result.record_id);
@@ -380,17 +424,46 @@ function clearPhoto(){photoStream?.getTracks().forEach(t=>t.stop());photoStream=
 $('choosePhoto').onclick=async()=>{if(state.recording){notice('Encerre a captura atual antes de abrir a câmera.');return;}$('mediaDialog').close();try{voice.pause();photoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920}},audio:false});$('photoVideo').srcObject=photoStream;$('photoVideo').hidden=false;$('photoPreview').hidden=true;$('takePhoto').hidden=false;$('retakePhoto').hidden=true;$('usePhoto').hidden=true;$('photoStatus').textContent='Enquadre e fotografe.';$('photoDialog').showModal();await $('photoVideo').play();}catch(e){clearPhoto();error(e);}};
 $('takePhoto').onclick=async()=>{try{photoBlob=await GeorgeMedia.frame($('photoVideo'));if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=URL.createObjectURL(photoBlob);$('photoPreview').src=photoUrl;$('photoPreview').hidden=false;$('photoVideo').hidden=true;$('takePhoto').hidden=true;$('retakePhoto').hidden=false;$('usePhoto').hidden=false;}catch(e){error(e);}};
 $('retakePhoto').onclick=()=>{photoBlob=null;$('photoPreview').hidden=true;$('photoVideo').hidden=false;$('takePhoto').hidden=false;$('retakePhoto').hidden=true;$('usePhoto').hidden=true;};
-$('usePhoto').onclick=async()=>{if(!photoBlob||state.upload)return;$('usePhoto').disabled=true;try{const file=new File([photoBlob],`Foto_${Date.now()}.jpg`,{type:'image/jpeg'});const id=await uploadFile(file);$('photoDialog').close();clearPhoto();message('me','Foto salva no servidor.');await processJob(id);}catch(e){$('photoStatus').textContent=e.message;}finally{$('usePhoto').disabled=false;}};
+$('usePhoto').onclick=async()=>{if(!photoBlob||state.upload)return;$('usePhoto').disabled=true;try{const file=new File([photoBlob],`Foto_${Date.now()}.jpg`,{type:'image/jpeg'});const id=await uploadFile(file);$('photoDialog').close();clearPhoto();message('me','Foto salva.');await processJob(id);}catch(e){$('photoStatus').textContent=e.message;}finally{$('usePhoto').disabled=false;}};
 $('closePhoto').onclick=()=>{if(state.upload)return;clearPhoto();$('photoDialog').close();};$('photoDialog').addEventListener('cancel',e=>{if(state.upload){e.preventDefault();return;}clearPhoto();});
 
+async function chooseDocuments(){
+ if(!requireAuth())return;
+ const j=await request('conversation_list',{limit:100});const dlg=document.createElement('dialog');dlg.className='source-picker';
+ const title=document.createElement('h3');title.textContent='Conversas e documentos';dlg.append(title);
+ const form=document.createElement('form');const list=document.createElement('div');list.style.cssText='max-height:55vh;overflow:auto';form.append(list);
+ for(const r of j.records){const label=document.createElement('label');label.style.cssText='display:block;padding:10px';const box=document.createElement('input');box.type='checkbox';box.value=r.id;label.append(box,document.createTextNode(' '+r.title+' • '+new Date(r.updated_at).toLocaleString('pt-BR')+' • '+r.turn_count+' mensagens'));list.append(label);}
+ const fmt=document.createElement('select');for(const [value,label] of [['document','Documento'],['minutes','Ata']]){const o=document.createElement('option');o.value=value;o.textContent=label;fmt.append(o);}form.append(fmt);
+ form.append(smallButton('Gerar PDF das fontes selecionadas',async()=>{try{const ids=[...list.querySelectorAll('input:checked')].map(x=>x.value);if(!ids.length)throw new Error('Selecione ao menos uma fonte.');const r=await request('document_create',{record_id:state.recording?.id||state.record,source_ids:ids,format:fmt.value,title:'Documento George',event_id:eventId()});dlg.close();dlg.remove();await processJob(r.record_id);}catch(e){error(e);}}));
+ form.append(smallButton('Fechar',()=>{dlg.close();dlg.remove();}));dlg.append(form);document.body.append(dlg);dlg.showModal();
+}
+async function showMediaQueue(){
+ const j=await request('media_queue',{include_removed:true}),dlg=document.createElement('dialog');dlg.className='g09-dialog';
+ const title=document.createElement('h2');title.textContent='Fila de arquivos';dlg.append(title);const list=document.createElement('div');dlg.append(list);
+ const refresh=async()=>{dlg.close();dlg.remove();await showMediaQueue();};
+ const change=async(ids,operation)=>{if(ids.includes(state.recording?.id))throw new Error('Encerre a gravação antes de retirar este arquivo.');if(ids.includes(state.uploadId))state.uploadAbort?.abort();await request('media_queue_change',{record_ids:ids,operation});await refresh();};
+ if(!j.jobs.length){const p=document.createElement('p');p.textContent='Sua fila está vazia.';list.append(p);}
+ for(const job of j.jobs){const row=document.createElement('div');row.className='media-queue-row';const name=document.createElement('strong');name.textContent=job.name;const status=document.createElement('p');status.textContent=job.state==='uploading'?'Envio incompleto':job.state==='cancelled'?'Retirado da fila — original preservado':taskText(job);row.append(name,status);
+  if(job.state!=='cancelled')row.append(smallButton('Retirar da fila',()=>change([job.record_id],'cancel').catch(error)));
+  row.append(smallButton('Excluir arquivo',async()=>{if(!confirm('Excluir “'+job.name+'” e seus arquivos de processamento?'))return;try{await change([job.record_id],'delete');}catch(e){error(e);}}));list.append(row);
+ }
+ const pending=j.jobs.filter(x=>x.state!=='cancelled'&&x.record_id!==state.recording?.id);
+ if(pending.length)dlg.append(smallButton('Limpar fila ('+pending.length+')',()=>change(pending.map(x=>x.record_id),'cancel').catch(error)));
+ dlg.append(smallButton('Fechar',()=>{dlg.close();dlg.remove();}));document.body.append(dlg);dlg.showModal();
+}
 async function initialize(){
  try{const j=await request('resume');state.record=j.record_id;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
   if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
   else message('george','Oi! Eu sou o George. Como posso te ajudar hoje?');
+  if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';sources.style.margin='6px';$('conversationTools').append(sources);}
+  if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
+  if(!$('mediaQueueButton')){const b=smallButton('Fila de arquivos',()=>showMediaQueue().catch(error));b.id='mediaQueueButton';$('conversationTools').append(b);}
+  if(!$('newConversation')){const b=smallButton('Nova conversa',async()=>{try{if(state.recording||state.upload)throw new Error('Conclua a captura ou envio antes de iniciar outra conversa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();await request('conversation_new');await initialize();}catch(e){error(e);}});b.id='newConversation';$('documentSources').after(b);}
+  try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
   if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify(h,null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
-  for(const item of (j.jobs||[]).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id)));}}
+  for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id)));}}
   state.mode='text';setActive('');normalStatus();
  }catch(e){error(e);}
 }
