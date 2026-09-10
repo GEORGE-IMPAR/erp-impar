@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<script src="agenda_client_v2.js?v=098rc3hf1"></script>
+<script src="agenda_client_v2.js?v=097rc2"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
@@ -4182,6 +4182,9 @@ renderAll();
       content.innerHTML=html;
       const frozen=Boolean(raw?.bloqueado||raw?.finalizado||raw?.locked||raw?.tipo==='historico'||raw?.estado==='historico_semanal');
       const found=Boolean(raw?.exists||raw?.existe||raw?.file||raw?.arquivo||raw?.filename||Object.keys(agenda).length||total);
+      if(found&&!frozen){
+        content.innerHTML='<div class="weekly-consult-empty">Esta Agenda Semanal ainda está em rascunho e não pode ser consultada no histórico.</div>';
+      }
       note.textContent=found
         ? 'Semana de '+br(consultMonday)+' a '+br(add(consultMonday,4))+' • '+(frozen?'HISTÓRICO SEMANAL CONGELADO':'RASCUNHO SEMANAL')+'. Consulta somente leitura.'
         : 'Semana de '+br(consultMonday)+' a '+br(add(consultMonday,4))+' • Agenda Semanal não encontrada.';
@@ -9796,7 +9799,7 @@ window.addEventListener('DOMContentLoaded',()=>{setupPickers();addFilters();docu
 </script>
 
 <script id="agendaDiaV339HistoricoRealizadoGuard">
-window.__AGENDA_DIA_VERSION__="3.3.9";
+window.__AGENDA_DIA_VERSION__="3.3.9-hf3-conformidade";
 </script>
 
 <style id="erpImparAgendaDiaFinalV28Css">
@@ -10117,7 +10120,7 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
     await window.AgendaDiaClient.flush();const draft=buildDraft();
     const j=await window.AgendaDiaClient.saveVisible(draft,true);
     window.__AGENDA_DIA_ACTIVE_RECORD__=clone(j.draft);
-    if(!silent)showToast?.("success","Agenda salva","Pronto, suas alterações foram salvas.");return j;
+    if(!silent)showToast?.("success","Agenda salva","Banco e JSON conferidos. Novo limite para Desfazer.");return j;
   }
   async function onSave(){
     const b=document.getElementById("saveMock"), old=b?.innerHTML;
@@ -10166,7 +10169,7 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>setTimeout(install,0),{once:true});else setTimeout(install,0);
   new MutationObserver(install).observe(document.documentElement,{subtree:true,childList:true});
   window.AgendaDiaRefatoracaoV1={buildDraft,salvar:saveDraft,abrirColaboradores:openPeople,aplicarColaboradores:applyPeople};
-  console.info("[Agenda do Dia] 0.9.8 RC3 HF1 — integração compartilhada ativa.");
+  console.info("[Agenda do Dia] Refatoração lógica V1 ativa; interface preservada; capability SQL compartilhada RC2.");
 })();
 </script>
 
@@ -11487,23 +11490,15 @@ window.__AGENDA_DIA_VERSION__="3.3.9";
  window.AgendaDiaClient.apply=async j=>{window.__AGENDA_CAP_APPLYING__=true;try{return await oldApply(j);}finally{window.__AGENDA_CAP_APPLYING__=false;}};
  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.target.closest('input,textarea,[contenteditable=true]')){e.preventDefault();e.stopImmediatePropagation();window.AgendaDiaClient.undo(e.shiftKey).catch(notify);}},true);
  const bar=document.getElementById('saveMock')?.parentNode;if(bar){
- const move=document.createElement('button');move.type='button';move.id='agendaMoveSelected';move.className='toolbar-btn';move.textContent='Mover selecionadas';
+ const move=document.createElement('button');move.type='button';move.textContent='Mover selecionadas';
  move.onclick=()=>{if(!selectedActivities?.size){showToast?.('warning','Selecione atividades','Selecione os cards que deseja mover.');return;}
-  const dlg=document.createElement('dialog');dlg.className='agenda-move-dialog';dlg.setAttribute('aria-labelledby','agendaMoveTitle');const title=document.createElement('h3');title.id='agendaMoveTitle';title.textContent='Mover atividades para';const select=document.createElement('select');select.setAttribute('aria-label','Colaborador de destino');
+  const dlg=document.createElement('dialog');const title=document.createElement('h3');title.textContent='Mover atividades para';const select=document.createElement('select');
   for(const p of people){const option=document.createElement('option');option.value=p.name;option.textContent=p.name;select.append(option);}
-  const confirm=document.createElement('button');confirm.className='system-btn primary';confirm.textContent='Mover';const cancel=document.createElement('button');cancel.className='system-btn';cancel.textContent='Fechar';cancel.onclick=()=>{dlg.close();dlg.remove();};dlg.addEventListener('cancel',()=>dlg.remove());
+  const confirm=document.createElement('button');confirm.textContent='Mover';const cancel=document.createElement('button');cancel.textContent='Fechar';cancel.onclick=()=>{dlg.close();dlg.remove();};
   confirm.onclick=async()=>{confirm.disabled=true;try{const groups=new Map();for(const a of window.AgendaDiaRefatoracaoV1.buildDraft().atividades){if(!selectedActivities.has(String(a.id)))continue;const ids=groups.get(a.colaborador)||[];ids.push(String(a.id));groups.set(a.colaborador,ids);}
    await window.AgendaDiaClient.plan([...groups].map(([name,ids])=>({operacao:'mover',origem_colaborador:name,destino_colaborador:select.value,atividade_ids:ids})));dlg.close();dlg.remove();
   }catch(e){notify(e);}finally{confirm.disabled=false;}};dlg.append(title,select,confirm,cancel);document.body.append(dlg);dlg.showModal();};bar.append(move);
-for(const [label,action] of [['Desfazer',()=>window.AgendaDiaClient.undo(false)],['Desfazer tudo',()=>window.AgendaDiaClient.undo(true)]]){const b=document.createElement('button');b.type='button';b.id=label==='Desfazer'?'agendaUndo':'agendaUndoAll';b.className='toolbar-btn';b.textContent=label;b.onclick=()=>action().catch(notify);bar.append(b);}}
+for(const [label,action] of [['Desfazer',()=>window.AgendaDiaClient.undo(false)],['Desfazer tudo',()=>window.AgendaDiaClient.undo(true)]]){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>action().catch(notify);bar.append(b);}}
 })();
 </script>
-<style id="agendaHf1Controls">
-.toolbar-actions>.toolbar-btn{flex:0 1 auto;max-width:100%}
-.agenda-move-dialog{box-sizing:border-box;width:min(440px,92vw);padding:24px;border:1px solid var(--agenda-blue-line,#b9d4f5);border-radius:16px;background:#fff;color:#174d83;box-shadow:0 20px 60px #17324744}
-.agenda-move-dialog::backdrop,#agendaLocalConnection::backdrop{background:rgba(23,50,71,.4)}
-.agenda-move-dialog h3{margin:0 0 16px;color:var(--agenda-blue-deep,#0b3f91)}
-.agenda-move-dialog select{display:block;box-sizing:border-box;width:100%;min-height:44px;margin:0 0 16px;padding:10px;border:1px solid #b9c9d5;border-radius:10px;background:#fff;color:#174d83;font:inherit}
-.agenda-move-dialog .system-btn{margin:0 8px 0 0;min-height:40px}
-</style>
 </body></html>
