@@ -23,7 +23,20 @@ async function close(){
  if(host){delete host.dataset.pdfPages;delete host.dataset.pdfLoaded;}await dispose(previous);
 }
 function button(text,fn){const b=document.createElement('button');b.type='button';b.className='g09-button';b.textContent=text;b.onclick=fn;return b;}
-function download(blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Documento_ERP_IMPAR.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+function download(blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=blob.name||'Documento_ERP_IMPAR_George.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+function fileActions(blob,title){
+ const wrap=document.createElement('div');wrap.className='pdf-file-actions';
+ const row=document.createElement('div');row.className='pdf-primary-actions';
+ const info=document.createElement('p');info.className='pdf-action-status';info.setAttribute('role','status');
+ const file=blob instanceof File?blob:new File([blob],'Documento_ERP_IMPAR_George.pdf',{type:'application/pdf'});
+ const save=button('Baixar PDF',()=>download(file));save.classList.add('primary');row.append(save);
+ const share=button('Compartilhar PDF',async()=>{
+  // The already validated File is ready before the user taps: keep transient activation.
+  try{if(navigator.share&&navigator.canShare?.({files:[file]})){await navigator.share({title,files:[file]});info.textContent='';}
+   else{info.textContent='Neste navegador, baixe o PDF e compartilhe pelo aparelho.';download(file);}}
+  catch(e){if(e.name!=='AbortError')info.textContent='O compartilhamento não abriu. Use Baixar PDF; o documento continua disponível.';}
+ });row.append(share);wrap.append(row,info);return wrap;
+}
 async function open(blob,title='Documento ERP ÍMPAR'){
  const ticket=++generation,previous=current;current=null;
  const host=document.getElementById('reportFrame'),dialog=document.getElementById('reportDialog');host.replaceChildren();delete host.dataset.pdfPages;delete host.dataset.pdfLoaded;
@@ -38,19 +51,21 @@ async function open(blob,title='Documento ERP ÍMPAR'){
   const card=document.createElement('div');card.className='pdf-viewer-fallback';
   const heading=document.createElement('h2');heading.textContent='Não consegui exibir o PDF aqui';
   const help=document.createElement('p');help.textContent='Você pode baixar o arquivo para abrir no leitor do aparelho ou tentar novamente.';
-  const actions=document.createElement('div');actions.className='pdf-primary-actions';const save=button('Baixar PDF',()=>download(blob));save.classList.add('primary');actions.append(save,button('Tentar abrir novamente',()=>open(blob,title).catch(()=>{})));
+  const actions=fileActions(blob,title);actions.append(button('Tentar abrir novamente',()=>open(blob,title).catch(()=>{})));
   card.append(heading,help,actions);host.append(card);
  };
  try{
-  const bytes=await validate(blob);verified=true;const lib=await library();if(ticket!==generation)return;
+  const bytes=await validate(blob);if(ticket!==generation)return;verified=true;
+  host.prepend(fileActions(blob,title));
+  const lib=await library();if(ticket!==generation)return;
   const loading=lib.getDocument({data:bytes,isEvalSupported:false,standardFontDataUrl:new URL('standard_fonts/',base).href,cMapUrl:new URL('cmaps/',base).href,cMapPacked:true,wasmUrl:new URL('wasm/',base).href});
   const session={loading,doc:null,page:1,task:null};current=session;
   const doc=await loading.promise;if(ticket!==generation){await dispose(session);return;}session.doc=doc;
   if(!doc.numPages)throw new Error('Documento sem páginas.');
   const bar=document.createElement('div');bar.className='pdf-page-tools';const label=document.createElement('span');label.setAttribute('aria-live','polite');
-  const previousPage=button('Anterior',()=>render(session.page-1)),next=button('Próxima',()=>render(session.page+1));bar.append(previousPage,label,next,button('Baixar PDF',()=>download(blob)));
+  const previousPage=button('Anterior',()=>render(session.page-1)),next=button('Próxima',()=>render(session.page+1));bar.append(previousPage,label,next);
   const viewport=document.createElement('div');viewport.className='pdf-page-scroll';const canvas=document.createElement('canvas');canvas.setAttribute('role','img');viewport.append(canvas);
-  const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');summary.textContent='Ler texto desta página';text.className='pdf-page-text';details.append(summary,text);host.replaceChildren(bar,viewport,details);host.dataset.pdfPages=String(doc.numPages);
+  const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('div');summary.textContent='Ler texto desta página';text.className='pdf-page-text';details.append(summary,text);host.replaceChildren(fileActions(blob,title),bar,viewport,details);host.dataset.pdfPages=String(doc.numPages);
   let rendering=false;
   async function render(n){
    if(rendering||current!==session||ticket!==generation||n<1||n>doc.numPages)return;

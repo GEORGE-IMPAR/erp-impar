@@ -11,20 +11,34 @@ const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-di
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 class ApiError extends Error{constructor(message,status,http){super(message);this.status=status;this.http=http;}}
+function connectionError(e,stage='concluir esta etapa'){
+ if(e?.name==='AbortError'||e?.name==='TimeoutError')return new ApiError('Demorou para '+stage+'. Tente novamente para continuar.','TIMEOUT',0);
+ if(e?.name==='TypeError'&&/fetch|network|load failed/i.test(e.message))return new ApiError('A conexão falhou ao '+stage+'. Confira a internet e tente novamente.','CONEXAO',0);
+ return e;
+}
+const temporaryError=e=>['CONEXAO','TIMEOUT'].includes(e?.status)||[502,503,504].includes(e?.http);
+async function retryConfirmed(action,payload,timeout=60000){
+ // Only use for reads and the backend's idempotent upload/derived confirmations.
+ for(let attempt=0;;attempt++){try{return await request(action,payload,timeout);}catch(e){if(attempt>=1||!temporaryError(e))throw e;await wait(700);}}
+}
 async function request(action,payload={},timeout=180000){
  const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout);
  try{
   const r=await fetch(API,{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','X-George-CSRF':state.csrf},body:JSON.stringify({action,...payload}),signal:c.signal});
   const raw=await r.text();let j;try{j=JSON.parse(raw);}catch{throw new ApiError(`O servidor retornou uma resposta inválida (HTTP ${r.status}).`,'JSON_INVALIDO',r.status);}
   if(!r.ok||j.ok===false)throw new ApiError(j.error||j.status||`HTTP ${r.status}`,j.status,r.status);return j;
- }catch(e){if(e.name==='AbortError')throw new ApiError('A etapa demorou além do limite. Os dados já confirmados permanecem no servidor.','TIMEOUT',0);throw e;}finally{clearTimeout(t);}
+ }catch(e){throw connectionError(e,({upload_finish:'confirmar a gravação',derived_finish:'confirmar o áudio',job:'consultar o documento',step:'preparar a ata',document_create:'solicitar o documento'})[action]||'concluir o pedido');}finally{clearTimeout(t);}
 }
 function showStatus(text,kind='text'){$('modeStatus').className='mode-status show '+kind;$('modeStatusText').textContent=text;}
 function setActive(mode){document.querySelectorAll('.action').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});}
 function normalStatus(){
+ const meeting=$('btnMeeting'),label=meeting?.querySelector('.label');
+ if(label)label.textContent=state.finalizing?'Finalizando':state.recording?.mode==='meeting'?'Encerrar':state.pendingCapture?'Retomar':'Reunião';
+ if(meeting){meeting.disabled=!!state.finalizing;meeting.setAttribute('aria-label',state.recording?.mode==='meeting'?'Encerrar reunião e abrir a ata em PDF':state.pendingCapture?'Retomar encerramento da gravação':'Iniciar reunião');}
+ if(state.finalizing){showStatus('Concluindo reunião • preparando sua ata…','warning');return;}
  if(state.recording?.error||state.recording?.rec?.state==='paused'){showStatus('Gravação pausada • confira o envio dos blocos','warning');return;}
  if(state.recording?.mode==='film'){showStatus('Filmagem em andamento • áudio e imagens amostradas','meeting');return;}
- if(state.recording){showStatus(document.visibilityState!=='visible'?'Reunião: página oculta • captura pode ser interrompida':'Reunião gravando • diga Jorge no início do pedido',document.visibilityState!=='visible'?'warning':'meeting');return;}
+ if(state.recording){showStatus(!voice.live?'Reunião gravando • toque em Áudio para reconectar a voz':document.visibilityState!=='visible'?'Reunião: página oculta • captura pode ser interrompida':'Reunião gravando • diga Jorge, encerrar reunião',!voice.live||document.visibilityState!=='visible'?'warning':'meeting');return;}
  if(state.mode==='audio')showStatus(voice.live?'Áudio ligado • George está ouvindo':'Áudio selecionado • toque em Áudio para conversar',voice.live?'audio':'warning');
  else showStatus('Áudio desligado • modo escrita','text');
 }
@@ -38,7 +52,7 @@ function message(side,text,label='GEORGE',at=now()){
  addBubbleMenu(b,d);row.append(a,b);chat.insertBefore(row,anchor);scroll();return {row,bubble:b,text:d,avatar:a};
 }
 function notice(text){const n=document.createElement('div');n.className='system';n.textContent=text;chat.insertBefore(n,anchor);scroll();return n;}
-function error(e){notice(e.message||String(e));showStatus(e.message||String(e),'warning');if(e.http===401)showLogin();}
+function error(e){e=connectionError(e);notice(e.message||String(e));showStatus(e.message||String(e),'warning');if(e.http===401)showLogin();}
 function showLogin(){state.auth=false;voice.pause();$('loginDialog').showModal();$('loginInfo').textContent='Use o e-mail e a senha já cadastrados no ERP. A senha é verificada no servidor.';}
 async function authenticate(){
  const s=await request('session');state.csrf=s.csrf;
@@ -134,6 +148,11 @@ input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isCompo
 const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 const stopSpeechIntent=s=>/^(?:(?:ei|oi|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$/.test(normalized(s));
 const called=s=>/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)\b/.test(normalized(s));
+function meetingEndIntent(text){
+ const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
+ // Match a complete explicit request, never an ambient mention, negation or agenda command.
+ return /^(?:(?:por favor|agora)[, ]+)?(?:(?:pode|poderia|vamos|quero que voce|eu quero que voce|preciso que voce) )?(?:encerrar|encerra|encerre|finalizar|finaliza|finalize|terminar|termina|termine|parar|para|pare)(?: (?:a|essa|esta|nossa|a nossa|a atual))? (?:reuniao|gravacao)(?:(?:[, ]+)(?:agora|por favor))?(?:[, ]*(?:e |para |pra )(?:(?:depois |ja )?(?:abrir|abra|abre|gerar|gere|gera|baixar|baixe|compartilhar|compartilhe) (?:o |a )?(?:pdf|ata)(?: em pdf)?(?: (?:para|pra) (?:download|baixar|compartilhar))?(?: e (?:abrir|abra|abre|baixar|baixe|compartilhar|compartilhe)(?: (?:o |a )?(?:pdf|ata))?)*|(?:ir|va) direto (?:na|para a) abertura do pdf(?: para download)?))?(?:[, ]+por favor)?$/.test(n);
+}
 
 // The WebRTC connection transcribes and voices validated server answers only.
 // No automatic LLM replies to ambient conversation; the server chat owns context/tools.
@@ -180,6 +199,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  acceptTranscript(e){
     const text=String(e.transcript||'').trim(),id=e.item_id||eventId();
     if(!text||this.seen.has(id))return;this.seen.add(id);this.partialTranscripts.delete(id);
+    if((state.recording?.mode==='meeting'||state.pendingCapture)&&called(text)&&meetingEndIntent(text)){queueQuestion(text,'audio',id);return;}
     if(this.interruptedItems.delete(id)||stopSpeechIntent(text)){this.stopSpeaking();message('me',text);const rid=state.recording?.id||state.record;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);return;}
     const startedDuringSpeech=this.interruptionOnly.delete(id);const duringSpeech=this.speaking||startedDuringSpeech;
     if(duringSpeech){if(state.recording?.mode==='meeting'&&!called(text)){const rid=state.recording.id;message('me',text);state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);}return;}
@@ -223,7 +243,13 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
- if(!requireAuth())return;if(state.recording){notice('Encerre a gravação atual pelo botão Reunião ou Parar.');return;}
+ if(!requireAuth())return;
+ if(state.finalizing){showStatus('Concluindo reunião • aguarde a ata…','warning');return;}
+ if(state.recording){
+  if(state.recording.mode!=='meeting'){notice('Use Parar para concluir a filmagem.');return;}
+  try{await voice.connect();voice.audio?.play().catch(()=>{});normalStatus();}
+  catch(e){error(connectionError(e,'reconectar a voz'));}return;
+ }
  if(state.mode==='audio'&&voice.live&&voice.wanted){state.mode='text';setActive('');voice.pause();normalStatus();return;}
  state.mode='audio';setActive('audio');$('btnAudio').focus({preventScroll:true});
  try{await voice.connect();voice.audio?.play().catch(()=>{});}catch(e){error(e);showStatus('Áudio selecionado • permita o microfone e toque novamente','warning');}
@@ -233,7 +259,10 @@ $('btnAudio').onclick=async()=>{
 async function uploadChunk(id,index,blob,signal){
  if(blob.size>1024*1024)throw new Error('Bloco de upload acima do limite.');
  const fd=new FormData();fd.append('action','upload_chunk');fd.append('record_id',id);fd.append('index',String(index));fd.append('chunk',blob,'chunk.part');
- const r=await fetch(API,{method:'POST',credentials:'include',headers:{'X-George-CSRF':state.csrf},body:fd,signal:signal?AbortSignal.any([signal,AbortSignal.timeout(60000)]):AbortSignal.timeout(60000)});let j;try{j=await r.json();}catch{throw new Error(`O bloco não foi recebido corretamente (HTTP ${r.status}).`);}if(!r.ok||!j.ok)throw new ApiError(j.error||'Upload não confirmado',j.status,r.status);return j;
+ const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,60000);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+ try{const r=await fetch(API,{method:'POST',credentials:'include',headers:{'X-George-CSRF':state.csrf},body:fd,signal:controller.signal});let j;try{j=await r.json();}catch{throw new ApiError(`O trecho não foi confirmado (HTTP ${r.status}).`,'JSON_INVALIDO',r.status);}if(!r.ok||!j.ok)throw new ApiError(j.error||'Upload não confirmado',j.status,r.status);return j;}
+ catch(e){if(signal?.aborted)throw e;throw connectionError(e,'enviar o trecho da gravação');}
+ finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
 async function uploadFile(file){
  const j=await request('media_start',{name:file.name,mime:file.type,size:file.size,kind:'media',parent_record_id:state.recording?.id||state.record});const id=j.record_id;state.uploadId=id;let i=0;const c=new AbortController();state.uploadAbort=c;state.upload=true;voice.pauseTransmit();
@@ -259,17 +288,30 @@ $('attachSend').onclick=async()=>{
  finally{$('attachSend').disabled=!chosen;$('attachChoose').disabled=false;}
 };
 function taskText(j){const map={derived_processing:'Interpretando os trechos de áudio e imagens amostradas…',uploaded:'Arquivo salvo • verificando o conteúdo…',whatsapp_extracting:'Abrindo a conversa do WhatsApp…',whatsapp_processing:'Processando conversa do WhatsApp…',transcription_ready:'Transcrição salva • preparando a ata…',summarizing:`Gerando ata • ${j.report_parts_done}/${j.report_parts_total} partes`,consolidating:'Consolidando todas as partes da ata…',rendering:'Aplicando o template executivo oficial…',ready:'Ata e transcrição prontas.'};if(j.state==='whatsapp_processing'){const stage={texto:'texto',audio:'áudios',video:'vídeos'}[j.batch_stage]||'arquivos';return `Lendo ${stage} • ${j.batch_done}/${j.batch_total}${j.batch_current?' • '+j.batch_current:''}${j.batch_failed?' • '+j.batch_failed+' não lido(s)':''}`;}return j.state==='transcribing'?`Transcrevendo áudio • ${j.segments_done}/${j.segments_total} trechos`:map[j.state]||j.state;}
-async function processJob(id){
- if(state.jobRunning.has(id))return;state.jobRunning.add(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');
- try{let j=await request('job',{record_id:id});while(j.state!=='ready'){if(['cancelled','deleted'].includes(j.state)){n.text.textContent=j.state==='deleted'?'Arquivo excluído.':'Arquivo retirado da fila.';return;}if(j.state==='uploading')throw new Error('O upload não foi finalizado. Reenvie o arquivo original para concluir.');n.text.textContent=taskText(j);j=await request('step',{record_id:id},195000);}
-   n.text.textContent='Documento gerado. Conferindo o PDF…';const ready=await reportActions(id,n.bubble);n.text.textContent=ready?'Seu PDF está pronto.':'Documento gerado. Ainda não consegui carregar o PDF.';
- }catch(e){n.text.textContent=e.message+' Seu arquivo continua salvo.';const b=smallButton('Retomar processamento',()=>{n.row.remove();processJob(id);});n.bubble.append(b,smallButton('Preparar neste aparelho',async()=>{try{const original=await downloadBlob(id,'source');const j=await request('job',{record_id:id});await prepareInBrowser(id,new File([original],j.name),n.text);await processJob(id);}catch(e){error(e);}}),smallButton('Baixar original',async()=>{try{saveBlob(await downloadBlob(id,'source'),'Original_George');}catch(e){error(e);}}));}
- finally{state.jobRunning.delete(id);normalStatus();}
+async function processJob(id,options={autoOpen:true}){
+ if(state.jobRunning.has(id))return false;state.jobRunning.add(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');
+ try{let j=await retryConfirmed('job',{record_id:id});let recoveries=0;
+  while(j.state!=='ready'){
+   if(['cancelled','deleted'].includes(j.state)){n.text.textContent=j.state==='deleted'?'Arquivo excluído.':'Arquivo retirado da fila.';return false;}
+   if(j.state==='uploading')throw new Error('O envio ainda precisa ser concluído. Use Retomar encerramento na reunião; para anexos, reenvie o original.');
+   n.text.textContent=taskText(j);
+   try{j=await request('step',{record_id:id},195000);recoveries=0;}
+   catch(e){if(!temporaryError(e)||recoveries++>=1)throw e;n.text.textContent='A conexão oscilou. Conferindo a etapa já concluída…';await wait(900);j=await retryConfirmed('job',{record_id:id});}
+  }
+  n.text.textContent='Documento gerado. Carregando o PDF…';
+  const ready=await reportActions(id,n.bubble,{...options,onReady:()=>{n.text.textContent='Seu PDF está pronto.';}});
+  n.text.textContent=ready?'Seu PDF está pronto.':'A ata foi gerada, mas o PDF ainda não carregou. Use Tentar carregar novamente.';return ready;
+ }catch(e){n.text.textContent=connectionError(e,'preparar a ata').message+' Os dados já confirmados estão preservados.';
+  const b=smallButton('Retomar processamento',()=>{n.row.remove();processJob(id,options);});
+  n.bubble.append(b,smallButton('Preparar neste aparelho',async()=>{try{const original=await downloadBlob(id,'source');const j=await request('job',{record_id:id});await prepareInBrowser(id,new File([original],j.name),n.text);await processJob(id,options);}catch(e){error(e);}}),smallButton('Baixar original',async()=>{try{saveBlob(await downloadBlob(id,'source'),'Original_George');}catch(e){error(e);}}));return false;
+ }finally{state.jobRunning.delete(id);normalStatus();}
 }
 function smallButton(text,fn){const b=document.createElement('button');b.type='button';b.className='g09-button';b.textContent=text;b.onclick=fn;return b;}
-async function downloadBlob(id,kind){
+async function downloadBlob(id,kind,attempt=0){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),60000);
+ try{
  const url=new URL('download.php',BASE);url.searchParams.set('record_id',id);url.searchParams.set('kind',kind);
- const r=await fetch(url.href,{credentials:'include',cache:'no-store',redirect:'error'});
+ const r=await fetch(url.href,{credentials:'include',cache:'no-store',redirect:'error',signal:controller.signal});
  if(!r.ok){let j;try{j=await r.json();}catch{}throw new ApiError(j?.error||'Arquivo ainda não disponível.',j?.status,r.status);}
  const blob=await r.blob();
  if(kind==='pdf'){
@@ -286,9 +328,10 @@ async function downloadBlob(id,kind){
   }
  }
  return blob;
+ }catch(err){const e=connectionError(err,'carregar o arquivo');if(attempt<1&&temporaryError(e)){clearTimeout(timer);await wait(700);return downloadBlob(id,kind,attempt+1);}throw e;}finally{clearTimeout(timer);}
 }
 function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-async function reportActions(id,bubble){
+async function reportActions(id,bubble,config={}){
  const row=document.createElement('div');row.className='pdf-actions';bubble.append(row);
  const main=document.createElement('div');main.className='pdf-primary-actions';
  const status=document.createElement('p');status.className='pdf-action-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
@@ -299,20 +342,20 @@ async function reportActions(id,bubble){
   status.textContent='Carregando PDF…';status.classList.remove('is-error');retry.hidden=true;
   loading=(async()=>{try{
    const b=await downloadBlob(id,'pdf');pdfFile=new File([b],'Documento_ERP_IMPAR_George.pdf',{type:'application/pdf'});
-   share.textContent=navigator.share&&navigator.canShare?.({files:[pdfFile]})?'Compartilhar PDF':'Baixar PDF';share.disabled=false;status.textContent='';return pdfFile;
+   share.textContent=navigator.share&&navigator.canShare?.({files:[pdfFile]})?'Compartilhar PDF':'Baixar PDF';share.disabled=false;status.textContent='';if(config.autoOpen)state.lastDocument={id,file:pdfFile,parent:state.record};config.onReady?.();return pdfFile;
   }catch(e){fail(e);retry.hidden=false;throw e;}finally{loading=null;}})();return loading;
  };
  const open=smallButton('Abrir PDF',async()=>{if(open.disabled)return;open.disabled=true;try{await window.GeorgePdf.open(await loadPdf());}catch(e){fail(e);}finally{open.disabled=false;}});open.classList.add('primary');
  const share=smallButton('Compartilhar PDF',async()=>{if(!pdfFile)return;try{
   if(navigator.share&&navigator.canShare?.({files:[pdfFile]}))await navigator.share({title:'Documento — ERP ÍMPAR',files:[pdfFile]});else saveBlob(pdfFile,pdfFile.name);
  }catch(e){if(e.name!=='AbortError')fail(e);}});share.disabled=true;
- const retry=smallButton('Tentar carregar novamente',()=>loadPdf().catch(()=>{}));retry.hidden=true;
+ const retry=smallButton('Tentar carregar novamente',async()=>{try{const file=await loadPdf();if(config.autoOpen)await window.GeorgePdf.open(file);}catch(e){fail(e);}});retry.hidden=true;
  main.append(open,share);
  const more=document.createElement('details');more.className='pdf-more-options';const label=document.createElement('summary');label.textContent='Outras opções';const options=document.createElement('div');
  const regenerate=smallButton('Gerar nova versão',async()=>{if(regenerate.disabled)return;regenerate.disabled=true;try{const j=await request('document_create',{record_id:state.record,source_ids:[id],title:'Nova versão do documento',event_id:eventId()});await processJob(j.record_id);}catch(e){fail(e);}finally{regenerate.disabled=false;}});
  options.append(smallButton('Obras relacionadas',async()=>{try{const j=await request('document_works',{record_id:id});message('george',j.obras.length?'Encontrei estas referências no cadastro atual:\n'+j.obras.map(w=>w.nome+' — '+(w.responsavel||'responsável não informado')).join('\n'):'Não encontrei uma correspondência exata entre este documento e as obras cadastradas.');}catch(e){fail(e);}}),regenerate,smallButton('Baixar transcrição',async()=>{try{saveBlob(await downloadBlob(id,'text'),'Transcricao_George.txt');}catch(e){fail(e);}}));
  more.append(label,options);row.append(main,status,retry,more);
- try{await loadPdf();return true;}catch{return false;}
+ try{const file=await loadPdf();if(config.autoOpen)await window.GeorgePdf.open(file);return true;}catch{return false;}
 }
 $('reportDialog').addEventListener('cancel',()=>window.GeorgePdf.close());
 $('reportBack').onclick=()=>{$('reportDialog').close();window.GeorgePdf.close();};
@@ -326,38 +369,77 @@ async function beginCapture(stream,mode,isVideo=false){
  const mime=rec.mimeType||preferred;if(!mime)throw new Error('Este navegador não informou o formato da gravação. Use a câmera do celular e anexe o vídeo.');const ext=mime.includes('mp4')?'mp4':'webm';const name=`${mode}_${new Date().toISOString().slice(0,10)}.${ext}`;
  const start=await request('media_start',{name,mime,live:true,parent_record_id:state.record,kind:mode==='meeting'?'meeting':'media'});
  const r={id:start.record_id,mode,rec,stream,index:0,queue:Promise.resolve(),started:Date.now(),pending:0,error:null,stopping:false,ownStream:isVideo,derivedError:null,sidecar:null,frameCount:0,frameQueue:Promise.resolve(),frameTimer:null};state.recording=r;meetingProposal=null;lastReview=0;
+ r.pendingChunks=[];r.chunkBytes=start.chunk_bytes;
  rec.ondataavailable=e=>{
-  if(!e.data?.size)return;const data=e.data;r.pending+=data.size;
-  if(r.pending>16*1024*1024&&rec.state==='recording'){rec.pause();notice('Rede lenta: gravação pausada enquanto os blocos são enviados.');}
-  r.queue=r.queue.then(async()=>{if(r.error)return;for(let p=0;p<data.size;p+=start.chunk_bytes){const b=data.slice(p,p+start.chunk_bytes);let done=false;
-    for(let attempt=0;attempt<3&&!done;attempt++){try{await uploadChunk(r.id,r.index,b);done=true;}catch(e){if(attempt===2)throw e;await wait(900*(attempt+1));}}
-    r.index++;r.pending-=b.size;
-   }if(!r.stopping&&rec.state==='paused'&&r.pending<2*1024*1024)rec.resume();}).catch(e=>{r.error=e;if(rec.state==='recording')rec.pause();notice('Gravação pausada: não foi possível confirmar o upload. Encerre a captura; ela será marcada incompleta e os blocos confirmados permanecerão no servidor. '+e.message);});
+  if(!e.data?.size)return;
+  for(let p=0;p<e.data.size;p+=r.chunkBytes){const blob=e.data.slice(p,p+r.chunkBytes);r.pendingChunks.push(blob);r.pending+=blob.size;}
+  if(r.pending>16*1024*1024&&rec.state==='recording'){r.captureGap=true;rec.pause();notice('Rede lenta: gravação pausada. Há uma pausa no registro; mantenha esta página aberta para recuperar o envio.');}
+  r.queue=r.queue.then(()=>r.uploadError?undefined:drainCaptureChunks(r)).catch(e=>{
+   r.uploadError=e;if(rec.state==='recording'){r.captureGap=true;rec.pause();}
+   notice('O envio da gravação parou. Os trechos aguardam nesta página. Toque em Encerrar para tentar enviar novamente.');normalStatus();
+  });
  };
  rec.onerror=e=>{r.error=e.error||new Error('Falha de gravação.');error(r.error);};
- try{r.sidecar=await GeorgeMedia.fromStream(stream,(blob,index,at)=>uploadDerived(r.id,blob,'audio',index,at),e=>{r.derivedError=e;if(rec.state==='recording')rec.pause();error(e);});}
+ try{r.sidecar=await GeorgeMedia.fromStream(stream,(blob,index,at)=>uploadDerived(r.id,blob,'audio',index,at),e=>{if(!r.derivedError)notice('A preparação do áudio oscilou. Continuo gravando o original.');r.derivedError=e;});}
  catch(e){notice('Preparação paralela indisponível: '+e.message+' O original será gravado e poderá exigir preparação após encerrar.');}
  if(isVideo){r.frameCount=1;r.frameQueue=GeorgeMedia.frame($('cameraVideo')).then(blob=>uploadDerived(r.id,blob,'frame',0,0)).catch(e=>{r.derivedError=e;error(e);});r.frameTimer=setInterval(()=>{if(r.stopping||rec.state!=='recording'||r.frameCount>=96)return;const i=r.frameCount++,at=(Date.now()-r.started)/1000;r.frameQueue=r.frameQueue.then(()=>GeorgeMedia.frame($('cameraVideo'))).then(blob=>uploadDerived(r.id,blob,'frame',i,at)).catch(e=>{r.derivedError=e;error(e);});},15000);}
  for(const track of stream.getTracks())track.addEventListener('ended',()=>{if(!r.stopping){r.error=new Error('A captura foi interrompida pelo aparelho. Os blocos confirmados estão preservados.');error(r.error);normalStatus();}});
  try{rec.start(4000);}catch(e){state.recording=null;clearInterval(r.frameTimer);await r.sidecar?.stop().catch(()=>{});throw new Error('Não consegui iniciar a filmagem neste navegador. Use a câmera do celular e anexe o vídeo.');}await keepAwake.acquire();normalStatus();return r;
 }
-async function endCapture(){
- const r=state.recording;if(!r||r.stopping)return;r.stopping=true;clearInterval(r.frameTimer);voice.pauseTransmit();
- showStatus('Finalizando a gravação e confirmando os blocos…','warning');
- await new Promise(resolve=>{r.rec.addEventListener('stop',resolve,{once:true});if(r.rec.state!=='inactive')r.rec.stop();else resolve();});
- let prepared=null;try{if(r.sidecar)prepared=await r.sidecar.stop();await r.frameQueue;}catch(e){r.derivedError=e;}
- await r.queue;await state.logQueue;await state.chatQueue;await keepAwake.release();
- if(r.ownStream)r.stream.getTracks().forEach(t=>t.stop());state.recording=null;setActive('');state.mode='text';voice.pause();
- if(r.error){error(new Error('Gravação incompleta: '+r.error.message+' Os blocos confirmados foram mantidos; nenhum PDF foi publicado.'));return;}
- try{await request('upload_finish',{record_id:r.id,chunks:r.index});if(r.derivedError)notice('O original foi confirmado. A preparação paralela não terminou: '+r.derivedError.message);if(prepared?.audio_count&&!r.derivedError)await request('derived_finish',{record_id:r.id,audio_count:prepared.audio_count,frame_count:r.frameCount});notice('Gravação salva. Estou preparando o documento; mantenha esta página aberta.');await processJob(r.id);}catch(e){error(e);}
- normalStatus();
+async function drainCaptureChunks(r){
+ while(r.pendingChunks?.length){
+  const blob=r.pendingChunks[0];
+  for(let attempt=0;;attempt++){try{await uploadChunk(r.id,r.index,blob);break;}catch(e){if(attempt>=2||!temporaryError(e))throw e;await wait(700*(attempt+1));}}
+  r.index++;r.pending-=blob.size;r.pendingChunks.shift();
+ }
+ r.uploadError=null;
+ if(!r.stopping&&r.rec.state==='paused'&&!r.error&&r.pending<2*1024*1024)r.rec.resume();
+}
+async function finishCapture(r){
+ await drainCaptureChunks(r);
+ await retryConfirmed('upload_finish',{record_id:r.id,chunks:r.index});
+ // Complete the upload even after a device interruption; do not advertise a complete meeting.
+ if(r.captureGap||r.error){
+  if(state.pendingCapture===r)state.pendingCapture=null;
+  const m=message('george','A gravação foi encerrada e o original está salvo, mas houve uma interrupção. Baixe e confira o áudio; não foi gerada uma ata completa.','REUNIÃO');
+  m.bubble.append(smallButton('Baixar gravação',async()=>{try{saveBlob(await downloadBlob(r.id,'source'),'Gravacao_George.'+(r.rec.mimeType?.includes('mp4')?'mp4':'webm'));}catch(e){error(e);}}));return false;
+ }
+ if(r.prepared?.audio_count&&!r.derivedError)await retryConfirmed('derived_finish',{record_id:r.id,audio_count:r.prepared.audio_count,frame_count:r.frameCount});
+ if(state.pendingCapture===r)state.pendingCapture=null;
+ notice('Reunião encerrada. Estou preparando sua ata…');
+ return processJob(r.id,{autoOpen:true});
+}
+function endCapture(){
+ if(state.finalizing)return state.finalizing;
+ const r=state.recording||state.pendingCapture;if(!r)return Promise.resolve(false);
+ const run=async()=>{
+  r.stopping=true;state.pendingCapture=r;voice.stopSpeaking(false);voice.wanted=false;voice.pauseTransmit(true);clearInterval(r.frameTimer);
+  normalStatus();
+  if(!r.captureStopped){
+   await new Promise((resolve,reject)=>{
+    if(r.rec.state==='inactive'){resolve();return;}
+    const done=()=>{clearTimeout(timer);resolve();};
+    const timer=setTimeout(()=>{r.rec.removeEventListener('stop',done);reject(new Error('A gravação não confirmou a parada. Tente encerrar novamente.'));},10000);
+    r.rec.addEventListener('stop',done,{once:true});try{r.rec.stop();}catch(e){clearTimeout(timer);reject(e);}
+   });r.captureStopped=true;
+   try{if(r.sidecar)r.prepared=await r.sidecar.stop();await r.frameQueue;}catch(e){r.derivedError=e;}
+   await r.queue;await state.logQueue;await state.chatQueue;await keepAwake.release();
+   if(r.ownStream)r.stream.getTracks().forEach(t=>t.stop());
+   if(state.recording===r)state.recording=null;state.mode='text';setActive('');voice.pause();
+  }
+  return await finishCapture(r);
+ };
+ state.finalizing=Promise.resolve().then(run).catch(e=>{
+  const n=message('george',connectionError(e,'concluir a reunião').message+' Mantenha esta página aberta para retomar.','REUNIÃO');
+  const retry=smallButton('Retomar encerramento',async()=>{if(retry.disabled)return;retry.disabled=true;const ok=await endCapture();if(ok)n.row.remove();else retry.disabled=false;});n.bubble.append(retry);error(e);return false;
+ }).finally(()=>{state.finalizing=null;normalStatus();});normalStatus();return state.finalizing;
 }
 async function recordingButton(mode){
- if(!requireAuth())return;if(state.recording){if(state.recording.mode===mode)await endCapture();else notice('Encerre a gravação atual antes de iniciar outra.');return;}
+ if(!requireAuth())return;if(state.finalizing)return state.finalizing;if(state.pendingCapture&&!state.recording){await endCapture();return;}if(state.recording){if(state.recording.mode===mode)await endCapture();else notice('Encerre a gravação atual antes de iniciar outra.');return;}
  try{state.mode='audio';await voice.connect();setActive('meeting');await beginCapture(voice.stream,'meeting');notice('Reunião iniciada. Avise os participantes. Diga Jorge no início de um pedido. Para terminar, diga Jorge, encerrar reunião.');}
  catch(e){if(!state.recording)voice.pause();error(e);}
 }
-$('btnMeeting').onclick=()=>recordingButton('meeting');
+$('btnMeeting').onclick=()=>recordingButton('meeting').catch(error);
 let camera=null;
 $('chooseFilm').onclick=async()=>{
  $('mediaDialog').close();
@@ -370,7 +452,7 @@ $('btnStopFilm').onclick=async()=>{$('btnStopFilm').disabled=true;try{await endC
 $('nativeFilm').onclick=()=>{$('btnCloseCamera').click();$('nativeVideoPicker').click();};
 $('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;try{const id=await uploadFile(file);message('me','Vídeo anexado: '+file.name);await prepareOrProcess(id,file);}catch(e){error(e);}finally{$('nativeVideoPicker').value='';}};
 $('btnCloseCamera').onclick=()=>{if(state.recording?.mode==='film'){$('cameraInfo').textContent='Use Parar para finalizar e preservar a gravação.';return;}camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');};
-window.addEventListener('beforeunload',e=>{if(state.recording||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{voice.close();camera?.getTracks().forEach(t=>t.stop());});
 function addBubbleMenu(bubble,textNode){
  const wrap=document.createElement('div');wrap.className='bubble-tools';const trigger=document.createElement('button');trigger.type='button';trigger.textContent='⋯';trigger.setAttribute('aria-label','Opções desta mensagem');trigger.setAttribute('aria-expanded','false');
@@ -413,11 +495,16 @@ function handleLocalIntent(text,source,id){
  if(stopSpeechIntent(text)){voice.stopSpeaking();message('me',text);return true;}
  if((voice.pausedSpeech||voice.lastSpeech)&&called(text)&&/\b(pode continuar|continua|leia os detalhes|le os detalhes)\b/.test(normalized(text))){const pending=voice.pausedSpeech||voice.lastSpeech;voice.pausedSpeech=null;voice.speak(pending,true);return true;}
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').trim();
- if(state.recording?.mode==='meeting'&&/^(?:encerrar|encerra|finalizar|finaliza|terminar|termina|parar|para)(?: a)? reuniao(?: por favor)?[.! ]*$/.test(n)){message('me',text);endCapture().catch(error);return true;}
+ if((state.recording?.mode==='meeting'||state.pendingCapture||state.finalizing)&&meetingEndIntent(text)){
+  if(!state.finalizing){message('me',text);voice.stopSpeaking(false);endCapture().catch(error);}return true;
+ }
+ if(!state.recording&&state.lastDocument?.parent===state.record&&/^(?:(?:pode|quero) )?(?:abrir|abre|abra|baixar|baixa|baixe|compartilhar|compartilha|compartilhe|enviar|envia|envie)(?: (?:o|a|essa|esta|esse|este|ultima|ultimo))? (?:pdf|ata|documento)(?: em pdf)?(?: por favor)?[.!? ]*$/.test(n)){
+  message('me',text);window.GeorgePdf.open(state.lastDocument.file).catch(error);return true;
+ }
  const control=state.recording?.mode==='meeting'?meetingIntent(text):null;
  if(control){message('me',text);state.chatQueue=state.chatQueue.catch(()=>{}).then(()=>controlProposal(control,text,id)).catch(error);return true;}
  if(/^(?:copi[ae]|compartilh[ae]) (?:a |essa |esta )?(?:ultima |essa |esta )?(?:mensagem|resposta|balao)/.test(n)){const row=[...chat.querySelectorAll('.msg.george')].pop();row?.querySelector('.bubble-tools>button')?.click();notice('Use Copiar ou Compartilhar na mensagem selecionada.');return true;}
- const isDoc=/\b(pdf|documento|ata|conversas)\b/.test(n)&&/\b(gera\w*|refaz\w*|regen\w*|unific\w*|junt\w*|compartilh\w*|export\w*)\b/.test(n);
+ const isDoc=/\b(pdf|documento|ata|conversas)\b/.test(n)&&/\b(ger[ae]\w*|refa[cz]\w*|regen\w*|unific\w*|junt\w*|compartilh\w*|export\w*)\b/.test(n);
  if(isDoc&&!window.GeorgeAgendaReport?.matches?.(text)){
   if(/agenda semanal|visao cliente|cronograma/.test(n)){return false;}
   message('me',text);const record=state.recording?.id||state.record;
@@ -426,8 +513,8 @@ function handleLocalIntent(text,source,id){
     if(/ultim[ao]s? (tres|3) conversas/.test(n)){const list=await request('conversation_list',{kind:'conversation',limit:3});ids=list.records.filter(x=>x.turn_count>0).map(x=>x.id);if(ids.length<3)throw new Error('Encontrei '+ids.length+' conversa(s) salva(s). Selecione as conversas pelo botão Conversas e documentos.');}else if(/ultim[ao]s? (tres|3) (mensagens|respostas)/.test(n))last=3;
     if(/unific|junt/.test(n)){const current=await request('record',{record_id:record});const docs=(current.documents||[]).slice(-2);const attachments=docs.length===2?docs:(current.attachments||[]).slice(-2);if(attachments.length<2)throw new Error('Preciso de duas partes vinculadas à conversa para unificar. Anexe as partes ou indique os registros.');ids=attachments.map(x=>x.id);}
     const result=await request('document_create',{record_id:record,source_ids:ids,last_turns:last,title:state.recording?'Ata parcial da reunião':'Documento George',format:/\bata\b/.test(n)?'minutes':'document',event_id:id});
-    await processJob(result.record_id);
-    if(state.recording)notice('PDF gerado a partir do conteúdo já salvo. A reunião continua gravando.');
+    const ready=await processJob(result.record_id);
+    if(state.recording)notice(ready?'PDF parcial pronto. A reunião continua gravando.':'A reunião continua gravando. Retome o documento pelo botão da mensagem.');
    }catch(e){error(e);}});return true;
  }
  return false;
@@ -562,7 +649,7 @@ async function showMediaQueue(){
   const j=await request('media_queue',{include_removed:true});if(!dlg.open)return;if(!Array.isArray(j.jobs))throw new Error('Não consegui carregar seus arquivos. Feche esta janela e tente novamente.');list.replaceChildren();
   const refresh=async()=>{sheet.close();await showMediaQueue();};let changing=false;
   const change=async(ids,operation)=>{
-   if(changing)return;if(ids.includes(state.recording?.id))throw new Error('Encerre a gravação antes de retirar este arquivo.');changing=true;sheet.clearError();
+   if(changing)return;if(ids.includes(state.recording?.id)||ids.includes(state.pendingCapture?.id))throw new Error('Encerre a gravação antes de retirar este arquivo.');changing=true;sheet.clearError();
    const buttons=[...list.querySelectorAll('button'),...footer.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
    try{if(ids.includes(state.uploadId))state.uploadAbort?.abort();await request('media_queue_change',{record_ids:ids,operation});await refresh();}
    finally{changing=false;buttons.forEach(b=>b.disabled=false);}
@@ -570,6 +657,7 @@ async function showMediaQueue(){
   if(!j.jobs.length){const p=document.createElement('p');p.className='tools-sheet-empty';p.textContent='Sua fila está vazia.';list.append(p);}
   for(const job of j.jobs){const row=document.createElement('div');row.className='media-queue-row';const name=document.createElement('strong');name.textContent=job.name;const status=document.createElement('p');status.className='queue-status';status.textContent=job.state==='uploading'?'Envio incompleto':job.state==='cancelled'?'Retirado da fila · original preservado':taskText(job);row.append(name,status);
    const actions=document.createElement('div');actions.className='queue-row-actions';
+   if(job.record_id!==state.recording?.id&&!['uploading','cancelled','deleted'].includes(job.state))actions.append(smallButton(job.state==='ready'?'Abrir PDF':'Retomar processamento',()=>{sheet.close();processJob(job.record_id);}));
    if(job.state!=='cancelled')actions.append(smallButton('Retirar da fila',()=>change([job.record_id],'cancel').catch(sheet.showError)));
    const remove=smallButton('Excluir arquivo',async()=>{if(!confirm('Excluir “'+job.name+'” e seus arquivos de processamento?'))return;try{await change([job.record_id],'delete');}catch(e){sheet.showError(e);}});remove.classList.add('subtle-danger');actions.append(remove);row.append(actions);list.append(row);
   }
@@ -585,11 +673,11 @@ async function initialize(){
   if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
   if(!$('mediaQueueButton')){const b=smallButton('Fila de arquivos',()=>showMediaQueue().catch(error));b.id='mediaQueueButton';$('conversationTools').append(b);}
-  if(!$('newConversation')){const b=smallButton('Nova conversa',async()=>{try{if(state.recording||state.upload)throw new Error('Conclua a captura ou envio antes de iniciar outra conversa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();await request('conversation_new');await initialize();}catch(e){error(e);}});b.id='newConversation';$('documentSources').after(b);}
-  try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
+  if(!$('newConversation')){const b=smallButton('Nova conversa',async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou envio antes de iniciar outra conversa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();await request('conversation_new');await initialize();}catch(e){error(e);}});b.id='newConversation';$('documentSources').after(b);}
+  try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
-  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify(h,null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
+  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf4-ata-direta'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id)));}}
   state.mode='text';setActive('');normalStatus();
  }catch(e){error(e);}
