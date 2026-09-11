@@ -1,10 +1,11 @@
-/* Shared authenticated Agenda capability - RC3 HF3. Loaded before the legacy page scripts. */
+/* Shared authenticated Agenda capability - RC3 HF5. Loaded before the legacy page scripts. */
 (() => {
 'use strict';
 const endpoint='https://api.erpimpar.com.br/george-reuniao/v09/api.php';
 const nativeFetch=window.fetch.bind(window);let csrf='',session=null,companyId=null,revision=null,queue=Promise.resolve(),lastDraft=null;
 const clone=x=>JSON.parse(JSON.stringify(x));const event=()=>crypto.randomUUID();
 async function raw(action,args={}){
+ if(location.protocol==='file:')throw new Error('Abra a Agenda pelo endereço oficial do ERP ÍMPAR. A conexão por arquivo local foi desativada.');
  const r=await nativeFetch(endpoint,{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','X-George-CSRF':csrf},body:JSON.stringify({action,...args})});
  let j;try{j=await r.json();}catch{throw new Error('Resposta inválida da Agenda integrada.');}
  if(!r.ok||j.ok===false){const e=new Error(j.error||j.message||j.status||'Não foi possível confirmar a operação.');e.status=j.status;e.http=r.status;throw e;}return j;
@@ -30,7 +31,9 @@ function mutate(args){
     // Exact same request safely completes a committed transaction with a pending projection.
     if(e.status==='PROJECAO_PENDENTE')j=await request('agenda_execute',payload);else throw e;
    }
-   if(j.verified!==true)throw new Error(j.message||'A operação não foi confirmada.');return accept(j);
+   if(j.verified!==true)throw new Error(j.message||'A operação não foi confirmada.');
+   if(j.draft&&['replace_visible','undo','undo_all'].includes(args.operation))await window.ERPIMPAR_SYNC_VEHICLE_LINKS?.(clone(j.draft));
+   return accept(j);
  });queue=task.catch(()=>{});return task;
 }
 async function apply(j){
@@ -40,6 +43,14 @@ async function apply(j){
  }finally{window.__AGENDA_CAP_APPLYING__=false;}
 }
 const client={read,request,mutate,apply,flush:()=>queue,revision:()=>revision,
+ // Infraestrutura existente de leitura/gravação do vínculo. A regra fica no HTML.
+ vehicleCatalog:async payload=>{
+   await authenticate();
+   const options={cache:'no-store'};
+   if(payload!==undefined)Object.assign(options,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(payload)});
+   const r=await nativeFetch('https://api.erpimpar.com.br/agenda/cadastros_agenda_novo.php',options);
+   const j=await r.json();if(!r.ok||j.ok===false)throw new Error(j.error||'Não foi possível consultar ou salvar o vínculo dos veículos.');return j;
+ },
  plan:steps=>mutate({operation:'plan',steps}).then(apply),
  saveVisible:(draft,checkpoint=false)=>mutate({operation:'replace_visible',draft:clone(draft),checkpoint}),
  checkpoint:()=>mutate({operation:'checkpoint'}),undo:all=>mutate({operation:all?'undo_all':'undo'}).then(apply),
@@ -51,6 +62,7 @@ const client={read,request,mutate,apply,flush:()=>queue,revision:()=>revision,
 // Exact legacy routes are translated to the shared service; unrelated requests are untouched.
 window.fetch=async(input,init={})=>{
  const url=new URL(typeof input==='string'?input:input.url,location.href);const file=url.pathname.split('/').pop();
+ if(location.protocol==='file:'&&url.origin==='https://api.erpimpar.com.br')throw new Error('Acesso local desativado. Abra a Agenda pelo endereço oficial do ERP ÍMPAR.');
  if(url.origin==='https://api.erpimpar.com.br'&&url.pathname.startsWith('/agenda/')){
   let j=null;const method=(init.method||'GET').toUpperCase();
   if(['atividade_dia_estado_novo.php','atividade_dia_get.php','carregar_atividade_dia.php'].includes(file)){

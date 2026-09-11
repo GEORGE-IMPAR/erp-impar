@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<script src="agenda_client_v2.js?v=097rc2"></script>
+<script src="agenda_client_v2.js?v=098rc3hf5"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
@@ -5041,6 +5041,8 @@ renderAll();
   }
 
   function initializeDaily(){
+    // A carga do serviço é autoritativa; o inicializador local não pode limpá-la.
+    if(window.AgendaDiaClient)return;
     // Regra principal: ao abrir o módulo, qualquer dia não finalizado
     // é carregado automaticamente para que a equipe conclua e finalize.
     const openRecords = getOpenRecords();
@@ -7847,11 +7849,14 @@ renderAll();
 
   function validateOneItem(item, collaboratorName, dateKey){
     if(!item)return false;
-    if(item.cancelado||item.cancelled){item.auditStatus="cancelled";return false;}
-    const weekly=item.origemSemanal===true||item.importedFromFrozenWeek===true;
-    const plan=item.planejado;
-    const changed=Boolean(plan&&["obra","atividade","viagem"].some(k=>plan[k]!=null&&String(plan[k])!==String(item[k])));
-    item.replanejado=!weekly||Boolean(item.replanejado)||changed;
+    if(window.__AGENDA_DIA_ACTIVE_RECORD__?.finalizado)return item.auditStatus==="planned";
+    if(item.cancelado||item.cancelled||["cancelado","cancelada"].includes(item.status)){
+      item.auditStatus="cancelled";item.replanejado=false;return false;
+    }
+    // Mesma regra já aprovada: data, colaborador, obra e viagem.
+    // Descrição e veículo não mudam a origem planejada da atividade.
+    item.__currentComparisonKey=keyOf(dateKey,collaboratorName,item.obra,item.viagem);
+    item.replanejado=!cardMatchesOriginal(item,collaboratorName,dateKey);
     item.auditStatus=item.replanejado?"replanned":"planned";return !item.replanejado;
   }
 
@@ -7904,17 +7909,33 @@ renderAll();
 
   async function applyRecord(record,message){
     // Existing days carry their own frozen provenance. Never reload weekly state here.
-    Object.values(record.schedule||{}).flat().forEach(item=>{
-      if(item.origemSemanal===true||item.importedFromFrozenWeek===true){
-        item.__originalComparisonKey=item.__originalComparisonKey||item.chaveOriginal||"weekly:"+String(item.id);
-      }else item.__originalComparisonKey=null;
+    Object.entries(record.schedule||{}).forEach(([scheduleKey,items])=>{
+      const person=(record.people||[]).find(p=>String(p.id)===String(scheduleKey).replace(/_0$/,""));
+      (items||[]).forEach(item=>{
+        const savedKey=String(item.__originalComparisonKey||item.chaveOriginal||"");
+        const parts=savedKey.split("|");
+        if(parts.length===4&&/^20\d{2}-\d{2}-\d{2}$/.test(parts[0])){
+          // Dias antigos registram a origem apenas na chave; não a descartar.
+          item.__originalComparisonKey=keyOf(...parts);
+        }else if((item.origemSemanal===true||item.importedFromFrozenWeek===true||item.importedFromFinalizedWeek===true)
+          &&item.planejado?.obra!=null&&item.planejado?.viagem!=null){
+          // Dias criados pelo serviço guardam o plano congelado, sem a chave visual.
+          item.__originalComparisonKey=keyOf(record.date,item.planejado.colaborador||item.colaborador||person?.name,
+            item.planejado.obra,item.planejado.viagem);
+        }else item.__originalComparisonKey=null;
+      });
     });
+
+    await window.ERPIMPAR_PREPARE_VEHICLE_LINKS?.(record);
 
     people = clone(record.people);
     schedule = clone(record.schedule);
     roomLinks = clone(record.roomLinks||[]);
     selectedWeekStart = parse(record.date);
     currentWeekKey = record.date;
+    // Os hooks legados devem apontar para a mesma cópia recém-carregada.
+    window.people=people;window.schedule=schedule;window.roomLinks=roomLinks;
+    window.currentWeekKey=currentWeekKey;
     weekLocked = record.status==="finalized";
     window.__AGENDA_DIA_CURRENT_DATE__ = record.date;
     window.__AGENDA_DIA_ACTIVE_RECORD__ = record;
@@ -8397,35 +8418,8 @@ window.__AGENDA_DIA_CHAVE_PADRAO__ = "DATA | COLABORADOR | OBRA | SIM/NÃO";
 
   function classify(item, collaboratorName){
     if(!item) return "planned";
-
-    // Prioridade absoluta.
-    if(isCancelled(item)){
-      item.auditStatus="cancelled";
-      item.replanejado=false;
-      return "cancelled";
-    }
-
-    const montarChave=engine()?.montarChave;
-    if(typeof montarChave!=="function"){
-      console.error("Função única montarChave não disponível.");
-      return item.auditStatus || "planned";
-    }
-
-    const chaveAtual=montarChave(
-      currentDate(),
-      collaboratorName,
-      item.obra,
-      item.viagem
-    );
-
-    const chaveOriginal=String(item.__originalComparisonKey||"");
-    const igual=Boolean(chaveOriginal) && chaveAtual===chaveOriginal;
-
-    item.__currentComparisonKey=chaveAtual;
-    item.replanejado=!igual;
-    item.auditStatus=igual ? "planned" : "replanned";
-
-    return item.auditStatus;
+    engine()?.validateOneItem(item,collaboratorName,currentDate());
+    return item.auditStatus || "planned";
   }
 
   function paint(card,item,status){
@@ -9713,93 +9707,102 @@ window.addEventListener('DOMContentLoaded',()=>{setupPickers();addFilters();docu
 <script id="erpImparVeiculosCadastroAtualV334">
 (function(){
   "use strict";
-  const CATALOG_URL="https://api.erpimpar.com.br/agenda/cadastros_agenda_novo.php";
-  let byId=new Map(), byName=new Map(), loading=null, cachedRows=[], lastFetchAt=0;
-  const CACHE_MS=60000;
-  const norm=v=>String(v||"").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const norm=v=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toUpperCase().replace(/\s+/g," ");
+  const plate=v=>{const s=norm(v).replace(/[-\s]/g,"");return ["","SEMVEICULO","NENHUM"].includes(s)?null:s;};
+  const hasCar=p=>p&&["car","carro","veiculo","placa"].some(k=>Object.prototype.hasOwnProperty.call(p,k));
+  const carOf=p=>{for(const k of ["car","carro","veiculo","placa"])if(Object.prototype.hasOwnProperty.call(p||{},k))return plate(p[k]);return null;};
+  let cachedRows=[],byName=new Map(),visibleCars=new Map(),pendingNames=new Set(),loading=null,loaded=false;
+  function remember(record){visibleCars=new Map((record.people||[]).filter(hasCar).map(p=>[norm(p.name??p.nome),carOf(p)]));}
 
+  function accept(payload){
+    const rows=payload?.data?.colaboradores;
+    if(!Array.isArray(rows))throw new Error("Não recebi o cadastro de vínculos dos veículos.");
+    const map=new Map();
+    for(const row of rows){
+      const name=norm(row.name??row.nome);if(!name)continue;
+      if(map.has(name))throw new Error("Há nomes repetidos no cadastro de veículos: "+name+".");
+      if(hasCar(row))map.set(name,carOf(row));
+    }
+    cachedRows=rows;byName=map;loaded=true;return rows;
+  }
+  async function refresh(force=false){
+    if(loading)return loading;
+    if(loaded&&!force)return cachedRows;
+    loading=window.AgendaDiaClient.vehicleCatalog().then(accept);
+    try{return await loading;}finally{loading=null;}
+  }
   function currentCar(personOrName){
-    const obj=(personOrName&&typeof personOrName==="object")?personOrName:{name:personOrName};
-    const id=obj?.id??obj?.colaboradorId??obj?.personId;
-    if(id!==undefined&&id!==null&&byId.has(String(id))) return byId.get(String(id))||"";
-    const name=norm(obj?.name??obj?.nome??obj?.colaborador);
+    const obj=personOrName&&typeof personOrName==="object"?personOrName:{name:personOrName};
+    // O valor visível, inclusive uma remoção explícita, prevalece sobre o cache.
+    if(hasCar(obj))return carOf(obj)||"";
+    const name=norm(obj.name??obj.nome??obj.colaborador);
+    if(window.__AGENDA_DIA_ACTIVE_RECORD__?.finalizado){
+      const person=window.__AGENDA_DIA_ACTIVE_RECORD__.people?.find(p=>norm(p.name??p.nome)===name);
+      return carOf(person)||"";
+    }
+    // IDs de cadastro legado e SQL têm domínios diferentes; unir pelo nome.
     return byName.get(name)||"";
   }
-
-  function applyToPeople(){
-    const list=(typeof people!=="undefined"&&Array.isArray(people))?people:(Array.isArray(window.people)?window.people:[]);
-    const agenda=(typeof schedule!=="undefined"&&schedule)?schedule:(window.schedule||{});
-
-    list.forEach(p=>{
-      const assignedCar=currentCar(p)||null;
-      p.car=assignedCar;
-
-      // O veículo do cadastro é aplicado imediatamente às atividades já abertas
-      // na tela principal. Relatórios e exportações apenas herdam este estado.
-      if(assignedCar){
-        Object.keys(agenda||{}).forEach(key=>{
-          if(!String(key).startsWith(String(p.id)+"_")) return;
-          const items=Array.isArray(agenda[key])?agenda[key]:[];
-          items.forEach(item=>{
-            if(!item||typeof item!=="object") return;
-            item.car=assignedCar;
-            item.carro=assignedCar;
-            item.veiculo=assignedCar;
-            item.placa=assignedCar;
-          });
-        });
+  async function prepare(record){
+    if(record.finalizado)return;
+    if(window.__AGENDA_CAP_APPLYING__){remember(record);return;}
+    try{await refresh();}
+    catch(error){remember(record);showToast?.("warning","Vínculos dos veículos",error.message+" As placas já salvas no dia foram preservadas.");return;}
+    for(const person of record.people||[]){
+      const name=norm(person.name??person.nome);
+      if(!byName.has(name))continue;
+      person.car=byName.get(name);
+      for(const item of record.schedule?.[String(person.id)+"_0"]||[]){
+        // Somente a cópia visível: abrir o dia não grava nem cria checkpoint.
+        for(const key of ["car","carro","veiculo","placa"])item[key]=person.car;
       }
-    });
-
-    window.people=list;
-    window.schedule=agenda;
-    try{ if(typeof saveState==="function") saveState(); }catch(_){ }
-    try{ if(typeof renderAll==="function") renderAll(); }catch(_){ }
+    }
+    remember(record);
   }
-
-  async function refresh(force=false){
-    const now=Date.now();
-    if(!force && cachedRows.length && (now-lastFetchAt)<CACHE_MS) return cachedRows;
-    if(loading) return loading;
-    loading=(async()=>{
-      const response=await fetch(CATALOG_URL+"?t="+Date.now(),{cache:"no-store"});
-      const text=await response.text();
-      let payload={};
-      try{payload=text?JSON.parse(text):{}}catch(_){throw new Error("Cadastro de veículos inválido.")}
-      if(!response.ok||payload?.ok===false) throw new Error(payload?.error||("HTTP "+response.status));
-      const rows=Array.isArray(payload?.data?.colaboradores)?payload.data.colaboradores:
-                 Array.isArray(payload?.colaboradores)?payload.colaboradores:[];
-      const nextId=new Map(), nextName=new Map();
-      rows.forEach(p=>{
-        const car=p?.car??p?.carro??p?.veiculo??p?.placa??null;
-        if(p?.id!==undefined&&p?.id!==null) nextId.set(String(p.id),car);
-        const name=norm(p?.name??p?.nome);
-        if(name) nextName.set(name,car);
-      });
-      byId=nextId; byName=nextName;
-      cachedRows=rows;
-      lastFetchAt=Date.now();
-      applyToPeople();
-      window.__ERPIMPAR_CURRENT_VEHICLES_UPDATED_AT__=payload?.data?.updatedAt||payload?.updatedAt||new Date().toISOString();
-      return cachedRows;
-    })();
-    try{return await loading}finally{loading=null}
+  async function sync(draft){
+    if(draft.finalizado)return;
+    const changes=(draft.people||[]).filter(p=>hasCar(p)&&
+      ((visibleCars.has(norm(p.name??p.nome))&&visibleCars.get(norm(p.name??p.nome))!==carOf(p))||
+      (!visibleCars.has(norm(p.name??p.nome))&&carOf(p))||pendingNames.has(norm(p.name??p.nome))));
+    if(!changes.length)return;
+    try{
+      // Reler antes de gravar e mesclar só as placas alteradas preserva os cadastros.
+      const fresh=await window.AgendaDiaClient.vehicleCatalog();
+      const rows=fresh?.data?.colaboradores;
+      if(!Array.isArray(rows))throw new Error("Cadastro de vínculos indisponível.");
+      for(const person of changes){
+        const matches=rows.filter(r=>norm(r.name??r.nome)===norm(person.name??person.nome));
+        if(matches.length!==1)throw new Error("Confira o cadastro do veículo de "+person.name+".");
+        matches[0].car=null;
+      }
+      for(const person of changes){
+        const name=norm(person.name??person.nome),car=carOf(person);
+        if(car)for(const row of rows)if(carOf(row)===car)row.car=null;
+        rows.find(r=>norm(r.name??r.nome)===name).car=car;
+      }
+      const result=await window.AgendaDiaClient.vehicleCatalog({colaboradores:rows});
+      const saved=result?.data?.colaboradores;
+      if(!Array.isArray(saved)||rows.some(row=>{
+        const match=saved.find(r=>norm(r.name??r.nome)===norm(row.name??row.nome));
+        return !match||carOf(match)!==carOf(row);
+      }))throw new Error("A confirmação das placas não corresponde ao vínculo enviado.");
+      accept(result);
+      remember(draft);
+      for(const p of changes)pendingNames.delete(norm(p.name??p.nome));
+    }catch(error){for(const p of changes)pendingNames.add(norm(p.name??p.nome));throw new Error("A Agenda foi salva, mas o último vínculo do veículo ainda não foi confirmado. "+error.message);}
   }
-
   window.ERPIMPAR_CURRENT_CAR=currentCar;
   window.ERPIMPAR_REFRESH_CURRENT_VEHICLES=refresh;
+  window.ERPIMPAR_PREPARE_VEHICLE_LINKS=prepare;
+  window.ERPIMPAR_SYNC_VEHICLE_LINKS=sync;
   document.addEventListener("DOMContentLoaded",()=>{
-    // Única carga do cadastro nesta abertura da Agenda do Dia.
-    window.ERPIMPAR_CURRENT_VEHICLES_READY=refresh().catch(err=>{
-      console.warn("VEICULOS_ATUAIS",err);
-      return cachedRows;
-    });
+    window.ERPIMPAR_CURRENT_VEHICLES_READY=refresh().catch(()=>[]);
   },{once:true});
 })();
 </script>
 
 <script id="agendaDiaV339HistoricoRealizadoGuard">
-window.__AGENDA_DIA_VERSION__="3.3.9-hf3-conformidade";
+window.__AGENDA_DIA_VERSION__="3.3.9-hf5-heranca-veiculos";
 </script>
 
 <style id="erpImparAgendaDiaFinalV28Css">
@@ -10106,7 +10109,7 @@ window.__AGENDA_DIA_VERSION__="3.3.9-hf3-conformidade";
       const p=personFromKey(key); const colaborador=p?.name||p?.nome||"";
       (Array.isArray(items)?items:[]).forEach(item=>activities.push({
         id:item.id,colaborador,funcao:p?.role||p?.funcao||"execucao",obra:item.obra||"",atividade:item.atividade||"",local:item.local||"",
-        horas:Number(item.horas||8)||8,viagem:item.viagem,carro:window.ERPIMPAR_CURRENT_CAR?.(p)||p?.car||null,
+        horas:Number(item.horas||8)||8,viagem:item.viagem===true||["sim","true","1"].includes(String(item.viagem).toLowerCase()),carro:p?.car||item.car||null,
         cancelado:Boolean(item.cancelado===true||item.cancelled===true||item.status==="cancelado"),statusVisual:item.auditStatus||"",
         replanejado:Boolean(item.replanejado),semCronogramaAtivo:Boolean(item.semCronogramaAtivo),chaveOriginal:item.__originalComparisonKey||null,
         motivoCancelamento:item.motivoCancelamento||"",motivoReplanejamento:item.motivoReplanejamento||"",planejado:clone(item.planejado||null),executado:clone(item.executado||null)
