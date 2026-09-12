@@ -1,4 +1,4 @@
-/* Shared authenticated Agenda capability - RC3 HF5. Loaded before the legacy page scripts. */
+/* Shared authenticated Agenda capability - RC3 HF6. Loaded before the legacy page scripts. */
 (() => {
 'use strict';
 const endpoint='https://api.erpimpar.com.br/george-reuniao/v09/api.php';
@@ -53,7 +53,7 @@ const client={read,request,mutate,apply,flush:()=>queue,revision:()=>revision,
  },
  plan:steps=>mutate({operation:'plan',steps}).then(apply),
  saveVisible:(draft,checkpoint=false)=>mutate({operation:'replace_visible',draft:clone(draft),checkpoint}),
- checkpoint:()=>mutate({operation:'checkpoint'}),undo:all=>mutate({operation:all?'undo_all':'undo'}).then(apply),
+ checkpoint:()=>mutate({operation:'checkpoint'}),undo:()=>mutate({operation:'undo_all'}).then(apply),
  close:async history=>{const j=await mutate({operation:'plan',data:history.data,steps:[{operacao:'finalizar',excecoes:history.atividades.map(a=>({atividade_id:String(a.id),percentual:a.percentualExecutado,motivo:a.motivoExecucao||'',motivo_cancelamento:a.motivoCancelamento||''}))}]});return j;},
  catalog:()=>request('agenda_catalog'),lastDraft:()=>clone(lastDraft),
  reportReady:async()=>{await queue;return read();}

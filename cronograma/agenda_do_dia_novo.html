@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<script src="agenda_client_v2.js?v=098rc3hf5"></script>
+<script src="agenda_client_v2.js?v=098rc3hf6"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1777,7 +1777,7 @@ body{background:var(--clean-bg)!important}
     <div class="toolbar-summary">
       <div class="toolbar-title">
         <h1>AGENDA DO DIA <span class="inline-week-meta" id="inlineWeekMeta"></span></h1>
-        <p>Planeje e execute o dia mantendo o mesmo padrão Premium. Nesta primeira entrega, a tela diária está isolada da Agenda Semanal.</p>
+        <p>Clique nas atividades para selecionar. Arraste para mover; Ctrl para copiar. Esc ou clique fora limpa a seleção.</p>
       </div>
       <div class="selected-day-top"><span>DIA SELECIONADO:</span><strong id="agendaDiaDataCabecalho">27/07/2026</strong></div>
       <div class="toolbar-collapse" aria-label="Recolher barra"></div>
@@ -2436,35 +2436,15 @@ function activityElement(a,personId,day){
       <span class="pill ${travelClass} editable-pill" data-field="viagem">Viagem: ${a.viagem}</span>
       ${effectiveCar?`<span class="pill editable-pill" data-field="car">🚗 ${effectiveCar}</span>`:`<span class="pill editable-pill" data-field="car">Sem veículo</span>`}
     </div>`;
-  el.addEventListener("click",e=>{
-    if(e.target.closest(".editable-pill")||e.target.closest(".activity-remove")||e.target.closest(".obra-history-btn"))return;
-    const id=String(a.id);
-    if(e.ctrlKey||e.metaKey){selectedActivities.has(id)?selectedActivities.delete(id):selectedActivities.add(id)}
-    else{selectedActivities.clear();selectedActivities.add(id)}
-    renderWeek();
-  });
-  el.addEventListener("dragstart",e=>{
-    const id=String(a.id);
-    if(!selectedActivities.has(id)){selectedActivities.clear();selectedActivities.add(id)}
-    const selected=[];
-    Object.entries(schedule).forEach(([key,arr])=>{
-      arr.forEach(item=>{
-        if(selectedActivities.has(String(item.id))){
-          const parsedKey=String(key).match(/^(.*)_([0-4])$/);if(!parsedKey)return;const p=parsedKey[1],d=Number(parsedKey[2]);
-          selected.push({item,personId:p,day:d});
-        }
-      });
-    });
-    dragPayload={type:"activities",selected};
-    e.dataTransfer.effectAllowed="copy";
-  });
+  el.addEventListener("dragstart",e=>window.AgendaInteracoes?.startDrag(e,{personId:String(personId),day},String(a.id)));
   el.querySelector(".activity-remove").onclick=()=>{
     schedule[dayKey(personId,day)]=ensureDay(personId,day).filter(x=>x.id!==a.id);
     selectedActivities.delete(String(a.id));
     saveState();renderAll();
   };
   el.querySelectorAll(".editable-pill").forEach(pill=>{
-    pill.onclick=e=>openInlineEditor(e.currentTarget,{personId,day,id:a.id,field:pill.dataset.field});
+    pill.title="Clique para selecionar; duplo clique para editar";
+    pill.ondblclick=e=>{if(!weekLocked)openInlineEditor(e.currentTarget,{personId,day,id:a.id,field:pill.dataset.field});};
   });
   return el;
 }
@@ -2479,7 +2459,7 @@ function createNameCell(person){
   
   const cell=document.createElement("div");
   cell.className="person-card name-cell";
-  cell.draggable=true;
+  cell.draggable=false;
   const roleText=person.role==="coordenacao"?"Coordenação":"Execução";
   const roommate=getRoommate(person.id);
   cell.innerHTML=`<div>
@@ -2491,7 +2471,6 @@ function createNameCell(person){
     <div class="person-car ${person.car?"has-car":""}" draggable="${person.car?"true":"false"}" data-car="${person.car||""}">
       ${person.car?"🚗 "+person.car+" • semana inteira":"Arraste um veículo aqui"}
     </div>
-    <div class="copy-week-hint">Segure o card para copiar a programação para outro colaborador.</div>
     ${roommate?`<div class="room-link" title="Clique para desfazer o vínculo"><span class="chain">🔗</span> Quarto duplo com ${roommate.name}</div>`:""}
   </div>
   <div class="person-actions">
@@ -2542,98 +2521,19 @@ function createNameCell(person){
     });
   }
 
-  cell.addEventListener("dragstart",e=>{
-    if(e.target.closest("button") || e.target.closest(".person-car") || e.target.closest(".room-link")){
-      if(e.target.closest("button")) e.preventDefault();
-      return;
-    }
-    dragPayload={type:"week",sourcePersonId:person.id};
-    cell.classList.add("week-source");
-    e.dataTransfer.effectAllowed="copy";
-  });
-
-  cell.addEventListener("dragend",()=>{
-    document.querySelectorAll(".name-cell").forEach(x=>x.classList.remove("week-source","week-target"));
-  });
-
   cell.ondragover=e=>{
-    if(dragPayload?.type==="week" && dragPayload.sourcePersonId!==person.id){
-      e.preventDefault();
-      cell.classList.add("week-target");
-    }else if(dragPayload?.type==="car"){
-      e.preventDefault();
-    }
+    if(weekLocked)return;
+    if(dragPayload?.type==="car" || dragPayload?.type==="activities"){e.preventDefault();}
   };
-
-  cell.ondragleave=()=>cell.classList.remove("week-target");
-
   cell.ondrop=e=>{
     e.preventDefault();
-    cell.classList.remove("week-target");
-    if(!dragPayload)return;
-
-    if(dragPayload.type==="car"){
-      removeCarEverywhere(dragPayload.car);
-      person.car=dragPayload.car;
-      saveState();
-      renderAll();
-      return;
+    if(weekLocked||!dragPayload)return;
+    if(dragPayload.type==="activities"){
+      window.AgendaInteracoes?.drop(e,{personId:String(person.id),day:0});return;
     }
-
-    if(dragPayload.type==="week" && dragPayload.sourcePersonId!==person.id){
-      const sourceId=dragPayload.sourcePersonId;
-
-      for(let day=0;day<5;day++){
-        const sourceItems=ensureDay(sourceId,day);
-        const sourcePerson=people.find(p=>String(p.id)===String(sourceId));
-        schedule[dayKey(person.id,day)] = sourceItems.map(item=>({
-          ...item,
-          id:Date.now()+Math.random(),
-          car:null,
-          obraOriginal:item.obraOriginal??item.obra??"",
-          atividadeOriginal:item.atividadeOriginal??item.atividade??"",
-          colaboradorOriginalId:sourceId,
-          colaboradorOriginalNome:sourcePerson?.name??"",
-          colaboradorAtualId:person.id,
-          replanejado:true,
-          motivoReplanejamento:""
-        }));
-      }
-
-      // A placa é exclusiva: nunca copia a placa do colaborador nem das atividades.
-      schedule[dayKey(person.id,0)] = schedule[dayKey(person.id,0)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,1)] = schedule[dayKey(person.id,1)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,2)] = schedule[dayKey(person.id,2)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,3)] = schedule[dayKey(person.id,3)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,4)] = schedule[dayKey(person.id,4)].map(item=>({...item,car:null}));
-
-      if(sourceHasTravel(sourceId)){
-        const sourcePerson=people.find(p=>p.id===sourceId);
-        const sourceName=sourcePerson?.name||"o colaborador";
-        askSystem({
-          title:"Criar quarto duplo?",
-          message:`As atividades copiadas possuem viagem.
-
-Deseja vincular ${sourceName} e ${person.name} em quarto duplo?`,
-          confirmText:"Sim, vincular",
-          cancelText:"Não"
-        }).then(quartoDuplo=>{
-          if(quartoDuplo){
-            addRoomLink(sourceId,person.id);
-            saveState();
-            renderAll();
-            showToast("success","Quarto duplo vinculado",`${sourceName} e ${person.name} foram vinculados.`);
-          }else{
-            showToast("info","Programação copiada","As atividades foram copiadas sem vínculo de quarto duplo.");
-          }
-        });
-      }
-
-      saveState();
-      renderAll();
-      if(!sourceHasTravel(sourceId)){
-        showToast("success","Programação copiada","As atividades do dia foram copiadas sem levar a placa do veículo.");
-      }
+    if(dragPayload.type==="car"){
+      removeCarEverywhere(dragPayload.car);person.car=dragPayload.car;
+      saveState();renderAll();
     }
   };
 
@@ -2648,14 +2548,10 @@ function movePerson(id,delta){
   [people[idx],people[target]]=[people[target],people[idx]];
   saveState();renderAll();
 }
-function copyActivitiesTo(personId,day,selected){
- window.__AGENDA_CAP_SKIP_SAVE__=true;const dest=people.find(p=>String(p.id)===String(personId));if(!dest)return;
- const groups=new Map();for(const entry of selected){const src=people.find(p=>String(p.id)===String(entry.personId));if(!src)continue;const ids=groups.get(src.name)||[];ids.push(String(entry.item.id));groups.set(src.name,ids);}
- window.__AGENDA_CAP_PENDING__=window.AgendaDiaClient.plan([...groups].map(([name,ids])=>({operacao:"copiar",origem_colaborador:name,destino_colaborador:dest.name,atividade_ids:ids}))).catch(e=>showToast?.("error","Cópia não confirmada",e.message));
-}
 function createDayCell(person,day){
   const cell=document.createElement("div");
   cell.className="person-card day-card";
+  cell.dataset.personId=String(person.id);cell.dataset.day=String(day);
   const mobileDays=["SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA"];
   const d=new Date(selectedWeekStart||new Date());
   d.setDate(d.getDate()+day);
@@ -2671,14 +2567,14 @@ function createDayCell(person,day){
   items.forEach(a=>list.appendChild(activityElement(a,person.id,day)));
   cell.append(formula,help,list);
 
-  cell.ondragover=e=>{e.preventDefault();cell.classList.add("drop-day")};
+  cell.ondragover=e=>{if(weekLocked)return;e.preventDefault();cell.classList.add("drop-day");if(e.dataTransfer&&dragPayload?.type==="activities")e.dataTransfer.dropEffect=e.ctrlKey?"copy":"move";};
   cell.ondragleave=()=>cell.classList.remove("drop-day");
   cell.ondrop=e=>{
     e.preventDefault();cell.classList.remove("drop-day");
     if(!dragPayload)return;
     if(dragPayload.type==="activities"){
-      copyActivitiesTo(person.id,day,dragPayload.selected);
-      selectedActivities.clear();
+      window.AgendaInteracoes?.drop(e,{personId:String(person.id),day});
+      return;
     }else if(dragPayload.type==="car"){
       removeCarEverywhere(dragPayload.car);
       const dayItems=ensureDay(person.id,day);
@@ -6644,33 +6540,6 @@ renderAll();
     window.AgendaDiaV315?.validateAllItems?.();
   },true);
 
-  // Copiar para outro colaborador sempre vira replanejamento no destino.
-  const originalCopy=window.copyActivitiesTo||copyActivitiesTo;
-  window.copyActivitiesTo=copyActivitiesTo=function(personId,day,selected){
-    selected.forEach(({item,personId:sourcePersonId})=>{
-      const sourcePerson=people.find(p=>String(p.id)===String(sourcePersonId));
-      ensureDay(personId,day).push({
-        ...JSON.parse(JSON.stringify(item)),
-        id:Date.now()+Math.random(),
-        originalItemId:item.originalItemId??item.id,
-        __originalComparisonKey:null,
-        importedFromFrozenWeek:false,
-        temOrigemSemanal:false,
-        colaboradorOriginalId:sourcePersonId,
-        colaboradorOriginalNome:sourcePerson?.name||"",
-        colaboradorAtualId:personId,
-        auditStatus:"replanned",
-        replanejado:true,
-        cancelado:false,
-        status:""
-      });
-      unlinkPerson(sourcePersonId);
-    });
-    saveState();
-    renderAll();
-    setTimeout(applyAuditClassification,0);
-  };
-
   function auditRows(){
     applyAuditClassification();
     const ctx=originalContext();
@@ -9802,7 +9671,7 @@ window.addEventListener('DOMContentLoaded',()=>{setupPickers();addFilters();docu
 </script>
 
 <script id="agendaDiaV339HistoricoRealizadoGuard">
-window.__AGENDA_DIA_VERSION__="3.3.9-hf5-heranca-veiculos";
+window.__AGENDA_DIA_VERSION__="3.3.10-hf6-interacoes-checkpoint";
 </script>
 
 <style id="erpImparAgendaDiaFinalV28Css">
@@ -11491,17 +11360,8 @@ window.__AGENDA_DIA_VERSION__="3.3.9-hf5-heranca-veiculos";
  };
  const oldApply=window.AgendaDiaClient.apply;
  window.AgendaDiaClient.apply=async j=>{window.__AGENDA_CAP_APPLYING__=true;try{return await oldApply(j);}finally{window.__AGENDA_CAP_APPLYING__=false;}};
- document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.target.closest('input,textarea,[contenteditable=true]')){e.preventDefault();e.stopImmediatePropagation();window.AgendaDiaClient.undo(e.shiftKey).catch(notify);}},true);
- const bar=document.getElementById('saveMock')?.parentNode;if(bar){
- const move=document.createElement('button');move.type='button';move.textContent='Mover selecionadas';
- move.onclick=()=>{if(!selectedActivities?.size){showToast?.('warning','Selecione atividades','Selecione os cards que deseja mover.');return;}
-  const dlg=document.createElement('dialog');const title=document.createElement('h3');title.textContent='Mover atividades para';const select=document.createElement('select');
-  for(const p of people){const option=document.createElement('option');option.value=p.name;option.textContent=p.name;select.append(option);}
-  const confirm=document.createElement('button');confirm.textContent='Mover';const cancel=document.createElement('button');cancel.textContent='Fechar';cancel.onclick=()=>{dlg.close();dlg.remove();};
-  confirm.onclick=async()=>{confirm.disabled=true;try{const groups=new Map();for(const a of window.AgendaDiaRefatoracaoV1.buildDraft().atividades){if(!selectedActivities.has(String(a.id)))continue;const ids=groups.get(a.colaborador)||[];ids.push(String(a.id));groups.set(a.colaborador,ids);}
-   await window.AgendaDiaClient.plan([...groups].map(([name,ids])=>({operacao:'mover',origem_colaborador:name,destino_colaborador:select.value,atividade_ids:ids})));dlg.close();dlg.remove();
-  }catch(e){notify(e);}finally{confirm.disabled=false;}};dlg.append(title,select,confirm,cancel);document.body.append(dlg);dlg.showModal();};bar.append(move);
-for(const [label,action] of [['Desfazer',()=>window.AgendaDiaClient.undo(false)],['Desfazer tudo',()=>window.AgendaDiaClient.undo(true)]]){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>action().catch(notify);bar.append(b);}}
+
 })();
 </script>
+<script src="agenda_interacoes.js?v=098rc3hf6"></script>
 </body></html>
