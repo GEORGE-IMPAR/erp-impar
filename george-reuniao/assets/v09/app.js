@@ -5,7 +5,7 @@
 const BASE='https://api.erpimpar.com.br/george-reuniao/v09/';
 const API=BASE+'api.php';
 const $=id=>document.getElementById(id);
-const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
+const state={csrf:'',user:null,record:null,mode:'text',busy:false,agendaReportBusy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -149,7 +149,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(window.GeorgeAgendaReport?.matches?.(text)){
    state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
      const indicator=notice('Gerando o relatório pela Agenda do Dia oficial…');
-     state.busy=true;voice.pauseTransmit();
+     state.busy=true;state.agendaReportBusy=true;voice.pauseTransmit();
      await logDirectTurn(record,'user',text,id);
      try{
        const result=await window.GeorgeAgendaReport.build(text);
@@ -163,6 +163,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        m.row.dataset.sources=result.source;
        agendaReportButtons(result,m.bubble);
        await logDirectTurn(record,'assistant',reply,eventId());
+       try{await window.GeorgePdf.open(result.blob,'Agenda do Dia');}catch(e){error(e);}
        if(speak&&!state.recording?.stopping)await voice.speak(reply);
      }catch(e){
        indicator.remove();
@@ -172,7 +173,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        await logDirectTurn(record,'assistant',reply,eventId());
        showStatus(reply,'warning');
      }finally{
-       state.busy=false;voice.resumeTransmit();normalStatus();
+       state.busy=false;state.agendaReportBusy=false;voice.resumeTransmit();normalStatus();
      }
    });
    return;
@@ -497,7 +498,7 @@ $('btnStopFilm').onclick=async()=>{$('btnStopFilm').disabled=true;try{await endC
 $('nativeFilm').onclick=()=>{$('btnCloseCamera').click();$('nativeVideoPicker').click();};
 $('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;try{const id=await uploadFile(file);message('me','Vídeo anexado: '+file.name);await prepareOrProcess(id,file);}catch(e){error(e);}finally{$('nativeVideoPicker').value='';}};
 $('btnCloseCamera').onclick=()=>{if(state.recording?.mode==='film'){$('cameraInfo').textContent='Use Parar para finalizar e preservar a gravação.';return;}camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');};
-window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||(state.busy&&!state.agendaReportBusy)||state.preparing){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{voice.close();camera?.getTracks().forEach(t=>t.stop());});
 function addBubbleMenu(bubble,textNode){
  const wrap=document.createElement('div');wrap.className='bubble-tools';const trigger=document.createElement('button');trigger.type='button';trigger.textContent='⋯';trigger.setAttribute('aria-label','Opções desta mensagem');trigger.setAttribute('aria-expanded','false');
