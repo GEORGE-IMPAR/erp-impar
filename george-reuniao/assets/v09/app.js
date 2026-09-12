@@ -65,6 +65,39 @@ $('loginForm').addEventListener('submit',async e=>{
  catch(e){$('loginInfo').textContent=e.message;}finally{btn.disabled=false;}
 });
 $('loginClose').onclick=()=>{$('loginDialog').close();showStatus('Entre para acessar suas conversas e o ERP.','warning');};
+let recoveryCodeRequested=false;
+function setRecoveryStage(codeRequested){
+ recoveryCodeRequested=codeRequested;
+ $('passwordCodeFields').hidden=!codeRequested;
+ ['recoveryCode','recoveryPassword','recoveryPasswordConfirm'].forEach(id=>{$(id).required=codeRequested;});
+ $('recoveryEmail').readOnly=codeRequested;
+ $('recoverySubmit').textContent=codeRequested?'Redefinir senha':'Enviar código';
+}
+$('forgotPassword').onclick=()=>{
+ $('recoveryEmail').value=$('loginEmail').value.trim();
+ $('recoveryCode').value='';$('recoveryPassword').value='';$('recoveryPasswordConfirm').value='';
+ $('passwordRecoveryInfo').textContent='Informe seu e-mail. Se ele estiver cadastrado, enviaremos um código de seis dígitos.';
+ setRecoveryStage(false);$('loginDialog').close();$('passwordRecoveryDialog').showModal();
+};
+$('recoveryBack').onclick=()=>{$('passwordRecoveryDialog').close();showLogin();};
+$('passwordRecoveryForm').addEventListener('submit',async e=>{
+ e.preventDefault();const btn=$('recoverySubmit');btn.disabled=true;
+ try{
+  const email=$('recoveryEmail').value.trim();
+  if(!recoveryCodeRequested){
+   await request('password_recovery_request',{email});
+   setRecoveryStage(true);
+   $('passwordRecoveryInfo').textContent='Se o e-mail estiver cadastrado, o código foi enviado. Ele vale por 15 minutos.';
+   $('recoveryCode').focus();
+   return;
+  }
+  const password=$('recoveryPassword').value;
+  if(password!==$('recoveryPasswordConfirm').value)throw new ApiError('As duas senhas precisam ser iguais.','SENHAS_DIFERENTES',422);
+  await request('password_recovery_reset',{email,code:$('recoveryCode').value.trim(),password});
+  $('passwordRecoveryDialog').close();$('loginEmail').value=email;$('loginPassword').value='';showLogin();
+  $('loginInfo').textContent='Senha redefinida. Entre usando a nova senha.';$('loginPassword').focus();
+ }catch(e){$('passwordRecoveryInfo').textContent=e.message||String(e);}finally{btn.disabled=false;}
+});
 function requireAuth(){if(state.auth)return true;showLogin();return false;}
 let draftTimer;
 function saveDraft(){if(state.record&&state.auth)return request('draft',{record_id:state.record,text:input.value}).catch(error);return Promise.resolve();}
