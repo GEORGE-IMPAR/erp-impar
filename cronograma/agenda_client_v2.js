@@ -1,79 +1,77 @@
-/* Shared authenticated Agenda capability - RC3 HF6. Loaded before the legacy page scripts. */
+/* ERP ÍMPAR — Agenda do Dia sem autenticação paralela.
+   Usa o usuário já autenticado no menu e os endpoints oficiais da Agenda. */
 (() => {
 'use strict';
-const endpoint='https://api.erpimpar.com.br/george-reuniao/v09/api.php';
-const nativeFetch=window.fetch.bind(window);let csrf='',session=null,companyId=null,revision=null,queue=Promise.resolve(),lastDraft=null;
-const clone=x=>JSON.parse(JSON.stringify(x));const event=()=>crypto.randomUUID();
-async function raw(action,args={}){
- if(location.protocol==='file:')throw new Error('Abra a Agenda pelo endereço oficial do ERP ÍMPAR. A conexão por arquivo local foi desativada.');
- const r=await nativeFetch(endpoint,{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','X-George-CSRF':csrf},body:JSON.stringify({action,...args})});
- let j;try{j=await r.json();}catch{throw new Error('Resposta inválida da Agenda integrada.');}
- if(!r.ok||j.ok===false){const e=new Error(j.error||j.message||j.status||'Não foi possível confirmar a operação.');e.status=j.status;e.http=r.status;throw e;}return j;
-}
-async function authenticate(){
- if(session)return session;
- session=(async()=>{const s=await raw('session');csrf=s.csrf;if(s.authenticated)return s.user;
-  return new Promise((resolve,reject)=>{const dlg=document.createElement('dialog');dlg.innerHTML='<form><h3>Entrar na Agenda do Dia</h3><p>Use seu usuário e senha do ERP.</p><label>E-mail <input type="email" autocomplete="username" required></label><label>Senha <input type="password" autocomplete="current-password" required></label><p role="status"></p><button type="submit">Entrar</button></form>';
-   dlg.style.cssText='max-width:440px;padding:24px;border-radius:14px';document.body.append(dlg);const form=dlg.querySelector('form');form.style.cssText='display:grid;gap:14px';
-   form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('button');b.disabled=true;try{const j=await raw('login',{email:form.querySelector('[type=email]').value,password:form.querySelector('[type=password]').value});form.querySelector('[type=password]').value='';csrf=j.csrf;dlg.close();dlg.remove();resolve(j.user);}catch(e){form.querySelector('[role=status]').textContent=e.message;}finally{b.disabled=false;}};
-   dlg.addEventListener('cancel',()=>{dlg.remove();session=null;reject(new Error('Entre para consultar a Agenda do Dia.'));});dlg.showModal();
-  });
- })().then(user=>{companyId=Number(user.company_id);document.title='Agenda do Dia · '+(user.company_name||'ERP ÍMPAR');return user;}).catch(e=>{session=null;throw e;});return session;
-}
-async function request(action,args={}){await authenticate();try{return await raw(action,{company_id:companyId,...args});}catch(e){if(e.http===401||e.status==='CSRF_INVALIDO'||e.status==='EMPRESA_ALTERADA')session=null;throw e;}}
-function accept(j){if(j.revision!=null)revision=j.revision;if(j.draft)lastDraft=clone(j.draft);return j;}
-async function read(data){await queue;return accept(await request('agenda_read',data?{data}:{}));}
-function mutate(args){
- const id=event();const task=queue.then(async()=>{
-   const payload={...args,company_id:companyId,event_id:id,source:'UI'};
-   let j;
-   try{j=await request('agenda_execute',payload);}catch(e){
-    // Exact same request safely completes a committed transaction with a pending projection.
-    if(e.status==='PROJECAO_PENDENTE')j=await request('agenda_execute',payload);else throw e;
-   }
-   if(j.verified!==true)throw new Error(j.message||'A operação não foi confirmada.');
-   if(j.draft&&['replace_visible','undo','undo_all'].includes(args.operation))await window.ERPIMPAR_SYNC_VEHICLE_LINKS?.(clone(j.draft));
-   return accept(j);
- });queue=task.catch(()=>{});return task;
-}
-async function apply(j){
- window.__AGENDA_CAP_APPLYING__=true;try{
- if(j.draft&&typeof window.AgendaDiaV315?.applyServerRecord==='function')await window.AgendaDiaV315.applyServerRecord(clone(j.draft));
- return j;
- }finally{window.__AGENDA_CAP_APPLYING__=false;}
-}
-const client={read,request,mutate,apply,flush:()=>queue,revision:()=>revision,
- // Infraestrutura existente de leitura/gravação do vínculo. A regra fica no HTML.
- vehicleCatalog:async payload=>{
-   await authenticate();
-   const options={cache:'no-store'};
-   if(payload!==undefined)Object.assign(options,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(payload)});
-   const r=await nativeFetch('https://api.erpimpar.com.br/agenda/cadastros_agenda_novo.php',options);
-   const j=await r.json();if(!r.ok||j.ok===false)throw new Error(j.error||'Não foi possível consultar ou salvar o vínculo dos veículos.');return j;
- },
- plan:steps=>mutate({operation:'plan',steps}).then(apply),
- saveVisible:(draft,checkpoint=false)=>mutate({operation:'replace_visible',draft:clone(draft),checkpoint}),
- checkpoint:()=>mutate({operation:'checkpoint'}),undo:()=>mutate({operation:'undo_all'}).then(apply),
- close:async history=>{const j=await mutate({operation:'plan',data:history.data,steps:[{operacao:'finalizar',excecoes:history.atividades.map(a=>({atividade_id:String(a.id),percentual:a.percentualExecutado,motivo:a.motivoExecucao||'',motivo_cancelamento:a.motivoCancelamento||''}))}]});return j;},
- catalog:()=>request('agenda_catalog'),lastDraft:()=>clone(lastDraft),
- reportReady:async()=>{await queue;return read();}
-};window.AgendaDiaClient=client;
-
-// Exact legacy routes are translated to the shared service; unrelated requests are untouched.
-window.fetch=async(input,init={})=>{
- const url=new URL(typeof input==='string'?input:input.url,location.href);const file=url.pathname.split('/').pop();
- if(location.protocol==='file:'&&url.origin==='https://api.erpimpar.com.br')throw new Error('Acesso local desativado. Abra a Agenda pelo endereço oficial do ERP ÍMPAR.');
- if(url.origin==='https://api.erpimpar.com.br'&&url.pathname.startsWith('/agenda/')){
-  let j=null;const method=(init.method||'GET').toUpperCase();
-  if(['atividade_dia_estado_novo.php','atividade_dia_get.php','carregar_atividade_dia.php'].includes(file)){
-   const r=await read(url.searchParams.get('data')||null);j={ok:true,data:r.data,conteudo:r.draft,draft:{data:r.data,conteudo:r.draft},historicos:r.historicos,revision:r.revision};
-  }else if(file==='salvar_atividade_dia.php'&&method==='POST'){
-   const body=JSON.parse(init.body||'{}');const r=await client.saveVisible(body.draft||body.conteudo,true);j={ok:true,...r};
-  }else if(file==='cadastros_agenda_novo.php'){
-   if(method==='POST')throw new Error('Atualize os colaboradores pelo cadastro global integrado.');j=await client.catalog();
-  }else if(file==='finalizar_atividade_dia.php'&&method==='POST')throw new Error('Use a finalização integrada da Agenda do Dia.');
-  if(j)return new Response(JSON.stringify(j),{status:200,headers:{'Content-Type':'application/json'}});
+const API='https://api.erpimpar.com.br/agenda/';
+const nativeFetch=window.fetch.bind(window);let queue=Promise.resolve(),lastDraft=null,savedDraft=null,revision=0;
+const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
+const norm=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase().replace(/\s+/g,' ');
+function erpUser(){
+ for(const store of [sessionStorage,localStorage])for(const key of ['ERPIMPAR_USER','erpimpar_user','ERP_USER','usuarioERP']){
+  try{const raw=store.getItem(key);if(raw){const user=JSON.parse(raw);if(user?.email)return user;}}catch(_){ }
  }
- return nativeFetch(input,init);
-};
+ try{window.top.location.href='/login_novo.html';}catch(_){location.href='/login_novo.html';}
+ throw new Error('Sua sessão do ERP terminou. Entre novamente pelo login principal.');
+}
+async function json(url,options={}){
+ if(location.protocol==='file:')throw new Error('Abra a Agenda pelo endereço oficial do ERP ÍMPAR.');
+ erpUser();const next={cache:'no-store',...options};
+ if(String(next.method||'GET').toUpperCase()==='POST'){const headers=new Headers(next.headers||{});headers.set('Content-Type','text/plain;charset=UTF-8');next.headers=headers;}
+ const response=await nativeFetch(url,next);const text=await response.text();let body;
+ try{body=text.trim()?JSON.parse(text):{};}catch{throw new Error('O servidor retornou uma resposta inválida.');}
+ if(!response.ok||body?.ok===false)throw new Error(body?.error||body?.mensagem||`HTTP ${response.status}`);return body;
+}
+function draftOf(body){return clone(body?.draft?.conteudo??body?.conteudo??body?.draft??body?.data?.conteudo??body?.data??null);}
+function accept(body,draft=null){const value=draft??draftOf(body);if(value){lastDraft=clone(value);if(!savedDraft)savedDraft=clone(value);}revision++;return {...body,ok:true,verified:true,revision,draft:value??clone(lastDraft)};}
+async function read(date){await queue;const suffix=date?'?data='+encodeURIComponent(date)+'&t='+Date.now():'?t='+Date.now();return accept(await json(API+'atividade_dia_estado_novo.php'+suffix));}
+async function apply(body){if(body?.draft&&typeof window.AgendaDiaV315?.applyServerRecord==='function'){window.__AGENDA_CAP_APPLYING__=true;try{await window.AgendaDiaV315.applyServerRecord(clone(body.draft));}finally{window.__AGENDA_CAP_APPLYING__=false;}}return body;}
+function visibleDraft(fallback=null){if(typeof window.AgendaDiaRefatoracaoV1?.buildDraft==='function')return clone(window.AgendaDiaRefatoracaoV1.buildDraft());return clone(fallback??lastDraft??window.__AGENDA_DIA_ACTIVE_RECORD__);}
+function saveVisible(draft,checkpoint=false){
+ const task=queue.then(async()=>{const next=clone(draft),date=String(next?.data??next?.date??'');if(!date)throw new Error('Nenhum dia foi carregado para salvar.');
+  await json(API+'salvar_atividade_dia.php',{method:'POST',body:JSON.stringify({data:date,draft:next,usuario:erpUser()})});if(checkpoint)savedDraft=clone(next);return accept({},next);});
+ queue=task.catch(()=>{});return task;
+}
+async function vehicleCatalog(payload){return json(API+'cadastros_agenda_novo.php',payload===undefined?{}:{method:'POST',body:JSON.stringify(payload)});}
+async function catalog(){return vehicleCatalog();}
+function peopleNow(){try{return Array.isArray(people)?people:(window.people||[]);}catch(_){return window.people||[];}}
+function scheduleNow(){try{return schedule&&typeof schedule==='object'?schedule:(window.schedule||{});}catch(_){return window.schedule||{};}}
+function setPeople(value){try{people=value;}catch(_){ }window.people=value;}
+function setSchedule(value){try{schedule=value;}catch(_){ }window.schedule=value;}
+function personByName(value){return peopleNow().find(person=>norm(person.name??person.nome)===norm(value));}
+const keyOf=person=>String(person.id)+'_0';
+async function plan(steps=[]){
+ const nextSchedule=clone(scheduleNow()),nextPeople=clone(peopleNow());setPeople(nextPeople);setSchedule(nextSchedule);
+ for(const step of steps){const operation=String(step.operacao||'').toLowerCase();
+  if(operation==='mover'||operation==='copiar'){
+   const origin=personByName(step.origem_colaborador);if(!origin)throw new Error('Colaborador de origem não encontrado.');
+   const sourceKey=keyOf(origin),ids=(step.atividade_ids||[]).map(String),source=nextSchedule[sourceKey]||[],chosen=source.filter(item=>ids.includes(String(item.id)));if(chosen.length!==ids.length)throw new Error('Uma atividade selecionada não foi encontrada.');
+   for(const targetName of step.destinos||[]){const target=personByName(targetName);if(!target)throw new Error('Colaborador de destino não encontrado.');const targetKey=keyOf(target),copies=chosen.map(item=>({...clone(item),id:crypto.randomUUID?.()||Date.now()+'_'+Math.random(),originalItemId:item.originalItemId??item.id,operacaoOrigem:operation.toUpperCase()}));nextSchedule[targetKey]=[...(nextSchedule[targetKey]||[]),...copies];}
+   if(operation==='mover')nextSchedule[sourceKey]=source.filter(item=>!ids.includes(String(item.id)));
+  }else if(operation==='remover_colaborador'){
+   const ref=String(step.colaborador||''),target=ref.startsWith('id:')?nextPeople.find(p=>String(p.colaborador_id??p.id)===ref.slice(3)):nextPeople.find(p=>norm(p.name??p.nome)===norm(ref));if(target){const index=nextPeople.indexOf(target);if(index>=0)nextPeople.splice(index,1);delete nextSchedule[keyOf(target)];}
+  }else if(operation==='vincular_colaborador'){
+   const ref=String(step.colaborador||'');let target;if(ref.startsWith('id:')){const rows=(await catalog())?.data?.colaboradores||[];target=rows.find(p=>String(p.id)===ref.slice(3));}else target={id:Math.max(0,...nextPeople.map(p=>Number(p.id)||0))+1,name:ref,role:'execucao',active:true,car:null};
+   if(target&&!nextPeople.some(p=>norm(p.name??p.nome)===norm(target.name??target.nome)))nextPeople.push({id:target.id,name:target.name??target.nome,role:target.role??target.funcao??'execucao',active:true,car:target.car??target.placa??null,colaborador_id:target.id});
+  }
+ }
+ if(typeof window.renderAll==='function')window.renderAll();return apply(await saveVisible(visibleDraft(lastDraft),false));
+}
+async function undo(){if(!savedDraft)throw new Error('Ainda não existe uma versão salva para restaurar.');return apply(await saveVisible(clone(savedDraft),false));}
+const parseDate=value=>{const [y,m,d]=String(value).split('-').map(Number);return new Date(y,m-1,d,12);};
+const iso=date=>[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+function nextBusiness(value){const date=parseDate(value);do{date.setDate(date.getDate()+1);}while([0,6].includes(date.getDay()));return iso(date);}
+function monday(value){const date=parseDate(value),day=date.getDay();date.setDate(date.getDate()+(day===0?-6:1-day));return iso(date);}
+async function nextDraft(currentDate){
+ const date=nextBusiness(currentDate),week=monday(date),day=parseDate(date).getDay()-1,isFriday=parseDate(currentDate).getDay()===5,strict=isFriday?'&historico_obrigatorio=1':'';let source={encontrada:false},activities=[];
+ try{source=await json(API+'finalizar_atividade_dia.php?fonte_semana='+encodeURIComponent(week)+strict+'&t='+Date.now());const raw=source.conteudo||{},payload=raw.payload&&typeof raw.payload==='object'?raw.payload:(raw.data&&typeof raw.data==='object'?raw.data:raw),agenda=payload.agenda&&typeof payload.agenda==='object'?payload.agenda:payload,names=Array.isArray(payload.colaboradores)&&payload.colaboradores.length?payload.colaboradores:Object.keys(agenda||{});
+  for(const name of names){const person=agenda[name]||agenda[String(name).toUpperCase()]||{},days=Array.isArray(person.dias)?person.dias:[],slot=days[day],items=Array.isArray(slot)?slot:(slot?.alocacoes||slot?.atividades||[]);
+   for(const item of items){const obra=String(item.obra||item.obraNome||item.nomeObra||'').trim();if(!obra)continue;const atividade=String(item.atividade||item.descricao||item.servico||'').trim(),travel=item.viagem===true||item.viagem===1||['sim','true','1'].includes(String(item.viagem??'').toLowerCase());activities.push({id:item.id||crypto.randomUUID(),colaborador:String(name).trim(),funcao:person.funcao||person.role||'execucao',obra,atividade,horas:Number(item.horas||8)||8,viagem:travel,carro:item.carro||item.car||item.veiculo||null,cancelado:false,planejado:{obra,atividade,viagem:travel},executado:{obra,atividade,viagem:travel},importedFromFrozenWeek:true,origemSemanal:true});}
+  }
+ }catch(error){if(isFriday)throw error;source={encontrada:false,motivo:error.message};}
+ if(isFriday&&(!source.encontrada||!activities.length))throw new Error('Finalize primeiro a Agenda Semanal da próxima semana.');
+ const now=new Date().toISOString();return {data:date,semana:week,diaSemana:parseDate(date).toLocaleDateString('pt-BR',{weekday:'long'}),atividades:activities,aplicarCronograma:false,finalizado:false,tipo:'draft',status:'draft',agendaSemanalEncontrada:source.encontrada===true,agendaSemanalCongelada:source.encontrada===true,fonteAgendaSemanalValida:source.encontrada===true,fonteAgendaSemanal:source.fonte||'nenhuma',arquivoFonteAgendaSemanal:source.arquivo||null,motivoFonteAgendaSemanal:source.motivo||'',abertoSemAgendaSemanal:source.encontrada!==true,createdAt:now,updatedAt:now,usuario:erpUser()};
+}
+async function close(history){const proximoDraft=await nextDraft(history.data);const response=await json(API+'finalizar_atividade_dia.php',{method:'POST',body:JSON.stringify({historico:history,proximoDraft,dataAtual:history.data,fonteAgendaSemanal:proximoDraft.fonteAgendaSemanal,arquivoFonteAgendaSemanal:proximoDraft.arquivoFonteAgendaSemanal,fonteAgendaSemanalValida:Boolean(proximoDraft.fonteAgendaSemanalValida),usuario:erpUser()})});return {...response,draft:proximoDraft,verified:true};}
+const client={read,apply,flush:()=>queue,vehicleCatalog,catalog,plan,saveVisible,checkpoint:()=>{savedDraft=clone(lastDraft);return Promise.resolve({ok:true});},undo,close,lastDraft:()=>clone(lastDraft),revision:()=>revision,reportReady:async()=>{await queue;return read();}};
+window.AgendaDiaClient=client;
 })();
