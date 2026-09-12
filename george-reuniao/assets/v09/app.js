@@ -5,7 +5,7 @@
 const BASE='https://api.erpimpar.com.br/george-reuniao/v09/';
 const API=BASE+'api.php';
 const $=id=>document.getElementById(id);
-const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
+const state={csrf:'',user:null,record:null,mode:'text',busy:false,agendaReportBusy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -135,6 +135,27 @@ function runAnalyticsLocal(text,source,id,n){
   message('george',reply,'ANÁLISE DA AGENDA');await logDirectTurn(state.record,'assistant',reply,eventId());if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);
  }catch(e){if(e.name!=='AbortError')error(e);}});return true;
 }
+function manualLocalIntent(text){
+ const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
+ return /^(?:(?:pode|por favor) )?(?:abre|abrir|abra|mostra|mostrar|mostre|gera|gerar|gere|consulta|consultar|consulte|quero|preciso)(?: (?:o|um|a))? (?:manual|ajuda|documentacao)(?: (?:da|de))? (?:agenda|atividade) do dia$/.test(n)
+   || /^(?:manual|ajuda|documentacao) (?:da|de) (?:agenda|atividade) do dia$/.test(n);
+}
+function ensureManualDialog(){
+ let dlg=$('agendaManualDialog');if(dlg)return dlg;
+ dlg=document.createElement('dialog');dlg.id='agendaManualDialog';dlg.style.cssText='width:min(1180px,98vw);height:min(900px,96vh);padding:0;border:0;border-radius:22px;overflow:hidden;background:#fff;box-shadow:0 30px 100px #0006';
+ const frame=document.createElement('iframe');frame.title='Manual da Agenda do Dia';frame.src='/cronograma/manual_agenda_do_dia.html?v=1.3';frame.style.cssText='width:100%;height:100%;border:0;background:#fff';dlg.append(frame);document.body.append(dlg);
+ window.addEventListener('message',event=>{if(event.origin===location.origin&&event.data?.type==='ERP_IMPAR_MANUAL_CLOSE'&&dlg.open)dlg.close();});
+ return dlg;
+}
+function openAgendaManual(){const dlg=ensureManualDialog();if(!dlg.open)dlg.showModal();}
+function runManualLocalIntent(text,source,id){
+ if(!manualLocalIntent(text))return false;
+ message('me',text);state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
+   const reply='Abri o Manual da Agenda do Dia. Você pode consultar, imprimir, baixar o PDF ou compartilhar.';
+   try{await logDirectTurn(state.record,'user',text,id);openAgendaManual();message('george',reply,'MANUAL DA AGENDA');await logDirectTurn(state.record,'assistant',reply,eventId());if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}
+   catch(e){if(e.name!=='AbortError')error(e);}
+ });return true;
+}
 async function logDirectTurn(record,role,text,id){
  try{await request('log_turn',{record_id:record,role,text,event_id:id});}
  catch(e){throw new Error('Não foi possível confirmar esta mensagem no servidor. '+e.message);}
@@ -142,6 +163,7 @@ async function logDirectTurn(record,role,text,id){
 function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(!text.trim()||!requireAuth())return;
  if(handleLocalIntent(text,source,id))return;
+ if(runManualLocalIntent(text,source,id))return;
  const record=retryRecord||state.recording?.id||state.record;const speak=state.mode==='audio'||state.recording?.mode==='meeting';
  message('me',text);scroll(true);
 
@@ -149,7 +171,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(window.GeorgeAgendaReport?.matches?.(text)){
    state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
      const indicator=notice('Gerando o relatório pela Agenda do Dia oficial…');
-     state.busy=true;voice.pauseTransmit();
+     state.busy=true;state.agendaReportBusy=true;voice.pauseTransmit();
      await logDirectTurn(record,'user',text,id);
      try{
        const result=await window.GeorgeAgendaReport.build(text);
@@ -163,6 +185,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        m.row.dataset.sources=result.source;
        agendaReportButtons(result,m.bubble);
        await logDirectTurn(record,'assistant',reply,eventId());
+       try{await window.GeorgePdf.open(result.blob,'Agenda do Dia');}catch(e){error(e);}
        if(speak&&!state.recording?.stopping)await voice.speak(reply);
      }catch(e){
        indicator.remove();
@@ -172,7 +195,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        await logDirectTurn(record,'assistant',reply,eventId());
        showStatus(reply,'warning');
      }finally{
-       state.busy=false;voice.resumeTransmit();normalStatus();
+       state.busy=false;state.agendaReportBusy=false;voice.resumeTransmit();normalStatus();
      }
    });
    return;
@@ -497,7 +520,7 @@ $('btnStopFilm').onclick=async()=>{$('btnStopFilm').disabled=true;try{await endC
 $('nativeFilm').onclick=()=>{$('btnCloseCamera').click();$('nativeVideoPicker').click();};
 $('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;try{const id=await uploadFile(file);message('me','Vídeo anexado: '+file.name);await prepareOrProcess(id,file);}catch(e){error(e);}finally{$('nativeVideoPicker').value='';}};
 $('btnCloseCamera').onclick=()=>{if(state.recording?.mode==='film'){$('cameraInfo').textContent='Use Parar para finalizar e preservar a gravação.';return;}camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');};
-window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||(state.busy&&!state.agendaReportBusy)||state.preparing){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{voice.close();camera?.getTracks().forEach(t=>t.stop());});
 function addBubbleMenu(bubble,textNode){
  const wrap=document.createElement('div');wrap.className='bubble-tools';const trigger=document.createElement('button');trigger.type='button';trigger.textContent='⋯';trigger.setAttribute('aria-label','Opções desta mensagem');trigger.setAttribute('aria-expanded','false');
