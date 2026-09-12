@@ -1828,7 +1828,7 @@ body{background:var(--clean-bg)!important}
     <div class="toolbar-summary">
       <div class="toolbar-title">
         <h1>PLANEJAMENTO SEMANAL <span class="inline-week-meta" id="inlineWeekMeta"></span></h1>
-        <p>Preencha pelo teclado: escolha com as setas e avance com Tab. Use Espaço normalmente nos nomes. Atividades são copiadas ao arrastar; veículos continuam exclusivos.</p>
+        <p>Clique nas atividades para selecionar. Arraste para mover; Ctrl para copiar. Esc ou clique fora limpa a seleção.</p>
       </div>
       <div class="toolbar-collapse" aria-label="Recolher barra"></div>
     </div>
@@ -2408,6 +2408,7 @@ function isActiveWork(name){
 function activityElement(a,personId,day){
   const el=document.createElement("div");
   el.className="activity-card";
+  el.dataset.itemId=String(a.id);el.dataset.personId=String(personId);el.dataset.day=String(day);
   const activeWork=isActiveWork(a.obra);
   if(!activeWork) el.classList.add("work-inactive");
   el.draggable=true;
@@ -2424,35 +2425,15 @@ function activityElement(a,personId,day){
       <span class="pill ${travelClass} editable-pill" data-field="viagem">Viagem: ${a.viagem}</span>
       ${effectiveCar?`<span class="pill editable-pill" data-field="car">🚗 ${effectiveCar}</span>`:`<span class="pill editable-pill" data-field="car">Sem veículo</span>`}
     </div>`;
-  el.addEventListener("click",e=>{
-    if(e.target.closest(".editable-pill")||e.target.closest(".activity-remove"))return;
-    const id=String(a.id);
-    if(e.ctrlKey||e.metaKey){selectedActivities.has(id)?selectedActivities.delete(id):selectedActivities.add(id)}
-    else{selectedActivities.clear();selectedActivities.add(id)}
-    renderWeek();
-  });
-  el.addEventListener("dragstart",e=>{
-    const id=String(a.id);
-    if(!selectedActivities.has(id)){selectedActivities.clear();selectedActivities.add(id)}
-    const selected=[];
-    Object.entries(schedule).forEach(([key,arr])=>{
-      arr.forEach(item=>{
-        if(selectedActivities.has(String(item.id))){
-          const [p,d]=key.split("_").map(Number);
-          selected.push({item,personId:p,day:d});
-        }
-      });
-    });
-    dragPayload={type:"activities",selected};
-    e.dataTransfer.effectAllowed="copy";
-  });
+  el.addEventListener("dragstart",e=>window.AgendaInteracoes?.startDrag(e,{personId:String(personId),day},String(a.id)));
   el.querySelector(".activity-remove").onclick=()=>{
     schedule[dayKey(personId,day)]=ensureDay(personId,day).filter(x=>x.id!==a.id);
     selectedActivities.delete(String(a.id));
     saveState();renderAll();
   };
   el.querySelectorAll(".editable-pill").forEach(pill=>{
-    pill.onclick=e=>openInlineEditor(e.currentTarget,{personId,day,id:a.id,field:pill.dataset.field});
+    pill.title="Clique para selecionar; duplo clique para editar";
+    pill.ondblclick=e=>{if(!weekLocked)openInlineEditor(e.currentTarget,{personId,day,id:a.id,field:pill.dataset.field});};
   });
   return el;
 }
@@ -2460,7 +2441,7 @@ function activityElement(a,personId,day){
 function createNameCell(person){
   const cell=document.createElement("div");
   cell.className="person-card name-cell";
-  cell.draggable=true;
+  cell.draggable=false;
   const roleText=person.role==="coordenacao"?"Coordenação":"Execução";
   const roommate=getRoommate(person.id);
   cell.innerHTML=`<div>
@@ -2472,7 +2453,6 @@ function createNameCell(person){
     <div class="person-car ${person.car?"has-car":""}" draggable="${person.car?"true":"false"}" data-car="${person.car||""}">
       ${person.car?"🚗 "+person.car+" • semana inteira":"Arraste um veículo aqui"}
     </div>
-    <div class="copy-week-hint">Segure o card para copiar a semana inteira para outro colaborador.</div>
     ${roommate?`<div class="room-link" title="Clique para desfazer o vínculo"><span class="chain">🔗</span> Quarto duplo com ${roommate.name}</div>`:""}
   </div>
   <div class="person-actions">
@@ -2523,90 +2503,16 @@ function createNameCell(person){
     });
   }
 
-  cell.addEventListener("dragstart",e=>{
-    if(e.target.closest("button") || e.target.closest(".person-car") || e.target.closest(".room-link")){
-      if(e.target.closest("button")) e.preventDefault();
-      return;
-    }
-    dragPayload={type:"week",sourcePersonId:person.id};
-    cell.classList.add("week-source");
-    e.dataTransfer.effectAllowed="copy";
-  });
-
-  cell.addEventListener("dragend",()=>{
-    document.querySelectorAll(".name-cell").forEach(x=>x.classList.remove("week-source","week-target"));
-  });
-
   cell.ondragover=e=>{
-    if(dragPayload?.type==="week" && dragPayload.sourcePersonId!==person.id){
-      e.preventDefault();
-      cell.classList.add("week-target");
-    }else if(dragPayload?.type==="car"){
-      e.preventDefault();
-    }
+    if(weekLocked)return;
+    if(dragPayload?.type==="car"){e.preventDefault();}
   };
-
-  cell.ondragleave=()=>cell.classList.remove("week-target");
-
   cell.ondrop=e=>{
     e.preventDefault();
-    cell.classList.remove("week-target");
-    if(!dragPayload)return;
-
+    if(weekLocked||!dragPayload)return;
     if(dragPayload.type==="car"){
-      removeCarEverywhere(dragPayload.car);
-      person.car=dragPayload.car;
-      saveState();
-      renderAll();
-      return;
-    }
-
-    if(dragPayload.type==="week" && dragPayload.sourcePersonId!==person.id){
-      const sourceId=dragPayload.sourcePersonId;
-
-      for(let day=0;day<5;day++){
-        const sourceItems=ensureDay(sourceId,day);
-        schedule[dayKey(person.id,day)] = sourceItems.map(item=>({
-          ...item,
-          id:Date.now()+Math.random(),
-          car:null
-        }));
-      }
-
-      // A placa é exclusiva: nunca copia a placa do colaborador nem das atividades.
-      schedule[dayKey(person.id,0)] = schedule[dayKey(person.id,0)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,1)] = schedule[dayKey(person.id,1)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,2)] = schedule[dayKey(person.id,2)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,3)] = schedule[dayKey(person.id,3)].map(item=>({...item,car:null}));
-      schedule[dayKey(person.id,4)] = schedule[dayKey(person.id,4)].map(item=>({...item,car:null}));
-
-      if(sourceHasTravel(sourceId)){
-        const sourcePerson=people.find(p=>p.id===sourceId);
-        const sourceName=sourcePerson?.name||"o colaborador";
-        askSystem({
-          title:"Criar quarto duplo?",
-          message:`As atividades copiadas possuem viagem.
-
-Deseja vincular ${sourceName} e ${person.name} em quarto duplo?`,
-          confirmText:"Sim, vincular",
-          cancelText:"Não"
-        }).then(quartoDuplo=>{
-          if(quartoDuplo){
-            addRoomLink(sourceId,person.id);
-            saveState();
-            renderAll();
-            showToast("success","Quarto duplo vinculado",`${sourceName} e ${person.name} foram vinculados.`);
-          }else{
-            showToast("info","Semana copiada","A programação foi copiada sem vínculo de quarto duplo.");
-          }
-        });
-      }
-
-      saveState();
-      renderAll();
-      if(!sourceHasTravel(sourceId)){
-        showToast("success","Semana copiada","O planejamento semanal foi copiado sem levar a placa do veículo.");
-      }
+      removeCarEverywhere(dragPayload.car);person.car=dragPayload.car;
+      saveState();renderAll();
     }
   };
 
@@ -2625,14 +2531,10 @@ function movePerson(id,delta){
   [people[idx],people[target]]=[people[target],people[idx]];
   saveState();renderAll();
 }
-function copyActivitiesTo(personId,day,selected){
-  selected.forEach(({item})=>{
-    ensureDay(personId,day).push({...item,id:Date.now()+Math.random(),car:null});
-  });
-}
 function createDayCell(person,day){
   const cell=document.createElement("div");
   cell.className="person-card day-card";
+  cell.dataset.personId=String(person.id);cell.dataset.day=String(day);
   const mobileDays=["SEGUNDA","TERÇA","QUARTA","QUINTA","SEXTA"];
   const d=new Date(selectedWeekStart||new Date());
   d.setDate(d.getDate()+day);
@@ -2648,14 +2550,14 @@ function createDayCell(person,day){
   items.forEach(a=>list.appendChild(activityElement(a,person.id,day)));
   cell.append(formula,help,list);
 
-  cell.ondragover=e=>{e.preventDefault();cell.classList.add("drop-day")};
+  cell.ondragover=e=>{if(weekLocked)return;e.preventDefault();cell.classList.add("drop-day");if(e.dataTransfer&&dragPayload?.type==="activities")e.dataTransfer.dropEffect=e.ctrlKey?"copy":"move";};
   cell.ondragleave=()=>cell.classList.remove("drop-day");
   cell.ondrop=e=>{
     e.preventDefault();cell.classList.remove("drop-day");
     if(!dragPayload)return;
     if(dragPayload.type==="activities"){
-      copyActivitiesTo(person.id,day,dragPayload.selected);
-      selectedActivities.clear();
+      window.AgendaInteracoes?.drop(e,{personId:String(person.id),day});
+      return;
     }else if(dragPayload.type==="car"){
       removeCarEverywhere(dragPayload.car);
       const dayItems=ensureDay(person.id,day);
@@ -3668,6 +3570,8 @@ renderAll();
       const btn=document.getElementById('freezeWeekBtn');if(btn){btn.textContent='❄ Semana histórica';btn.disabled=true;btn.classList.add('locked');}
     }
     selectedActivities.clear();renderAll();
+    window.__AGENDA_WEEK_CONFIRMED__=JSON.parse(JSON.stringify({date:currentWeekKey,people,schedule,roomLinks}));
+    window.AgendaInteracoes?.checkpoint(window.__AGENDA_WEEK_CONFIRMED__);
   }
   loadWeek=async function(date){
     selectedWeekStart=mondayOf(date);currentWeekKey=isoDate(selectedWeekStart);
@@ -3679,11 +3583,12 @@ renderAll();
   };
   async function saveAgendaServer(){
     if(weekLocked){showToast('warning','Semana bloqueada','Descongele a semana futura antes de salvar.');return;}
+    const savedState=JSON.parse(JSON.stringify({date:currentWeekKey,people,schedule,roomLinks}));
     const legacy=scheduleToLegacy();
     const payload={semana:currentWeekKey,colaboradores:people.filter(p=>p.active).map(p=>p.name),agenda:legacy,resumo:buildResumo(legacy),agendaV96:schedule,people,roomLinks,updatedAt:new Date().toISOString(),usuario:getERPUser(),versaoLayout:'9.6'};
     const res=await apiJson('salvar_agenda_novo.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     currentServerType='rascunho';currentServerFile=res.file;getWeekMeta(currentWeekKey).saved=true;
-    await saveCatalogs();showToast('success','Agenda salva','O rascunho semanal foi gravado no servidor.');
+    await saveCatalogs();window.__AGENDA_WEEK_CONFIRMED__=savedState;window.AgendaInteracoes?.checkpoint(savedState);showToast('success','Agenda salva','O rascunho semanal foi gravado no servidor.');
   }
   async function toggleFreeze(){
     if(currentServerType==='historico'||weekRelation(selectedWeekStart)!=='future'){
@@ -4166,5 +4071,6 @@ setTimeout(install,250);
 @media(max-width:700px){#peopleCrudBar{grid-template-columns:1fr!important}#peopleModal .person-config{grid-template-columns:1fr!important}#peopleModal .people-delete-btn{grid-column:1!important}}
 </style>
 
+<script src="agenda_interacoes.js?v=098rc3hf6"></script>
 </body>
 </html>
