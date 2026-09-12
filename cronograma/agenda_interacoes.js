@@ -1,4 +1,4 @@
-/* ERP ÍMPAR HF6 — seleção por célula, mover, cópia em lote e checkpoint. */
+/* ERP ÍMPAR HF8 — HF6 preservado + acesso isolado ao manual da Agenda do Dia. */
 (() => {
   'use strict';
   const daily = Boolean(window.AgendaDiaClient);
@@ -22,6 +22,11 @@
   button.textContent = '↶ Desfazer';
   button.title = 'Restaurar todas as alterações posteriores ao último Salvar (Ctrl+Z)';
   document.getElementById('saveMock')?.after(button);
+  const manualButton = document.createElement('button');
+  manualButton.id = 'agendaManualButton'; manualButton.type = 'button'; manualButton.className = 'toolbar-btn';
+  manualButton.textContent = '❓ Ajuda / Manual';
+  manualButton.title = 'Abrir o Manual da Agenda do Dia';
+  if (daily) document.getElementById('reportBtn')?.after(manualButton);
   const status = document.createElement('div');
   status.className = 'agenda-copy-status'; status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite'); status.hidden = true;
@@ -32,6 +37,9 @@
     '.agenda-copy-status{padding:8px 12px;color:#17455e;background:#eef7ff;border:1px solid #bed9f1;border-radius:10px;font-size:12px;margin:8px 0}' +
     '.agenda-copy-status[hidden]{display:none}.activity-card{touch-action:manipulation}' +
     '.module-toolbar:not(.collapsed){height:auto!important}' +
+    '.agenda-manual-layer{position:fixed;inset:0;z-index:2147483000;background:#0d2f57c4;padding:18px;display:flex;align-items:center;justify-content:center}' +
+    '.agenda-manual-layer[hidden]{display:none}.agenda-manual-frame{width:min(1180px,100%);height:min(900px,96vh);border:0;border-radius:22px;background:#fff;box-shadow:0 30px 100px #0006}' +
+    '@media(max-width:760px){.agenda-manual-layer{padding:0}.agenda-manual-frame{width:100%;height:100vh;border-radius:0}}' +
     '.content{top:var(--agenda-toolbar-bottom,calc(var(--toolbar-h) + 18px))!important}';
   document.head.append(css);
   const toolbar = document.querySelector('.module-toolbar');
@@ -40,6 +48,21 @@
   };
   if (toolbar) new ResizeObserver(fitToolbar).observe(toolbar);
   window.addEventListener('resize', fitToolbar); fitToolbar();
+  function manualLayer() {
+    let layer = document.getElementById('agendaManualLayer');
+    if (layer) return layer;
+    layer = document.createElement('div'); layer.id = 'agendaManualLayer'; layer.className = 'agenda-manual-layer'; layer.hidden = true;
+    const frame = document.createElement('iframe'); frame.className = 'agenda-manual-frame'; frame.title = 'Manual da Agenda do Dia';
+    frame.src = 'manual_agenda_do_dia.html?v=1.3'; layer.append(frame); document.body.append(layer);
+    return layer;
+  }
+  function openManual() { manualLayer().hidden = false; }
+  function closeManual() { const layer = document.getElementById('agendaManualLayer'); if (layer) layer.hidden = true; }
+  manualButton.onclick = openManual;
+  window.addEventListener('message', event => {
+    if (event.origin !== location.origin || event.data?.type !== 'ERP_IMPAR_MANUAL_CLOSE') return;
+    closeManual();
+  });
   function paint() {
     document.querySelectorAll('.activity-card').forEach(el => {
       const selected = same(origin, cellOf(el)) && selectedActivities.has(el.dataset.itemId);
@@ -185,7 +208,7 @@
   if (grid) new MutationObserver(() => {
     if (pending && pending.date !== currentWeekKey) clear(); else paint();
   }).observe(grid, {childList: true, subtree: true});
-  window.AgendaInteracoes = {select, startDrag, drop, clear, checkpoint, undo};
+  window.AgendaInteracoes = {select, startDrag, drop, clear, checkpoint, undo, openManual, closeManual};
   // A resposta da semana pode chegar antes deste arquivo terminar de carregar.
   if (!daily && window.__AGENDA_WEEK_CONFIRMED__) checkpoint(window.__AGENDA_WEEK_CONFIRMED__);
   paint();
