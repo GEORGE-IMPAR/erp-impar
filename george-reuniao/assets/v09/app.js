@@ -220,7 +220,13 @@ function sendText(){const text=input.value.trim();if(!text||!requireAuth())retur
 $('btnSend').onclick=sendText;
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}});
 const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
-const stopSpeechIntent=s=>/^(?:(?:ei|oi|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$/.test(normalized(s));
+const georgeName='(?:george|jorge|giorge|georgie|djorge|jordi)';
+const pauseWords='(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)';
+const stopSpeechIntent=s=>{
+ const n=normalized(s);
+ return new RegExp(`^(?:(?:ei|oi|por favor)[, .!]* )?${georgeName}[, :.!]*${pauseWords}(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$`).test(n)||
+   new RegExp(`^${pauseWords}[, :.!]*${georgeName}[, .!]*$`).test(n);
+};
 const called=s=>/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)\b/.test(normalized(s));
 function meetingEndIntent(text){
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
@@ -256,7 +262,22 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
    try{return await this.connecting;}finally{this.connecting=null;}
  },
 partialTranscripts:new Map(),interruptedItems:new Set(),interruptionOnly:new Set(),tts:null,ttsAbort:null,speechTicket:0,pausedSpeech:null,
+pendingCommandText:'',pendingCommandId:null,pendingCommandTimer:null,
 transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
+ clearPendingCommand(){clearTimeout(this.pendingCommandTimer);this.pendingCommandTimer=null;this.pendingCommandText='';this.pendingCommandId=null;},
+ scheduleCommand(text,id){
+   const clean=String(text||'').trim();if(!clean)return;
+   clearTimeout(this.pendingCommandTimer);
+   if(!this.pendingCommandText)this.pendingCommandText=clean;
+   else if(clean.startsWith(this.pendingCommandText))this.pendingCommandText=clean;
+   else if(!this.pendingCommandText.endsWith(clean))this.pendingCommandText+=' '+clean;
+   this.pendingCommandId=this.pendingCommandId||id;
+   showStatus('Áudio ligado • aguardando você terminar a frase…','audio');
+   this.pendingCommandTimer=setTimeout(()=>{
+     const full=this.pendingCommandText.trim(),event=this.pendingCommandId||eventId();
+     this.clearPendingCommand();if(full)queueQuestion(full,'audio',event);
+   },1800);
+ },
  drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
  event(e){
   const t=e.type||'';
@@ -280,7 +301,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
     if(state.recording?.mode==='meeting'){
       if(called(text))queueQuestion(text,'audio',id);
       else{message('me',text);const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);}
-    }else if(state.mode==='audio'&&!state.recording)queueQuestion(text,'audio',id);
+    }else if(state.mode==='audio'&&!state.recording)this.scheduleCommand(text,id);
  },
  send(e){if(this.dc?.readyState!=='open')throw new Error('Áudio ainda não está conectado.');this.dc.send(JSON.stringify(e));},
  async speak(text,full=false){
@@ -313,7 +334,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  trackQueue:Promise.resolve(),
  pauseTransmit(force=false){if(!force&&this.wanted&&(this.speaking||state.recording&&!state.recording.stopping))return this.resumeTransmit();this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
  resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&(this.speaking||state.recording&&!state.recording.stopping||!state.busy&&!state.upload)&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
- pause(){this.wanted=false;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
+ pause(){this.wanted=false;this.clearPendingCommand();this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
  close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
