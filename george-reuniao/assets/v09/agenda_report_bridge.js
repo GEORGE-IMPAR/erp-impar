@@ -1,6 +1,6 @@
-/* ERP ÍMPAR — George V0.9.8 HF13
-   PDF da Agenda do Dia montado no navegador a partir do payload estruturado
-   retornado pela consulta somente leitura de Analytics. Não abre o módulo do
+/* ERP ÍMPAR — George V0.9.8 HF15
+   PDF da Agenda do Dia montado no navegador a partir da leitura oficial do
+   único rascunho diário aberto. Não abre o módulo do
    ERP em iframe, não navega, não escreve na Agenda e não depende do PDF oficial.
 */
 (() => {
@@ -9,8 +9,15 @@ const scriptUrl=new URL(document.currentScript.src),LOGO_URL=new URL('logo_georg
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function matches(text,module=''){
- const n=norm(text),output=/\brelatorio\b|\bpdf\b|\bcompartilh|\bexport|\bimprim/.test(n),daily=/\bagenda do dia\b|\batividade do dia\b/.test(n),analytics=/\banalise\b|\banalitica|\banalytics\b|\bdashboard\b|\bgrafico\b|\bplanilha\b|\bexcel\b|\bcsv\b/.test(n);
- return output&&!analytics&&(daily||module==='agenda_dia');
+ const command=norm(text)
+   .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'')
+   .replace(/[.!?]+$/,'').trim();
+ const share='(?:compartilha|compartilhar|compartilhe|envia|enviar|envie)';
+ const open='(?:gera|gerar|gere|abre|abrir|abra|baixa|baixar|baixe|imprime|imprimir|imprima)';
+ const polite='(?:(?:pode|por favor|quero que voce) )?';
+ const bare=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: o)? pdf(?: do dia)?$');
+ const explicit=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: o)? (?:pdf|relatorio)(?: em pdf)? (?:da|do) (?:agenda|atividade) do dia$');
+ return explicit.test(command)||(module==='agenda_dia'&&bare.test(command));
 }
 function wantsShare(text){return /\bcompartilh|\benvi(a|e|ar)\b/.test(norm(text));}
 function wantsPrint(text){return /\bimprim|\bimpress/.test(norm(text));}
@@ -18,6 +25,18 @@ function br(iso){const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);retu
 function number(value){return Number(value||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2});}
 function clean(value){return String(value??'').replace(/\s+/g,' ').trim();}
 function safeFilename(value){return clean(value||'agenda_do_dia').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_').replace(/^_+|_+$/g,'')||'agenda_do_dia';}
+function fromAgenda(response){
+ const draft=response?.draft&&typeof response.draft==='object'?response.draft:response||{},date=String(response?.data||draft.data||draft.date||''),activities=Array.isArray(response?.atividades)?response.atividades:Array.isArray(draft.atividades)?draft.atividades:[];
+ const rows=activities.filter(item=>item&&typeof item==='object').map((item,index)=>{
+   const merged={...(item.planejado&&typeof item.planejado==='object'?item.planejado:{}),...item,...(item.executado&&typeof item.executado==='object'?item.executado:{})};
+   const statusText=norm(merged.statusVisual||merged.status||''),description=clean(merged.atividade||merged.atividade_texto||merged.descricao||'Sem descrição'),work=clean(merged.obra||merged.obra_texto||merged.projeto||'Sem obra'),cancelled=!!(item.cancelado||item.cancelled)||statusText.includes('cancel'),special=/\bferias\b/.test(norm(description+' '+work))?'Férias':/\bfalta\b/.test(norm(description+' '+work))?'Falta':'';
+   return {data:date,colaborador:clean(merged.colaborador||merged.colaborador_nome||merged.responsavel||'Sem colaborador'),funcao:clean(merged.funcao||merged.cargo||''),obra:work,atividade:description,veiculo:clean(merged.carro||merged.placa||'Sem veículo'),status:cancelled?'Cancelada':special||'Ativa',horas:0,atividade_id:String(item.id||`${date}_${index}`)};
+ });
+ const byPerson=new Map();for(const row of rows)if(row.status==='Ativa'&&row.colaborador!=='Sem colaborador'){const key=norm(row.colaborador);if(!byPerson.has(key))byPerson.set(key,[]);byPerson.get(key).push(row);}
+ for(const activeRows of byPerson.values()){const share=activeRows.length?8/activeRows.length:0;for(const row of activeRows)row.horas=share;}
+ const productive=rows.filter(row=>row.status==='Ativa'),people=new Set(productive.map(row=>norm(row.colaborador)).filter(Boolean)),works=new Set(productive.map(row=>norm(row.obra)).filter(Boolean));
+ return {title:'Relatório da Agenda do Dia',filename:`agenda_do_dia_${date}`,format:'pdf',summary:{periodo:{inicio:date,fim:date},horas:productive.reduce((total,row)=>total+Number(row.horas||0),0),colaboradores:people.size,obras:works.size,atividades:rows.length,regra:'8 horas por colaborador/dia, divididas igualmente entre as atividades produtivas válidas'},never_allocated:[],rows,source:response?.source||'Fonte operacional da Agenda do Dia'};
+}
 function loadLogo(){return new Promise(resolve=>{const image=new Image();let done=false;const finish=value=>{if(!done){done=true;resolve(value);}};image.onload=()=>finish(image);image.onerror=()=>finish(null);image.src=LOGO_URL;setTimeout(()=>finish(null),4000);});}
 function wrap(ctx,text,maxWidth){const words=clean(text).split(' ').filter(Boolean),lines=[];let line='';for(const word of words){const trial=line?line+' '+word:word;if(line&&ctx.measureText(trial).width>maxWidth){lines.push(line);line=word;}else line=trial;}if(line)lines.push(line);return lines.length?lines:['—'];}
 function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}}
@@ -43,6 +62,6 @@ async function render(payload,onStage){
  for(let index=0;index<rows.length;index++){const row=rows[index]||{};ctx.font='22px Arial';const title=`${br(row.data)} • ${clean(row.colaborador)||'Sem colaborador'} • ${number(row.horas)}h`,work=`${clean(row.obra)||'Sem obra'}${clean(row.veiculo)&&clean(row.veiculo)!=='Sem veículo'?' • Veículo: '+clean(row.veiculo):''}`,activity=`${clean(row.atividade)||'Sem descrição'}${clean(row.status)?' • '+clean(row.status):''}`,titleLines=wrap(ctx,title,CONTENT-44),workLines=wrap(ctx,work,CONTENT-44),activityLines=wrap(ctx,activity,CONTENT-44),height=30+titleLines.length*31+workLines.length*28+activityLines.length*28+22;await ensure(height+18);rounded(ctx,MARGIN,y,CONTENT,height,16,index%2?'#f7f9fc':'#f1f6fb','#d7e1ec');let lineY=y+18;lineY=drawText(ctx,title,MARGIN+22,lineY,{font:'bold 22px Arial',color:'#135fb8',width:CONTENT-44,lineHeight:31});lineY=drawText(ctx,work,MARGIN+22,lineY+3,{font:'bold 20px Arial',color:'#173550',width:CONTENT-44,lineHeight:28});drawText(ctx,activity,MARGIN+22,lineY+3,{font:'20px Arial',color:'#4e657a',width:CONTENT-44,lineHeight:28});y+=height+18;if(index%10===0){onStage?.(`Montando o PDF • ${index+1} de ${rows.length} atividades…`);await sleep(0);}}
  footer();pages.push({width:WIDTH,height:HEIGHT,bytes:dataUrlBytes(canvas.toDataURL('image/jpeg',0.9))});return jpegPdf(pages);
 }
-async function build(text,payload,options={}){if(!payload||!payload.summary||!Array.isArray(payload.rows))throw new Error('A consulta da Agenda do Dia não retornou dados estruturados para montar o PDF. Nenhum arquivo foi anunciado como pronto.');options.onStage?.('Montando o PDF com os dados da Agenda do Dia…');const blob=await render(payload,options.onStage);if(blob.size<100||await blob.slice(0,5).text()!=='%PDF-')throw new Error('Não foi possível concluir um PDF válido. Tente novamente.');const period=payload.summary.periodo||{},date=period.inicio||'',end=period.fim||date;return {ok:true,date,date_br:date===end?br(date):`${br(date)} a ${br(end)}`,blob,filename:safeFilename(payload.filename||`agenda_do_dia_${date}`)+'.pdf',wants_share:wantsShare(text),wants_print:wantsPrint(text),source:'Analytics da Agenda do Dia — consulta somente leitura',payload};}
-window.GeorgeAgendaReport=Object.freeze({matches,build,version:'0.9.8-hf13-v1.5'});
+async function build(text,payload,options={}){if(!payload||!payload.summary||!Array.isArray(payload.rows))throw new Error('A consulta da Agenda do Dia não retornou dados estruturados para montar o PDF. Nenhum arquivo foi anunciado como pronto.');options.onStage?.('Montando o PDF com os dados da Agenda do Dia…');const blob=await render(payload,options.onStage);if(blob.size<100||await blob.slice(0,5).text()!=='%PDF-')throw new Error('Não foi possível concluir um PDF válido. Tente novamente.');const period=payload.summary.periodo||{},date=period.inicio||'',end=period.fim||date;return {ok:true,date,date_br:date===end?br(date):`${br(date)} a ${br(end)}`,blob,filename:safeFilename(payload.filename||`agenda_do_dia_${date}`)+'.pdf',wants_share:wantsShare(text),wants_print:wantsPrint(text),source:payload.source||'Fonte operacional da Agenda do Dia — consulta somente leitura',payload};}
+window.GeorgeAgendaReport=Object.freeze({matches,fromAgenda,build,version:'0.9.8-hf15-v1.7'});
 })();

@@ -195,8 +195,9 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  const record=retryRecord||state.recording?.id||state.record;const speak=state.mode==='audio'||state.recording?.mode==='meeting';
  message('me',text);scroll(true);
 
- // Saída isolada: consulta os mesmos dados estruturados do Analytics e monta
- // um PDF real no navegador, sem abrir/navegar no módulo do ERP.
+ // Saída isolada e estrita: lê diretamente o único rascunho oficial aberto e
+ // monta o PDF no navegador. Não envia instrução ao chat, não altera o módulo,
+ // não grava contexto de Analytics e não participa das operações da Agenda.
  if(window.GeorgeAgendaReport?.matches?.(text,state.activeModule)){
    state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
      const indicator=notice('Consultando os dados da Agenda do Dia…');
@@ -204,18 +205,11 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
      state.busy=true;voice.pauseTransmit();
      try{
        await state.logQueue;
-       if(state.activeModule!=='agenda_dia'){
-         const activated=await request('chat',{record_id:record,text:'Agenda do Dia',event_id:eventId()});
-         state.activeModule=activated.module||'agenda_dia';
-       }
-       // "horas e alocações" direciona a solicitação à consulta estruturada
-       // já existente; não acrescenta operação de escrita nem regra nova.
-       const analyticalRequest=text+'\nPara montar este arquivo, consulte a Agenda do Dia inteira, sem filtro de colaborador, inclua atividades canceladas, férias, faltas, horas e alocações, e retorne a saída PDF.';
-       const response=await request('chat',{record_id:record,text:analyticalRequest,event_id:id});
-       if(response.module)state.activeModule=response.module;
-       if(!response.analytics)throw new Error('A consulta da Agenda do Dia não retornou os dados necessários para montar o PDF. Nenhum arquivo foi anunciado como pronto.');
-       state.lastAnalytics=response.analytics;state.lastOutput='analytics';
-       const result=await window.GeorgeAgendaReport.build(text,response.analytics,{onStage:stage=>{indicator.textContent=stage;operation?.update('Relatório da Agenda do Dia',stage,null);}});
+       await logDirectTurn(record,'user',text,id);
+       const response=await request('agenda_read');
+       if(!response?.verified||!Array.isArray(response.atividades))throw new Error('A Agenda do Dia oficial não retornou uma base verificada. Nenhum PDF foi anunciado como pronto.');
+       const payload=window.GeorgeAgendaReport.fromAgenda(response);
+       const result=await window.GeorgeAgendaReport.build(text,payload,{onStage:stage=>{indicator.textContent=stage;operation?.update('Relatório da Agenda do Dia',stage,null);}});
        indicator.remove();
        const reply=result.wants_share
          ? `PDF da Agenda do Dia de ${result.date_br} gerado e aberto. Use Compartilhar PDF no visualizador para escolher o aplicativo.`
@@ -225,6 +219,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        const m=message('george',reply,'RELATÓRIO DA AGENDA');
        m.row.dataset.sources=result.source;
        agendaReportButtons(result,m.bubble);
+       await logDirectTurn(record,'assistant',reply,eventId());
        let shared=false;
        if(result.wants_share){try{shared=await shareAgendaReport(result);}catch(e){error(e);}}
        if(!shared){try{await window.GeorgePdf.open(result.blob,'Agenda do Dia');}catch(e){error(e);}}
@@ -233,7 +228,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        indicator.remove();
        const reply=e.message||String(e);
        const m=message('george',reply,'RELATÓRIO DA AGENDA');
-       m.row.dataset.sources='Analytics da Agenda do Dia';
+       m.row.dataset.sources='Fonte operacional da Agenda do Dia';
        showStatus(reply,'warning');
      }finally{
        operation?.close();state.busy=false;voice.resumeTransmit();normalStatus();
@@ -452,15 +447,18 @@ async function downloadBlob(id,kind,attempt=0){
 function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 function mediaOriginalActions(id,card,job={}){
  if(!card||!['image','video'].includes(card.kind))return;
- const actions=card.row.querySelector('.media-card-actions');if(!actions||actions.dataset.originalReady==='true')return;actions.dataset.originalReady='true';
+ const actions=card.row.querySelector('.media-card-actions');if(!actions)return;
+ if(actions.dataset.originalReady==='true'){card.loadOriginal?.().catch(()=>{});return;}actions.dataset.originalReady='true';
  let file=card.file instanceof File?card.file:null,loading=null;
+ const mediaMime=(name,received)=>{if(received&&received!=='application/octet-stream'&&(card.kind==='image'?received.startsWith('image/'):received.startsWith('video/')))return received;const ext=String(name||'').split('.').pop().toLowerCase(),types={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif',mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm',mkv:'video/x-matroska',mpeg:'video/mpeg',mpg:'video/mpeg'};return types[ext]||(card.kind==='image'?'image/jpeg':'video/mp4');};
  const getFile=()=>{
-  if(file)return Promise.resolve(file);if(loading)return loading;
-  loading=(async()=>{const blob=await downloadBlob(id,'source'),fallback=card.kind==='image'?'foto_george.jpg':'video_george.webm',name=job.name||fallback;file=new File([blob],name,{type:blob.type||(card.kind==='image'?'image/jpeg':'video/webm')});card.source?.(file,name);return file;})().finally(()=>{loading=null;});return loading;
+  if(file){if(!card.url)card.source?.(file,file.name);return Promise.resolve(file);}if(loading)return loading;
+  loading=(async()=>{const blob=await downloadBlob(id,'source'),fallback=card.kind==='image'?'foto_george.jpg':'video_george.mp4',name=job.name||fallback;file=new File([blob],name,{type:mediaMime(name,blob.type)});card.source?.(file,name);actions.querySelector('.media-original-retry')?.remove();return file;})().finally(()=>{loading=null;});return loading;
  };
+ card.loadOriginal=getFile;
  const download=smallButton('Baixar original',async()=>{try{const original=await getFile();saveBlob(original,original.name);}catch(e){error(e);}});
  const share=smallButton('Compartilhar original',async()=>{try{const original=await getFile();if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[original]})))await navigator.share({title:'Mídia — ERP ÍMPAR',files:[original]});else saveBlob(original,original.name);}catch(e){if(e.name!=='AbortError')error(e);}});
- actions.append(download,share);getFile().catch(()=>{});
+ actions.append(download,share);getFile().catch(()=>{if(!actions.querySelector('.media-original-retry')){const retry=smallButton(card.kind==='video'?'Mostrar vídeo':'Mostrar foto',async()=>{retry.disabled=true;try{await getFile();}catch(e){error(e);}finally{retry.disabled=false;}});retry.classList.add('media-original-retry');actions.prepend(retry);}});
 }
 async function reportActions(id,bubble,config={}){
  const row=document.createElement('div');row.className='pdf-actions';bubble.append(row);
@@ -812,7 +810,7 @@ async function initialize(){
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
   if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf4-ata-direta'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
-  for(const item of (j.jobs||[])){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
+  for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
   state.mode='text';setActive('');normalStatus();
  }catch(e){error(e);}
