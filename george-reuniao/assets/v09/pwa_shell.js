@@ -28,8 +28,8 @@
     if(removed)return;removed=true;splash.classList.add('is-leaving');
     window.setTimeout(()=>{splash.remove();releaseSplash();},480);
   };
-  const earliest=new Promise(resolve=>window.setTimeout(resolve,2200));
+  const earliest=new Promise(resolve=>window.setTimeout(resolve,3000));
   const loaded=document.readyState==='complete'?Promise.resolve():new Promise(resolve=>window.addEventListener('load',resolve,{once:true}));
   Promise.all([earliest,loaded]).then(finish);
-  window.setTimeout(finish,4200);
+  window.setTimeout(finish,5200);
 })();

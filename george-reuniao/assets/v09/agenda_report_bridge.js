@@ -1,8 +1,7 @@
 /* ERP ÍMPAR — George V0.9.3
    Bridge SOMENTE de relatório da Agenda do Dia.
-   Reutiliza o módulo oficial /cronograma/agenda_do_dia_novo.html:
-     AgendaDiaV315.openDate()      -> carrega draft/histórico da fonte oficial
-     AgendaDiaPackage77.buildPdf() -> gera o MESMO PDF do relatório oficial
+   Reutiliza o módulo oficial /cronograma/agenda_do_dia_novo.html e sua
+   interface pública mais recente de relatório. Mantém fallback para Package77.
    Não cria regra de relatório paralela e não escreve na Agenda.
 */
 (() => {
@@ -96,14 +95,20 @@ function ensureFrame(){
   });
   return loading;
 }
-async function waitApi(win){
+function pdfBuilder(win){
+  if(typeof win?.AgendaDiaRelatorioShellV3?.gerarPdf==='function')return ()=>win.AgendaDiaRelatorioShellV3.gerarPdf();
+  if(typeof win?.AgendaDiaPackage77?.buildPdf==='function')return ()=>win.AgendaDiaPackage77.buildPdf();
+  return null;
+}
+async function waitApi(win,onStage){
   const end=Date.now()+90000;
   while(Date.now()<end){
-    if(
-      win?.AgendaDiaV315?.openDate &&
-      win?.AgendaDiaV315?.openDraft &&
-      win?.AgendaDiaPackage77?.buildPdf
-    ) return true;
+    try{
+      const path=win?.location?.pathname||'';
+      if(path&&!/\/cronograma\/agenda_do_dia_novo\.html$/i.test(path))throw new Error('A Agenda oficial abriu outra tela. Confirme o login do ERP e tente novamente.');
+    }catch(error){if(error.message)throw error;}
+    if(pdfBuilder(win)&&win?.AgendaDiaV315?.openDate&&win?.AgendaDiaV315?.openDraft)return true;
+    onStage?.('Carregando o motor oficial da Agenda do Dia…');
     await sleep(250);
   }
   throw new Error('O motor oficial de relatório da Agenda ainda não ficou disponível.');
@@ -117,16 +122,19 @@ async function waitDate(win,date){
   return false;
 }
 
-async function build(text){
+async function build(text,options={}){
+  const stage=message=>options.onStage?.(message);
   let date=dateFromText(text);
+  stage('Abrindo a Agenda do Dia oficial…');
   const f=await ensureFrame();
   const win=f.contentWindow;
-  await waitApi(win);
+  await waitApi(win,stage);
 
   let restored=false;
   try{
     // V315 consulta o draft/histórico pelo atividade_dia_estado_novo.php.
     // Para histórico, abre somente leitura. Para data futura, bloqueia.
+    stage(date?'Carregando a Agenda do Dia solicitada…':'Carregando o rascunho oficial aberto…');
     if(date)await win.AgendaDiaV315.openDate(date);else{await win.AgendaDiaV315.openDraft();date=String(win.__AGENDA_DIA_CURRENT_DATE__||'');if(!/^20\d{2}-\d{2}-\d{2}$/.test(date))throw new Error('O módulo oficial não confirmou a data do draft ativo.');}
     const exact=await waitDate(win,date);
     if(!exact){
@@ -138,7 +146,10 @@ async function build(text){
       );
     }
 
-    const foreignBlob=await win.AgendaDiaPackage77.buildPdf();
+    stage('Renderizando o PDF oficial…');
+    const builder=pdfBuilder(win);
+    if(!builder)throw new Error('O gerador oficial do relatório não foi encontrado.');
+    const foreignBlob=await builder();
     if(!foreignBlob || foreignBlob.size<500){
       throw new Error('O gerador oficial retornou um PDF vazio.');
     }
@@ -154,7 +165,7 @@ async function build(text){
       filename:`agenda_do_dia_${date}.pdf`,
       wants_share:wantsShare(text),
       wants_print:wantsPrint(text),
-      source:'agenda_do_dia_novo.html > AgendaDiaV315.openDate > AgendaDiaPackage77.buildPdf'
+      source:'agenda_do_dia_novo.html > AgendaDiaV315 > AgendaDiaRelatorioShellV3/AgendaDiaPackage77'
     };
   } finally {
     // O relatório oficial abre estado visual dentro do iframe.
@@ -172,6 +183,6 @@ window.GeorgeAgendaReport=Object.freeze({
   dateFromText,
   build,
   source:OFFICIAL_URL,
-  version:'0.9.7-rc1'
+  version:'0.9.8-hf10-v1.2'
 });
 })();

@@ -53,7 +53,7 @@ function message(side,text,label='GEORGE',at=now()){
 }
 function notice(text){const n=document.createElement('div');n.className='system';n.textContent=text;chat.insertBefore(n,anchor);scroll();return n;}
 function error(e){e=connectionError(e);notice(e.message||String(e));showStatus(e.message||String(e),'warning');if(e.http===401)showLogin();}
-function showLogin(){state.auth=false;voice.pause();$('loginDialog').showModal();$('loginInfo').textContent='Use o e-mail e a senha já cadastrados no ERP. A senha é verificada no servidor.';}
+function showLogin(){state.auth=false;voice.pause();const dlg=$('loginDialog');if(!dlg.open)dlg.showModal();$('loginInfo').textContent='Use o mesmo e-mail e a mesma senha do ERP ÍMPAR. A senha é validada no servidor e não fica salva neste aplicativo.';}
 async function authenticate(){
  const s=await request('session');state.csrf=s.csrf;
  if(!s.authenticated){showLogin();return false;}
@@ -64,7 +64,12 @@ $('loginForm').addEventListener('submit',async e=>{
  try{const j=await request('login',{email:$('loginEmail').value,password:$('loginPassword').value});$('loginPassword').value='';state.csrf=j.csrf;state.user=j.user;state.auth=true;$('loginDialog').close();await initialize();}
  catch(e){$('loginInfo').textContent=e.message;}finally{btn.disabled=false;}
 });
-$('loginClose').onclick=()=>{$('loginDialog').close();showStatus('Entre para acessar suas conversas e o ERP.','warning');};
+$('loginClose').onclick=()=>{location.replace('/menu_novo.html');};
+$('exitApp').onclick=async()=>{
+ if(state.recording||state.pendingCapture||state.finalizing||state.upload||state.busy||state.preparing){notice('Conclua a gravação, o envio ou o processamento antes de sair do aplicativo.');return;}
+ try{await state.chatQueue;await state.logQueue;await saveDraft();}catch(e){error(e);return;}
+ voice.close();location.replace('/menu_novo.html');
+};
 function requireAuth(){if(state.auth)return true;showLogin();return false;}
 let draftTimer;
 function saveDraft(){if(state.record&&state.auth)return request('draft',{record_id:state.record,text:input.value}).catch(error);return Promise.resolve();}
@@ -106,7 +111,7 @@ function analyticsHtml(payload){
  const bars=groups.slice(0,12).map(row=>`<div class="bar-row"><span>${analyticsEscape(analyticsLabel(row))}</span><i><b style="width:${Math.max(2,Number(row.horas||0)/max*100)}%"></b></i><strong>${analyticsNumber(row.horas)}h</strong></div>`).join('');
  const table=groups.map(row=>`<tr><td>${analyticsEscape(analyticsLabel(row))}</td><td>${analyticsEscape((row.colaboradores||[]).join(', '))}</td><td>${row.atividades||0}</td><td>${analyticsNumber(row.horas)}h</td></tr>`).join('');
  const missing=(summary.datas_uteis_sem_agenda||[]).length?`<p class="warning">Dias úteis sem Agenda disponível: ${analyticsEscape(summary.datas_uteis_sem_agenda.join(', '))}.</p>`:'';
- return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${analyticsEscape(payload.title||'Análise da Agenda do Dia')}</title><style>*{box-sizing:border-box}body{margin:0;background:#eef5f8;color:#12364a;font:14px Arial,sans-serif}.page{max-width:1100px;margin:24px auto;background:#fff;border-radius:20px;padding:28px;box-shadow:0 14px 40px #1233}header{background:linear-gradient(135deg,#073a52,#08775f);color:#fff;padding:24px;border-radius:16px}h1{margin:0 0 8px;font-size:28px}header p{margin:0;color:#d9fff1}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.card{padding:16px;border:1px solid #cfe2ea;border-radius:14px;background:#f8fbfc}.card span{display:block;color:#607d8b;font-size:12px}.card strong{display:block;margin-top:6px;font-size:24px;color:#08775f}.panel{margin-top:18px;border:1px solid #d6e5eb;border-radius:14px;padding:18px}h2{margin:0 0 14px;font-size:18px}.bar-row{display:grid;grid-template-columns:230px 1fr 75px;gap:10px;align-items:center;margin:9px 0}.bar-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar-row i{height:14px;background:#e5eff3;border-radius:99px;overflow:hidden}.bar-row b{display:block;height:100%;background:linear-gradient(90deg,#0b93d5,#12a56f);border-radius:99px}.bar-row strong{text-align:right}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e1edf1;text-align:left}th{color:#08775f}.warning{padding:10px;background:#fff4d6;border-radius:10px;color:#7a5410}.rule{font-size:12px;color:#627986}@media(max-width:700px){.cards{grid-template-columns:repeat(2,1fr)}.bar-row{grid-template-columns:110px 1fr 60px}.page{margin:0;border-radius:0;padding:14px}}@media print{body{background:#fff}.page{box-shadow:none;margin:0;max-width:none}.panel{break-inside:avoid}}</style></head><body><main class="page"><header><h1>${analyticsEscape(payload.title||'Análise da Agenda do Dia')}</h1><p>${analyticsEscape(period.inicio||'')} a ${analyticsEscape(period.fim||'')}</p></header><section class="cards">${cards.map(card=>`<div class="card"><span>${card[0]}</span><strong>${card[1]}</strong></div>`).join('')}</section>${missing}<section class="panel"><h2>Principais alocações</h2>${bars||'<p>Não há dados para o período.</p>'}</section><section class="panel"><h2>Consolidação</h2><table><thead><tr><th>Grupo</th><th>Colaboradores</th><th>Atividades</th><th>Horas</th></tr></thead><tbody>${table||'<tr><td colspan="4">Não há dados.</td></tr>'}</tbody></table></section><p class="rule">${analyticsEscape(summary.regra||'')}</p></main></body></html>`;
+ return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${analyticsEscape(payload.title||'Análise da Agenda do Dia')}</title><style>*{box-sizing:border-box}body{margin:0;background:#e8edf3;color:#16354d;font:14px Arial,sans-serif}.page{max-width:1100px;margin:24px auto;background:#fff;border-radius:20px;padding:28px;box-shadow:0 14px 40px #1e2f4433}header{background:linear-gradient(135deg,#394a5b,#1d66bd);color:#fff;padding:24px;border-radius:16px}h1{margin:0 0 8px;font-size:28px}header p{margin:0;color:#e7f2ff}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.card{padding:16px;border:1px solid #d4dee8;border-radius:14px;background:#f4f6f8}.card span{display:block;color:#60758a;font-size:12px}.card strong{display:block;margin-top:6px;font-size:24px;color:#195ca8}.panel{margin-top:18px;border:1px solid #d6dfe8;border-radius:14px;padding:18px}h2{margin:0 0 14px;font-size:18px}.bar-row{display:grid;grid-template-columns:230px 1fr 75px;gap:10px;align-items:center;margin:9px 0}.bar-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar-row i{height:14px;background:#dde4eb;border-radius:99px;overflow:hidden}.bar-row b{display:block;height:100%;background:linear-gradient(90deg,#607385,#247be0);border-radius:99px}.bar-row strong{text-align:right}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e1e7ed;text-align:left}th{color:#195ca8}.warning{padding:10px;background:#fff4d6;border-radius:10px;color:#7a5410}.rule{font-size:12px;color:#627986}@media(max-width:700px){.cards{grid-template-columns:repeat(2,1fr)}.bar-row{grid-template-columns:110px 1fr 60px}.page{margin:0;border-radius:0;padding:14px}}@media print{body{background:#fff}.page{box-shadow:none;margin:0;max-width:none}.panel{break-inside:avoid}}</style></head><body><main class="page"><header><h1>${analyticsEscape(payload.title||'Análise da Agenda do Dia')}</h1><p>${analyticsEscape(period.inicio||'')} a ${analyticsEscape(period.fim||'')}</p></header><section class="cards">${cards.map(card=>`<div class="card"><span>${card[0]}</span><strong>${card[1]}</strong></div>`).join('')}</section>${missing}<section class="panel"><h2>Principais alocações</h2>${bars||'<p>Não há dados para o período.</p>'}</section><section class="panel"><h2>Consolidação</h2><table><thead><tr><th>Grupo</th><th>Colaboradores</th><th>Atividades</th><th>Horas</th></tr></thead><tbody>${table||'<tr><td colspan="4">Não há dados.</td></tr>'}</tbody></table></section><p class="rule">${analyticsEscape(summary.regra||'')}</p></main></body></html>`;
 }
 function ensureAnalyticsDialog(){
  let dlg=$('analyticsDialog');if(dlg)return dlg;
@@ -166,9 +171,20 @@ async function logDirectTurn(record,role,text,id){
  try{await request('log_turn',{record_id:record,role,text,event_id:id});}
  catch(e){throw new Error('Não foi possível confirmar esta mensagem no servidor. '+e.message);}
 }
+function moduleActivationIntent(text){
+ const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
+ return /^(?:agenda|atividade) do dia$/.test(n);
+}
+function activateAgendaDay(text,source,id){
+ if(!moduleActivationIntent(text))return false;
+ message('me',text);state.activeModule='agenda_dia';normalStatus();
+ state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const reply='Ok, Agenda do Dia.';try{const j=await request('chat',{record_id:state.record,text,event_id:id});state.activeModule=j.module||'agenda_dia';message('george',reply,'AGENDA DO DIA');if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){error(e);}});
+ return true;
+}
 function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(!text.trim()||!requireAuth())return;
  if(handleLocalIntent(text,source,id))return;
+ if(activateAgendaDay(text,source,id))return;
  if(runManualLocalIntent(text,source,id))return;
  const record=retryRecord||state.recording?.id||state.record;const speak=state.mode==='audio'||state.recording?.mode==='meeting';
  message('me',text);scroll(true);
@@ -177,10 +193,11 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(window.GeorgeAgendaReport?.matches?.(text)){
    state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
      const indicator=notice('Gerando o relatório pela Agenda do Dia oficial…');
+     const operation=window.GeorgeAgendaExperience?.operation('Relatório da Agenda do Dia','Abrindo a fonte oficial…');
      state.busy=true;voice.pauseTransmit();
      await logDirectTurn(record,'user',text,id);
      try{
-       const result=await window.GeorgeAgendaReport.build(text);
+       const result=await window.GeorgeAgendaReport.build(text,{onStage:stage=>{indicator.textContent=stage;operation?.update('Relatório da Agenda do Dia',stage,null);}});
        indicator.remove();
        const reply=result.wants_share
          ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado e aberto. Use Compartilhar no visualizador para escolher o aplicativo.`
@@ -201,7 +218,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        await logDirectTurn(record,'assistant',reply,eventId());
        showStatus(reply,'warning');
      }finally{
-       state.busy=false;voice.resumeTransmit();normalStatus();
+       operation?.close();state.busy=false;voice.resumeTransmit();normalStatus();
      }
    });
    return;
@@ -220,12 +237,11 @@ function sendText(){const text=input.value.trim();if(!text||!requireAuth())retur
 $('btnSend').onclick=sendText;
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}});
 const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
-const georgeName='(?:george|jorge|giorge|georgie|djorge|jordi)';
-const pauseWords='(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)';
 const stopSpeechIntent=s=>{
  const n=normalized(s);
- return new RegExp(`^(?:(?:ei|oi|por favor)[, .!]* )?${georgeName}[, :.!]*${pauseWords}(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$`).test(n)||
-   new RegExp(`^${pauseWords}[, :.!]*${georgeName}[, .!]*$`).test(n);
+ const name='(?:george|jorge|giorge|georgie|djorge|jordi)';
+ const pause='(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)';
+ return new RegExp('^(?:(?:ei|oi|por favor)[, .!]* )?(?:'+name+'[, :.!]*'+pause+'|'+pause+'[, :.!]*'+name+')(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$').test(n);
 };
 const called=s=>/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)\b/.test(normalized(s));
 function meetingEndIntent(text){
@@ -262,22 +278,7 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
    try{return await this.connecting;}finally{this.connecting=null;}
  },
 partialTranscripts:new Map(),interruptedItems:new Set(),interruptionOnly:new Set(),tts:null,ttsAbort:null,speechTicket:0,pausedSpeech:null,
-pendingCommandText:'',pendingCommandId:null,pendingCommandTimer:null,
 transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
- clearPendingCommand(){clearTimeout(this.pendingCommandTimer);this.pendingCommandTimer=null;this.pendingCommandText='';this.pendingCommandId=null;},
- scheduleCommand(text,id){
-   const clean=String(text||'').trim();if(!clean)return;
-   clearTimeout(this.pendingCommandTimer);
-   if(!this.pendingCommandText)this.pendingCommandText=clean;
-   else if(clean.startsWith(this.pendingCommandText))this.pendingCommandText=clean;
-   else if(!this.pendingCommandText.endsWith(clean))this.pendingCommandText+=' '+clean;
-   this.pendingCommandId=this.pendingCommandId||id;
-   showStatus('Áudio ligado • aguardando você terminar a frase…','audio');
-   this.pendingCommandTimer=setTimeout(()=>{
-     const full=this.pendingCommandText.trim(),event=this.pendingCommandId||eventId();
-     this.clearPendingCommand();if(full)queueQuestion(full,'audio',event);
-   },1800);
- },
  drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
  event(e){
   const t=e.type||'';
@@ -301,7 +302,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
     if(state.recording?.mode==='meeting'){
       if(called(text))queueQuestion(text,'audio',id);
       else{message('me',text);const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);}
-    }else if(state.mode==='audio'&&!state.recording)this.scheduleCommand(text,id);
+    }else if(state.mode==='audio'&&!state.recording)queueQuestion(text,'audio',id);
  },
  send(e){if(this.dc?.readyState!=='open')throw new Error('Áudio ainda não está conectado.');this.dc.send(JSON.stringify(e));},
  async speak(text,full=false){
@@ -334,7 +335,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  trackQueue:Promise.resolve(),
  pauseTransmit(force=false){if(!force&&this.wanted&&(this.speaking||state.recording&&!state.recording.stopping))return this.resumeTransmit();this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
  resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&(this.speaking||state.recording&&!state.recording.stopping||!state.busy&&!state.upload)&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
- pause(){this.wanted=false;this.clearPendingCommand();this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
+ pause(){this.wanted=false;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
  close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
@@ -347,7 +348,7 @@ $('btnAudio').onclick=async()=>{
  }
  if(state.mode==='audio'&&voice.live&&voice.wanted){state.mode='text';setActive('');voice.pause();normalStatus();return;}
  state.mode='audio';setActive('audio');$('btnAudio').focus({preventScroll:true});
- try{await voice.connect();voice.audio?.play().catch(()=>{});}catch(e){error(e);showStatus('Áudio selecionado • permita o microfone e toque novamente','warning');}
+ try{await voice.connect();voice.audio?.play().catch(()=>{});state.mode='audio';setActive('audio');normalStatus();}catch(e){error(e);showStatus('Áudio selecionado • permita o microfone e toque novamente','warning');}
 };
 
 // Uploads are persisted on the server in ordered, hash-checked chunks.
@@ -359,13 +360,14 @@ async function uploadChunk(id,index,blob,signal){
  catch(e){if(signal?.aborted)throw e;throw connectionError(e,'enviar o trecho da gravação');}
  finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
-async function uploadFile(file){
- const j=await request('media_start',{name:file.name,mime:file.type,size:file.size,kind:'media',parent_record_id:state.recording?.id||state.record});const id=j.record_id;state.uploadId=id;let i=0;const c=new AbortController();state.uploadAbort=c;state.upload=true;voice.pauseTransmit();
+async function uploadFile(file,mediaCard=null){
+ const operation=window.GeorgeAgendaExperience?.operation('Enviando arquivo',file.name,0);let j;try{j=await request('media_start',{name:file.name,mime:file.type,size:file.size,kind:'media',parent_record_id:state.recording?.id||state.record});}catch(e){operation?.close();throw e;}const id=j.record_id;state.uploadId=id;let i=0;const c=new AbortController();state.uploadAbort=c;state.upload=true;voice.pauseTransmit();
+ mediaCard?.setId(id);mediaCard?.update('Enviando',0);
  try{for(let pos=0;pos<file.size;pos+=j.chunk_bytes){const chunk=file.slice(pos,pos+j.chunk_bytes);let sent=false;
    for(let attempt=0;attempt<3&&!sent;attempt++){try{await uploadChunk(id,i,chunk,c.signal);sent=true;}catch(e){if(c.signal.aborted||attempt===2)throw e;await wait(700*(attempt+1));}}
-   i++;$('attachStatus').textContent='Enviando '+Math.min(100,Math.round((pos+chunk.size)/file.size*100))+'% • o chat continua preservado.';
- }await request('upload_finish',{record_id:id,chunks:i});return id;}
- finally{state.upload=false;state.uploadId=null;state.uploadAbort=null;voice.resumeTransmit();}
+   i++;const pct=Math.min(100,Math.round((pos+chunk.size)/file.size*100));$('attachStatus').textContent='Enviando '+pct+'% • o chat continua preservado.';mediaCard?.update('Enviando',pct);operation?.update('Enviando arquivo',file.name,pct);
+ }await request('upload_finish',{record_id:id,chunks:i});mediaCard?.update('Enviado • aguardando processamento',100);return id;}
+ finally{operation?.close();state.upload=false;state.uploadId=null;state.uploadAbort=null;voice.resumeTransmit();}
 }
 let chosen=null;
 function openAttach(){if(!requireAuth())return;saveDraft();chosen=null;$('filePicker').value='';$('attachName').textContent='Nenhum arquivo selecionado.';$('attachStatus').textContent='Para exportações do WhatsApp, o George lê primeiro o texto, depois os áudios e por último os vídeos. Imagens e documentos do ZIP são ignorados.';$('attachSend').disabled=true;$('attachDialog').showModal();}
@@ -378,28 +380,32 @@ $('attachBack').onclick=closeAttach;
 $('attachDialog').addEventListener('cancel',e=>{e.preventDefault();closeAttach();});
 $('attachSend').onclick=async()=>{
  if(!chosen||state.upload)return;const file=chosen;$('attachSend').disabled=true;$('attachChoose').disabled=true;
- try{const id=await uploadFile(file);$('attachDialog').close();message('me','Arquivo anexado: '+file.name);await prepareOrProcess(id,file);}
- catch(e){$('attachStatus').textContent=e.name==='AbortError'?'Envio interrompido.':e.message;}
+ const mediaCard=window.GeorgeAgendaExperience?.create(file);
+ try{const id=await uploadFile(file,mediaCard);$('attachDialog').close();await prepareOrProcess(id,file,mediaCard);}
+ catch(e){$('attachStatus').textContent=e.name==='AbortError'?'Envio interrompido.':e.message;mediaCard?.error(e.message,()=>{$('attachSend').click();});}
  finally{$('attachSend').disabled=!chosen;$('attachChoose').disabled=false;}
 };
 function taskText(j){const map={derived_processing:'Interpretando os trechos de áudio e imagens amostradas…',uploaded:'Arquivo salvo • verificando o conteúdo…',whatsapp_extracting:'Abrindo a conversa do WhatsApp…',whatsapp_processing:'Processando conversa do WhatsApp…',transcription_ready:'Transcrição salva • preparando a ata…',summarizing:`Gerando ata • ${j.report_parts_done}/${j.report_parts_total} partes`,consolidating:'Consolidando todas as partes da ata…',rendering:'Aplicando o template executivo oficial…',ready:'Ata e transcrição prontas.'};if(j.state==='whatsapp_processing'){const stage={texto:'texto',audio:'áudios',video:'vídeos'}[j.batch_stage]||'arquivos';return `Lendo ${stage} • ${j.batch_done}/${j.batch_total}${j.batch_current?' • '+j.batch_current:''}${j.batch_failed?' • '+j.batch_failed+' não lido(s)':''}`;}return j.state==='transcribing'?`Transcrevendo áudio • ${j.segments_done}/${j.segments_total} trechos`:map[j.state]||j.state;}
-async function processJob(id,options={autoOpen:true}){
- if(state.jobRunning.has(id))return false;state.jobRunning.add(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');
+async function processJob(id,options={autoOpen:true,mediaCard:null}){
+ if(state.jobRunning.has(id))return false;state.jobRunning.add(id);const card=options.mediaCard||window.GeorgeAgendaExperience?.get(id);const n=message('george','Verificando arquivo recebido…','ARQUIVO / ATA');const operation=window.GeorgeAgendaExperience?.operation('Processando arquivo','Verificando o original recebido…');
  try{let j=await retryConfirmed('job',{record_id:id});let recoveries=0;
   while(j.state!=='ready'){
    if(['cancelled','deleted'].includes(j.state)){n.text.textContent=j.state==='deleted'?'Arquivo excluído.':'Arquivo retirado da fila.';return false;}
    if(j.state==='uploading')throw new Error('O envio ainda precisa ser concluído. Use Retomar encerramento na reunião; para anexos, reenvie o original.');
-   n.text.textContent=taskText(j);
+   n.text.textContent=taskText(j);card?.job(j);operation?.update('Processando arquivo',taskText(j),null);
    try{j=await request('step',{record_id:id},195000);recoveries=0;}
    catch(e){if(!temporaryError(e)||recoveries++>=1)throw e;n.text.textContent='A conexão oscilou. Conferindo a etapa já concluída…';await wait(900);j=await retryConfirmed('job',{record_id:id});}
   }
-  n.text.textContent='Documento gerado. Carregando o PDF…';
+  n.text.textContent='Documento gerado. Carregando o PDF…';card?.job(j);operation?.update('Documento concluído','Carregando o PDF validado…',null);
   const ready=await reportActions(id,n.bubble,{...options,onReady:()=>{n.text.textContent='Seu PDF está pronto.';}});
+  let transcript='';try{transcript=await (await downloadBlob(id,'text')).text();}catch(_){transcript='';}
+  card?.done(transcript||'Processamento concluído. O documento está pronto.');
   n.text.textContent=ready?'Seu PDF está pronto.':'A ata foi gerada, mas o PDF ainda não carregou. Use Tentar carregar novamente.';return ready;
  }catch(e){n.text.textContent=connectionError(e,'preparar a ata').message+' Os dados já confirmados estão preservados.';
+  card?.error(e.message,()=>processJob(id,{...options,mediaCard:card}));
   const b=smallButton('Retomar processamento',()=>{n.row.remove();processJob(id,options);});
   n.bubble.append(b,smallButton('Preparar neste aparelho',async()=>{try{const original=await downloadBlob(id,'source');const j=await request('job',{record_id:id});await prepareInBrowser(id,new File([original],j.name),n.text);await processJob(id,options);}catch(e){error(e);}}),smallButton('Baixar original',async()=>{try{saveBlob(await downloadBlob(id,'source'),'Original_George');}catch(e){error(e);}}));return false;
- }finally{state.jobRunning.delete(id);normalStatus();}
+ }finally{operation?.close();state.jobRunning.delete(id);normalStatus();}
 }
 function smallButton(text,fn){const b=document.createElement('button');b.type='button';b.className='g09-button';b.textContent=text;b.onclick=fn;return b;}
 async function downloadBlob(id,kind,attempt=0){
@@ -463,7 +469,7 @@ async function beginCapture(stream,mode,isVideo=false){
  const preferred=recorderMime(isVideo);let rec;try{rec=new MediaRecorder(stream,{...(preferred?{mimeType:preferred}:{}),audioBitsPerSecond:64000,...(isVideo?{videoBitsPerSecond:1400000}:{})});}catch{rec=new MediaRecorder(stream);}
  const mime=rec.mimeType||preferred;if(!mime)throw new Error('Este navegador não informou o formato da gravação. Use a câmera do celular e anexe o vídeo.');const ext=mime.includes('mp4')?'mp4':'webm';const name=`${mode}_${new Date().toISOString().slice(0,10)}.${ext}`;
  const start=await request('media_start',{name,mime,live:true,parent_record_id:state.record,kind:mode==='meeting'?'meeting':'media'});
- const r={id:start.record_id,mode,rec,stream,index:0,queue:Promise.resolve(),started:Date.now(),pending:0,error:null,stopping:false,ownStream:isVideo,derivedError:null,sidecar:null,frameCount:0,frameQueue:Promise.resolve(),frameTimer:null};state.recording=r;meetingProposal=null;lastReview=0;
+ const r={id:start.record_id,mode,rec,stream,index:0,queue:Promise.resolve(),started:Date.now(),pending:0,error:null,stopping:false,ownStream:isVideo,derivedError:null,sidecar:null,frameCount:0,frameQueue:Promise.resolve(),frameTimer:null,mediaCard:isVideo?window.GeorgeAgendaExperience?.create(null,'video'):null};r.mediaCard?.setId(r.id);r.mediaCard?.update('Gravando vídeo',null);state.recording=r;meetingProposal=null;lastReview=0;
  r.pendingChunks=[];r.chunkBytes=start.chunk_bytes;
  rec.ondataavailable=e=>{
   if(!e.data?.size)return;
@@ -502,7 +508,7 @@ async function finishCapture(r){
  if(r.prepared?.audio_count&&!r.derivedError)await retryConfirmed('derived_finish',{record_id:r.id,audio_count:r.prepared.audio_count,frame_count:r.frameCount});
  if(state.pendingCapture===r)state.pendingCapture=null;
  notice('Reunião encerrada. Estou preparando sua ata…');
- return processJob(r.id,{autoOpen:true});
+ return processJob(r.id,{autoOpen:true,mediaCard:r.mediaCard});
 }
 function endCapture(){
  if(state.finalizing)return state.finalizing;
@@ -545,7 +551,7 @@ $('chooseFilm').onclick=async()=>{
 $('btnStartFilm').onclick=async()=>{$('btnStartFilm').disabled=true;try{await beginCapture(camera,'film',true);$('btnStopFilm').disabled=false;$('cameraInfo').textContent='Gravando…';}catch(e){$('btnStartFilm').disabled=false;$('cameraInfo').textContent=e.message;error(e);}};
 $('btnStopFilm').onclick=async()=>{$('btnStopFilm').disabled=true;try{await endCapture();}catch(e){error(e);}finally{camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');$('btnStartFilm').disabled=false;}};
 $('nativeFilm').onclick=()=>{$('btnCloseCamera').click();$('nativeVideoPicker').click();};
-$('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;try{const id=await uploadFile(file);message('me','Vídeo anexado: '+file.name);await prepareOrProcess(id,file);}catch(e){error(e);}finally{$('nativeVideoPicker').value='';}};
+$('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;const mediaCard=window.GeorgeAgendaExperience?.create(file,'video');try{const id=await uploadFile(file,mediaCard);await prepareOrProcess(id,file,mediaCard);}catch(e){mediaCard?.error(e.message,()=>$('nativeFilm').click());error(e);}finally{$('nativeVideoPicker').value='';}};
 $('btnCloseCamera').onclick=()=>{if(state.recording?.mode==='film'){$('cameraInfo').textContent='Use Parar para finalizar e preservar a gravação.';return;}camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');};
 window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{voice.close();camera?.getTracks().forEach(t=>t.stop());});
@@ -626,15 +632,15 @@ async function prepareInBrowser(id,file,statusNode){
  try{await request('derived_reset',{record_id:id});const result=await GeorgeMedia.prepare(file,{audio:(b,i,t)=>uploadDerived(id,b,'audio',i,t),frame:(b,i,t)=>uploadDerived(id,b,'frame',i,t),startPlayback:start=>{const button=smallButton('Iniciar leitura do arquivo',()=>{button.remove();start();});statusNode.parentNode.append(button);statusNode.textContent='Toque em Iniciar leitura do arquivo para liberar a reprodução no aparelho.';},status:t=>{statusNode.textContent=t;}});await request('derived_finish',{record_id:id,...result});}
  finally{state.preparing=false;if(!state.recording)await keepAwake.release();}
 }
-async function prepareOrProcess(id,file){
+async function prepareOrProcess(id,file,mediaCard=null){
  const ext=file.name.split('.').pop().toLowerCase();const video=file.type.startsWith('video/')||['mp4','mov','mkv','webm','mpeg'].includes(ext);
  const audio=file.type.startsWith('audio/')||['mp3','mpga','m4a','wav','ogg','aac'].includes(ext);
- if(ext==='zip'){await processJob(id);return;}
+ if(ext==='zip'){await processJob(id,{mediaCard});return;}
  if(video||(audio&&!(state.caps?.ffmpeg&&state.caps?.ffprobe)&&(file.size>24*1024*1024||!['mp3','mpga','m4a','wav','webm','mp4','mpeg'].includes(ext)))){
   const m=message('george','Original salvo. Preparando o áudio e imagens amostradas neste aparelho…','MÍDIAS');
-  try{await prepareInBrowser(id,file,m.text);}catch(e){m.text.textContent=e.message;m.bubble.append(smallButton('Retomar preparação',async()=>{try{await prepareInBrowser(id,file,m.text);await processJob(id);}catch(e){error(e);}}),smallButton('Tentar processar no servidor',()=>processJob(id)));return;}
+  try{mediaCard?.update('Preparando áudio e imagens',null);await prepareInBrowser(id,file,m.text);}catch(e){m.text.textContent=e.message;mediaCard?.error(e.message,()=>prepareOrProcess(id,file,mediaCard));m.bubble.append(smallButton('Retomar preparação',async()=>{try{await prepareInBrowser(id,file,m.text);await processJob(id,{mediaCard});}catch(e){error(e);}}),smallButton('Tentar processar no servidor',()=>processJob(id,{mediaCard})));return;}
  }
- await processJob(id);
+ await processJob(id,{mediaCard});
 }
 $('btnMedia').onclick=()=>{if(requireAuth())$('mediaDialog').showModal();};$('closeMedia').onclick=()=>$('mediaDialog').close();
 let photoStream=null,photoBlob=null,photoUrl=null;
@@ -642,7 +648,7 @@ function clearPhoto(){photoStream?.getTracks().forEach(t=>t.stop());photoStream=
 $('choosePhoto').onclick=async()=>{if(state.recording){notice('Encerre a captura atual antes de abrir a câmera.');return;}$('mediaDialog').close();try{voice.pause();photoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920}},audio:false});$('photoVideo').srcObject=photoStream;$('photoVideo').hidden=false;$('photoPreview').hidden=true;$('takePhoto').hidden=false;$('retakePhoto').hidden=true;$('usePhoto').hidden=true;$('photoStatus').textContent='Enquadre e fotografe.';$('photoDialog').showModal();await $('photoVideo').play();}catch(e){clearPhoto();error(e);}};
 $('takePhoto').onclick=async()=>{try{photoBlob=await GeorgeMedia.frame($('photoVideo'));if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=URL.createObjectURL(photoBlob);$('photoPreview').src=photoUrl;$('photoPreview').hidden=false;$('photoVideo').hidden=true;$('takePhoto').hidden=true;$('retakePhoto').hidden=false;$('usePhoto').hidden=false;}catch(e){error(e);}};
 $('retakePhoto').onclick=()=>{photoBlob=null;$('photoPreview').hidden=true;$('photoVideo').hidden=false;$('takePhoto').hidden=false;$('retakePhoto').hidden=true;$('usePhoto').hidden=true;};
-$('usePhoto').onclick=async()=>{if(!photoBlob||state.upload)return;$('usePhoto').disabled=true;try{const file=new File([photoBlob],`Foto_${Date.now()}.jpg`,{type:'image/jpeg'});const id=await uploadFile(file);$('photoDialog').close();clearPhoto();message('me','Foto salva.');await processJob(id);}catch(e){$('photoStatus').textContent=e.message;}finally{$('usePhoto').disabled=false;}};
+$('usePhoto').onclick=async()=>{if(!photoBlob||state.upload)return;$('usePhoto').disabled=true;const file=new File([photoBlob],`Foto_${Date.now()}.jpg`,{type:'image/jpeg'}),mediaCard=window.GeorgeAgendaExperience?.create(file,'image');try{const id=await uploadFile(file,mediaCard);$('photoDialog').close();clearPhoto();await processJob(id,{mediaCard});}catch(e){$('photoStatus').textContent=e.message;mediaCard?.error(e.message,()=>$('usePhoto').click());}finally{$('usePhoto').disabled=false;}};
 $('closePhoto').onclick=()=>{if(state.upload)return;clearPhoto();$('photoDialog').close();};$('photoDialog').addEventListener('cancel',e=>{if(state.upload){e.preventDefault();return;}clearPhoto();});
 
 // Presentation only: requests, permissions and operational actions remain unchanged.
@@ -774,7 +780,8 @@ async function initialize(){
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
   if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf4-ata-direta'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
-  for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id)));}}
+  window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
+  for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
   state.mode='text';setActive('');normalStatus();
  }catch(e){error(e);}
 }
