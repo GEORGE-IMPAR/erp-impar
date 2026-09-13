@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-hf10-v12';
+const CACHE='erp-impar-george-hf13-v15';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
@@ -13,7 +13,8 @@ const SHELL=[
   './assets/v09/pwa_logo.jpg',
   './assets/v09/pwa_logo.svg',
   './assets/v09/pwa_icon_192.png',
-  './assets/v09/pwa_icon_512.png'
+  './assets/v09/pwa_icon_512.png',
+  './assets/v09/pwa_maskable_512.png'
 ];
 
 self.addEventListener('install',event=>{
