@@ -1,188 +1,48 @@
-/* ERP ÍMPAR — George V0.9.3
-   Bridge SOMENTE de relatório da Agenda do Dia.
-   Reutiliza o módulo oficial /cronograma/agenda_do_dia_novo.html e sua
-   interface pública mais recente de relatório. Mantém fallback para Package77.
-   Não cria regra de relatório paralela e não escreve na Agenda.
+/* ERP ÍMPAR — George V0.9.8 HF13
+   PDF da Agenda do Dia montado no navegador a partir do payload estruturado
+   retornado pela consulta somente leitura de Analytics. Não abre o módulo do
+   ERP em iframe, não navega, não escreve na Agenda e não depende do PDF oficial.
 */
 (() => {
 'use strict';
-
-const OFFICIAL_URL='/cronograma/agenda_do_dia_novo.html';
-let frame=null;
-let loading=null;
-
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const scriptUrl=new URL(document.currentScript.src),LOGO_URL=new URL('logo_george.png',scriptUrl).href;
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-
-function todayISO(){
-  const d=new Date(), p=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function matches(text,module=''){
+ const n=norm(text),output=/\brelatorio\b|\bpdf\b|\bcompartilh|\bexport|\bimprim/.test(n),daily=/\bagenda do dia\b|\batividade do dia\b/.test(n),analytics=/\banalise\b|\banalitica|\banalytics\b|\bdashboard\b|\bgrafico\b|\bplanilha\b|\bexcel\b|\bcsv\b/.test(n);
+ return output&&!analytics&&(daily||module==='agenda_dia');
 }
-function shiftISO(days){
-  const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+days);
-  const p=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+function wantsShare(text){return /\bcompartilh|\benvi(a|e|ar)\b/.test(norm(text));}
+function wantsPrint(text){return /\bimprim|\bimpress/.test(norm(text));}
+function br(iso){const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}/${m[2]}/${m[1]}`:String(iso||'');}
+function number(value){return Number(value||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:2});}
+function clean(value){return String(value??'').replace(/\s+/g,' ').trim();}
+function safeFilename(value){return clean(value||'agenda_do_dia').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_').replace(/^_+|_+$/g,'')||'agenda_do_dia';}
+function loadLogo(){return new Promise(resolve=>{const image=new Image();let done=false;const finish=value=>{if(!done){done=true;resolve(value);}};image.onload=()=>finish(image);image.onerror=()=>finish(null);image.src=LOGO_URL;setTimeout(()=>finish(null),4000);});}
+function wrap(ctx,text,maxWidth){const words=clean(text).split(' ').filter(Boolean),lines=[];let line='';for(const word of words){const trial=line?line+' '+word:word;if(line&&ctx.measureText(trial).width>maxWidth){lines.push(line);line=word;}else line=trial;}if(line)lines.push(line);return lines.length?lines:['—'];}
+function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}}
+function drawText(ctx,text,x,y,options={}){ctx.font=options.font||'26px Arial';ctx.fillStyle=options.color||'#173550';ctx.textAlign=options.align||'left';ctx.textBaseline='top';const lines=wrap(ctx,text,options.width||900),height=options.lineHeight||34;lines.forEach((line,index)=>ctx.fillText(line,x,y+index*height));return y+lines.length*height;}
+function dataUrlBytes(url){const binary=atob(url.slice(url.indexOf(',')+1)),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes;}
+function jpegPdf(images){
+ const encoder=new TextEncoder(),parts=[],offsets=[0];let length=0;const add=value=>{const bytes=typeof value==='string'?encoder.encode(value):value;parts.push(bytes);length+=bytes.length;};const object=(id,body)=>{offsets[id]=length;add(`${id} 0 obj\n${body}\nendobj\n`);};
+ add('%PDF-1.4\n%ERPIMPAR\n');const pageIds=[],imageIds=[];let next=3;images.forEach(()=>{pageIds.push(next++);imageIds.push(next++);});object(1,'<< /Type /Catalog /Pages 2 0 R >>');object(2,`<< /Type /Pages /Count ${images.length} /Kids [${pageIds.map(id=>id+' 0 R').join(' ')}] >>`);
+ images.forEach((image,index)=>{const pageId=pageIds[index],imageId=imageIds[index],contentId=next++;object(pageId,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im${index+1} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`);offsets[imageId]=length;add(`${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.length} >>\nstream\n`);add(image.bytes);add('\nendstream\nendobj\n');const stream=`q\n595 0 0 842 0 0 cm\n/Im${index+1} Do\nQ\n`;object(contentId,`<< /Length ${encoder.encode(stream).length} >>\nstream\n${stream}endstream`);});
+ const xref=length;add(`xref\n0 ${next}\n0000000000 65535 f \n`);for(let id=1;id<next;id++)add(`${String(offsets[id]||0).padStart(10,'0')} 00000 n \n`);add(`trailer\n<< /Size ${next} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);return new Blob(parts,{type:'application/pdf'});
 }
-function dateFromText(text){
-  const s=String(text||'');
-  let m=s.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
-  if(m)return `${m[1]}-${m[2]}-${m[3]}`;
-  m=s.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
-  if(m)return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
-  const n=norm(s);
-  if(/\bontem\b/.test(n))return shiftISO(-1);
-  return null; // Sem histórico/data explícita, usar o único draft ativo.
+async function render(payload,onStage){
+ const summary=payload.summary||{},period=summary.periodo||{},rows=Array.isArray(payload.rows)?payload.rows:[],neverAllocated=Array.isArray(payload.never_allocated)?payload.never_allocated:[],WIDTH=1240,HEIGHT=1754,MARGIN=72,CONTENT=WIDTH-MARGIN*2,TOP=300,BOTTOM=105,logoPromise=loadLogo();let pageNumber=0,canvas,ctx,y,logo;const pages=[];
+ async function newPage(){if(canvas)pages.push({width:WIDTH,height:HEIGHT,bytes:dataUrlBytes(canvas.toDataURL('image/jpeg',0.9))});pageNumber++;canvas=document.createElement('canvas');canvas.width=WIDTH;canvas.height=HEIGHT;ctx=canvas.getContext('2d',{alpha:false});ctx.fillStyle='#fff';ctx.fillRect(0,0,WIDTH,HEIGHT);const gradient=ctx.createLinearGradient(0,0,WIDTH,0);gradient.addColorStop(0,'#084777');gradient.addColorStop(.55,'#1769d3');gradient.addColorStop(1,'#4832ef');ctx.fillStyle=gradient;ctx.fillRect(0,0,WIDTH,225);logo=logo===undefined?await logoPromise:logo;if(logo)ctx.drawImage(logo,MARGIN,42,132,132);ctx.fillStyle='#fff';ctx.font='bold 41px Arial';ctx.fillText('ERP ÍMPAR',logo?230:MARGIN,54);ctx.font='bold 21px Arial';ctx.fillStyle='#bfe8ff';ctx.fillText('GEORGE • INTELIGÊNCIA OPERACIONAL',logo?230:MARGIN,110);ctx.font='bold 25px Arial';ctx.fillStyle='#fff';ctx.textAlign='right';ctx.fillText('AGENDA DO DIA',WIDTH-MARGIN,58);ctx.font='20px Arial';ctx.fillText(`${br(period.inicio)}${period.fim&&period.fim!==period.inicio?' a '+br(period.fim):''}`,WIDTH-MARGIN,108);ctx.textAlign='left';y=TOP;}
+ function footer(){ctx.fillStyle='#6f8191';ctx.font='18px Arial';ctx.fillText('Fonte: Agenda do Dia • consulta somente leitura',MARGIN,HEIGHT-63);ctx.textAlign='right';ctx.fillText(`Página ${pageNumber}`,WIDTH-MARGIN,HEIGHT-63);ctx.textAlign='left';}
+ async function ensure(space){if(y+space<=HEIGHT-BOTTOM)return;footer();await newPage();}
+ await newPage();ctx.font='bold 45px Arial';ctx.fillStyle='#123e72';ctx.fillText(payload.title||'Relatório da Agenda do Dia',MARGIN,y);y+=78;
+ const cards=[['HORAS',number(summary.horas)+'h'],['COLABORADORES',summary.colaboradores||0],['OBRAS',summary.obras||0],['ATIVIDADES',summary.atividades||0]],gap=18,cardWidth=(CONTENT-gap*3)/4;cards.forEach((card,index)=>{const x=MARGIN+index*(cardWidth+gap);rounded(ctx,x,y,cardWidth,132,18,'#f1f6fb','#ccdaea');ctx.fillStyle='#627c94';ctx.font='bold 17px Arial';ctx.fillText(card[0],x+20,y+22);ctx.fillStyle='#1769d3';ctx.font='bold 36px Arial';ctx.fillText(String(card[1]),x+20,y+62);});y+=170;
+ if(summary.regra){rounded(ctx,MARGIN,y,CONTENT,82,15,'#eef5ff','#c7dbf6');drawText(ctx,'Critério: '+summary.regra,MARGIN+22,y+20,{font:'20px Arial',width:CONTENT-44,lineHeight:26});y+=112;}
+ if(summary.datas_uteis_sem_agenda?.length){const text='Dias úteis sem Agenda disponível: '+summary.datas_uteis_sem_agenda.map(br).join(', '),lines=wrap(ctx,text,CONTENT-44),h=36+lines.length*27;rounded(ctx,MARGIN,y,CONTENT,h,15,'#fff6dd','#ead49a');drawText(ctx,'Atenção: '+text,MARGIN+22,y+18,{font:'20px Arial',color:'#765516',width:CONTENT-44,lineHeight:27});y+=h+24;}
+ if(neverAllocated.length){const text='Colaboradores sem alocação no período: '+neverAllocated.join(', ');ctx.font='20px Arial';const lines=wrap(ctx,text,CONTENT-44),h=36+lines.length*27;rounded(ctx,MARGIN,y,CONTENT,h,15,'#f4f6f8','#d6dee7');drawText(ctx,text,MARGIN+22,y+18,{font:'20px Arial',color:'#425b70',width:CONTENT-44,lineHeight:27});y+=h+24;}
+ ctx.fillStyle='#173550';ctx.font='bold 30px Arial';ctx.fillText('Atividades e alocações',MARGIN,y);y+=52;if(!rows.length){drawText(ctx,'Nenhuma atividade foi retornada para o período consultado.',MARGIN,y,{font:'24px Arial',width:CONTENT});y+=50;}
+ for(let index=0;index<rows.length;index++){const row=rows[index]||{};ctx.font='22px Arial';const title=`${br(row.data)} • ${clean(row.colaborador)||'Sem colaborador'} • ${number(row.horas)}h`,work=`${clean(row.obra)||'Sem obra'}${clean(row.veiculo)&&clean(row.veiculo)!=='Sem veículo'?' • Veículo: '+clean(row.veiculo):''}`,activity=`${clean(row.atividade)||'Sem descrição'}${clean(row.status)?' • '+clean(row.status):''}`,titleLines=wrap(ctx,title,CONTENT-44),workLines=wrap(ctx,work,CONTENT-44),activityLines=wrap(ctx,activity,CONTENT-44),height=30+titleLines.length*31+workLines.length*28+activityLines.length*28+22;await ensure(height+18);rounded(ctx,MARGIN,y,CONTENT,height,16,index%2?'#f7f9fc':'#f1f6fb','#d7e1ec');let lineY=y+18;lineY=drawText(ctx,title,MARGIN+22,lineY,{font:'bold 22px Arial',color:'#135fb8',width:CONTENT-44,lineHeight:31});lineY=drawText(ctx,work,MARGIN+22,lineY+3,{font:'bold 20px Arial',color:'#173550',width:CONTENT-44,lineHeight:28});drawText(ctx,activity,MARGIN+22,lineY+3,{font:'20px Arial',color:'#4e657a',width:CONTENT-44,lineHeight:28});y+=height+18;if(index%10===0){onStage?.(`Montando o PDF • ${index+1} de ${rows.length} atividades…`);await sleep(0);}}
+ footer();pages.push({width:WIDTH,height:HEIGHT,bytes:dataUrlBytes(canvas.toDataURL('image/jpeg',0.9))});return jpegPdf(pages);
 }
-function br(iso){
-  const [y,m,d]=String(iso).split('-');
-  return `${d}/${m}/${y}`;
-}
-function matches(text){
-  const n=norm(text);
-  const agenda=/\bagenda do dia\b|\batividade do dia\b/.test(n);
-  const report=/\brelatorio\b|\bpdf\b|\bcompartilh|\bexport|\bimprim/.test(n);
-  return agenda && report;
-}
-function wantsShare(text){
-  return /\bcompartilh|\benvi(a|e|ar)\b/.test(norm(text));
-}
-function wantsPrint(text){
-  return /\bimprim|\bimpress/.test(norm(text));
-}
-
-function ensureFrame(){
-  if(frame?.isConnected)return Promise.resolve(frame);
-  if(loading)return loading;
-
-  loading=new Promise((resolve,reject)=>{
-    const f=document.createElement('iframe');
-    f.id='georgeAgendaOfficialReportFrame';
-    f.title='Motor oficial do relatório da Agenda do Dia';
-    // A Agenda pode executar scripts e usar a mesma sessão, mas não pode
-    // redirecionar a janela principal do George para login ou para o ERP.
-    f.setAttribute('sandbox','allow-scripts allow-same-origin allow-downloads allow-modals');
-    f.referrerPolicy='same-origin';
-    // Precisa renderizar para html2canvas, mas fica totalmente fora da área visível.
-    f.style.cssText=[
-      'position:fixed',
-      'left:-20000px',
-      'top:0',
-      'width:1280px',
-      'height:960px',
-      'opacity:0.001',
-      'pointer-events:none',
-      'border:0',
-      'z-index:-9999',
-      'background:#fff'
-    ].join(';');
-    const timer=setTimeout(()=>{
-      try{f.remove();}catch(_){}
-      frame=null; loading=null;
-      reject(new Error('O módulo oficial da Agenda do Dia demorou demais para carregar.'));
-    },90000);
-    f.onload=()=>{
-      clearTimeout(timer);
-      frame=f; loading=null; resolve(f);
-    };
-    f.onerror=()=>{
-      clearTimeout(timer);
-      try{f.remove();}catch(_){}
-      frame=null; loading=null;
-      reject(new Error('Não foi possível carregar o módulo oficial da Agenda do Dia.'));
-    };
-    f.src=OFFICIAL_URL+'?george_report_bridge=093&_='+Date.now();
-    document.body.appendChild(f);
-  });
-  return loading;
-}
-function pdfBuilder(win){
-  if(typeof win?.AgendaDiaRelatorioShellV3?.gerarPdf==='function')return ()=>win.AgendaDiaRelatorioShellV3.gerarPdf();
-  if(typeof win?.AgendaDiaPackage77?.buildPdf==='function')return ()=>win.AgendaDiaPackage77.buildPdf();
-  return null;
-}
-async function waitApi(win,onStage){
-  const end=Date.now()+90000;
-  while(Date.now()<end){
-    try{
-      const path=win?.location?.pathname||'';
-      if(path&&!/\/cronograma\/agenda_do_dia_novo\.html$/i.test(path))throw new Error('A Agenda oficial abriu outra tela. Confirme o login do ERP e tente novamente.');
-    }catch(error){if(error.message)throw error;}
-    if(pdfBuilder(win)&&win?.AgendaDiaV315?.openDate&&win?.AgendaDiaV315?.openDraft)return true;
-    onStage?.('Carregando o motor oficial da Agenda do Dia…');
-    await sleep(250);
-  }
-  throw new Error('O motor oficial de relatório da Agenda ainda não ficou disponível.');
-}
-async function waitDate(win,date){
-  const end=Date.now()+45000;
-  while(Date.now()<end){
-    if(String(win.__AGENDA_DIA_CURRENT_DATE__||'')===date)return true;
-    await sleep(200);
-  }
-  return false;
-}
-
-async function build(text,options={}){
-  const stage=message=>options.onStage?.(message);
-  let date=dateFromText(text);
-  stage('Abrindo a Agenda do Dia oficial…');
-  const f=await ensureFrame();
-  const win=f.contentWindow;
-  await waitApi(win,stage);
-
-  let restored=false;
-  try{
-    // V315 consulta o draft/histórico pelo atividade_dia_estado_novo.php.
-    // Para histórico, abre somente leitura. Para data futura, bloqueia.
-    stage(date?'Carregando a Agenda do Dia solicitada…':'Carregando o rascunho oficial aberto…');
-    if(date)await win.AgendaDiaV315.openDate(date);else{await win.AgendaDiaV315.openDraft();date=String(win.__AGENDA_DIA_CURRENT_DATE__||'');if(!/^20\d{2}-\d{2}-\d{2}$/.test(date))throw new Error('O módulo oficial não confirmou a data do draft ativo.');}
-    const exact=await waitDate(win,date);
-    if(!exact){
-      const current=String(win.__AGENDA_DIA_CURRENT_DATE__||'');
-      throw new Error(
-        current && current!==date
-          ? `A Agenda oficial de ${br(date)} não foi carregada; o módulo permaneceu em ${br(current)}. Nenhum PDF foi gerado.`
-          : `A Agenda oficial de ${br(date)} não foi encontrada. Nenhum PDF foi gerado.`
-      );
-    }
-
-    stage('Renderizando o PDF oficial…');
-    const builder=pdfBuilder(win);
-    if(!builder)throw new Error('O gerador oficial do relatório não foi encontrado.');
-    const foreignBlob=await builder();
-    if(!foreignBlob || foreignBlob.size<500){
-      throw new Error('O gerador oficial retornou um PDF vazio.');
-    }
-
-    // Clona o Blob para o realm do George.
-    const bytes=await foreignBlob.arrayBuffer();
-    const blob=new Blob([bytes],{type:'application/pdf'});
-    return {
-      ok:true,
-      date,
-      date_br:br(date),
-      blob,
-      filename:`agenda_do_dia_${date}.pdf`,
-      wants_share:wantsShare(text),
-      wants_print:wantsPrint(text),
-      source:'agenda_do_dia_novo.html > AgendaDiaV315 > AgendaDiaRelatorioShellV3/AgendaDiaPackage77'
-    };
-  } finally {
-    // O relatório oficial abre estado visual dentro do iframe.
-    // Sempre restaura o draft corrente do servidor ao terminar, evitando
-    // deixar a instância oculta posicionada em um histórico.
-    try{
-      await win.AgendaDiaV315.openDraft();
-      restored=true;
-    }catch(_){}
-  }
-}
-
-window.GeorgeAgendaReport=Object.freeze({
-  matches,
-  dateFromText,
-  build,
-  source:OFFICIAL_URL,
-  version:'0.9.8-hf10-v1.2'
-});
+async function build(text,payload,options={}){if(!payload||!payload.summary||!Array.isArray(payload.rows))throw new Error('A consulta da Agenda do Dia não retornou dados estruturados para montar o PDF. Nenhum arquivo foi anunciado como pronto.');options.onStage?.('Montando o PDF com os dados da Agenda do Dia…');const blob=await render(payload,options.onStage);if(blob.size<100||await blob.slice(0,5).text()!=='%PDF-')throw new Error('Não foi possível concluir um PDF válido. Tente novamente.');const period=payload.summary.periodo||{},date=period.inicio||'',end=period.fim||date;return {ok:true,date,date_br:date===end?br(date):`${br(date)} a ${br(end)}`,blob,filename:safeFilename(payload.filename||`agenda_do_dia_${date}`)+'.pdf',wants_share:wantsShare(text),wants_print:wantsPrint(text),source:'Analytics da Agenda do Dia — consulta somente leitura',payload};}
+window.GeorgeAgendaReport=Object.freeze({matches,build,version:'0.9.8-hf13-v1.5'});
 })();
