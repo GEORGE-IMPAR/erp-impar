@@ -1,14 +1,19 @@
-const CACHE='erp-impar-george-hf9-v1-1';
+const CACHE='erp-impar-george-hf10-v12';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
   './assets/v09/styles.css',
   './assets/v09/pwa_shell.css',
   './assets/v09/pwa_shell.js',
+  './assets/v09/agenda_day_experience.css',
+  './assets/v09/agenda_day_experience.js',
+  './assets/v09/agenda_report_bridge.js',
+  './assets/v09/app.js',
   './assets/v09/logo_george.png',
   './assets/v09/pwa_logo.jpg',
   './assets/v09/pwa_logo.svg',
-  './assets/v09/pdf_viewer.js'
+  './assets/v09/pwa_icon_192.png',
+  './assets/v09/pwa_icon_512.png'
 ];
 
 self.addEventListener('install',event=>{
