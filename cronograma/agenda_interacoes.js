@@ -27,6 +27,16 @@
   manualButton.textContent = '❓ Ajuda / Manual';
   manualButton.title = 'Abrir o Manual da Agenda do Dia';
   if (daily) document.getElementById('reportBtn')?.after(manualButton);
+  const exitButton = document.createElement('button');
+  exitButton.id = 'agendaExitButton'; exitButton.type = 'button'; exitButton.className = 'toolbar-btn';
+  exitButton.textContent = '🚪 Sair';
+  exitButton.title = 'Sair da Agenda do Dia e voltar ao menu do ERP ÍMPAR';
+  if (daily) manualButton.after(exitButton);
+  exitButton.onclick = () => {
+    const existingMenu = document.getElementById('rpMenuBtn');
+    if (existingMenu) existingMenu.click();
+    else window.location.assign('/menu_novo.html');
+  };
   const status = document.createElement('div');
   status.className = 'agenda-copy-status'; status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite'); status.hidden = true;
