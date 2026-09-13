@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-hf13-v15';
+const CACHE='erp-impar-george-hf15-v17';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
