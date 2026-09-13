@@ -5,7 +5,7 @@
 const BASE='https://api.erpimpar.com.br/george-reuniao/v09/';
 const API=BASE+'api.php';
 const $=id=>document.getElementById(id);
-const state={csrf:'',user:null,record:null,mode:'text',busy:false,agendaReportBusy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
+const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -136,9 +136,15 @@ function runAnalyticsLocal(text,source,id,n){
  }catch(e){if(e.name!=='AbortError')error(e);}});return true;
 }
 function manualLocalIntent(text){
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
- return /^(?:(?:pode|por favor) )?(?:abre|abrir|abra|mostra|mostrar|mostre|gera|gerar|gere|consulta|consultar|consulte|quero|preciso)(?: (?:o|um|a))? (?:manual|ajuda|documentacao)(?: (?:da|de))? (?:agenda|atividade) do dia$/.test(n)
-   || /^(?:manual|ajuda|documentacao) (?:da|de) (?:agenda|atividade) do dia$/.test(n);
+ const n=normalized(text)
+   .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'')
+   .replace(/[.!?]+$/,'').trim();
+ const subject=/(?:agenda|atividade) do dia/;
+ const help=/(?:manual|manuais|documentacao|ajuda|auxilio|guias?(?: operacional)?|tutorial|instrucao|instrucoes|orientacao|duvidas?|faq|passo a passo|raio[ -]?x|detalhes? das atividades|como (?:usar|funciona))/;
+ const action=/(?:abre|abrir|abra|mostra|mostrar|mostre|gera|gerar|gere|consulta|consultar|consulte|quero|preciso|acessa|acessar|acesse|tem acesso|cade|onde esta|procura|procurar|encontra|encontrar|veja|ver|leia|ler|baixa|baixar|imprime|imprimir|compartilha|compartilhar)/;
+ const explicit=help.test(n)&&subject.test(n);
+ const contextual=state.activeModule==='agenda_dia'&&help.test(n)&&(action.test(n)||/^(?:manual|manuais|documentacao|ajuda|auxilio|guias?|tutorial|instrucao|instrucoes|orientacao|duvidas?|faq|passo a passo|raio[ -]?x)$/.test(n));
+ return explicit||contextual;
 }
 function ensureManualDialog(){
  let dlg=$('agendaManualDialog');if(dlg)return dlg;
@@ -151,7 +157,7 @@ function openAgendaManual(){const dlg=ensureManualDialog();if(!dlg.open)dlg.show
 function runManualLocalIntent(text,source,id){
  if(!manualLocalIntent(text))return false;
  message('me',text);state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
-   const reply='Abri o Manual da Agenda do Dia. Você pode consultar, imprimir, baixar o PDF ou compartilhar.';
+   const reply='Abri a documentação da Agenda do Dia. Você pode consultar o manual, imprimir, baixar o PDF ou compartilhar.';
    try{await logDirectTurn(state.record,'user',text,id);openAgendaManual();message('george',reply,'MANUAL DA AGENDA');await logDirectTurn(state.record,'assistant',reply,eventId());if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}
    catch(e){if(e.name!=='AbortError')error(e);}
  });return true;
@@ -171,16 +177,16 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  if(window.GeorgeAgendaReport?.matches?.(text)){
    state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
      const indicator=notice('Gerando o relatório pela Agenda do Dia oficial…');
-     state.busy=true;state.agendaReportBusy=true;voice.pauseTransmit();
+     state.busy=true;voice.pauseTransmit();
      await logDirectTurn(record,'user',text,id);
      try{
        const result=await window.GeorgeAgendaReport.build(text);
        indicator.remove();
        const reply=result.wants_share
-         ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado. Toque em Compartilhar PDF para abrir o compartilhamento do aparelho.`
+         ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado e aberto. Use Compartilhar no visualizador para escolher o aplicativo.`
          : result.wants_print
-         ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado. Use Abrir / imprimir para visualizar e imprimir o mesmo documento.`
-         : `PDF oficial da Agenda do Dia de ${result.date_br} gerado pelo próprio módulo da Agenda.`;
+         ? `PDF oficial da Agenda do Dia de ${result.date_br} gerado e aberto. Use Imprimir no visualizador.`
+         : `PDF oficial da Agenda do Dia de ${result.date_br} gerado e aberto pelo próprio módulo da Agenda.`;
        const m=message('george',reply,'RELATÓRIO DA AGENDA');
        m.row.dataset.sources=result.source;
        agendaReportButtons(result,m.bubble);
@@ -195,7 +201,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        await logDirectTurn(record,'assistant',reply,eventId());
        showStatus(reply,'warning');
      }finally{
-       state.busy=false;state.agendaReportBusy=false;voice.resumeTransmit();normalStatus();
+       state.busy=false;voice.resumeTransmit();normalStatus();
      }
    });
    return;
@@ -520,7 +526,7 @@ $('btnStopFilm').onclick=async()=>{$('btnStopFilm').disabled=true;try{await endC
 $('nativeFilm').onclick=()=>{$('btnCloseCamera').click();$('nativeVideoPicker').click();};
 $('nativeVideoPicker').onchange=async()=>{const file=$('nativeVideoPicker').files?.[0];if(!file)return;try{const id=await uploadFile(file);message('me','Vídeo anexado: '+file.name);await prepareOrProcess(id,file);}catch(e){error(e);}finally{$('nativeVideoPicker').value='';}};
 $('btnCloseCamera').onclick=()=>{if(state.recording?.mode==='film'){$('cameraInfo').textContent='Use Parar para finalizar e preservar a gravação.';return;}camera?.getTracks().forEach(t=>t.stop());camera=null;$('cameraModal').classList.add('hidden');};
-window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||(state.busy&&!state.agendaReportBusy)||state.preparing){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(state.recording||state.pendingCapture||state.finalizing||state.upload||state.busy||state.preparing){e.preventDefault();e.returnValue='';}});
 window.addEventListener('pagehide',()=>{voice.close();camera?.getTracks().forEach(t=>t.stop());});
 function addBubbleMenu(bubble,textNode){
  const wrap=document.createElement('div');wrap.className='bubble-tools';const trigger=document.createElement('button');trigger.type='button';trigger.textContent='⋯';trigger.setAttribute('aria-label','Opções desta mensagem');trigger.setAttribute('aria-expanded','false');
@@ -752,5 +758,5 @@ async function initialize(){
  }catch(e){error(e);}
 }
 setupConversationTools();
-(async()=>{try{setActive('');if(await authenticate())await initialize();}catch(e){error(e);}})();
+(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());if(await authenticate())await initialize();}catch(e){error(e);}})();
 })();

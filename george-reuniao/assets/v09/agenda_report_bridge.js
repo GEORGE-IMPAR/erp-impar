@@ -59,6 +59,10 @@ function ensureFrame(){
     const f=document.createElement('iframe');
     f.id='georgeAgendaOfficialReportFrame';
     f.title='Motor oficial do relatório da Agenda do Dia';
+    // A Agenda pode executar scripts e usar a mesma sessão, mas não pode
+    // redirecionar a janela principal do George para login ou para o ERP.
+    f.setAttribute('sandbox','allow-scripts allow-same-origin allow-downloads allow-modals');
+    f.referrerPolicy='same-origin';
     // Precisa renderizar para html2canvas, mas fica totalmente fora da área visível.
     f.style.cssText=[
       'position:fixed',
