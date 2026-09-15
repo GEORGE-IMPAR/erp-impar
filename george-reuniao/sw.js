@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-hf15-v17';
+const CACHE='erp-impar-george-rc1-contexto-pausa-nome-20260915';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
