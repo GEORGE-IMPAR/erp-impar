@@ -5,7 +5,7 @@
 const BASE='https://api.erpimpar.com.br/george-reuniao/v09/';
 const API=BASE+'api.php';
 const $=id=>document.getElementById(id);
-const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
+const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null,timings:[]};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -22,25 +22,27 @@ async function retryConfirmed(action,payload,timeout=60000){
  for(let attempt=0;;attempt++){try{return await request(action,payload,timeout);}catch(e){if(attempt>=1||!temporaryError(e))throw e;await wait(700);}}
 }
 async function request(action,payload={},timeout=180000){
- const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout);
+ const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout),started=performance.now();let http=0,status='OK';
  try{
   const r=await fetch(API,{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json','X-George-CSRF':state.csrf},body:JSON.stringify({action,...payload}),signal:c.signal});
+  http=r.status;
   const raw=await r.text();let j;try{j=JSON.parse(raw);}catch{throw new ApiError(`O servidor retornou uma resposta inválida (HTTP ${r.status}).`,'JSON_INVALIDO',r.status);}
   if(!r.ok||j.ok===false)throw new ApiError(j.error||j.status||`HTTP ${r.status}`,j.status,r.status);return j;
- }catch(e){throw connectionError(e,({upload_finish:'confirmar a gravação',derived_finish:'confirmar o áudio',job:'consultar o documento',step:'preparar a ata',document_create:'solicitar o documento'})[action]||'concluir o pedido');}finally{clearTimeout(t);}
+ }catch(e){status=e?.name==='AbortError'?'TIMEOUT':(e?.status||e?.name||'ERRO');throw connectionError(e,({upload_finish:'confirmar a gravação',derived_finish:'confirmar o áudio',job:'consultar o documento',step:'preparar a ata',document_create:'solicitar o documento'})[action]||'concluir o pedido');}finally{clearTimeout(t);state.timings.push({action,ms:Math.round(performance.now()-started),http,status,at:new Date().toISOString()});state.timings=state.timings.slice(-50);}
 }
 function showStatus(text,kind='text'){$('modeStatus').className='mode-status show '+kind;$('modeStatusText').textContent=text;}
 function setActive(mode){document.querySelectorAll('.action').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});}
 function normalStatus(){
+ const contextLabel=state.activeModule==='agenda_dia'?'Agenda do Dia':'Menu Geral';
  const meeting=$('btnMeeting'),label=meeting?.querySelector('.label');
  if(label)label.textContent=state.finalizing?'Finalizando':state.recording?.mode==='meeting'?'Encerrar':state.pendingCapture?'Retomar':'Reunião';
  if(meeting){meeting.disabled=!!state.finalizing;meeting.setAttribute('aria-label',state.recording?.mode==='meeting'?'Encerrar reunião e abrir a ata em PDF':state.pendingCapture?'Retomar encerramento da gravação':'Iniciar reunião');}
  if(state.finalizing){showStatus('Concluindo reunião • preparando sua ata…','warning');return;}
  if(state.recording?.error||state.recording?.rec?.state==='paused'){showStatus('Gravação pausada • confira o envio dos blocos','warning');return;}
  if(state.recording?.mode==='film'){showStatus('Filmagem em andamento • áudio e imagens amostradas','meeting');return;}
- if(state.recording){showStatus(!voice.live?'Reunião gravando • toque em Áudio para reconectar a voz':document.visibilityState!=='visible'?'Reunião: página oculta • captura pode ser interrompida':'Reunião gravando • diga Jorge, encerrar reunião',!voice.live||document.visibilityState!=='visible'?'warning':'meeting');return;}
- if(state.mode==='audio')showStatus(voice.live?'Áudio ligado • George está ouvindo':'Áudio selecionado • toque em Áudio para conversar',voice.live?'audio':'warning');
- else showStatus(state.activeModule==='agenda_dia'?'Módulo: Agenda do Dia • modo escrita':'Áudio desligado • modo escrita','text');
+ if(state.recording){showStatus(!voice.live?'Reunião gravando • toque em Áudio para reconectar a voz':document.visibilityState!=='visible'?'Reunião: página oculta • captura pode ser interrompida':'Reunião gravando • diga George, encerrar reunião',!voice.live||document.visibilityState!=='visible'?'warning':'meeting');return;}
+ if(state.mode==='audio')showStatus(contextLabel+' • '+(voice.live?'Áudio ligado • George está ouvindo':'Áudio selecionado • toque em Áudio para conversar'),voice.live?'audio':'warning');
+ else showStatus(contextLabel+' • modo escrita','text');
 }
 let followChat=true;chat.addEventListener('scroll',()=>{followChat=chat.scrollHeight-chat.scrollTop-chat.clientHeight<100;},{passive:true});
 function scroll(force=false){if(force||followChat)requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight;});}
@@ -253,7 +255,7 @@ const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCas
 const stopSpeechIntent=s=>{
  const n=normalized(s);
  const name='(?:george|jorge|giorge|georgie|djorge|jordi)';
- const pause='(?:so (?:um |uma )?(?:minuto|minutinho|momento)|segura(?: ai)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai)?|aguarda(?: ai)?|nao e isso)';
+ const pause='(?:so (?:um |uma )?(?:minuto|minutinho|momento|instante)|um instante|segura(?: ai| um pouco| um pouquinho)?|para(?: de falar)?|pare(?: de falar)?|espera(?: ai| um pouco| um pouquinho)?|aguarda(?: ai| um pouco| um pouquinho)?|depois (?:voce )?(?:fala|fale)|da um tempo|ja vou|nao e isso)';
  return new RegExp('^(?:(?:ei|oi|por favor)[, .!]* )?(?:'+name+'[, :.!]*'+pause+'|'+pause+'[, :.!]*'+name+')(?:[, .!]*(?:por favor|um minutinho))?[, .!]*$').test(n);
 };
 const called=s=>/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)\b/.test(normalized(s));
@@ -565,7 +567,7 @@ function endCapture(){
 }
 async function recordingButton(mode){
  if(!requireAuth())return;if(state.finalizing)return state.finalizing;if(state.pendingCapture&&!state.recording){await endCapture();return;}if(state.recording){if(state.recording.mode===mode)await endCapture();else notice('Encerre a gravação atual antes de iniciar outra.');return;}
- try{state.mode='audio';await voice.connect();setActive('meeting');await beginCapture(voice.stream,'meeting');notice('Reunião iniciada. Avise os participantes. Diga Jorge no início de um pedido. Para terminar, diga Jorge, encerrar reunião.');}
+ try{state.mode='audio';await voice.connect();setActive('meeting');await beginCapture(voice.stream,'meeting');notice('Reunião iniciada. Avise os participantes. Diga George no início de um pedido. Para terminar, diga George, encerrar reunião.');}
  catch(e){if(!state.recording)voice.pause();error(e);}
 }
 $('btnMeeting').onclick=()=>recordingButton('meeting').catch(error);
@@ -808,7 +810,7 @@ async function initialize(){
   try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
-  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf4-ata-direta'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
+  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-rc1-contexto-pausa-nome',request_timings:state.timings},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
   for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
