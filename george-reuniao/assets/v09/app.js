@@ -8,6 +8,12 @@ const $=id=>document.getElementById(id);
 const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null,timings:[]};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+let renderedConversationDay='';
+function conversationDate(value){const d=value&&/^\d{4}-\d{2}-\d{2}/.test(String(value))?new Date(value):new Date();return Number.isNaN(d.getTime())?new Date():d;}
+function conversationDayKey(value){const d=conversationDate(value);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
+function conversationTime(value){if(!value||!/^\d{4}-\d{2}-\d{2}/.test(String(value)))return value||now();return conversationDate(value).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+function officialGeorgeText(value){return String(value??'').replace(/\bjorge\b/giu,'George');}
+function ensureConversationDate(value){const key=conversationDayKey(value);if(key===renderedConversationDay)return;renderedConversationDay=key;const d=conversationDate(value),divider=document.createElement('div');divider.className='today conversation-date';divider.dataset.day=key;divider.textContent=d.toLocaleDateString('pt-BR');chat.insertBefore(divider,anchor);}
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 class ApiError extends Error{constructor(message,status,http){super(message);this.status=status;this.http=http;}}
@@ -48,17 +54,19 @@ let followChat=true;chat.addEventListener('scroll',()=>{followChat=chat.scrollHe
 function scroll(force=false){if(force||followChat)requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight;});}
 function avatar(side){const a=document.createElement('div');a.className='msg-avatar';if(side==='me')a.textContent=(state.user?.nome||'GE').split(/\s/)[0].slice(0,2).toUpperCase();else{const im=document.createElement('img');im.src='assets/v09/logo_george.png';im.alt='George';a.append(im);}return a;}
 function message(side,text,label='GEORGE',at=now()){
+ ensureConversationDate(at);
+ if(side!=='me')text=officialGeorgeText(text);
  const row=document.createElement('div');row.className='msg '+side;const a=avatar(side);const b=document.createElement('div');b.className='bubble';
  if(side!=='me'){const w=document.createElement('div');w.className='who';w.textContent=label;b.append(w);}
- const d=document.createElement('div');d.className='message-text';d.textContent=text;b.append(d);const tm=document.createElement('div');tm.className='time';tm.textContent=at;b.append(tm);
+ const d=document.createElement('div');d.className='message-text';d.textContent=text;b.append(d);const tm=document.createElement('div');tm.className='time';tm.textContent=conversationTime(at);b.append(tm);
  addBubbleMenu(b,d);row.append(a,b);chat.insertBefore(row,anchor);scroll();return {row,bubble:b,text:d,avatar:a};
 }
 function notice(text){const n=document.createElement('div');n.className='system';n.textContent=text;chat.insertBefore(n,anchor);scroll();return n;}
 function error(e){e=connectionError(e);notice(e.message||String(e));showStatus(e.message||String(e),'warning');if(e.http===401)showLogin();}
 function showLogin(){state.auth=false;voice.pause();const dlg=$('loginDialog');if(!dlg.open)dlg.showModal();$('loginInfo').textContent='Use o mesmo e-mail e a mesma senha do ERP ÍMPAR. A senha é validada no servidor e não fica salva neste aplicativo.';}
-async function authenticate(forceLogin=false){
+async function authenticate(){
  const s=await request('session');state.csrf=s.csrf;
- if(forceLogin||!s.authenticated){showLogin();return false;}
+ if(!s.authenticated){showLogin();return false;}
  state.user=s.user;state.auth=true;return true;
 }
 $('loginForm').addEventListener('submit',async e=>{
@@ -181,7 +189,7 @@ async function logDirectTurn(record,role,text,id){
 }
 function moduleActivationIntent(text){
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
- return /^(?:agenda|atividade) do dia$/.test(n);
+ return /^(?:agenda|atividades?) do dia$/.test(n);
 }
 function activateAgendaDay(text,source,id){
  if(!moduleActivationIntent(text))return false;
@@ -293,15 +301,15 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
    try{return await this.connecting;}finally{this.connecting=null;}
  },
 partialTranscripts:new Map(),interruptedItems:new Set(),interruptionOnly:new Set(),tts:null,ttsAbort:null,speechTicket:0,pausedSpeech:null,
-transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
- drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
+transcriptOrder:[],transcriptFinals:new Map(),transcriptQueuedAt:new Map(),transcriptTimer:null,
+ drainTranscripts(){clearTimeout(this.transcriptTimer);while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.transcriptQueuedAt.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){this.transcriptTimer=setTimeout(()=>{const id=this.transcriptOrder.shift();this.transcriptFinals.delete(id);this.transcriptQueuedAt.delete(id);this.partialTranscripts.delete(id);this.interruptedItems.delete(id);this.interruptionOnly.delete(id);notice('Não consegui concluir a última transcrição de voz. Repita somente esse pedido.');this.drainTranscripts();},20000);}},
  event(e){
   const t=e.type||'';
   if(t==='input_audio_buffer.speech_started'&&this.speaking)this.interruptionOnly.add(e.item_id);
   if(t==='conversation.item.input_audio_transcription.delta'){const part=(this.partialTranscripts.get(e.item_id)||'')+(e.delta||'');this.partialTranscripts.set(e.item_id,part);if(this.speaking&&stopSpeechIntent(part)){this.interruptedItems.add(e.item_id);this.stopSpeaking();}}
-  if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();}
+  if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id)){this.transcriptOrder.push(e.item_id);this.transcriptQueuedAt.set(e.item_id,Date.now());}this.drainTranscripts();}
   if(t==='conversation.item.input_audio_transcription.completed'){if(this.seen.has(e.item_id))return;this.transcriptFinals.set(e.item_id,e);if(!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();return;}
-  if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
+  if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);this.transcriptFinals.delete(e.item_id);this.transcriptQueuedAt.delete(e.item_id);this.partialTranscripts.delete(e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
 
   if(t==='output_audio_buffer.stopped'||t==='output_audio_buffer.cleared'){this.speaking=false;this.speakDone?.();this.speakDone=null;this.resumeTransmit();this.markSpeaking(false);}
   if(t==='response.done'&&e.response?.status==='failed'){this.speaking=false;this.speakDone?.();this.speakDone=null;this.resumeTransmit();notice('A resposta em texto está salva; a reprodução por voz não terminou.');this.markSpeaking(false);}
@@ -799,9 +807,9 @@ async function showMediaQueue(){
  }catch(e){list.replaceChildren();sheet.showError(e);}
 }
 async function initialize(){
- try{const j=await request('resume');state.record=j.record_id;state.activeModule='geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
-  [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
-  if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
+ try{const j=await request('resume');state.record=j.record_id;state.activeModule=j.module||'geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
+  [...chat.querySelectorAll('.msg,.system,.today')].forEach(n=>n.remove());renderedConversationDay='';
+  if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at||now()));
   else message('george','Oi! Eu sou o George. Como posso te ajudar hoje?');
   if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
@@ -810,7 +818,7 @@ async function initialize(){
   try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
-  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-rc1-contexto-pausa-nome',request_timings:state.timings},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
+  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-rc2.1-grafia-relatorio-azul',request_timings:state.timings},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
   for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
@@ -818,5 +826,5 @@ async function initialize(){
  }catch(e){error(e);}
 }
 setupConversationTools();
-(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());const standalone=window.matchMedia?.('(display-mode: standalone)').matches||window.navigator.standalone===true;if(await authenticate(standalone))await initialize();}catch(e){error(e);}})();
+(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());if(await authenticate())await initialize();}catch(e){error(e);}})();
 })();
