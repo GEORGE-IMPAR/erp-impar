@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-rc2-1-grafia-relatorio-azul-20260916';
+const CACHE='erp-impar-george-rc2-3-conversa-relatorios-datas-20260916';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
