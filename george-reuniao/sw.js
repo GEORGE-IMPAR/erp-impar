@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-gabarito-rc5-20260916';
+const CACHE='erp-impar-george-gabarito-rc7-20260916';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
