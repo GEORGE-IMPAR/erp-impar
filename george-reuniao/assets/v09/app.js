@@ -7,11 +7,15 @@ const API=BASE+'api.php';
 const $=id=>document.getElementById(id);
 const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAgendaReport:null,lastAnalytics:null,lastOutput:null,timings:[]};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
+const ConversationDates=window.GeorgeConversationDates;
+if(!ConversationDates)throw new Error('Módulo de datas da conversa não carregado.');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+const timestampNow=ConversationDates.now;
 let renderedConversationDay='';
-function conversationDate(value){const d=value&&/^\d{4}-\d{2}-\d{2}/.test(String(value))?new Date(value):new Date();return Number.isNaN(d.getTime())?new Date():d;}
-function conversationDayKey(value){const d=conversationDate(value);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');}
-function conversationTime(value){if(!value||!/^\d{4}-\d{2}-\d{2}/.test(String(value)))return value||now();return conversationDate(value).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+const conversationDate=ConversationDates.date;
+const conversationDayKey=ConversationDates.dayKey;
+const conversationTime=ConversationDates.time;
+const turnTimestamp=ConversationDates.turnTimestamp;
 function officialGeorgeText(value){return String(value??'').replace(/\bjorge\b/giu,'George');}
 function visibleUserText(value){return String(value??'').replace(/^(\s*(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?)jorge\b/iu,'$1George').replace(/\bjorge([, .!?]*\s*)$/iu,'George$1');}
 function readAloudIntent(question){return /\b(?:leia|ler|le|fale|diga|narre)(?: tudo| inteira| inteiro| completa| completo| em voz alta| toda a agenda| todo o relatorio)?\b/u.test(normalized(question));}
@@ -23,7 +27,7 @@ function spokenReplyFor(question,answer){
  if(plain.includes('\n')||plain.length>240)return {text:'Pronto. A resposta está na tela.',full:false};
  return {text:plain,full:false};
 }
-function ensureConversationDate(value){const key=conversationDayKey(value);if(key===renderedConversationDay)return;renderedConversationDay=key;const d=conversationDate(value),divider=document.createElement('div');divider.className='today conversation-date';divider.dataset.day=key;divider.textContent=d.toLocaleDateString('pt-BR');chat.insertBefore(divider,anchor);}
+function ensureConversationDate(value){const key=conversationDayKey(value);if(key===renderedConversationDay)return;renderedConversationDay=key;const parts=key.split('-'),divider=document.createElement('div');divider.className='today conversation-date';divider.dataset.day=key;divider.textContent=`${parts[2]}/${parts[1]}/${parts[0]}`;chat.insertBefore(divider,anchor);}
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 class ApiError extends Error{constructor(message,status,http){super(message);this.status=status;this.http=http;}}
@@ -63,7 +67,7 @@ function normalStatus(){
 let followChat=true;chat.addEventListener('scroll',()=>{followChat=chat.scrollHeight-chat.scrollTop-chat.clientHeight<100;},{passive:true});
 function scroll(force=false){if(force||followChat)requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight;});}
 function avatar(side){const a=document.createElement('div');a.className='msg-avatar';if(side==='me')a.textContent=(state.user?.nome||'GE').split(/\s/)[0].slice(0,2).toUpperCase();else{const im=document.createElement('img');im.src='assets/v09/logo_george.png';im.alt='George';a.append(im);}return a;}
-function message(side,text,label='GEORGE',at=now()){
+function message(side,text,label='GEORGE',at=timestampNow()){
  ensureConversationDate(at);
  text=side==='me'?visibleUserText(text):officialGeorgeText(text);
  const row=document.createElement('div');row.className='msg '+side;const a=avatar(side);const b=document.createElement('div');b.className='bubble';
@@ -831,7 +835,7 @@ async function showMediaQueue(){
 async function initialize(){
  try{const j=await request('resume');state.record=j.record_id;state.activeModule=j.module||'geral';state.lastDocument=null;state.lastAgendaReport=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system,.today')].forEach(n=>n.remove());renderedConversationDay='';
-  if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at||now()));
+  if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',turnTimestamp(t,j.conversation_created_at||'')));
   else message('george','Oi! Eu sou o George. Como posso te ajudar hoje?');
   if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
@@ -840,7 +844,7 @@ async function initialize(){
   try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
-  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-gabarito-rc5',request_timings:state.timings},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
+  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-gabarito-rc7',request_timings:state.timings},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
   for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
