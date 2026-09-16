@@ -11,13 +11,15 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function matches(text,module=''){
  const command=norm(text)
    .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'')
+   .replace(/[, :.!]*(?:george|jorge|giorge|georgie|djorge|jordi)[, .!?]*$/,'')
    .replace(/[.!?]+$/,'').trim();
  const share='(?:compartilha|compartilhar|compartilhe|envia|enviar|envie)';
  const open='(?:gera|gerar|gere|abre|abrir|abra|baixa|baixar|baixe|imprime|imprimir|imprima)';
  const polite='(?:(?:pode|por favor|quero que voce) )?';
  const bare=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: o)? pdf(?: do dia)?$');
  const explicit=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: o)? (?:pdf|relatorio)(?: em pdf)? (?:da|do) (?:agenda|atividade) do dia$');
- return explicit.test(command)||(module==='agenda_dia'&&bare.test(command));
+ const natural=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: a| o)? (?:agenda|atividade)(?: do dia)?(?: em pdf)?$');
+ return explicit.test(command)||(module==='agenda_dia'&&(bare.test(command)||natural.test(command)));
 }
 function wantsShare(text){return /\bcompartilh|\benvi(a|e|ar)\b/.test(norm(text));}
 function wantsPrint(text){return /\bimprim|\bimpress/.test(norm(text));}
@@ -63,5 +65,5 @@ async function render(payload,onStage){
  footer();pages.push({width:WIDTH,height:HEIGHT,bytes:dataUrlBytes(canvas.toDataURL('image/jpeg',0.9))});return jpegPdf(pages);
 }
 async function build(text,payload,options={}){if(!payload||!payload.summary||!Array.isArray(payload.rows))throw new Error('A consulta da Agenda do Dia não retornou dados estruturados para montar o PDF. Nenhum arquivo foi anunciado como pronto.');options.onStage?.('Montando o PDF com os dados da Agenda do Dia…');const blob=await render(payload,options.onStage);if(blob.size<100||await blob.slice(0,5).text()!=='%PDF-')throw new Error('Não foi possível concluir um PDF válido. Tente novamente.');const period=payload.summary.periodo||{},date=period.inicio||'',end=period.fim||date;return {ok:true,date,date_br:date===end?br(date):`${br(date)} a ${br(end)}`,blob,filename:safeFilename(payload.filename||`agenda_do_dia_${date}`)+'.pdf',wants_share:wantsShare(text),wants_print:wantsPrint(text),source:payload.source||'Fonte operacional da Agenda do Dia — consulta somente leitura',payload};}
-window.GeorgeAgendaReport=Object.freeze({matches,fromAgenda,build,version:'0.9.8-hf15-v1.7'});
+window.GeorgeAgendaReport=Object.freeze({matches,fromAgenda,build,version:'0.9.8-hf15-v1.8'});
 })();
