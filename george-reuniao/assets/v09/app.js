@@ -179,13 +179,18 @@ async function logDirectTurn(record,role,text,id){
  catch(e){throw new Error('Não foi possível confirmar esta mensagem no servidor. '+e.message);}
 }
 function moduleActivationIntent(text){
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
- return /^(?:agenda|atividade) do dia$/.test(n);
+ const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/[.!?]+$/,'').trim();
+ if(/\bnao\s+(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|mude|mudar)\b/.test(n))return false;
+ const subject=/\b(?:agenda|atividade) do dia\b/.test(n);
+ const navigation=/\b(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|vamos|mude|mudar|troque|trocar|fique|ficar|logado|modulo|contexto)\b/.test(n);
+ const readText=n.replace(/\bnao\s+(?:me\s+)?(?:liste|listar|mostre|mostrar|consulte|consultar)\b/g,' ');
+ const read=/\b(?:liste|listar|mostre|mostrar|consulta|consultar|quem|qual|quais|quant|relatorio|pdf|horas|alocad|atividade de)\b/.test(readText);
+ return subject&&((navigation&&!read)||/^(?:agenda|atividade) do dia$/.test(n));
 }
 function activateAgendaDay(text,source,id){
  if(!moduleActivationIntent(text))return false;
  message('me',text);state.activeModule='agenda_dia';normalStatus();
- state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const reply='Ok, Agenda do Dia.';try{const j=await request('chat',{record_id:state.record,text,event_id:id});state.activeModule=j.module||'agenda_dia';message('george',reply,'AGENDA DO DIA');if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){error(e);}});
+ state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const reply='Pronto, estamos na Agenda do Dia. O que você precisa?';try{const j=await request('module_select',{record_id:state.record,module:'agenda_dia',text,event_id:id});state.activeModule=j.module;normalStatus();message('george',reply,'AGENDA DO DIA');if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){state.activeModule='geral';normalStatus();error(e);}});
  return true;
 }
 function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
@@ -299,15 +304,19 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
    try{return await this.connecting;}finally{this.connecting=null;}
  },
 partialTranscripts:new Map(),interruptedItems:new Set(),interruptionOnly:new Set(),tts:null,ttsAbort:null,speechTicket:0,pausedSpeech:null,
-transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
- drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
+transcriptOrder:[],transcriptFinals:new Map(),transcriptCommittedAt:new Map(),transcriptTimer:null,
+ drainTranscripts(){
+  while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.transcriptCommittedAt.delete(id);this.acceptTranscript(e);}
+  clearTimeout(this.transcriptTimer);
+  if(this.transcriptOrder.length)this.transcriptTimer=setTimeout(()=>{const id=this.transcriptOrder[0],age=Date.now()-(this.transcriptCommittedAt.get(id)||Date.now());if(age>=18000){this.transcriptOrder.shift();this.transcriptFinals.delete(id);this.partialTranscripts.delete(id);this.transcriptCommittedAt.delete(id);notice('Uma fala não terminou de transcrever e foi liberada. Pode repetir somente essa frase.');}this.drainTranscripts();},2000);
+ },
  event(e){
   const t=e.type||'';
   if(t==='input_audio_buffer.speech_started'&&this.speaking)this.interruptionOnly.add(e.item_id);
   if(t==='conversation.item.input_audio_transcription.delta'){const part=(this.partialTranscripts.get(e.item_id)||'')+(e.delta||'');this.partialTranscripts.set(e.item_id,part);if(this.speaking&&wakeWordDetected(part))this.stopSpeaking();}
-  if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();}
+  if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id)){this.transcriptOrder.push(e.item_id);this.transcriptCommittedAt.set(e.item_id,Date.now());}this.drainTranscripts();}
   if(t==='conversation.item.input_audio_transcription.completed'){if(this.seen.has(e.item_id))return;this.transcriptFinals.set(e.item_id,e);if(!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();return;}
-  if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
+  if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);this.transcriptCommittedAt.delete(e.item_id);this.partialTranscripts.delete(e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
 
   if(t==='output_audio_buffer.stopped'||t==='output_audio_buffer.cleared'){this.speaking=false;this.speakDone?.();this.speakDone=null;this.resumeTransmit();this.markSpeaking(false);}
   if(t==='response.done'&&e.response?.status==='failed'){this.speaking=false;this.speakDone?.();this.speakDone=null;this.resumeTransmit();notice('A resposta em texto está salva; a reprodução por voz não terminou.');this.markSpeaking(false);}
@@ -343,7 +352,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
    let remainder='';const limit=full?2800:480;if(spoken.length>limit){const prefix=spoken.slice(0,limit-30),cut=prefix.lastIndexOf(' ');remainder=full?spoken.slice(cut).trim():'';spoken=prefix.slice(0,cut)+'.';}
    if(spoken.length<plain.length&&!full)spoken+=' Se quiser, eu leio os detalhes.';
    this.lastSpeech=plain;this.speaking=true;this.markSpeaking(true);this.audio&&(this.audio.muted=true);
-   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('George está falando • Módulo: '+activeModuleLabel()+' • diga “George” ou “Jot” para interromper','audio');
+   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('GEORGE está falando • Módulo: '+activeModuleLabel()+' • diga “GEORGE” para interromper','audio');
    try{
      const response=await fetch(BASE+'speech.php',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-George-CSRF':state.csrf},body:JSON.stringify({text:spoken}),signal:this.ttsAbort.signal});
      if(!response.ok){let j;try{j=await response.json();}catch{}throw new Error(j?.error||'Não consegui falar agora. Minha resposta está na conversa.');}
@@ -365,7 +374,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  pauseTransmit(force=false){if(!force&&this.wanted&&(this.speaking||state.recording&&!state.recording.stopping))return this.resumeTransmit();this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
  resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&(this.speaking||state.recording&&!state.recording.stopping||!state.busy&&!state.upload)&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
  pause(){this.wanted=false;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
- close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
+ close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.transcriptCommittedAt.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
  if(!requireAuth())return;
@@ -614,7 +623,7 @@ const keepAwake={lock:null,pending:null,
 document.addEventListener('visibilitychange',()=>{if(state.recording){if(document.visibilityState==='visible'){keepAwake.acquire();const tracks=state.recording.stream.getTracks();if(tracks.some(t=>t.readyState!=='live')){state.recording.error=new Error('O aparelho interrompeu a captura. Há uma lacuna na reunião.');error(state.recording.error);}else notice('Página visível novamente. Confira a continuidade da gravação; o sistema pode suspender a captura em segundo plano.');}else{showStatus('Página oculta • a captura pode ser suspensa pelo aparelho','warning');const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log_turn',{record_id:rid,role:'assistant',text:'[Registro técnico] Página ficou oculta; pode haver uma lacuna de captura a partir deste instante.',event_id:eventId()})).catch(error);}}});
 let meetingProposal=null,lastReview=0,reviewBusy=false;
 function meetingIntent(text){
- const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/^[, .:;-]+|[, .:;-]+$/g,'').trim();
+ const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/^[, .:;!?-]+|[, .:;!?-]+$/g,'').trim();
  if(/^(?:agora nao|nao agora|depois|aguarda|aguarde|espera|espere|segura(?: a pergunta)?|nao pode falar|nao pode perguntar|so (?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)|calma(?: ai)?)\b/.test(n))return 'defer';
  if(/^(?:(?:agora |ja |sim,? )?(?:pode (?:falar|perguntar|participar|fazer|dizer)|fala|fale|pergunta|pergunte|diz ai|diga ai|manda|qual (?:e|era) (?:a |sua )?pergunta|esta (?:liberado|autorizado))|libero (?:voce|a pergunta)|autorizado)[.! ]*(?:por favor)?[.! ]*$/.test(n))return 'grant';
  if(/^(?:dispensa|dispense|cancela|cancele) (?:essa |a )?pergunta[.! ]*$/.test(n))return 'dismiss';
@@ -642,9 +651,11 @@ function handlePauseInterruption(text,source,id){
   state.chatQueue=state.chatQueue.catch(()=>{}).then(()=>controlProposal('defer',text,id)).catch(error);return true;
  }
  const rid=state.recording?.id||state.record;
- const reply='Opa, me chamou. Posso continuar ou você precisa de outra coisa?';
- state.logQueue=state.logQueue.catch(()=>{}).then(async()=>{await request('log',{record_id:rid,text,event_id:id});await logDirectTurn(rid,'assistant',reply,eventId());}).catch(error);
- message('george',reply,'GEORGE');voice.speak(reply,false,true).catch(error);return true;
+ state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);
+ showStatus('GEORGE pausou e está ouvindo • Módulo: '+activeModuleLabel(),'audio');
+ input.placeholder='Pode falar. GEORGE está ouvindo…';
+ setTimeout(()=>{input.placeholder='Fale ou digite para o GEORGE';normalStatus();},5000);
+ return true;
 }
 function handleLocalIntent(text,source,id){
  if(stopSpeechIntent(text)){return handlePauseInterruption(text,source,id);}
@@ -708,7 +719,7 @@ $('closePhoto').onclick=()=>{if(state.upload)return;clearPhoto();$('photoDialog'
 
 // Presentation only: requests, permissions and operational actions remain unchanged.
 function toolIcon(kind){
- const paths={documents:'M8 3h8l4 4v14H8z M16 3v5h4 M4 7v14 M11 12h6 M11 16h6',new:'M12 5v14 M5 12h14',pause:'M9 5v14 M15 5v14',files:'M3 7h7l2-3h9v16H3z'};
+ const paths={documents:'M8 3h8l4 4v14H8z M16 3v5h4 M4 7v14 M11 12h6 M11 16h6',new:'M12 5v14 M5 12h14',pause:'M9 5v14 M15 5v14',files:'M3 7h7l2-3h9v16H3z',database:'M4 6c0-2 4-3 8-3s8 1 8 3-4 3-8 3-8-1-8-3zm0 0v6c0 2 4 3 8 3s8-1 8-3V6m-16 6v6c0 2 4 3 8 3s8-1 8-3v-6'};
  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[kind]||paths.documents);svg.append(path);return svg;
 }
@@ -751,7 +762,7 @@ function setupConversationTools(){
  setOpen(false);
 }
 function decorateConversationTools(){
- for(const [id,kind] of [['documentSources','documents'],['newConversation','new'],['stopGeorge','pause'],['mediaQueueButton','files']]){
+ for(const [id,kind] of [['documentSources','documents'],['newConversation','new'],['stopGeorge','pause'],['mediaQueueButton','files'],['validateAgendaDatabase','database']]){
   const button=$(id);if(!button||button.dataset.toolStyled)return;
   const label=document.createElement('span');label.textContent=button.textContent;button.replaceChildren(toolIcon(kind),label);button.classList.add('tool-option');button.dataset.toolStyled='true';
  }
@@ -822,19 +833,66 @@ async function showMediaQueue(){
   if(pending.length){const clear=smallButton('Limpar fila ('+pending.length+')',()=>change(pending.map(x=>x.record_id),'cancel').catch(sheet.showError));footer.append(clear);footer.hidden=false;}
  }catch(e){list.replaceChildren();sheet.showError(e);}
 }
+async function validateAgendaDatabase(){
+ if(!requireAuth()||!state.user?.admin||document.querySelector('.database-validator[open]'))return;
+ const sheet=createToolsSheet('database-validator','Validar Banco V2','Validação controlada da Agenda do Dia para a empresa ativa.');
+ const {dlg,list,footer}=sheet;list.replaceChildren();
+ const log=document.createElement('pre');log.className='diagnostic';list.append(log);
+ const companyId=Number(state.user.company_id);let busy=false;
+ const show=(title,value)=>{log.textContent+=(log.textContent?'\n\n':'')+title+'\n'+(typeof value==='string'?value:JSON.stringify(value,null,2));list.scrollTop=list.scrollHeight;};
+ const fail=e=>{show('FALHA SEGURA',e.message||String(e));sheet.showError(e);};
+ const finish=health=>{footer.replaceChildren();const close=smallButton('Fechar',sheet.close);footer.append(close);footer.hidden=false;show('BANCO V2 ATIVO E VERIFICADO',health.persistence);};
+ const activate=async()=>{
+  if(busy)return;busy=true;footer.querySelectorAll('button').forEach(b=>b.disabled=true);sheet.clearError();
+  try{
+   const activated=await request('agenda_activate_sql',{company_id:companyId});show('ATIVAÇÃO',activated);
+   const health=await request('health');
+   if(health.persistence?.operational!=='BANCO_V2'||health.persistence?.dual_write_verified!==true)throw new Error('A ativação não passou na verificação final. Nenhuma operação deve ser homologada ainda.');
+   finish(health);
+  }catch(e){fail(e);footer.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}
+ };
+ const previewAndCommit=async()=>{
+  if(busy)return;busy=true;footer.querySelectorAll('button').forEach(b=>b.disabled=true);sheet.clearError();
+  try{
+   const installed=await request('agenda_install',{company_id:companyId});show('ESTRUTURA INSTALADA',installed);
+   const preview=await request('agenda_bootstrap_preview');show('PRÉVIA DO RASCUNHO',preview);
+   footer.replaceChildren();
+   if(preview.already_initialized){
+    const activateButton=smallButton('Ativar banco já importado',()=>{if(confirm('Ativar o Banco V2 já importado para esta empresa?'))activate();});activateButton.classList.add('primary');footer.append(activateButton);
+   }else{
+    const summary=`Data: ${preview.data}\nColaboradores: ${preview.people}\nAtividades: ${preview.items}`;
+    const commit=smallButton('Importar, conferir e ativar',async()=>{
+     if(!confirm('Importar exatamente esta prévia no Banco V2?\n\n'+summary+'\n\nO arquivo original será preservado para recuperação.'))return;
+     busy=true;commit.disabled=true;sheet.clearError();
+     try{const result=await request('agenda_bootstrap_commit',{company_id:companyId,sha256:preview.source_sha256});show('IMPORTAÇÃO VERIFICADA',result);if(!result.verified)throw new Error('A importação não retornou verificação positiva.');busy=false;await activate();}
+     catch(e){fail(e);commit.disabled=false;}finally{busy=false;}
+    });commit.classList.add('primary');footer.append(commit);
+   }
+   footer.append(smallButton('Cancelar',sheet.close));footer.hidden=false;
+  }catch(e){fail(e);footer.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}
+ };
+ try{
+  show('1. CONFERÊNCIA DO SCHEMA','Consultando sem alterar dados…');
+  const check=await request('agenda_install_check');show('DIAGNÓSTICO',check.diagnostic);
+  if(!check.diagnostic?.ok)throw new Error('O schema atual é incompatível. Corrija somente os campos indicados no diagnóstico e execute novamente. Nada foi alterado.');
+  const proceed=smallButton('Instalar e gerar prévia',()=>{if(confirm('O diagnóstico passou. Instalar apenas as tabelas auxiliares e gerar a prévia de importação?'))previewAndCommit();});proceed.classList.add('primary');footer.append(proceed,smallButton('Cancelar',sheet.close));footer.hidden=false;
+ }catch(e){fail(e);footer.replaceChildren(smallButton('Fechar',sheet.close));footer.hidden=false;}
+}
 async function initialize(){
- try{const j=await request('resume');state.record=j.record_id;state.activeModule='geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
+ try{const j=await request('resume');state.record=j.record_id;state.activeModule=j.module||'geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
   if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
   else message('george','E aí, amigão! Como posso te ajudar?');
   if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
   if(!$('mediaQueueButton')){const b=smallButton('Fila de arquivos',()=>showMediaQueue().catch(error));b.id='mediaQueueButton';$('conversationTools').append(b);}
+  if(state.user?.admin&&!$('validateAgendaDatabase')){const b=smallButton('Validar Banco V2',()=>validateAgendaDatabase().catch(error));b.id='validateAgendaDatabase';$('conversationTools').append(b);}
+  if(!state.user?.admin)$('validateAgendaDatabase')?.remove();
   if(!$('newConversation')){const b=smallButton('Nova conversa',async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou envio antes de iniciar outra conversa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();await request('conversation_new');await initialize();}catch(e){error(e);}});b.id='newConversation';$('documentSources').after(b);}
   try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
-  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf4-ata-direta'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
+ if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf6-conversa-banco-v2'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
   for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
