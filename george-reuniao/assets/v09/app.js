@@ -264,7 +264,7 @@ function interruptionIntent(s){
 }
 const stopSpeechIntent=s=>interruptionIntent(s)==='pause';
 const continueSpeechIntent=s=>interruptionIntent(s)==='continue';
-const called=s=>/^(?:(?:ei|oi|o|ola|opa|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi|jot|jote|jordan)\b/.test(normalized(s));
+const called=s=>new RegExp('\\b'+georgeName+'\\b').test(normalized(s));
 function meetingEndIntent(text){
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
  // Match a complete explicit request, never an ambient mention, negation or agenda command.
@@ -316,6 +316,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  acceptTranscript(e){
     const text=String(e.transcript||'').trim(),id=e.item_id||eventId();
     if(!text||this.seen.has(id))return;this.seen.add(id);this.partialTranscripts.delete(id);
+    if(state.recording?.mode==='meeting'&&meetingProposal&&meetingIntent(text)){queueQuestion(text,'audio',id);return;}
     if((state.recording?.mode==='meeting'||state.pendingCapture)&&called(text)&&meetingEndIntent(text)){queueQuestion(text,'audio',id);return;}
     const explicitlyPaused=this.interruptedItems.delete(id)||stopSpeechIntent(text);
     const startedDuringSpeech=this.interruptionOnly.delete(id);
@@ -613,9 +614,9 @@ const keepAwake={lock:null,pending:null,
 document.addEventListener('visibilitychange',()=>{if(state.recording){if(document.visibilityState==='visible'){keepAwake.acquire();const tracks=state.recording.stream.getTracks();if(tracks.some(t=>t.readyState!=='live')){state.recording.error=new Error('O aparelho interrompeu a captura. Há uma lacuna na reunião.');error(state.recording.error);}else notice('Página visível novamente. Confira a continuidade da gravação; o sistema pode suspender a captura em segundo plano.');}else{showStatus('Página oculta • a captura pode ser suspensa pelo aparelho','warning');const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log_turn',{record_id:rid,role:'assistant',text:'[Registro técnico] Página ficou oculta; pode haver uma lacuna de captura a partir deste instante.',event_id:eventId()})).catch(error);}}});
 let meetingProposal=null,lastReview=0,reviewBusy=false;
 function meetingIntent(text){
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').trim();
+ const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/^[, .:;-]+|[, .:;-]+$/g,'').trim();
  if(/^(?:agora nao|nao agora|depois|aguarda|aguarde|espera|espere|segura(?: a pergunta)?|nao pode falar|nao pode perguntar|so (?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)|calma(?: ai)?)\b/.test(n))return 'defer';
- if(/^(?:(?:agora |ja |sim,? )?(?:pode (?:falar|perguntar|participar)|esta (?:liberado|autorizado))|libero (?:voce|a pergunta)|autorizado)[.! ]*(?:por favor)?[.! ]*$/.test(n))return 'grant';
+ if(/^(?:(?:agora |ja |sim,? )?(?:pode (?:falar|perguntar|participar|fazer|dizer)|fala|fale|pergunta|pergunte|diz ai|diga ai|manda|qual (?:e|era) (?:a |sua )?pergunta|esta (?:liberado|autorizado))|libero (?:voce|a pergunta)|autorizado)[.! ]*(?:por favor)?[.! ]*$/.test(n))return 'grant';
  if(/^(?:dispensa|dispense|cancela|cancele) (?:essa |a )?pergunta[.! ]*$/.test(n))return 'dismiss';
  return null;
 }
@@ -825,7 +826,7 @@ async function initialize(){
  try{const j=await request('resume');state.record=j.record_id;state.activeModule='geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
   if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
-  else message('george','Oi, eu sou o George. No que eu posso ajudar? Me conte com detalhes o que você precisa.');
+  else message('george','E aí, amigão! Como posso te ajudar?');
   if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
   if(!$('mediaQueueButton')){const b=smallButton('Fila de arquivos',()=>showMediaQueue().catch(error));b.id='mediaQueueButton';$('conversationTools').append(b);}
