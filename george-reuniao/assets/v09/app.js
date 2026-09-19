@@ -31,6 +31,7 @@ async function request(action,payload={},timeout=180000){
 }
 function showStatus(text,kind='text'){$('modeStatus').className='mode-status show '+kind;$('modeStatusText').textContent=text;}
 function setActive(mode){document.querySelectorAll('.action').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});}
+const activeModuleLabel=()=>state.activeModule==='agenda_dia'?'Agenda do Dia':'Geral';
 function normalStatus(){
  const meeting=$('btnMeeting'),label=meeting?.querySelector('.label');
  if(label)label.textContent=state.finalizing?'Finalizando':state.recording?.mode==='meeting'?'Encerrar':state.pendingCapture?'Retomar':'Reunião';
@@ -39,7 +40,7 @@ function normalStatus(){
  if(state.recording?.error||state.recording?.rec?.state==='paused'){showStatus('Gravação pausada • confira o envio dos blocos','warning');return;}
  if(state.recording?.mode==='film'){showStatus('Filmagem em andamento • áudio e imagens amostradas','meeting');return;}
  if(state.recording){showStatus(!voice.live?'Reunião gravando • toque em Áudio para reconectar a voz':document.visibilityState!=='visible'?'Reunião: página oculta • captura pode ser interrompida':'Reunião gravando • diga Jorge, encerrar reunião',!voice.live||document.visibilityState!=='visible'?'warning':'meeting');return;}
- if(state.mode==='audio')showStatus(voice.live?'Áudio ligado • George está ouvindo':'Áudio selecionado • toque em Áudio para conversar',voice.live?'audio':'warning');
+ if(state.mode==='audio')showStatus(voice.live?'Áudio ligado • Módulo: '+activeModuleLabel()+' • George está ouvindo':'Áudio selecionado • Módulo: '+activeModuleLabel()+' • toque em Áudio para conversar',voice.live?'audio':'warning');
  else showStatus(state.activeModule==='agenda_dia'?'Módulo: Agenda do Dia • modo escrita':'Áudio desligado • modo escrita','text');
 }
 let followChat=true;chat.addEventListener('scroll',()=>{followChat=chat.scrollHeight-chat.scrollTop-chat.clientHeight<100;},{passive:true});
@@ -250,19 +251,20 @@ function sendText(){const text=input.value.trim();if(!text||!requireAuth())retur
 $('btnSend').onclick=sendText;
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}});
 const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
-const georgeName='(?:george|jorge|giorge|georgie|djorge|jordi)';
+const georgeName='(?:george|jorge|giorge|georgie|djorge|jordi|jot|jote|jord[aã]n)';
+const wakeWordDetected=s=>new RegExp('\\b'+georgeName+'\\b').test(normalized(s));
 function interruptionIntent(s){
  const n=normalized(s).replace(/[!?]+/g,' ').replace(/\s+/g,' ').trim();
  const hasName=new RegExp('\\b'+georgeName+'\\b').test(n);
  const withoutName=n.replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/^[, .:;-]+|[, .:;-]+$/g,'').trim();
  if(/\b(?:pode |poderia )?(?:continuar|seguir|prosseguir|retomar)\b|\b(?:continua|continue|segue|prossiga|retoma|retome)\b|\bde onde (?:voce )?parou\b/.test(withoutName))return 'continue';
- if(/\b(?:so |apenas )?(?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)\b|\b(?:espera|espere|aguarda|aguarde|segura|segure|calma|para|pare)(?: ai| um pouco| so um pouco)?\b|\b(?:presta|preste) atencao\b|\bnao e (?:isso|bem isso)\b|\bdeixa eu (?:falar|terminar|explicar)\b/.test(withoutName))return 'pause';
+ if(hasName&&/\b(?:so |apenas )?(?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)\b|\b(?:espera|espere|aguarda|aguarde|segura|segure|calma|para|pare)(?: ai| um pouco| so um pouco)?\b|\b(?:presta|preste) atencao\b|\bnao e (?:isso|bem isso)\b|\bdeixa eu (?:falar|terminar|explicar)\b/.test(withoutName))return 'pause';
  if(hasName&&/^(?:(?:ei|oi|o|opa|por favor)[, .:;-]*)?$/.test(withoutName))return 'pause';
  return null;
 }
 const stopSpeechIntent=s=>interruptionIntent(s)==='pause';
 const continueSpeechIntent=s=>interruptionIntent(s)==='continue';
-const called=s=>/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)\b/.test(normalized(s));
+const called=s=>/^(?:(?:ei|oi|o|ola|opa|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi|jot|jote|jordan)\b/.test(normalized(s));
 function meetingEndIntent(text){
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
  // Match a complete explicit request, never an ambient mention, negation or agenda command.
@@ -301,8 +303,8 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
  event(e){
   const t=e.type||'';
-  if(t==='input_audio_buffer.speech_started'&&this.speaking){this.interruptionOnly.add(e.item_id);this.stopSpeaking();}
-  if(t==='conversation.item.input_audio_transcription.delta'){const part=(this.partialTranscripts.get(e.item_id)||'')+(e.delta||'');this.partialTranscripts.set(e.item_id,part);if(this.speaking&&stopSpeechIntent(part)){this.interruptedItems.add(e.item_id);this.stopSpeaking();}}
+  if(t==='input_audio_buffer.speech_started'&&this.speaking)this.interruptionOnly.add(e.item_id);
+  if(t==='conversation.item.input_audio_transcription.delta'){const part=(this.partialTranscripts.get(e.item_id)||'')+(e.delta||'');this.partialTranscripts.set(e.item_id,part);if(this.speaking&&wakeWordDetected(part))this.stopSpeaking();}
   if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();}
   if(t==='conversation.item.input_audio_transcription.completed'){if(this.seen.has(e.item_id))return;this.transcriptFinals.set(e.item_id,e);if(!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();return;}
   if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
@@ -320,7 +322,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
     if(explicitlyPaused){handlePauseInterruption(text,'audio',id);return;}
     if(startedDuringSpeech){
       if(state.recording?.mode==='meeting'&&!called(text)){const rid=state.recording.id;message('me',text);state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);return;}
-      queueQuestion(text,'audio',id);return;
+      if(called(text))queueQuestion(text,'audio',id);return;
     }
     const duringSpeech=this.speaking;
     if(duringSpeech){if(state.recording?.mode==='meeting'&&!called(text)){const rid=state.recording.id;message('me',text);state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);}return;}
@@ -340,7 +342,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
    let remainder='';const limit=full?2800:480;if(spoken.length>limit){const prefix=spoken.slice(0,limit-30),cut=prefix.lastIndexOf(' ');remainder=full?spoken.slice(cut).trim():'';spoken=prefix.slice(0,cut)+'.';}
    if(spoken.length<plain.length&&!full)spoken+=' Se quiser, eu leio os detalhes.';
    this.lastSpeech=plain;this.speaking=true;this.markSpeaking(true);this.audio&&(this.audio.muted=true);
-   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('George está falando • diga “George, só um minuto” para pausar','audio');
+   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('George está falando • Módulo: '+activeModuleLabel()+' • diga “George” ou “Jot” para interromper','audio');
    try{
      const response=await fetch(BASE+'speech.php',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-George-CSRF':state.csrf},body:JSON.stringify({text:spoken}),signal:this.ttsAbort.signal});
      if(!response.ok){let j;try{j=await response.json();}catch{}throw new Error(j?.error||'Não consegui falar agora. Minha resposta está na conversa.');}
