@@ -10,8 +10,8 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLo
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function matches(text,module=''){
  const command=norm(text)
-   .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'')
-   .replace(/[, :.!]*(?:george|jorge|giorge|georgie|djorge|jordi)[, .!?]*$/,'')
+   .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge)[, :.!]*/,'')
+   .replace(/[, :.!]*(?:george|jorge)[, .!?]*$/,'')
    .replace(/[.!?]+$/,'').trim();
  const share='(?:compartilha|compartilhar|compartilhe|envia|enviar|envie)';
  const open='(?:gera|gerar|gere|abre|abrir|abra|baixa|baixar|baixe|imprime|imprimir|imprima)';
@@ -20,7 +20,8 @@ function matches(text,module=''){
  const explicit=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: o)? (?:pdf|relatorio)(?: em pdf)? (?:da|do) (?:agenda|atividade) do dia$');
  const natural=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: a| o)? (?:agenda|atividade)(?: do dia)?(?: em pdf)?$');
  const contextualReport=new RegExp('^'+polite+'(?:'+share+'|'+open+')(?: o| a)? (?:pdf|relatorio)(?: do dia| em pdf)?$');
- return explicit.test(command)||(module==='agenda_dia'&&(bare.test(command)||natural.test(command)||contextualReport.test(command)));
+ const requestedFile=/^(?:(?:eu )?(?:quero|preciso)(?: de)? )?(?:um |o )?(?:arquivo|documento)? ?pdf(?: da agenda do dia)? para (?:compartilhar|enviar|baixar|imprimir)$/;
+ return explicit.test(command)||(module==='agenda_dia'&&(bare.test(command)||natural.test(command)||contextualReport.test(command)||requestedFile.test(command)));
 }
 function wantsShare(text){return /\bcompartilh|\benvi(a|e|ar)\b/.test(norm(text));}
 function wantsPrint(text){return /\bimprim|\bimpress/.test(norm(text));}

@@ -46,10 +46,13 @@ function normalStatus(){
 let followChat=true;chat.addEventListener('scroll',()=>{followChat=chat.scrollHeight-chat.scrollTop-chat.clientHeight<100;},{passive:true});
 function scroll(force=false){if(force||followChat)requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight;});}
 function avatar(side){const a=document.createElement('div');a.className='msg-avatar';if(side==='me')a.textContent=(state.user?.nome||'GE').split(/\s/)[0].slice(0,2).toUpperCase();else{const im=document.createElement('img');im.src='assets/v09/logo_george.png';im.alt='George';a.append(im);}return a;}
+function presentText(text){
+ return String(text??'').replace(/^\s{0,3}#{1,6}\s+/gm,'').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/__([^_]+)__/g,'$1').replace(/`([^`]+)`/g,'$1');
+}
 function message(side,text,label='GEORGE',at=now()){
  const row=document.createElement('div');row.className='msg '+side;const a=avatar(side);const b=document.createElement('div');b.className='bubble';
  if(side!=='me'){const w=document.createElement('div');w.className='who';w.textContent=label;b.append(w);}
- const d=document.createElement('div');d.className='message-text';d.textContent=text;b.append(d);const tm=document.createElement('div');tm.className='time';tm.textContent=at;b.append(tm);
+ const d=document.createElement('div');d.className='message-text';d.textContent=side==='me'?text:presentText(text);b.append(d);const tm=document.createElement('div');tm.className='time';tm.textContent=at;b.append(tm);
  addBubbleMenu(b,d);row.append(a,b);chat.insertBefore(row,anchor);scroll();return {row,bubble:b,text:d,avatar:a};
 }
 function notice(text){const n=document.createElement('div');n.className='system';n.textContent=text;chat.insertBefore(n,anchor);scroll();return n;}
@@ -149,7 +152,7 @@ function runAnalyticsLocal(text,source,id,n){
 }
 function manualLocalIntent(text){
  const n=normalized(text)
-   .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'')
+   .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge)[, :.!]*/,'')
    .replace(/[.!?]+$/,'').trim();
  const subject=/(?:agenda|atividade) do dia/;
  const help=/(?:manual|manuais|documentacao|ajuda|auxilio|guias?(?: operacional)?|tutorial|instrucao|instrucoes|orientacao|duvidas?|faq|passo a passo|raio[ -]?x|detalhes? das atividades|como (?:usar|funciona))/;
@@ -179,13 +182,18 @@ async function logDirectTurn(record,role,text,id){
  catch(e){throw new Error('Não foi possível confirmar esta mensagem no servidor. '+e.message);}
 }
 function moduleActivationIntent(text){
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
- return /^(?:agenda|atividade) do dia$/.test(n);
+ const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/[.!?]+$/,'').trim();
+ if(/\bnao\s+(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|mude|mudar)\b/.test(n))return false;
+ const subject=/\b(?:agenda|atividade) do dia\b/.test(n);
+ const navigation=/\b(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|vamos|mude|mudar|troque|trocar|fique|ficar|logado|modulo|contexto)\b/.test(n);
+ const readText=n.replace(/\bnao\s+(?:me\s+)?(?:liste|listar|mostre|mostrar|consulte|consultar)\b/g,' ');
+ const read=/\b(?:liste|listar|mostre|mostrar|consulta|consultar|quem|qual|quais|quant|relatorio|pdf|horas|alocad|atividade de)\b/.test(readText);
+ return subject&&((navigation&&!read)||/^(?:agenda|atividade) do dia$/.test(n));
 }
 function activateAgendaDay(text,source,id){
  if(!moduleActivationIntent(text))return false;
  message('me',text);state.activeModule='agenda_dia';normalStatus();
- state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const reply='Ok, Agenda do Dia.';try{const j=await request('chat',{record_id:state.record,text,event_id:id});state.activeModule=j.module||'agenda_dia';message('george',reply,'AGENDA DO DIA');if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){error(e);}});
+ state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const reply='Pronto, estamos na Agenda do Dia. O que você precisa?';try{const j=await request('module_select',{record_id:state.record,module:'agenda_dia',text,event_id:id});state.activeModule=j.module;normalStatus();message('george',reply,'AGENDA DO DIA');if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){state.activeModule='geral';normalStatus();error(e);}});
  return true;
 }
 function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
@@ -199,7 +207,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
  // Saída isolada e estrita: lê diretamente o único rascunho oficial aberto e
  // monta o PDF no navegador. Não envia instrução ao chat, não altera o módulo,
  // não grava contexto de Analytics e não participa das operações da Agenda.
- if(window.GeorgeAgendaReport?.matches?.(text,state.activeModule)){
+ if(window.GeorgeAgendaReport?.matches?.(text,state.activeModule)||agendaReportIntent(text)){
    state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{
      const indicator=notice('Consultando os dados da Agenda do Dia…');
      const operation=window.GeorgeAgendaExperience?.operation('Relatório da Agenda do Dia','Consultando horas e alocações…');
@@ -227,7 +235,8 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        if(speak&&!state.recording?.stopping)await voice.speak(reply);
      }catch(e){
        indicator.remove();
-       const reply=e.message||String(e);
+       console.error('Agenda PDF',e);
+       const reply='Não consegui montar o PDF da Agenda do Dia agora. Seu pedido continua preservado; tente novamente sem repetir as informações.';
        const m=message('george',reply,'RELATÓRIO DA AGENDA');
        m.row.dataset.sources='Fonte operacional da Agenda do Dia';
        showStatus(reply,'warning');
@@ -244,36 +253,51 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
       if(j.sources?.length)m.row.dataset.sources=j.sources.join(' | ');
       if(j.analytics){analyticsButtons(j.analytics,m.bubble);if(j.analytics.format==='planilha')downloadAnalyticsCsv(j.analytics);else if(['pdf','grafico','dashboard','tabela'].includes(j.analytics.format))openAnalytics(j.analytics);}
       if(speak&&!state.recording?.stopping)await voice.speak(j.text);
-   }catch(e){indicator.remove();error(e);const m=message('george','Você pode retomar este pedido para conferir como ficou.');m.bubble.append(smallButton('Retomar pedido',()=>{m.row.remove();queueQuestion(text,source,id,record);}));}finally{state.busy=false;voice.resumeTransmit();normalStatus();}
+   }catch(e){indicator.remove();error(e);const pedido=String(text).replace(/\s+/g,' ').trim().slice(0,120);const m=message('george',`Não consegui concluir agora: “${pedido}”. O pedido ficou preservado.`);m.bubble.append(smallButton('Tentar novamente este pedido',()=>{m.row.remove();queueQuestion(text,source,id,record);}));}finally{state.busy=false;voice.resumeTransmit();normalStatus();}
  });
 }
 function sendText(){const text=input.value.trim();if(!text||!requireAuth())return;if(state.recording&&state.recording.mode!=='meeting'){notice('Encerre a gravação para conversar. Seu texto foi mantido.');return;}input.value='';autosize();saveDraft();queueQuestion(text);}
 $('btnSend').onclick=sendText;
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendText();}});
 const normalized=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
-const georgeName='(?:george|jorge|giorge|georgie|djorge|jordi|jot|jote|jord[aã]n)';
+// A chamada pública e operacional é somente George/Jorge. Não transforme nomes
+// de pessoas (Jordi, Jordan) nem palavras curtas (Jot) em palavra de ativação.
+const georgeName='(?:george|jorge)';
+function normalizeGeorgeCall(text){
+ const raw=String(text??'').trim();
+ const start=new RegExp('^((?:ei|oi|ola|o|opa)[, .:;-]*)?('+georgeName+')\\b','i');
+ const end=new RegExp('\\b('+georgeName+')[, .:;!?-]*$','i');
+ return raw.replace(start,(_,prefix)=>`${prefix||''}GEORGE`).replace(end,'GEORGE');
+}
+function agendaReportIntent(text){
+ if(state.activeModule!=='agenda_dia'||state.recording)return false;
+ const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ');
+ const report=/\b(relatorio|pdf)\b/.test(n)&&/\b(gera|gerar|gere|monte|montar|crie|criar|quero|preciso|arquivo|compartilha|compartilhar|baixa|baixar|imprime|imprimir|exporta|exportar)\b/.test(n);
+ const another=/\b(semana|semanal|cronograma|erros?|problemas?|conversas?|reuniao|ata)\b/.test(n);
+ return report&&!another;
+}
 const wakeWordDetected=s=>new RegExp('\\b'+georgeName+'\\b').test(normalized(s));
 function interruptionIntent(s){
  const n=normalized(s).replace(/[!?]+/g,' ').replace(/\s+/g,' ').trim();
  const hasName=new RegExp('\\b'+georgeName+'\\b').test(n);
  const withoutName=n.replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/^[, .:;-]+|[, .:;-]+$/g,'').trim();
  if(/\b(?:pode |poderia )?(?:continuar|seguir|prosseguir|retomar)\b|\b(?:continua|continue|segue|prossiga|retoma|retome)\b|\bde onde (?:voce )?parou\b/.test(withoutName))return 'continue';
- if(hasName&&/\b(?:so |apenas )?(?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)\b|\b(?:espera|espere|aguarda|aguarde|segura|segure|calma|para|pare)(?: ai| um pouco| so um pouco)?\b|\b(?:presta|preste) atencao\b|\bnao e (?:isso|bem isso)\b|\bdeixa eu (?:falar|terminar|explicar)\b/.test(withoutName))return 'pause';
+ if(hasName&&/^(?:(?:so |apenas )?(?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)|(?:espera|espere|aguarda|aguarde|segura|segure|calma|para|pare)(?: ai| um pouco| so um pouco)?|(?:presta|preste) atencao|nao e (?:isso|bem isso)|deixa eu (?:falar|terminar|explicar))[.! ]*$/.test(withoutName))return 'pause';
  if(hasName&&/^(?:(?:ei|oi|o|opa|por favor)[, .:;-]*)?$/.test(withoutName))return 'pause';
  return null;
 }
 const stopSpeechIntent=s=>interruptionIntent(s)==='pause';
 const continueSpeechIntent=s=>interruptionIntent(s)==='continue';
-const called=s=>/^(?:(?:ei|oi|o|ola|opa|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi|jot|jote|jordan)\b/.test(normalized(s));
+const called=s=>new RegExp('\\b'+georgeName+'\\b').test(normalized(s));
 function meetingEndIntent(text){
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
+ const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge)[, :.!]*/,'').replace(/[.!?]+$/,'').trim();
  // Match a complete explicit request, never an ambient mention, negation or agenda command.
  return /^(?:(?:por favor|agora)[, ]+)?(?:(?:pode|poderia|vamos|quero que voce|eu quero que voce|preciso que voce) )?(?:encerrar|encerra|encerre|finalizar|finaliza|finalize|terminar|termina|termine|parar|para|pare)(?: (?:a|essa|esta|nossa|a nossa|a atual))? (?:reuniao|gravacao)(?:(?:[, ]+)(?:agora|por favor))?(?:[, ]*(?:e |para |pra )(?:(?:depois |ja )?(?:abrir|abra|abre|gerar|gere|gera|baixar|baixe|compartilhar|compartilhe) (?:o |a )?(?:pdf|ata)(?: em pdf)?(?: (?:para|pra) (?:download|baixar|compartilhar))?(?: e (?:abrir|abra|abre|baixar|baixe|compartilhar|compartilhe)(?: (?:o |a )?(?:pdf|ata))?)*|(?:ir|va) direto (?:na|para a) abertura do pdf(?: para download)?))?(?:[, ]+por favor)?$/.test(n);
 }
 
 // The WebRTC connection transcribes and voices validated server answers only.
 // No automatic LLM replies to ambient conversation; the server chat owns context/tools.
-const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,connecting:null,speaking:false,speakDone:null,seen:new Set(),wanted:false,
+const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,connecting:null,speaking:false,speakDone:null,seen:new Set(),wanted:false,followupUntil:0,
  async connect(){
    if(this.connecting)return this.connecting;
    if(this.live&&this.dc?.readyState==='open'&&this.stream?.getAudioTracks().some(t=>t.readyState==='live')&&!['failed','closed','disconnected'].includes(this.pc?.connectionState)){this.wanted=true;await this.resumeTransmit();return;}
@@ -294,28 +318,33 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
     const c=new AbortController(),tt=setTimeout(()=>c.abort(),70000);
     try{const r=await fetch(BASE+'realtime.php',{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/sdp','X-George-CSRF':state.csrf},body:offer.sdp,signal:c.signal});const raw=await r.text();if(!r.ok){let msg='Não foi possível ligar a voz.';try{msg=JSON.parse(raw).error||msg;}catch{}throw new Error(msg);}await this.pc.setRemoteDescription({type:'answer',sdp:raw});await open;}
     catch(e){clearTimeout(timer);if(retained){if(this.dc)this.dc.onclose=null;this.dc?.close();this.pc?.close();this.live=false;this.sender=null;this.stream=retained;}else this.close();throw e;}finally{clearTimeout(tt);}
-    this.wanted=true;this.resumeTransmit();normalStatus();
+    this.wanted=true;this.followupUntil=Date.now()+20000;this.resumeTransmit();normalStatus();
    })();
    try{return await this.connecting;}finally{this.connecting=null;}
  },
 partialTranscripts:new Map(),interruptedItems:new Set(),interruptionOnly:new Set(),tts:null,ttsAbort:null,speechTicket:0,pausedSpeech:null,
-transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
- drainTranscripts(){while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.acceptTranscript(e);}if(this.transcriptOrder.length){clearTimeout(this.transcriptTimer);this.transcriptTimer=setTimeout(()=>notice('Há uma fala aguardando transcrição. Aguarde antes de repetir um comando para evitar duplicação.'),20000);}},
+transcriptOrder:[],transcriptFinals:new Map(),transcriptCommittedAt:new Map(),transcriptTimer:null,
+ drainTranscripts(){
+  while(this.transcriptOrder.length&&this.transcriptFinals.has(this.transcriptOrder[0])){const id=this.transcriptOrder.shift(),e=this.transcriptFinals.get(id);this.transcriptFinals.delete(id);this.transcriptCommittedAt.delete(id);this.acceptTranscript(e);}
+  clearTimeout(this.transcriptTimer);
+  if(this.transcriptOrder.length)this.transcriptTimer=setTimeout(()=>{const id=this.transcriptOrder[0],age=Date.now()-(this.transcriptCommittedAt.get(id)||Date.now());if(age>=18000){this.transcriptOrder.shift();this.transcriptFinals.delete(id);this.partialTranscripts.delete(id);this.transcriptCommittedAt.delete(id);notice('Uma fala não terminou de transcrever e foi liberada. Pode repetir somente essa frase.');}this.drainTranscripts();},2000);
+ },
  event(e){
   const t=e.type||'';
   if(t==='input_audio_buffer.speech_started'&&this.speaking)this.interruptionOnly.add(e.item_id);
   if(t==='conversation.item.input_audio_transcription.delta'){const part=(this.partialTranscripts.get(e.item_id)||'')+(e.delta||'');this.partialTranscripts.set(e.item_id,part);if(this.speaking&&wakeWordDetected(part))this.stopSpeaking();}
-  if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();}
+  if(t==='input_audio_buffer.committed'){if(!this.seen.has(e.item_id)&&!this.transcriptOrder.includes(e.item_id)){this.transcriptOrder.push(e.item_id);this.transcriptCommittedAt.set(e.item_id,Date.now());}this.drainTranscripts();}
   if(t==='conversation.item.input_audio_transcription.completed'){if(this.seen.has(e.item_id))return;this.transcriptFinals.set(e.item_id,e);if(!this.transcriptOrder.includes(e.item_id))this.transcriptOrder.push(e.item_id);this.drainTranscripts();return;}
-  if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
+  if(t==='conversation.item.input_audio_transcription.failed'){this.transcriptOrder=this.transcriptOrder.filter(id=>id!==e.item_id);this.transcriptCommittedAt.delete(e.item_id);this.partialTranscripts.delete(e.item_id);notice('Uma fala não foi transcrita. Repita apenas esse pedido.');this.drainTranscripts();}
 
   if(t==='output_audio_buffer.stopped'||t==='output_audio_buffer.cleared'){this.speaking=false;this.speakDone?.();this.speakDone=null;this.resumeTransmit();this.markSpeaking(false);}
   if(t==='response.done'&&e.response?.status==='failed'){this.speaking=false;this.speakDone?.();this.speakDone=null;this.resumeTransmit();notice('A resposta em texto está salva; a reprodução por voz não terminou.');this.markSpeaking(false);}
   if(t==='error'){this.speaking=false;notice('Áudio: '+(e.error?.message||'erro na sessão'));this.speakDone?.();this.speakDone=null;this.resumeTransmit();this.markSpeaking(false);}
  },
  acceptTranscript(e){
-    const text=String(e.transcript||'').trim(),id=e.item_id||eventId();
+    const text=normalizeGeorgeCall(String(e.transcript||'').trim()),id=e.item_id||eventId();
     if(!text||this.seen.has(id))return;this.seen.add(id);this.partialTranscripts.delete(id);
+    if(state.recording?.mode==='meeting'&&meetingProposal&&meetingIntent(text)){queueQuestion(text,'audio',id);return;}
     if((state.recording?.mode==='meeting'||state.pendingCapture)&&called(text)&&meetingEndIntent(text)){queueQuestion(text,'audio',id);return;}
     const explicitlyPaused=this.interruptedItems.delete(id)||stopSpeechIntent(text);
     const startedDuringSpeech=this.interruptionOnly.delete(id);
@@ -329,7 +358,9 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
     if(state.recording?.mode==='meeting'){
       if(called(text))queueQuestion(text,'audio',id);
       else{message('me',text);const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);}
-    }else if(state.mode==='audio'&&!state.recording)queueQuestion(text,'audio',id);
+    }else if(state.mode==='audio'&&!state.recording){
+      if(called(text)||Date.now()<=this.followupUntil){this.followupUntil=0;queueQuestion(text,'audio',id);}
+    }
  },
  send(e){if(this.dc?.readyState!=='open')throw new Error('Áudio ainda não está conectado.');this.dc.send(JSON.stringify(e));},
  async speak(text,full=false,preservePaused=false){
@@ -340,9 +371,8 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
    const sentences=plain.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[plain];
    let spoken=full?plain:sentences.slice(0,2).join(' ').trim();
    let remainder='';const limit=full?2800:480;if(spoken.length>limit){const prefix=spoken.slice(0,limit-30),cut=prefix.lastIndexOf(' ');remainder=full?spoken.slice(cut).trim():'';spoken=prefix.slice(0,cut)+'.';}
-   if(spoken.length<plain.length&&!full)spoken+=' Se quiser, eu leio os detalhes.';
    this.lastSpeech=plain;this.speaking=true;this.markSpeaking(true);this.audio&&(this.audio.muted=true);
-   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('George está falando • Módulo: '+activeModuleLabel()+' • diga “George” ou “Jot” para interromper','audio');
+   const ticket=++this.speechTicket;this.ttsAbort=new AbortController();await this.resumeTransmit();showStatus('GEORGE está falando • Módulo: '+activeModuleLabel()+' • diga “GEORGE” para interromper','audio');
    try{
      const response=await fetch(BASE+'speech.php',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-George-CSRF':state.csrf},body:JSON.stringify({text:spoken}),signal:this.ttsAbort.signal});
      if(!response.ok){let j;try{j=await response.json();}catch{}throw new Error(j?.error||'Não consegui falar agora. Minha resposta está na conversa.');}
@@ -352,7 +382,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
      finally{a.pause();URL.revokeObjectURL(url);}
      if(remainder&&ticket===this.speechTicket)await this.speak(remainder,true);
    }catch(e){if(e.name!=='AbortError')notice(e.message);}
-   finally{if(ticket===this.speechTicket){this.speaking=false;this.tts=null;this.ttsAbort=null;this.speakDone=null;this.markSpeaking(false);this.resumeTransmit();if(preservePaused&&retainedPause)this.pausedSpeech=retainedPause;normalStatus();}}
+   finally{if(ticket===this.speechTicket){this.speaking=false;this.tts=null;this.ttsAbort=null;this.speakDone=null;this.markSpeaking(false);this.followupUntil=Date.now()+20000;this.resumeTransmit();if(preservePaused&&retainedPause)this.pausedSpeech=retainedPause;normalStatus();}}
  },
  stopSpeaking(keep=true){
    const was=this.speaking;if(keep&&was)this.pausedSpeech=this.lastSpeech;this.speechTicket++;this.ttsAbort?.abort();this.tts?.pause();if(this.audio)this.audio.muted=true;
@@ -364,7 +394,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptTimer:null,
  pauseTransmit(force=false){if(!force&&this.wanted&&(this.speaking||state.recording&&!state.recording.stopping))return this.resumeTransmit();this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
  resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&(this.speaking||state.recording&&!state.recording.stopping||!state.busy&&!state.upload)&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
  pause(){this.wanted=false;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
- close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
+ close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.transcriptCommittedAt.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
  if(!requireAuth())return;
@@ -613,9 +643,9 @@ const keepAwake={lock:null,pending:null,
 document.addEventListener('visibilitychange',()=>{if(state.recording){if(document.visibilityState==='visible'){keepAwake.acquire();const tracks=state.recording.stream.getTracks();if(tracks.some(t=>t.readyState!=='live')){state.recording.error=new Error('O aparelho interrompeu a captura. Há uma lacuna na reunião.');error(state.recording.error);}else notice('Página visível novamente. Confira a continuidade da gravação; o sistema pode suspender a captura em segundo plano.');}else{showStatus('Página oculta • a captura pode ser suspensa pelo aparelho','warning');const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log_turn',{record_id:rid,role:'assistant',text:'[Registro técnico] Página ficou oculta; pode haver uma lacuna de captura a partir deste instante.',event_id:eventId()})).catch(error);}}});
 let meetingProposal=null,lastReview=0,reviewBusy=false;
 function meetingIntent(text){
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').trim();
+ const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/^[, .:;!?-]+|[, .:;!?-]+$/g,'').trim();
  if(/^(?:agora nao|nao agora|depois|aguarda|aguarde|espera|espere|segura(?: a pergunta)?|nao pode falar|nao pode perguntar|so (?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)|calma(?: ai)?)\b/.test(n))return 'defer';
- if(/^(?:(?:agora |ja |sim,? )?(?:pode (?:falar|perguntar|participar)|esta (?:liberado|autorizado))|libero (?:voce|a pergunta)|autorizado)[.! ]*(?:por favor)?[.! ]*$/.test(n))return 'grant';
+ if(/^(?:(?:agora |ja |sim,? )?(?:pode (?:falar|perguntar|participar|fazer|dizer)|fala|fale|pergunta|pergunte|diz ai|diga ai|manda|qual (?:e|era) (?:a |sua )?pergunta|esta (?:liberado|autorizado))|libero (?:voce|a pergunta)|autorizado)[.! ]*(?:por favor)?[.! ]*$/.test(n))return 'grant';
  if(/^(?:dispensa|dispense|cancela|cancele) (?:essa |a )?pergunta[.! ]*$/.test(n))return 'dismiss';
  return null;
 }
@@ -641,18 +671,20 @@ function handlePauseInterruption(text,source,id){
   state.chatQueue=state.chatQueue.catch(()=>{}).then(()=>controlProposal('defer',text,id)).catch(error);return true;
  }
  const rid=state.recording?.id||state.record;
- const reply='Opa, me chamou. Posso continuar ou você precisa de outra coisa?';
- state.logQueue=state.logQueue.catch(()=>{}).then(async()=>{await request('log',{record_id:rid,text,event_id:id});await logDirectTurn(rid,'assistant',reply,eventId());}).catch(error);
- message('george',reply,'GEORGE');voice.speak(reply,false,true).catch(error);return true;
+ state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);
+ showStatus('GEORGE pausou e está ouvindo • Módulo: '+activeModuleLabel(),'audio');
+ input.placeholder='Pode falar. GEORGE está ouvindo…';
+ setTimeout(()=>{input.placeholder='Fale ou digite para o GEORGE';normalStatus();},5000);
+ return true;
 }
 function handleLocalIntent(text,source,id){
  if(stopSpeechIntent(text)){return handlePauseInterruption(text,source,id);}
  if((voice.pausedSpeech||voice.lastSpeech)&&continueSpeechIntent(text)){const pending=voice.pausedSpeech||voice.lastSpeech;voice.pausedSpeech=null;message('me',text);voice.speak(pending,true);return true;}
- const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge|giorge|georgie|djorge|jordi)[, :.!]*/,'').trim();
+ const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge)[, :.!]*/,'').trim();
  if((state.recording?.mode==='meeting'||state.pendingCapture||state.finalizing)&&meetingEndIntent(text)){
   if(!state.finalizing){message('me',text);voice.stopSpeaking(false);endCapture().catch(error);}return true;
  }
- const agendaPdfIntent=!state.recording&&window.GeorgeAgendaReport?.matches?.(text,state.activeModule);
+ const agendaPdfIntent=!state.recording&&(window.GeorgeAgendaReport?.matches?.(text,state.activeModule)||agendaReportIntent(text));
  if(!agendaPdfIntent&&!state.recording&&state.lastOutput==='analytics'&&state.lastAnalytics&&analyticsLocalIntent(n))return runAnalyticsLocal(text,source,id,n);
  if(!agendaPdfIntent&&!state.recording&&state.lastDocument?.parent===state.record&&/^(?:(?:pode|quero) )?(?:abrir|abre|abra|baixar|baixa|baixe|compartilhar|compartilha|compartilhe|enviar|envia|envie)(?: (?:o|a|essa|esta|esse|este|ultima|ultimo))? (?:pdf|ata|documento)(?: em pdf)?(?: por favor)?[.!? ]*$/.test(n)){
   message('me',text);window.GeorgePdf.open(state.lastDocument.file).catch(error);return true;
@@ -661,17 +693,17 @@ function handleLocalIntent(text,source,id){
  if(control){message('me',text);state.chatQueue=state.chatQueue.catch(()=>{}).then(()=>controlProposal(control,text,id)).catch(error);return true;}
  if(/^(?:copi[ae]|compartilh[ae]) (?:a |essa |esta )?(?:ultima |essa |esta )?(?:mensagem|resposta|balao)/.test(n)){const row=[...chat.querySelectorAll('.msg.george')].pop();row?.querySelector('.bubble-tools>button')?.click();notice('Use Copiar ou Compartilhar na mensagem selecionada.');return true;}
  const isDoc=/\b(pdf|documento|ata|conversas)\b/.test(n)&&/\b(ger[ae]\w*|refa[cz]\w*|regen\w*|unific\w*|junt\w*|compartilh\w*|export\w*)\b/.test(n);
- if(isDoc&&!window.GeorgeAgendaReport?.matches?.(text,state.activeModule)){
+ if(isDoc&&!window.GeorgeAgendaReport?.matches?.(text,state.activeModule)&&!agendaReportIntent(text)){
   if(/agenda semanal|visao cliente|cronograma/.test(n)){return false;}
   message('me',text);const record=state.recording?.id||state.record;
-  state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{try{await state.logQueue;
+  state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const indicator=notice('Pedido recebido • preparando o PDF…');const operation=window.GeorgeAgendaExperience?.operation('Gerando PDF','Reunindo as fontes da conversa…');try{await state.logQueue;
     let ids=[record],last=0;
     if(/ultim[ao]s? (tres|3) conversas/.test(n)){const list=await request('conversation_list',{kind:'conversation',limit:3});ids=list.records.filter(x=>x.turn_count>0).map(x=>x.id);if(ids.length<3)throw new Error('Encontrei '+ids.length+' conversa(s) salva(s). Selecione as conversas pelo botão Conversas e documentos.');}else if(/ultim[ao]s? (tres|3) (mensagens|respostas)/.test(n))last=3;
     if(/unific|junt/.test(n)){const current=await request('record',{record_id:record});const docs=(current.documents||[]).slice(-2);const attachments=docs.length===2?docs:(current.attachments||[]).slice(-2);if(attachments.length<2)throw new Error('Preciso de duas partes vinculadas à conversa para unificar. Anexe as partes ou indique os registros.');ids=attachments.map(x=>x.id);}
-    const result=await request('document_create',{record_id:record,source_ids:ids,last_turns:last,title:state.recording?'Ata parcial da reunião':'Documento George',format:/\bata\b/.test(n)?'minutes':'document',event_id:id});
+    operation?.update('Gerando PDF','Processando o documento…',55);const result=await request('document_create',{record_id:record,source_ids:ids,last_turns:last,title:state.recording?'Ata parcial da reunião':'Documento George',format:/\bata\b/.test(n)?'minutes':'document',event_id:id});
     const ready=await processJob(result.record_id);
     if(state.recording)notice(ready?'PDF parcial pronto. A reunião continua gravando.':'A reunião continua gravando. Retome o documento pelo botão da mensagem.');
-   }catch(e){error(e);}});return true;
+   }catch(e){error(e);notice('O pedido de PDF ficou preservado. Tente novamente quando a conexão estiver estável.');}finally{indicator.remove();operation?.close();}});return true;
  }
  return false;
 }
@@ -707,7 +739,7 @@ $('closePhoto').onclick=()=>{if(state.upload)return;clearPhoto();$('photoDialog'
 
 // Presentation only: requests, permissions and operational actions remain unchanged.
 function toolIcon(kind){
- const paths={documents:'M8 3h8l4 4v14H8z M16 3v5h4 M4 7v14 M11 12h6 M11 16h6',new:'M12 5v14 M5 12h14',pause:'M9 5v14 M15 5v14',files:'M3 7h7l2-3h9v16H3z'};
+ const paths={documents:'M8 3h8l4 4v14H8z M16 3v5h4 M4 7v14 M11 12h6 M11 16h6',new:'M12 5v14 M5 12h14',pause:'M9 5v14 M15 5v14',files:'M3 7h7l2-3h9v16H3z',database:'M4 6c0-2 4-3 8-3s8 1 8 3-4 3-8 3-8-1-8-3zm0 0v6c0 2 4 3 8 3s8-1 8-3V6m-16 6v6c0 2 4 3 8 3s8-1 8-3v-6'};
  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[kind]||paths.documents);svg.append(path);return svg;
 }
@@ -750,7 +782,7 @@ function setupConversationTools(){
  setOpen(false);
 }
 function decorateConversationTools(){
- for(const [id,kind] of [['documentSources','documents'],['newConversation','new'],['stopGeorge','pause'],['mediaQueueButton','files']]){
+ for(const [id,kind] of [['documentSources','documents'],['newConversation','new'],['stopGeorge','pause'],['mediaQueueButton','files'],['validateAgendaDatabase','database']]){
   const button=$(id);if(!button||button.dataset.toolStyled)return;
   const label=document.createElement('span');label.textContent=button.textContent;button.replaceChildren(toolIcon(kind),label);button.classList.add('tool-option');button.dataset.toolStyled='true';
  }
@@ -821,19 +853,66 @@ async function showMediaQueue(){
   if(pending.length){const clear=smallButton('Limpar fila ('+pending.length+')',()=>change(pending.map(x=>x.record_id),'cancel').catch(sheet.showError));footer.append(clear);footer.hidden=false;}
  }catch(e){list.replaceChildren();sheet.showError(e);}
 }
+async function validateAgendaDatabase(){
+ if(!requireAuth()||!state.user?.admin||document.querySelector('.database-validator[open]'))return;
+ const sheet=createToolsSheet('database-validator','Validar Banco V2','Validação controlada da Agenda do Dia para a empresa ativa.');
+ const {dlg,list,footer}=sheet;list.replaceChildren();
+ const log=document.createElement('pre');log.className='diagnostic';list.append(log);
+ const companyId=Number(state.user.company_id);let busy=false;
+ const show=(title,value)=>{log.textContent+=(log.textContent?'\n\n':'')+title+'\n'+(typeof value==='string'?value:JSON.stringify(value,null,2));list.scrollTop=list.scrollHeight;};
+ const fail=e=>{show('FALHA SEGURA',e.message||String(e));sheet.showError(e);};
+ const finish=health=>{footer.replaceChildren();const close=smallButton('Fechar',sheet.close);footer.append(close);footer.hidden=false;show('BANCO V2 ATIVO E VERIFICADO',health.persistence);};
+ const activate=async()=>{
+  if(busy)return;busy=true;footer.querySelectorAll('button').forEach(b=>b.disabled=true);sheet.clearError();
+  try{
+   const activated=await request('agenda_activate_sql',{company_id:companyId});show('ATIVAÇÃO',activated);
+   const health=await request('health');
+   if(health.persistence?.operational!=='BANCO_V2'||health.persistence?.dual_write_verified!==true)throw new Error('A ativação não passou na verificação final. Nenhuma operação deve ser homologada ainda.');
+   finish(health);
+  }catch(e){fail(e);footer.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}
+ };
+ const previewAndCommit=async()=>{
+  if(busy)return;busy=true;footer.querySelectorAll('button').forEach(b=>b.disabled=true);sheet.clearError();
+  try{
+   const installed=await request('agenda_install',{company_id:companyId});show('ESTRUTURA INSTALADA',installed);
+   const preview=await request('agenda_bootstrap_preview');show('PRÉVIA DO RASCUNHO',preview);
+   footer.replaceChildren();
+   if(preview.already_initialized){
+    const activateButton=smallButton('Ativar banco já importado',()=>{if(confirm('Ativar o Banco V2 já importado para esta empresa?'))activate();});activateButton.classList.add('primary');footer.append(activateButton);
+   }else{
+    const summary=`Data: ${preview.data}\nColaboradores: ${preview.people}\nAtividades: ${preview.items}`;
+    const commit=smallButton('Importar, conferir e ativar',async()=>{
+     if(!confirm('Importar exatamente esta prévia no Banco V2?\n\n'+summary+'\n\nO arquivo original será preservado para recuperação.'))return;
+     busy=true;commit.disabled=true;sheet.clearError();
+     try{const result=await request('agenda_bootstrap_commit',{company_id:companyId,sha256:preview.source_sha256});show('IMPORTAÇÃO VERIFICADA',result);if(!result.verified)throw new Error('A importação não retornou verificação positiva.');busy=false;await activate();}
+     catch(e){fail(e);commit.disabled=false;}finally{busy=false;}
+    });commit.classList.add('primary');footer.append(commit);
+   }
+   footer.append(smallButton('Cancelar',sheet.close));footer.hidden=false;
+  }catch(e){fail(e);footer.querySelectorAll('button').forEach(b=>b.disabled=false);}finally{busy=false;}
+ };
+ try{
+  show('1. CONFERÊNCIA DO SCHEMA','Consultando sem alterar dados…');
+  const check=await request('agenda_install_check');show('DIAGNÓSTICO',check.diagnostic);
+  if(!check.diagnostic?.ok)throw new Error('O schema atual é incompatível. Corrija somente os campos indicados no diagnóstico e execute novamente. Nada foi alterado.');
+  const proceed=smallButton('Instalar e gerar prévia',()=>{if(confirm('O diagnóstico passou. Instalar apenas as tabelas auxiliares e gerar a prévia de importação?'))previewAndCommit();});proceed.classList.add('primary');footer.append(proceed,smallButton('Cancelar',sheet.close));footer.hidden=false;
+ }catch(e){fail(e);footer.replaceChildren(smallButton('Fechar',sheet.close));footer.hidden=false;}
+}
 async function initialize(){
- try{const j=await request('resume');state.record=j.record_id;state.activeModule='geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
+ try{const j=await request('resume');state.record=j.record_id;state.activeModule=j.module||'geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
   if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
-  else message('george','Oi, eu sou o George. No que eu posso ajudar? Me conte com detalhes o que você precisa.');
+  else message('george','E aí, amigão! Como posso te ajudar?');
   if(!$('documentSources')){const sources=smallButton('Conversas e documentos',()=>chooseDocuments().catch(error));sources.id='documentSources';$('conversationTools').append(sources);}
   if(!$('stopGeorge')){const b=smallButton('Pausar fala',()=>voice.stopSpeaking());b.id='stopGeorge';b.setAttribute('aria-label','Pausar somente a fala do George');$('documentSources').after(b);}
   if(!$('mediaQueueButton')){const b=smallButton('Fila de arquivos',()=>showMediaQueue().catch(error));b.id='mediaQueueButton';$('conversationTools').append(b);}
+  if(state.user?.admin&&!$('validateAgendaDatabase')){const b=smallButton('Validar Banco V2',()=>validateAgendaDatabase().catch(error));b.id='validateAgendaDatabase';$('conversationTools').append(b);}
+  if(!state.user?.admin)$('validateAgendaDatabase')?.remove();
   if(!$('newConversation')){const b=smallButton('Nova conversa',async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou envio antes de iniciar outra conversa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();await request('conversation_new');await initialize();}catch(e){error(e);}});b.id='newConversation';$('documentSources').after(b);}
   try{const companies=await request('companies');let chooser=$('companyChooser');if(!chooser){chooser=document.createElement('select');chooser.id='companyChooser';chooser.setAttribute('aria-label','Empresa ativa');$('documentSources').after(chooser);}chooser.replaceChildren();for(const c of companies.companies){const option=document.createElement('option');option.value=c.empresa_id;option.textContent=c.empresa_nome;chooser.append(option);}chooser.value=String(companies.current);chooser.hidden=companies.companies.length<2;chooser.onchange=async()=>{try{if(state.recording||state.pendingCapture||state.finalizing||state.upload)throw new Error('Conclua a captura ou o envio antes de trocar de empresa.');await state.chatQueue;await state.logQueue;await saveDraft();voice.pause();const j=await request('company_select',{company_id:Number(chooser.value)});state.user=j.user;await initialize();}catch(e){chooser.value=String(state.user.company_id);error(e);}};}catch(e){}
   decorateConversationTools();
   const h=await request('health');state.caps=h.media;$('onlineText').textContent='conectado';
-  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf4-ata-direta'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
+ if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf7-video-validacao'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
   for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
   for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
@@ -841,5 +920,5 @@ async function initialize(){
  }catch(e){error(e);}
 }
 setupConversationTools();
-(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());const standalone=window.matchMedia?.('(display-mode: standalone)').matches||window.navigator.standalone===true;if(await authenticate(standalone))await initialize();}catch(e){error(e);}})();
+(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());if(await authenticate(false))await initialize();}catch(e){error(e);}})();
 })();
