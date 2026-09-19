@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-hf17-contexto-agenda-v1';
+const CACHE='erp-impar-george-hf18-regressao-validada';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',
