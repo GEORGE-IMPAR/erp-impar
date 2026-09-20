@@ -38,7 +38,7 @@ for _ in {1..40}; do curl -sS "$BASE/api.php" >/dev/null 2>&1 && break || sleep 
 request_json() {
   local name="$1" body="$2" csrf="${3:-}"
   local headers="$TMP_DIR/$name.headers" response="$TMP_DIR/$name.json"
-  local args=(-sS -D "$headers" -o "$response" -c "$COOKIE_JAR" -b "$COOKIE_JAR" -H 'Content-Type: application/json')
+  local args=(-sS -D "$headers" -o "$response" -c "$COOKIE_JAR" -b "$COOKIE_JAR" -H 'Content-Type: application/json' -H 'X-Forwarded-Proto: https')
   if [[ -n "$csrf" ]]; then args+=(-H "X-George-CSRF: $csrf"); fi
   curl "${args[@]}" --data "$body" "$BASE/api.php"
   grep -Eiq '^Content-Type: application/json' "$headers" || { echo "$name: Content-Type inválido"; cat "$headers"; cat "$response"; exit 1; }
