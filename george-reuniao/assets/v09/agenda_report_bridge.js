@@ -13,6 +13,7 @@ function matches(text,module=''){
    .replace(/^(?:(?:ei|oi|ola|por favor|ta|ok|entao)[, .!]* )?(?:george|jorge)[, :.!]*/,'')
    .replace(/[, :.!]*(?:george|jorge)[, .!?]*$/,'')
    .replace(/[.!?]+$/,'').trim();
+ if(/\b(por que|porque|motivo|erro|falhou|falha|problema|nao conseguiu|nao consegue)\b/.test(command)&&/\b(pdf|relatorio)\b/.test(command))return false;
  const share='(?:compartilha|compartilhar|compartilhe|envia|enviar|envie)';
  const open='(?:gera|gerar|gere|abre|abrir|abra|baixa|baixar|baixe|imprime|imprimir|imprima)';
  const polite='(?:(?:pode|por favor|quero que voce) )?';
@@ -41,9 +42,13 @@ function fromAgenda(response){
  const productive=rows.filter(row=>row.status==='Ativa'),people=new Set(productive.map(row=>norm(row.colaborador)).filter(Boolean)),works=new Set(productive.map(row=>norm(row.obra)).filter(Boolean));
  return {title:'Relatório da Agenda do Dia',filename:`agenda_do_dia_${date}`,format:'pdf',summary:{periodo:{inicio:date,fim:date},horas:productive.reduce((total,row)=>total+Number(row.horas||0),0),colaboradores:people.size,obras:works.size,atividades:rows.length,regra:'8 horas por colaborador/dia, divididas igualmente entre as atividades produtivas válidas'},never_allocated:[],rows,source:response?.source||'Fonte operacional da Agenda do Dia'};
 }
-function loadLogo(){return new Promise(resolve=>{const image=new Image();let done=false;const finish=value=>{if(!done){done=true;resolve(value);}};image.onload=()=>finish(image);image.onerror=()=>finish(null);image.src=LOGO_URL;setTimeout(()=>finish(null),4000);});}
+async function loadLogo(){
+ let objectUrl='';
+ try{const response=await fetch(LOGO_URL,{credentials:'same-origin',cache:'force-cache'});if(!response.ok)return null;objectUrl=URL.createObjectURL(await response.blob());return await new Promise(resolve=>{const image=new Image();let done=false;const finish=value=>{if(done)return;done=true;if(objectUrl)URL.revokeObjectURL(objectUrl);resolve(value);};image.onload=()=>finish(image);image.onerror=()=>finish(null);image.src=objectUrl;setTimeout(()=>finish(null),4000);});}
+ catch(e){if(objectUrl)URL.revokeObjectURL(objectUrl);return null;}
+}
 function wrap(ctx,text,maxWidth){const words=clean(text).split(' ').filter(Boolean),lines=[];let line='';for(const word of words){const trial=line?line+' '+word:word;if(line&&ctx.measureText(trial).width>maxWidth){lines.push(line);line=word;}else line=trial;}if(line)lines.push(line);return lines.length?lines:['—'];}
-function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}}
+function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();if(typeof ctx.roundRect==='function')ctx.roundRect(x,y,w,h,r);else{const radius=Math.min(r,w/2,h/2);ctx.moveTo(x+radius,y);ctx.lineTo(x+w-radius,y);ctx.quadraticCurveTo(x+w,y,x+w,y+radius);ctx.lineTo(x+w,y+h-radius);ctx.quadraticCurveTo(x+w,y+h,x+w-radius,y+h);ctx.lineTo(x+radius,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-radius);ctx.lineTo(x,y+radius);ctx.quadraticCurveTo(x,y,x+radius,y);}if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}}
 function drawText(ctx,text,x,y,options={}){ctx.font=options.font||'26px Arial';ctx.fillStyle=options.color||'#173550';ctx.textAlign=options.align||'left';ctx.textBaseline='top';const lines=wrap(ctx,text,options.width||900),height=options.lineHeight||34;lines.forEach((line,index)=>ctx.fillText(line,x,y+index*height));return y+lines.length*height;}
 function dataUrlBytes(url){const binary=atob(url.slice(url.indexOf(',')+1)),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes;}
 function jpegPdf(images){

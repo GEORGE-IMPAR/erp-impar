@@ -5,7 +5,7 @@
 const BASE='https://api.erpimpar.com.br/george-reuniao/v09/';
 const API=BASE+'api.php';
 const $=id=>document.getElementById(id);
-const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastOutput:null};
+const state={csrf:'',user:null,record:null,mode:'text',busy:false,recording:null,auth:false,upload:false,jobRunning:new Set(),logQueue:Promise.resolve(),chatQueue:Promise.resolve(),caps:null,activeModule:'geral',lastDocument:null,lastAnalytics:null,lastAgendaReport:null,lastAgendaReportError:'',lastOutput:null,lastWakeAt:0};
 const chat=$('chat'),input=$('manual'),anchor=$('typingAnchor');
 const now=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 const eventId=()=>crypto.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -65,7 +65,7 @@ async function authenticate(forceLogin=false){
 }
 $('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();const btn=$('loginSubmit');btn.disabled=true;
- try{const j=await request('login',{email:$('loginEmail').value,password:$('loginPassword').value});$('loginPassword').value='';state.csrf=j.csrf;state.user=j.user;state.auth=true;$('loginDialog').close();await initialize();}
+ try{const j=await request('login',{email:$('loginEmail').value,password:$('loginPassword').value});$('loginPassword').value='';state.csrf=j.csrf;state.user=j.user;state.auth=true;$('loginDialog').close();await initialize({newConversation:true});}
  catch(e){$('loginInfo').textContent=e.message;}finally{btn.disabled=false;}
 });
 $('loginClose').onclick=()=>{location.replace('/menu_novo.html');};
@@ -219,6 +219,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
        if(!response?.verified||!Array.isArray(response.atividades))throw new Error('A Agenda do Dia oficial não retornou uma base verificada. Nenhum PDF foi anunciado como pronto.');
        const payload=window.GeorgeAgendaReport.fromAgenda(response);
        const result=await window.GeorgeAgendaReport.build(text,payload,{onStage:stage=>{indicator.textContent=stage;operation?.update('Relatório da Agenda do Dia',stage,null);}});
+       state.lastAgendaReport=result;state.lastAgendaReportError='';state.lastOutput='agenda_pdf';
        indicator.remove();
        const reply=result.wants_share
          ? `PDF da Agenda do Dia de ${result.date_br} gerado e aberto. Use Compartilhar PDF no visualizador para escolher o aplicativo.`
@@ -236,6 +237,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
      }catch(e){
        indicator.remove();
        console.error('Agenda PDF',e);
+       state.lastAgendaReport=null;state.lastAgendaReportError=e?.message||'Falha ao montar o arquivo.';state.lastOutput='agenda_pdf_error';
        const reply='Não consegui montar o PDF da Agenda do Dia agora. Seu pedido continua preservado; tente novamente sem repetir as informações.';
        const m=message('george',reply,'RELATÓRIO DA AGENDA');
        m.row.dataset.sources='Fonte operacional da Agenda do Dia';
@@ -272,6 +274,7 @@ function normalizeGeorgeCall(text){
 function agendaReportIntent(text){
  if(state.activeModule!=='agenda_dia'||state.recording)return false;
  const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ');
+ if(/\b(por que|porque|motivo|erro|falhou|falha|problema|nao conseguiu|nao consegue)\b/.test(n)&&/\b(pdf|relatorio)\b/.test(n))return false;
  const report=/\b(relatorio|pdf)\b/.test(n)&&/\b(gera|gerar|gere|monte|montar|crie|criar|quero|preciso|arquivo|compartilha|compartilhar|baixa|baixar|imprime|imprimir|exporta|exportar)\b/.test(n);
  const another=/\b(semana|semanal|cronograma|erros?|problemas?|conversas?|reuniao|ata)\b/.test(n);
  return report&&!another;
@@ -666,7 +669,17 @@ async function controlProposal(control,text,id=eventId()){
 }
 async function grantProposal(){return controlProposal('grant','Pode falar');}
 function handlePauseInterruption(text,source,id){
- voice.stopSpeaking();message('me',text);
+ voice.stopSpeaking();
+ const bareWake=/^(?:(?:ei|oi|ola|opa)[, .:;-]*)?(?:george|jorge)[, .:;!?-]*$/i.test(String(text||'').trim());
+ if(bareWake){
+  const nowWake=Date.now();
+  showStatus('Tô aqui • pode falar','audio');input.placeholder='Pode falar. George está ouvindo…';
+  if(nowWake-state.lastWakeAt>5000&&!state.busy&&!state.recording?.stopping)voice.speak('Tô aqui. Pode falar.').catch(()=>{});
+  state.lastWakeAt=nowWake;
+  setTimeout(()=>{input.placeholder='Fale ou digite para o GEORGE';normalStatus();},5000);
+  return true;
+ }
+ message('me',text);
  if(state.recording?.mode==='meeting'&&meetingProposal){
   state.chatQueue=state.chatQueue.catch(()=>{}).then(()=>controlProposal('defer',text,id)).catch(error);return true;
  }
@@ -681,6 +694,11 @@ function handleLocalIntent(text,source,id){
  if(stopSpeechIntent(text)){return handlePauseInterruption(text,source,id);}
  if((voice.pausedSpeech||voice.lastSpeech)&&continueSpeechIntent(text)){const pending=voice.pausedSpeech||voice.lastSpeech;voice.pausedSpeech=null;message('me',text);voice.speak(pending,true);return true;}
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge)[, :.!]*/,'').trim();
+ if(!state.recording&&/\b(por que|porque|motivo|erro|falhou|falha|problema|nao conseguiu|nao consegue)\b/.test(n)&&/\b(pdf|relatorio)\b/.test(n)&&state.lastOutput==='agenda_pdf_error'){
+  message('me',text);const detail=state.lastAgendaReportError?` Detalhe técnico: ${state.lastAgendaReportError}`:'';
+  const reply='O PDF novo não foi criado. A leitura da Agenda funcionou, mas a montagem do arquivo falhou; por isso não vou abrir nem anunciar um documento antigo como se fosse o relatório pedido.'+detail;
+  message('george',reply,'RELATÓRIO DA AGENDA');state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{await logDirectTurn(state.record,'user',text,id);await logDirectTurn(state.record,'assistant',reply,eventId());if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}).catch(error);return true;
+ }
  if((state.recording?.mode==='meeting'||state.pendingCapture||state.finalizing)&&meetingEndIntent(text)){
   if(!state.finalizing){message('me',text);voice.stopSpeaking(false);endCapture().catch(error);}return true;
  }
@@ -898,8 +916,10 @@ async function validateAgendaDatabase(){
   const proceed=smallButton('Instalar e gerar prévia',()=>{if(confirm('O diagnóstico passou. Instalar apenas as tabelas auxiliares e gerar a prévia de importação?'))previewAndCommit();});proceed.classList.add('primary');footer.append(proceed,smallButton('Cancelar',sheet.close));footer.hidden=false;
  }catch(e){fail(e);footer.replaceChildren(smallButton('Fechar',sheet.close));footer.hidden=false;}
 }
-async function initialize(){
- try{const j=await request('resume');state.record=j.record_id;state.activeModule=j.module||'geral';state.lastDocument=null;state.lastAnalytics=null;state.lastOutput=null;input.value=j.draft||'';autosize();
+async function initialize(options={}){
+ try{
+  if(options.newConversation)await request('conversation_new');
+  const j=await request('resume');state.record=j.record_id;state.activeModule=j.module||'geral';state.lastDocument=null;state.lastAnalytics=null;state.lastAgendaReport=null;state.lastAgendaReportError='';state.lastOutput=null;input.value=j.draft||'';autosize();
   [...chat.querySelectorAll('.msg,.system')].forEach(n=>n.remove());
   if(j.turns.length)j.turns.forEach(t=>message(t.role==='user'?'me':'george',t.text,'GEORGE',t.at?new Date(t.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):now()));
   else message('george','E aí, amigão! Como posso te ajudar?');
@@ -915,10 +935,9 @@ async function initialize(){
  if(new URLSearchParams(location.search).has('diagnostico')){const n=message('george','Diagnóstico de instalação','DIAGNÓSTICO');const pre=document.createElement('pre');pre.className='diagnostic';pre.textContent=JSON.stringify({...h,frontend_version:'0.9.8-rc3-hf7-video-validacao'},null,2);n.bubble.append(pre);state.mode='text';normalStatus();return;}
   window.GeorgeAgendaExperience?.sync(j.jobs||[],(id,card)=>processJob(id,{mediaCard:card}));
   for(const item of (j.jobs||[]).filter(item=>item.state==='ready')){const card=window.GeorgeAgendaExperience?.get(item.record_id);if(card&&['image','video'].includes(card.kind))mediaOriginalActions(item.record_id,card,item);}
-  for(const item of (j.jobs||[]).filter(x=>!['cancelled','deleted'].includes(x.state)).slice(0,4)){if(item.state==='ready'){const m=message('george','Documento disponível: '+item.name,'ARQUIVO');reportActions(item.record_id,m.bubble);}else if(item.state!=='uploading'){const m=message('george','Há um processamento preservado: '+item.name,'ARQUIVO');m.bubble.append(smallButton('Retomar processamento',()=>processJob(item.record_id,{mediaCard:window.GeorgeAgendaExperience?.get(item.record_id)})));}}
-  state.mode='text';setActive('');normalStatus();
+  state.mode='text';setActive('');normalStatus();followChat=true;scroll(true);
  }catch(e){error(e);}
 }
 setupConversationTools();
-(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());if(await authenticate(false))await initialize();}catch(e){error(e);}})();
+(async()=>{try{setActive('');await (window.GeorgePwaSplashReady||Promise.resolve());if(await authenticate(false))await initialize({newConversation:true});}catch(e){error(e);}})();
 })();
