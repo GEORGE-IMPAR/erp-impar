@@ -107,15 +107,22 @@ $run('AD-003',function()use($user):void{
 
 $run('AD-004',function()use($user):void{
     $before=\GeorgeV09\agendaRead($user);
+    $beforeHistoryNames=array_values(array_map('strval',array_column($before['historicos'],'data')));
+    echo 'AD-004 históricos antes: '.count($beforeHistoryNames).' ['.implode(', ',$beforeHistoryNames)."]\n";
     $result=executeAgenda($user,[
         'company_id'=>1,'event_id'=>'ad-004-checkpoint','data'=>'2026-09-21','operation'=>'checkpoint','steps'=>[]
     ]);
     expectSame('2026-09-21',$result['data'],'Checkpoint não deve navegar para outro dia.');
     expectSame(null,$result['finalized_date'],'Checkpoint não deve finalizar o dia.');
     $after=\GeorgeV09\agendaRead($user);
+    $afterHistoryNames=array_values(array_map('strval',array_column($after['historicos'],'data')));
+    echo 'AD-004 históricos depois: '.count($afterHistoryNames).' ['.implode(', ',$afterHistoryNames)."]\n";
     expectSame($before['data'],$after['data'],'Checkpoint não deve alterar a data ativa.');
     expectSame($before['atividades'],$after['atividades'],'Checkpoint não deve alterar as atividades.');
-    expect(count($after['historicos'])===0,'Checkpoint não deve criar histórico.');
+    expectSame(count($beforeHistoryNames),count($afterHistoryNames),'Checkpoint não deve alterar a quantidade de históricos.');
+    expectSame($beforeHistoryNames,$afterHistoryNames,'Checkpoint não deve alterar a lista de históricos.');
+    expect(in_array('2026-09-18',$afterHistoryNames,true),'O histórico 2026-09-18 criado pelo AD-001 deve permanecer.');
+    expect(!in_array('2026-09-21',$afterHistoryNames,true),'Checkpoint não deve criar histórico para 2026-09-21.');
 });
 
 $run('AD-005',function()use($user):void{
