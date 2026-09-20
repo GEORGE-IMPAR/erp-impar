@@ -5,8 +5,9 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend-ci"
 API_DIR="$BACKEND_DIR/v09"
 PORT="${GEORGE_TEST_PORT:-18099}"
-BASE="http://127.0.0.1:${PORT}"
+BASE="http://127.0.0.1:${PORT}/george-reuniao/v09"
 TMP_DIR="$(mktemp -d)"
+TEST_DOCROOT="$TMP_DIR/www"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 SERVER_LOG="$TMP_DIR/php-server.log"
 SERVER_PID=''
@@ -30,8 +31,9 @@ return [
   'allowed_origins' => ['http://127.0.0.1:$PORT'],
 ];
 PHP
-
-php -S "127.0.0.1:$PORT" -t "$API_DIR" >"$SERVER_LOG" 2>&1 &
+mkdir -p "$TEST_DOCROOT/george-reuniao"
+ln -s "$API_DIR" "$TEST_DOCROOT/george-reuniao/v09"
+php -S "127.0.0.1:$PORT" -t "$TEST_DOCROOT" >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 for _ in {1..40}; do curl -sS "$BASE/api.php" >/dev/null 2>&1 && break || sleep 0.1; done
 
