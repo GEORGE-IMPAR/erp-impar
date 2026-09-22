@@ -1,4 +1,4 @@
-const CACHE='erp-impar-george-hf19-homologacao-20260920';
+const CACHE='erp-impar-george-hf21-george-regression-20260922';
 const SHELL=[
   './george_v09.html',
   './manifest.webmanifest',

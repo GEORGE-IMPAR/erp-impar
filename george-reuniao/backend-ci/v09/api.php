@@ -99,11 +99,17 @@ try{
     if($action==='document_works')out(GeorgeV09\worksForRecord($u,$id));
     if($action==='works_read')out(GeorgeV09\worksRead($u,$in));
     if($action==='agenda_read')out(GeorgeV09\agendaRead($u,$in['data']??null));
+    // Read-only view used by conversational reports. It must use the same
+    // operational source as consultar_agenda, without invoking write-domain
+    // normalization on legacy drafts.
+    if($action==='agenda_live_read')out(GeorgeV09\liveAgenda($u,$in['data']??null));
     if($action==='agenda_execute')out(GeorgeV09\agendaExecute($u,$in));
     if($action==='agenda_catalog'){permission($u,'atividades');out(['ok'=>true,'data'=>['colaboradores'=>GeorgeV09\agendaCatalog($u)]]);}
     if($action==='agenda_rules')out(GeorgeV09\agendaRules($u));
     if($action==='agenda_rule_save')out(GeorgeV09\agendaRuleSave($u,$in));
     if($action==='meeting_control')out(GeorgeV09\meetingControl($u,$in));
+    if($action==='meeting_close_review')out(GeorgeV09\meetingCloseReview($u,$in));
+    if($action==='meeting_close_confirm')out(GeorgeV09\meetingCloseConfirm($u,$in));
     if($action==='conversation_list')out(GeorgeV09\conversationList($u,$in));
     if($action==='document_create')out(GeorgeV09\documentCreate($u,$in));
     if($action==='derived_reset')out(GeorgeV09\derivedReset($u,$in));

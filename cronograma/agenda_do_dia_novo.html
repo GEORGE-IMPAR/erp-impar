@@ -10164,7 +10164,24 @@ window.__AGENDA_DIA_VERSION__="3.3.10-hf6-interacoes-checkpoint";
   async function loadCatalog(){const j=await window.AgendaDiaClient.catalog();return j.data.colaboradores;}
   let selectedLinks=new Set(),catalogRows=[];
   async function openPeople(){
-    try{await window.AgendaDiaClient.flush();catalogRows=await loadCatalog();selectedLinks=new Set(peopleNow().map(p=>Number(p.colaborador_id)));renderPeopleChoices();document.getElementById("peopleModal")?.classList.add("open");}
+    try{
+      const client=window.AgendaDiaClient;
+      if(!client||typeof client.flush!=="function"||typeof client.catalog!=="function"){
+        // A gestão local de colaboradores continua disponível mesmo quando o
+        // cliente integrado não foi carregado (por exemplo, pacote incompleto
+        // ou cache antigo). Não deixa o botão principal quebrar com `.flush`.
+        if(typeof window.renderPeopleModal==="function")window.renderPeopleModal();
+        else if(typeof renderPeopleModal==="function")renderPeopleModal();
+        document.getElementById("peopleModal")?.classList.add("open");
+        showToast?.(
+          "warning",
+          "Colaboradores em modo local",
+          "A integração não carregou. A lista atual foi aberta sem consultar o cadastro central."
+        );
+        return;
+      }
+      await client.flush();catalogRows=await loadCatalog();selectedLinks=new Set(peopleNow().map(p=>Number(p.colaborador_id)));renderPeopleChoices();document.getElementById("peopleModal")?.classList.add("open");
+    }
     catch(e){showToast?.("error","Colaboradores",e.message);}
   }
   function renderPeopleChoices(){

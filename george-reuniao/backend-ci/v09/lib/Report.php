@@ -88,7 +88,7 @@ function reportStep(array $r,array $u):array {
     }
     if($r['job_state']==='summarizing'){
         $i=count($r['report_parts']);
-        $meta=['arquivo'=>$r['meta']['name']??'Reunião','data_informada_pelo_usuario'=>$r['meta']['meeting_date']??'', 'parte'=>($i+1),'total_partes'=>count($r['report_inputs'])];
+        $meta=['arquivo'=>$r['meta']['name']??'Reunião','data_informada_pelo_usuario'=>$r['meta']['meeting_date']??'','conferencia_fechamento'=>$r['meta']['closing_review']??null,'parte'=>($i+1),'total_partes'=>count($r['report_inputs'])];
         $file='report_part_'.$i.'.json';
         $part=is_file($dir.'/'.$file)?validateReport(readJson($dir.'/'.$file)):reportFromSource((string)file_get_contents($dir.'/'.$r['report_inputs'][$i]),$meta);
         atomic($dir.'/'.$file,encode($part));$r['report_parts'][]=$file;

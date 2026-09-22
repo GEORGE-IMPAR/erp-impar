@@ -1,0 +1,81 @@
+name: ERP Complete Regression
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  production-contract:
+    name: Contrato completo do ERP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rotas, módulos e integrações publicadas
+        run: |
+          node tests/erp_production_contract.test.mjs
+          node tests/erp_business_rules_contract.test.mjs
+          node tests/erp_static_integrity.test.mjs
+      - name: Regressão JavaScript do George e Agenda
+        run: |
+          node --check george-reuniao/assets/v09/app.js
+          node --check george-reuniao/assets/v09/agenda_report_bridge.js
+          node --check cronograma/agenda_client_v2.js
+          node --check cronograma/agenda_interacoes.js
+          node george-reuniao/tests/agenda_george_contract.test.mjs
+          node george-reuniao/tests/agenda_report_pdf_regression.test.mjs
+          node george-reuniao/tests/meeting_question_control_regression.test.js
+          node cronograma/testes/agenda-dia-ui-contract.test.mjs
+          node cronograma/testes/agenda-client-v2.test.mjs
+      - name: Navegador isolado, sem acesso à produção
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install --with-deps chromium
+          node tests/erp_browser_smoke.test.mjs
+      - name: Integridade do repositório
+        run: git diff --check
+
+  george-agenda-backend:
+    name: George e Agenda / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root-ci
+          MYSQL_DATABASE: erp_regression
+          MYSQL_USER: erp_ci
+          MYSQL_PASSWORD: erp-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json, mbstring, pdo, pdo_mysql
+          coverage: none
+      - name: Sintaxe PHP do backend George
+        run: find george-reuniao/backend-ci -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Smoke HTTP e JSON
+        run: bash -x george-reuniao/tests/php_api_smoke.sh
+      - name: Regressão de domínio AD-001 a AD-006
+        run: bash -x george-reuniao/tests/run_agenda_domain_regression.sh
+      - name: Regressão SQL em MySQL isolado
+        env:
+          AGENDA_TEST_DB_DSN: mysql:host=127.0.0.1;port=3306;dbname=erp_regression;charset=utf8mb4
+          AGENDA_TEST_DB_USER: erp_ci
+          AGENDA_TEST_DB_PASSWORD: erp-ci
+        run: bash -x george-reuniao/tests/run_agenda_mysql_regression.sh
