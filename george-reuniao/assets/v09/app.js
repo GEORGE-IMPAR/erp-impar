@@ -215,7 +215,7 @@ function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
      try{
        await state.logQueue;
        await logDirectTurn(record,'user',text,id);
-       const response=await request('agenda_read');
+       const response=await request('agenda_live_read');
        if(!response?.verified||!Array.isArray(response.atividades))throw new Error('A Agenda do Dia oficial não retornou uma base verificada. Nenhum PDF foi anunciado como pronto.');
        const payload=window.GeorgeAgendaReport.fromAgenda(response);
        const result=await window.GeorgeAgendaReport.build(text,payload,{onStage:stage=>{indicator.textContent=stage;operation?.update('Relatório da Agenda do Dia',stage,null);}});
@@ -309,7 +309,24 @@ function meetingCloseConfirmIntent(text){
 
 // The WebRTC connection transcribes and voices validated server answers only.
 // No automatic LLM replies to ambient conversation; the server chat owns context/tools.
-const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,connecting:null,speaking:false,speakDone:null,seen:new Set(),wanted:false,followupUntil:0,
+const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,connecting:null,speaking:false,speakDone:null,seen:new Set(),wanted:false,followupUntil:0,reconnectTimer:null,reconnectAttempt:0,
+ scheduleReconnect(){
+   if(this.reconnectTimer||!this.wanted||(state.mode!=='audio'&&!state.recording))return;
+   const delay=Math.min(8000,1200*Math.pow(2,this.reconnectAttempt++));
+   showStatus('Áudio reconectando automaticamente…','warning');
+   this.reconnectTimer=setTimeout(async()=>{
+    this.reconnectTimer=null;
+    if(!this.wanted||(state.mode!=='audio'&&!state.recording))return;
+    const keepWanted=this.wanted;
+    if(this.dc)this.dc.onclose=null;
+    if(this.pc)this.pc.onconnectionstatechange=null;
+    this.dc?.close();this.pc?.close();this.audio?.pause();
+    this.dc=null;this.pc=null;this.sender=null;this.audio=null;this.live=false;this.connecting=null;
+    this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;this.wanted=keepWanted;
+    try{await this.connect();this.reconnectAttempt=0;this.audio?.play().catch(()=>{});normalStatus();}
+    catch(_){if(this.reconnectAttempt<5&&(state.mode==='audio'||state.recording)){this.wanted=true;this.scheduleReconnect();}else showStatus('Não consegui restabelecer o áudio. Toque em Áudio para tentar novamente.','warning');}
+   },delay);
+ },
  async connect(){
    if(this.connecting)return this.connecting;
    if(this.live&&this.dc?.readyState==='open'&&this.stream?.getAudioTracks().some(t=>t.readyState==='live')&&!['failed','closed','disconnected'].includes(this.pc?.connectionState)){this.wanted=true;await this.resumeTransmit();return;}
@@ -323,9 +340,9 @@ const voice={pc:null,dc:null,stream:null,sender:null,audio:null,live:false,conne
     this.pc.ontrack=e=>{this.audio.srcObject=e.streams[0];this.audio.play().catch(()=>showStatus('Toque em Áudio para liberar a reprodução.','warning'));};
     this.sender=this.pc.addTrack(this.stream.getAudioTracks()[0],this.stream);this.dc=this.pc.createDataChannel('oai-events');
     let resolveOpen,rejectOpen;const open=new Promise((a,b)=>{resolveOpen=a;rejectOpen=b;});open.catch(()=>{});const timer=setTimeout(()=>rejectOpen(new Error('A conexão de voz não foi estabelecida.')),70000);
-    this.dc.onopen=()=>{this.live=true;clearTimeout(timer);resolveOpen();};this.dc.onclose=()=>{this.live=false;this.speaking=false;this.speakDone?.();this.speakDone=null;clearTimeout(timer);rejectOpen(new Error('A sessão de voz foi encerrada. Toque em Áudio para reconectar.'));normalStatus();};
+    this.dc.onopen=()=>{this.live=true;this.reconnectAttempt=0;clearTimeout(timer);resolveOpen();};this.dc.onclose=()=>{const reconnect=this.wanted;this.live=false;this.speaking=false;this.speakDone?.();this.speakDone=null;clearTimeout(timer);rejectOpen(new Error('A sessão de voz foi encerrada.'));if(reconnect)this.scheduleReconnect();else normalStatus();};
     this.dc.onmessage=e=>{try{this.event(JSON.parse(e.data));}catch(err){console.warn('Evento de voz inválido');}};
-    this.pc.onconnectionstatechange=()=>{if(['failed','closed','disconnected'].includes(this.pc?.connectionState)){this.live=false;normalStatus();}};
+    this.pc.onconnectionstatechange=()=>{if(['failed','closed','disconnected'].includes(this.pc?.connectionState)){this.live=false;if(this.wanted)this.scheduleReconnect();else normalStatus();}};
     const offer=await this.pc.createOffer();await this.pc.setLocalDescription(offer);
     const c=new AbortController(),tt=setTimeout(()=>c.abort(),70000);
     try{const r=await fetch(BASE+'realtime.php',{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/sdp','X-George-CSRF':state.csrf},body:offer.sdp,signal:c.signal});const raw=await r.text();if(!r.ok){let msg='Não foi possível ligar a voz.';try{msg=JSON.parse(raw).error||msg;}catch{}throw new Error(msg);}await this.pc.setRemoteDescription({type:'answer',sdp:raw});await open;}
@@ -405,7 +422,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptCommittedAt:new Map(),tr
  trackQueue:Promise.resolve(),
  pauseTransmit(force=false){if(!force&&this.wanted&&(this.speaking||state.recording&&!state.recording.stopping))return this.resumeTransmit();this.trackQueue=this.trackQueue.catch(()=>{}).then(()=>this.sender?.replaceTrack(null));return this.trackQueue.catch(()=>{});},
  resumeTransmit(){this.trackQueue=this.trackQueue.catch(()=>{}).then(async()=>{if(this.wanted&&(this.speaking||state.recording&&!state.recording.stopping||!state.busy&&!state.upload)&&this.stream?.active){const t=this.stream.getAudioTracks()[0];if(t&&t.readyState==='live'){t.enabled=true;await this.sender?.replaceTrack(t);}}});return this.trackQueue.catch(()=>{});},
- pause(){this.wanted=false;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
+ pause(){this.wanted=false;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectAttempt=0;this.stopSpeaking(false);this.pauseTransmit(true);if(!state.recording)this.stream?.getAudioTracks().forEach(t=>{t.enabled=false;});if(this.speaking){try{this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});}catch{}this.speakDone?.();this.speaking=false;}},
  close(){this.pause();clearTimeout(this.transcriptTimer);this.transcriptOrder=[];this.transcriptFinals.clear();this.transcriptCommittedAt.clear();this.dc?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.audio?.pause();this.dc=null;this.pc=null;this.stream=null;this.sender=null;this.live=false;},
 };
 $('btnAudio').onclick=async()=>{
@@ -726,7 +743,7 @@ function handleLocalIntent(text,source,id){
  if(stopSpeechIntent(text)){return handlePauseInterruption(text,source,id);}
  if((voice.pausedSpeech||voice.lastSpeech)&&continueSpeechIntent(text)){const pending=voice.pausedSpeech||voice.lastSpeech;voice.pausedSpeech=null;message('me',text);voice.speak(pending,true);return true;}
  const n=normalized(text).replace(/^(?:(?:ei|oi|ola|por favor)[, .!]* )?(?:george|jorge)[, :.!]*/,'').trim();
- if(!state.recording&&/\b(por que|porque|motivo|erro|falhou|falha|problema|nao conseguiu|nao consegue)\b/.test(n)&&/\b(pdf|relatorio)\b/.test(n)&&state.lastOutput==='agenda_pdf_error'){
+ if(!state.recording&&state.lastOutput==='agenda_pdf_error'&&(/\b(pdf|relatorio)\b/.test(n)||/^(?:por que|porque|qual (?:foi |e )?o (?:motivo|erro|problema)|o que aconteceu|e agora|e ai|tem detalhes)(?: disso)?$/.test(n))&&/\b(por que|porque|motivo|erro|falhou|falha|problema|nao conseguiu|nao consegue|aconteceu|agora|detalhes|e ai)\b/.test(n)){
   message('me',text);const detail=state.lastAgendaReportError?` Detalhe técnico: ${state.lastAgendaReportError}`:'';
   const reply='O PDF novo não foi criado. A leitura da Agenda funcionou, mas a montagem do arquivo falhou; por isso não vou abrir nem anunciar um documento antigo como se fosse o relatório pedido.'+detail;
   message('george',reply,'RELATÓRIO DA AGENDA');state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{await logDirectTurn(state.record,'user',text,id);await logDirectTurn(state.record,'assistant',reply,eventId());if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}).catch(error);return true;
