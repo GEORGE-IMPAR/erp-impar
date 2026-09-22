@@ -11,7 +11,7 @@ function cfg(): array {
     $path=root().'/config.local.php';
     if(!is_file($path))$path=root().'/config.example.php';
     $old=is_file($path)?require $path:[];
-    $c=array_merge(is_array($old)?$old:[],[
+    $defaults=[
         'version'=>'0.9.8-rc3-hf7','storage_dir'=>root().'/storage/v09',
         'agenda_backend'=>'json', 'company_id'=>1,'company_code'=>'IMPAR_CLIMATIZACAO',
         'company_name'=>'ÍMPAR Climatização e Sistemas',
@@ -24,7 +24,8 @@ function cfg(): array {
         'max_transcript_chars_per_report_part'=>28000,
         'allowed_origins'=>['https://www.erpimpar.com.br','https://erpimpar.com.br'],
         'test_mode'=>false,
-    ]);
+    ];
+    $c=array_merge($defaults,is_array($old)?$old:[]);
     $extra=dirname(__DIR__).'/settings.local.php';
     if(is_file($extra)){ $x=require $extra;if(is_array($x))$c=array_merge($c,$x); }
     $c['version']='0.9.8-rc3-hf7';return $c;

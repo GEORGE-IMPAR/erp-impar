@@ -16,10 +16,14 @@ const pages=[
   'administracao/index.html','george-reuniao/george_v09.html'
 ];
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.mp4':'video/mp4'};
+const emptyApi=()=>JSON.stringify({ok:true,data:[],items:[],projects:[],usuarios:[],coordenadores:[],atividades:[],exists:false});
 const server=http.createServer((request,response)=>{
   const pathname=decodeURIComponent(new URL(request.url,'http://local').pathname);
   const target=path.resolve(root,'.'+pathname);
   if(!target.startsWith(root)||!fs.existsSync(target)||fs.statSync(target).isDirectory()){
+    if(pathname.endsWith('.json')||pathname.includes('/data/')){
+      response.writeHead(200,{'content-type':'application/json; charset=utf-8'});response.end(emptyApi());return;
+    }
     response.writeHead(404,{'content-type':'text/plain'});response.end('not found');return;
   }
   response.writeHead(200,{'content-type':mime[path.extname(target).toLowerCase()]||'application/octet-stream'});
@@ -35,6 +39,11 @@ try{
     const context=await browser.newContext();
     await context.addInitScript(()=>{
       localStorage.setItem('ERPIMPAR_USER',JSON.stringify({nome:'Teste Regressão',email:'regressao@erpimpar.com.br',modulos:['*']}));
+      window.html2canvas=async()=>document.createElement('canvas');
+      window.html2pdf=()=>({set(){return this},from(){return this},save(){return Promise.resolve()}});
+      window.jspdf={jsPDF:class{save(){}}};
+      window.JSZip=class{};
+      window.XLSX={utils:{book_new:()=>({}),json_to_sheet:()=>({}),book_append_sheet:()=>{}},writeFile:()=>{}};
     });
     const page=await context.newPage();
     page.on('pageerror',error=>failures.push(`${file}: erro JavaScript: ${error.message}`));
@@ -43,14 +52,18 @@ try{
     });
     await page.route('**/*',async route=>{
       const url=new URL(route.request().url());
+      const type=route.request().resourceType();
       if(url.origin===origin&&url.pathname.endsWith('.php')){
         await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:[],items:[],projects:[],usuarios:[],coordenadores:[],atividades:[],exists:false})});return;
       }
       if(url.origin!==origin){
-        if(route.request().resourceType()==='image'||route.request().resourceType()==='media'||route.request().resourceType()==='font'){
+        if(type==='image'||type==='media'||type==='font'||type==='stylesheet'){
           await route.fulfill({status:204,body:''});return;
         }
-        await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,data:[],items:[],projects:[],usuarios:[],coordenadores:[],atividades:[],exists:false})});return;
+        if(type==='script'){
+          await route.fulfill({status:200,contentType:'text/javascript',body:'/* dependência externa simulada pelo smoke */'});return;
+        }
+        await route.fulfill({status:200,contentType:'application/json',body:emptyApi()});return;
       }
       await route.continue();
     });
