@@ -1171,6 +1171,30 @@ window.EMPRESA_DOCUMENTOS_API = window.EMPRESA_DOCUMENTOS_API || "https://api.er
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jodit@4/es2021/jodit.min.css">
+<script src="https://cdn.jsdelivr.net/npm/jodit@4/es2021/jodit.min.js"></script>
+<style id="joditErpImparV3">
+#tplModal .rich-editor-toolbar{display:none!important}
+#tplModal .scroll{padding:0!important;background:#eef3f5!important;overflow:hidden!important}
+#tplModal .jodit-container{border:0!important;border-radius:0 0 14px 14px!important;height:100%!important}
+#tplModal .jodit-workplace{background:#dde4e0!important;overflow:auto!important;padding:20px!important}
+#tplModal .jodit-wysiwyg{width:794px!important;max-width:100%!important;min-height:1123px!important;margin:0 auto!important;background:#fff!important;box-shadow:0 14px 40px #0002!important;padding:66px 72px!important;font:12px/1.45 Arial,sans-serif!important;color:#111!important}
+#tplModal .jodit-toolbar__box{position:sticky!important;top:0!important;z-index:4!important}
+#tplModal .jodit-status-bar{background:#f7faf8!important}
+.template-import-type{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.template-import-choice{border:1px solid #cad8df;border-radius:11px;padding:10px;background:#fff;cursor:pointer}
+.template-import-choice:has(input:checked){border-color:#13a86d;box-shadow:0 0 0 3px rgba(19,168,109,.12);background:#f2fbf7}
+.template-import-choice input{margin-right:7px}.template-import-choice small{display:block;margin:4px 0 0 23px;color:#6b7d89}
+.mapping-box{width:min(1080px,96vw)!important;max-height:92vh!important;display:flex!important;flex-direction:column!important}
+.mapping-summary{padding:10px 14px;border-radius:11px;background:#edf8f3;color:#176a4c;font-size:12px;margin-bottom:10px}
+.mapping-list{overflow:auto;border:1px solid #d9e3e8;border-radius:12px}
+.mapping-row{display:grid;grid-template-columns:34px minmax(190px,1.2fr) minmax(190px,1fr) 105px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e5ecef;background:#fff}
+.mapping-row:last-child{border-bottom:0}.mapping-row:nth-child(even){background:#fbfcfd}
+.mapping-value{font-weight:800;color:#173247;overflow-wrap:anywhere}.mapping-context{font-size:10px;color:#71818b;display:block;margin-top:3px}
+.mapping-row select{width:100%;height:36px;border:1px solid #cbd9df;border-radius:8px;background:#fff;padding:0 8px}
+.confidence{font-size:9px;font-weight:900;text-align:center;border-radius:999px;padding:5px 7px;background:#eef4f7;color:#557080}.confidence.high{background:#e8f8f0;color:#0b7a50}.confidence.medium{background:#fff6df;color:#9a6b00}
+@media(max-width:760px){.template-import-type{grid-template-columns:1fr}.mapping-row{grid-template-columns:28px 1fr}.mapping-row select,.confidence{grid-column:2}}
+</style>
 <style id="templateManagerRichEditorV2">
 .templates-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .template-stack{display:grid;gap:9px}
@@ -2107,9 +2131,21 @@ body:has(#docWizardForm:not([style*="display: none"])) #docWizardForm{
       <div class="f"><label>Nome do template *</label><input id="templateImportName" placeholder="Ex.: Termo de confidencialidade"></div>
       <div class="f"><label>Categoria</label><select id="templateImportCategory"><option>Contrato</option><option>Termo</option><option>Ordem de Serviço</option><option>Jurídico</option><option>Outro</option></select></div>
       <div class="f full"><label>Descrição</label><textarea id="templateImportDescription" placeholder="Descreva brevemente a finalidade do modelo."></textarea></div>
+      <div class="f full"><label>TIPO DE ARQUIVO</label><div class="template-import-type">
+        <label class="template-import-choice"><input type="radio" name="templateImportMode" value="template" checked><b>Template</b><small>O arquivo já contém campos variáveis ou será ajustado manualmente.</small></label>
+        <label class="template-import-choice"><input type="radio" name="templateImportMode" value="filled"><b>Contrato já preenchido</b><small>O ERP identificará os dados da obra e sugerirá vínculos com as variáveis.</small></label>
+      </div></div>
       <div class="full template-file-drop" id="templateFileDrop"><b id="templateFileLabel">Selecionar arquivo</b><small>Formatos aceitos: DOCX, HTML, HTM e TXT. Você poderá editar o conteúdo antes de utilizá-lo.</small><input id="templateFileInput" type="file" accept=".docx,.html,.htm,.txt,text/html,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></div>
     </div>
     <div class="template-import-actions"><button class="btn s" id="cancelTemplateImport" type="button">CANCELAR</button><button class="btn p" id="confirmTemplateImport" type="button">IMPORTAR E EDITAR</button></div>
+  </div>
+</div>
+<div class="modal" id="templateMappingModal">
+  <div class="box mapping-box">
+    <div class="mhead"><div><h2>Revisar campos identificados</h2><div class="sub">Confirme quais informações do contrato devem virar variáveis do sistema.</div></div><div class="sp"></div><button class="icon" id="closeTemplateMapping" type="button">×</button></div>
+    <div class="mapping-summary" id="templateMappingSummary"></div>
+    <div class="mapping-list" id="templateMappingList"></div>
+    <div class="template-import-actions"><button class="btn s" id="cancelTemplateMapping" type="button">VOLTAR</button><button class="btn p" id="confirmTemplateMapping" type="button">APLICAR VÍNCULOS E IMPORTAR</button></div>
   </div>
 </div>
 <div class="context" id="ctx"><div id="ctxList"></div></div>
@@ -5066,6 +5102,8 @@ function erpConfirm(title,text,{type="warning",okText="Confirmar",cancelText="Ca
 const TEMPLATE_CATALOG_KEY="ERPIMPAR_DOCUMENTOS_TEMPLATE_CATALOG_V2";
 const TEMPLATE_CATALOG_BACKEND_ID="__template_catalog_v2";
 let pendingTemplateFile=null;
+let pendingImportedHtml="";
+let pendingImportCandidates=[];
 
 function slugTemplate(value){
   return String(value||"template").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
@@ -5188,6 +5226,58 @@ async function readTemplateFile(file){
   if(ext==="txt")return text.split(/\r?\n/).map(line=>line.trim()?'<p>'+esc(line)+'</p>':"<p><br></p>").join("");
   return sanitizeImportedTemplate(text);
 }
+function importMode(){return document.querySelector('input[name="templateImportMode"]:checked')?.value||"template"}
+function plainImportedText(html){
+  const doc=new DOMParser().parseFromString(String(html||""),"text/html");
+  return (doc.body.innerText||doc.body.textContent||"").replace(/\u00a0/g," ").replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();
+}
+function variableOptions(selected=""){
+  const groups={};Object.entries(varMeta||{}).forEach(([key,meta])=>{(groups[meta.category||"Documento"]??=[]).push({key,label:meta.label||key})});
+  return '<option value="">Manter como texto fixo</option>'+Object.entries(groups).map(([group,items])=>'<optgroup label="'+esc(group)+'">'+items.map(x=>'<option value="'+esc(x.key)+'" '+(x.key===selected?'selected':'')+'>'+esc(x.label)+'</option>').join('')+'</optgroup>').join('');
+}
+function candidateContext(text,start,length){return text.slice(Math.max(0,start-75),Math.min(text.length,start+length+75)).replace(/\s+/g," ").trim()}
+function partyFromContext(context){
+  const c=context.toUpperCase();
+  const a=Math.max(c.lastIndexOf("CONTRATANTE"),c.lastIndexOf("CLIENTE"));
+  const b=Math.max(c.lastIndexOf("CONTRATADA"),c.lastIndexOf("CONTRATADO"),c.lastIndexOf("EMPREITEIRO"));
+  return a>b?"Contratante":b>a?"Contratada":"";
+}
+function addImportCandidate(list,seen,text,value,index,suggested,confidence,kind){
+  value=String(value||"").trim().replace(/[;,.:]+$/g,"");if(!value||value.length<2)return;
+  const key=value.toLocaleLowerCase("pt-BR")+"|"+suggested;if(seen.has(key))return;seen.add(key);
+  list.push({id:"map_"+list.length,value,index,suggested,confidence,kind,context:candidateContext(text,index,value.length)});
+}
+function detectImportCandidates(html){
+  const text=plainImportedText(html),list=[],seen=new Set();let m;
+  const scan=(regex,resolve)=>{regex.lastIndex=0;while((m=regex.exec(text))){const out=resolve(m,m.index)||{};addImportCandidate(list,seen,text,out.value??m[0],out.index??m.index,out.field||"",out.confidence||"medium",out.kind||"");if(m[0]==="")regex.lastIndex++}};
+  scan(/\b(?:\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})\b/g,(x,i)=>{const ctx=candidateContext(text,i,x[0].length),party=partyFromContext(ctx),isCnpj=x[0].includes("/");return{field:party?"cpfCnpj"+party:(isCnpj?"cpfCnpjContratante":"cpfContatoContratante"),confidence:party?"high":"medium",kind:isCnpj?"CNPJ":"CPF"}});
+  scan(/\b\d{5}-?\d{3}\b/g,(x,i)=>{const party=partyFromContext(candidateContext(text,i,x[0].length));return{field:party?"cep"+party:"",confidence:party?"high":"medium",kind:"CEP"}});
+  scan(/R\$\s*[\d.]+(?:,\d{2})?/gi,()=>({field:"valor",confidence:"high",kind:"Valor"}));
+  scan(/\b\d{1,4}(?=\s*dias?\s*(?:corridos|úteis)?)/gi,()=>({field:"prazoDias",confidence:"high",kind:"Prazo"}));
+  scan(/\b(?:AC|OS|CT|PC|PR)[-_ ]?\d{3,8}\b/gi,()=>({field:"codigo",confidence:"medium",kind:"Código"}));
+  scan(/\b\d{1,2}\s+de\s+(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+\d{4}\b/gi,()=>({field:"dataExtenso",confidence:"high",kind:"Data"}));
+  scan(/(?:ENDEREÇO\s+DA\s+OBRA|OBRA\s+SITUADA\s+EM)\s*[:\-]?\s*([^\n]{8,180})/gi,(x,i)=>({value:x[1],index:i+x[0].indexOf(x[1]),field:"enderecoObra",confidence:"high",kind:"Endereço da obra"}));
+  scan(/(?:CONTRATANTE|CLIENTE)\s*:\s*([^,\n]{3,120})/gi,(x,i)=>({value:x[1],index:i+x[0].indexOf(x[1]),field:"nomeContratante",confidence:"high",kind:"Razão social"}));
+  scan(/(?:CONTRATADA|CONTRATADO|EMPREITEIRO)\s*:\s*([^,\n]{3,120})/gi,(x,i)=>({value:x[1],index:i+x[0].indexOf(x[1]),field:"nomeContratada",confidence:"high",kind:"Razão social"}));
+  return list.sort((a,b)=>a.index-b.index);
+}
+function renderImportMapping(){
+  const list=document.getElementById("templateMappingList"),summary=document.getElementById("templateMappingSummary");
+  summary.textContent=pendingImportCandidates.length?pendingImportCandidates.length+" possível(is) campo(s) encontrado(s). Revise os vínculos; desmarque ou selecione “Manter como texto fixo” quando não for variável.":"Nenhum campo foi reconhecido automaticamente. Você poderá inserir as variáveis manualmente no editor.";
+  list.innerHTML=pendingImportCandidates.length?pendingImportCandidates.map((x,i)=>'<div class="mapping-row"><input type="checkbox" data-map-enabled="'+i+'" '+(x.suggested?'checked':'')+'><div><span class="mapping-value">'+esc(x.value)+'</span><span class="mapping-context">…'+esc(x.context)+'…</span></div><select data-map-field="'+i+'">'+variableOptions(x.suggested)+'</select><span class="confidence '+esc(x.confidence)+'">'+(x.confidence==="high"?"ALTA CONFIANÇA":"REVISAR")+'</span></div>').join(''):'<div class="template-empty">Importe normalmente e utilize o painel de variáveis dentro do editor.</div>';
+}
+function replaceTextWithVariables(html,mappings){
+  const doc=new DOMParser().parseFromString(String(html||""),"text/html"),walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);let node;const nodes=[];while((node=walker.nextNode()))nodes.push(node);
+  mappings.filter(x=>x.field&&x.value).sort((a,b)=>b.value.length-a.value.length).forEach(map=>{
+    nodes.slice().forEach(textNode=>{if(!textNode.isConnected||textNode.parentElement?.closest?.(".var"))return;let pos=textNode.nodeValue.indexOf(map.value);while(pos>=0){const before=textNode.splitText(pos),after=before.splitText(map.value.length),chip=doc.createElement("span");chip.className="var";chip.dataset.var=map.field;chip.setAttribute("contenteditable","false");chip.textContent="["+map.field+"]";before.replaceWith(chip);const idx=nodes.indexOf(textNode);nodes.splice(idx+1,0,after);textNode=after;pos=textNode.nodeValue.indexOf(map.value)}});
+  });
+  return sanitizeImportedTemplate(doc.body.innerHTML).replace(/<span class="var"([^>]*)>/g,'<span class="var"$1 contenteditable="false">');
+}
+async function finishTemplateImport(html){
+  const nome=document.getElementById("templateImportName").value.trim(),categoria=document.getElementById("templateImportCategory").value,descricao=document.getElementById("templateImportDescription").value.trim();
+  const id=slugTemplate(nome)+"_"+Date.now().toString(36),def={id,nome,descricao,categoria,icone:"📄",custom:true,original:html};
+  TEMPLATE_DEFS[id]=def;templateStore[id]=html;await backendRequest("template_save",{id,nome,descricao,categoria,custom:true,html});saveLocalTemplateCatalog();await saveRemoteTemplateCatalog();renderTemplateCatalog();closeTemplateImport();document.getElementById("templateMappingModal").classList.remove("on");showToast("success","Template importado",nome+" foi adicionado ao catálogo.");await openTemplateEditor(id);
+}
 async function confirmTemplateImport(){
   const nome=document.getElementById("templateImportName").value.trim();
   const categoria=document.getElementById("templateImportCategory").value;
@@ -5196,16 +5286,11 @@ async function confirmTemplateImport(){
   if(!pendingTemplateFile){showToast("warning","Arquivo obrigatório","Selecione um arquivo DOCX, HTML, HTM ou TXT.");return}
   const btn=document.getElementById("confirmTemplateImport");btn.disabled=true;btn.textContent="IMPORTANDO...";
   try{
-    const html=await readTemplateFile(pendingTemplateFile);
-    const id=slugTemplate(nome)+"_"+Date.now().toString(36);
-    const def={id,nome,descricao,categoria,icone:"📄",custom:true,original:html};
-    TEMPLATE_DEFS[id]=def;templateStore[id]=html;
-    await backendRequest("template_save",{id,nome,descricao,categoria,custom:true,html});
-    saveLocalTemplateCatalog();
-    await saveRemoteTemplateCatalog();
-    renderTemplateCatalog();closeTemplateImport();
-    showToast("success","Template importado",nome+" foi adicionado ao catálogo.");
-    await openTemplateEditor(id);
+    const html=await readTemplateFile(pendingTemplateFile);pendingImportedHtml=html;
+    if(importMode()==="filled"){
+      pendingImportCandidates=detectImportCandidates(html);renderImportMapping();document.getElementById("templateMappingModal").classList.add("on");btn.disabled=false;btn.textContent="IMPORTAR E EDITAR";return;
+    }
+    await finishTemplateImport(html);
   }catch(err){
     console.error("[Templates] importar",err);
     showToast("error","Falha ao importar",err.message||"Não foi possível importar o arquivo.",7000);
@@ -5223,6 +5308,16 @@ function bindTemplateImportUI(){
   ["dragenter","dragover"].forEach(ev=>drop?.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag")}));
   ["dragleave","drop"].forEach(ev=>drop?.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag")}));
   drop?.addEventListener("drop",e=>acceptFile(e.dataTransfer.files?.[0]));
+  const closeMap=()=>document.getElementById("templateMappingModal")?.classList.remove("on");
+  document.getElementById("closeTemplateMapping")?.addEventListener("click",closeMap);
+  document.getElementById("cancelTemplateMapping")?.addEventListener("click",closeMap);
+  document.getElementById("confirmTemplateMapping")?.addEventListener("click",async()=>{
+    const btn=document.getElementById("confirmTemplateMapping");btn.disabled=true;btn.textContent="APLICANDO...";
+    try{
+      const mappings=pendingImportCandidates.map((x,i)=>({...x,field:document.querySelector('[data-map-field="'+i+'"]')?.value||"",enabled:document.querySelector('[data-map-enabled="'+i+'"]')?.checked})).filter(x=>x.enabled&&x.field);
+      await finishTemplateImport(replaceTextWithVariables(pendingImportedHtml,mappings));
+    }catch(err){console.error("[Templates] vínculos",err);showToast("error","Falha ao aplicar vínculos",err.message||"Não foi possível concluir a importação.",7000)}finally{btn.disabled=false;btn.textContent="APLICAR VÍNCULOS E IMPORTAR"}
+  });
 }
 
 function restoreEditorRange(){
@@ -5289,6 +5384,53 @@ function bindRichEditorToolbar(){
   }));
   bar.querySelectorAll("[data-editor-color]").forEach(input=>input.addEventListener("input",()=>execRichCommand(input.dataset.editorColor,input.value)));
 }
+
+/* ===== V3 — EDITOR PROFISSIONAL INCORPORADO (JODIT / MIT) ===== */
+let imparJodit=null;
+const openTemplateEditorLegacy=openTemplateEditor;
+function joditTemplateConfig(){return{
+  language:"pt_br",height:"100%",minHeight:620,toolbarAdaptive:false,toolbarSticky:true,spellcheck:true,
+  askBeforePasteHTML:false,askBeforePasteFromWord:false,defaultActionOnPaste:"insert_clear_html",
+  enter:"p",useSearch:true,showCharsCounter:true,showWordsCounter:true,showXPathInStatusbar:false,
+  buttons:["undo","redo","|","paragraph","font","fontsize","brush","|","bold","italic","underline","strikethrough","superscript","subscript","|","ul","ol","outdent","indent","|","left","center","right","justify","|","lineHeight","table","link","hr","eraser","copyformat","|","find","selectall","source","fullsize","preview","print"],
+  controls:{font:{list:{Arial:"Arial",Calibri:"Calibri","Segoe UI":"Segoe UI","Times New Roman":"Times New Roman",Georgia:"Georgia",Verdana:"Verdana",Tahoma:"Tahoma","Courier New":"Courier New"}},fontsize:{list:[8,9,10,11,12,14,16,18,20,24,28,32,36,48]}},
+  cleanHTML:{fillEmptyParagraph:false,removeEmptyElements:false,replaceNBSP:false},
+  style:{font:"12px/1.45 Arial, sans-serif"},
+  events:{change:()=>{if(imparJodit){normalizeTemplateEditorContent(imparJodit.editor);templateHTML=imparJodit.value;templateStore[currentTemplateId]=templateHTML}}}
+}}
+async function ensureJoditTemplateEditor(){
+  if(imparJodit)return imparJodit;
+  if(!window.Jodit)throw new Error("O editor profissional não foi carregado. Verifique a conexão e tente novamente.");
+  imparJodit=Jodit.make("#editor",joditTemplateConfig());
+  imparJodit.value=templateHTML||document.getElementById("editor")?.innerHTML||"<p></p>";
+  normalizeTemplateEditorContent(imparJodit.editor);
+  imparJodit.events.on("afterPaste",()=>normalizeTemplateEditorContent(imparJodit.editor));
+  return imparJodit;
+}
+openTemplateEditor=async function(id="contrato_padrao_impar"){
+  if(!imparJodit){await openTemplateEditorLegacy(id);try{await ensureJoditTemplateEditor()}catch(err){showToast("error","Editor indisponível",err.message,7000)}return}
+  currentTemplateId=id;const def=TEMPLATE_DEFS[id]||TEMPLATE_DEFS.contrato_padrao_impar;templateHTML=await ensureTemplateLoaded(id,{silent:true});
+  document.getElementById("tplModalTitle").textContent=def.nome;document.getElementById("tplModalSub").textContent="Editor profissional • "+(def.categoria||"Documento");
+  imparJodit.value=templateHTML;normalizeTemplateEditorContent(imparJodit.editor);tplModal.classList.add("on");setTimeout(()=>imparJodit.focus(),50);
+};
+window.openTemplateEditor=openTemplateEditor;
+editorNode=function(){return imparJodit?.editor||document.getElementById("editor")||document.getElementById("templateEditor")};
+insertVar=function(k){
+  const chip='<span class="var" data-var="'+esc(k)+'" contenteditable="false">['+esc(k)+']</span>&nbsp;';
+  if(imparJodit){imparJodit.focus();imparJodit.s.insertHTML(chip);normalizeTemplateEditorContent(imparJodit.editor);return}
+  const ed=editorNode();ed?.focus();document.execCommand("insertHTML",false,chip);
+};
+saveTpl.onclick=async()=>{
+  try{const def=TEMPLATE_DEFS[currentTemplateId]||TEMPLATE_DEFS.contrato_padrao_impar,ed=editorNode();normalizeTemplateEditorContent(ed);templateHTML=imparJodit?imparJodit.value:ed.innerHTML;templateStore[currentTemplateId]=templateHTML;await backendRequest("template_save",{id:currentTemplateId,nome:def.nome,html:templateHTML});showToast("success","Template salvo",def.nome+" atualizado no sistema.")}
+  catch(err){console.error("[Templates] salvar",err);showToast("error","Falha ao salvar template",err.message||"Não foi possível gravar o template.")}
+};
+resetTpl.onclick=async()=>{
+  const def=TEMPLATE_DEFS[currentTemplateId]||TEMPLATE_DEFS.contrato_padrao_impar;
+  if(await erpConfirm("Restaurar template","Deseja restaurar o conteúdo original de "+def.nome+"?",{type:"warning",okText:"Restaurar"})){
+    templateStore[currentTemplateId]=def.original;templateHTML=def.original;if(imparJodit)imparJodit.value=def.original;else editorNode().innerHTML=def.original;normalizeTemplateEditorContent(editorNode());showToast("success","Template restaurado","O conteúdo original foi restaurado.")
+  }
+};
+closeTpl.onclick=()=>{if(imparJodit){normalizeTemplateEditorContent(imparJodit.editor);templateStore[currentTemplateId]=imparJodit.value}tplModal.classList.remove("on")};
 
 bindTemplateImportUI();
 bindRichEditorToolbar();
