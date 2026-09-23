@@ -156,9 +156,10 @@ button,input,select{font:inherit}
 .day-card{display:flex;flex-direction:column;gap:6px;min-width:0}
 .day-card.drag-selected{outline:2px solid rgba(87,242,135,.75);outline-offset:2px}
 .formula-wrap{position:relative}
-.formula-input{width:100%;height:31px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(2,15,28,.58);color:#fff;padding:0 26px 0 9px;font-size:8px;outline:none}
+.formula-input{width:100%;height:31px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(2,15,28,.58);color:#fff;padding:0 58px 0 9px;font-size:8px;outline:none}
 .formula-input:focus{border-color:rgba(87,242,135,.65);box-shadow:0 0 0 2px rgba(87,242,135,.08)}
-.formula-hint{position:absolute;right:8px;top:8px;font-size:10px;color:#8fa4b5}
+.formula-hint,.formula-add{position:absolute;top:5px;width:22px;height:22px;border:1px solid rgba(148,163,184,.28);border-radius:7px;background:#f8fafc;color:#17455e;display:grid;place-items:center;font-size:11px;font-weight:950;cursor:pointer;padding:0;z-index:4}
+.formula-hint{right:31px}.formula-add{right:5px;background:#159b68;color:#fff;border-color:#159b68}.formula-add[hidden]{display:none}
 .formula-help{font-size:7px;color:#869bab;line-height:1.35}
 .suggestions{position:absolute;left:0;right:0;top:34px;z-index:30;display:none;border:1px solid rgba(87,242,135,.28);border-radius:9px;background:#061a2a;box-shadow:0 18px 38px rgba(0,0,0,.42);max-height:138px;overflow:auto}
 .suggestions.open{display:block}
@@ -2377,18 +2378,19 @@ function createFormula(person,day){
   input.dataset.personId=String(person.id);
   input.dataset.day=String(day);
   const ico=document.createElement("span");
-  ico.className="formula-hint";ico.textContent="ƒx";
+  ico.className="formula-hint";ico.textContent="?";ico.title="Ajuda da fórmula";ico.setAttribute("role","button");ico.tabIndex=0;
+  const add=document.createElement("button");
+  add.className="formula-add";add.type="button";add.textContent="+";add.title="Confirmar e incluir atividade";add.hidden=true;
   const sug=document.createElement("div");sug.className="suggestions";
   const signature=document.createElement("div");
   signature.className="formula-signature";
-  wrap.append(input,ico,sug,signature);
+  wrap.append(input,ico,add,sug,signature);
 
   function getParts(){try{return JSON.parse(input.dataset.parts||"[]")}catch{return[]}}
   function renderSignature(){
     const step=getParts().length;
     const labels=["obra","local","atividade","viagem"];
-    signature.innerHTML='<span class="fn">AGENDA</span>('+labels.map((label,i)=>'<span class="part '+(i===step?"active":"")+'">'+label+'</span>').join('<span class="sep">; </span>')+')';
-    signature.classList.toggle("open",document.activeElement===input&&step<4);
+    signature.innerHTML='<span class="fn">AGENDA</span>('+labels.map((label,i)=>'<span class="part '+(i===step?"active":"")+'">'+label+'</span>').join('<span class="sep">; </span>')+')<br><span>Enter/vírgula avança • Backspace volta • + inclui</span>';
   }
   function filtered(){
     const parts=getParts(),step=parts.length;
@@ -2429,7 +2431,15 @@ function createFormula(person,day){
     syncInput(input,parts);
     input.dataset.activeIndex="0";
     renderSignature();
+    add.hidden=parts.length!==4;
     if(parts.length===4){
+      sug.classList.remove("open");
+      input.focus();
+    }else{input.focus();redraw();}
+  }
+  function confirmActivity(moveAfterComplete=false){
+    const parts=getParts();
+    if(parts.length!==4)return;
       ensureDay(person.id,day).push({
         id:Date.now()+Math.random(),
         obra:parts[0],
@@ -2448,11 +2458,31 @@ function createFormula(person,day){
           !window.__AGENDA_ACTIVE_WORK_NAMES.has(String(parts[0]||"").trim().toLowerCase())
       });
       input.value="";input.dataset.parts="[]";
+      add.hidden=true;
       signature.classList.remove("open");
       saveState();renderAll();
       if(moveAfterComplete)focusNextFormula();
-    }else{input.focus();redraw();}
   }
+  function rewind(){
+    const parts=getParts();
+    if(!parts.length)return false;
+    const value=parts.pop();
+    input.dataset.parts=JSON.stringify(parts);
+    const prefix=parts.map((p,i)=>`${labelForStep(i)}: ${p}`).join(", ")+(parts.length?", ":"");
+    input.value=prefix+`${labelForStep(parts.length)}: ${value}`;
+    input.dataset.activeIndex="0";
+    add.hidden=true;
+    requestAnimationFrame(()=>input.setSelectionRange(input.value.length,input.value.length));
+    redraw();renderSignature();
+    return true;
+  }
+  function toggleHelp(force){
+    const open=force??!signature.classList.contains("open");
+    signature.classList.toggle("open",open);
+  }
+  ico.onclick=()=>toggleHelp();
+  ico.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleHelp();}};
+  add.onclick=()=>confirmActivity(false);
   input.addEventListener("focus",()=>{redraw();renderSignature()});
   input.addEventListener("input",()=>{input.dataset.activeIndex="0";redraw();renderSignature()});
   input.addEventListener("keydown",e=>{
@@ -2463,14 +2493,22 @@ function createFormula(person,day){
     let idx=Number(input.dataset.activeIndex||0);
     if(e.key==="ArrowDown"){e.preventDefault();if(items.length){idx=(idx+1)%items.length;input.dataset.activeIndex=idx;redraw();return}}
     if(e.key==="ArrowUp"){e.preventDefault();if(items.length){idx=(idx-1+items.length)%items.length;input.dataset.activeIndex=idx;redraw();return}}
-    if(e.key==="Tab"){
+    if(e.key==="+"&&parts.length===4){e.preventDefault();confirmActivity(false);return;}
+    if(e.key==="Backspace"){
+      if(parts.length===4){e.preventDefault();rewind();return;}
+      const segment=input.value.split(",").pop()||"";
+      const activeText=segment.replace(/^[^:]*:\s*/,"");
+      const prefixLength=input.value.length-activeText.length;
+      const cursor=input.selectionStart??input.value.length;
+      if(parts.length&&(!activeText.length||cursor<=prefixLength)){e.preventDefault();rewind();return;}
+    }
+    if(e.key==="Tab"||e.key==="Enter"||e.key===","){
       const value=((step===0||step===2)&&typed)?typed:(items[idx]||items[0]||typed);
       if(value){e.preventDefault();commit(value,step===3);}
+      else if(e.key!=="Tab")e.preventDefault();
       return;
     }
     if(e.key==="Escape"){sug.classList.remove("open");signature.classList.remove("open");return;}
-    // Enter, espaço e vírgula não confirmam campos. A confirmação é exclusivamente pelo Tab.
-    if(e.key==="Enter"||e.key===",")e.preventDefault();
   });
   return wrap;
 }
@@ -2704,15 +2742,12 @@ function createDayCell(person,day){
   d.setDate(d.getDate()+day);
   cell.dataset.mobileDay=`${mobileDays[day]} • ${d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}`;
   const formula=createFormula(person,day);
-  const help=document.createElement("div");
-  help.className="formula-help";
-  help.textContent="Setas para navegar • Tab confirma e avança";
   const list=document.createElement("div");
   list.className="activity-list";
   const items=ensureDay(person.id,day);
   if(!items.length)list.innerHTML='<div class="empty-day">Nenhuma programação</div>';
   items.forEach(a=>list.appendChild(activityElement(a,person.id,day)));
-  cell.append(formula,help,list);
+  cell.append(formula,list);
 
   cell.ondragover=e=>{if(weekLocked)return;e.preventDefault();cell.classList.add("drop-day");if(e.dataTransfer&&dragPayload?.type==="activities")e.dataTransfer.dropEffect=e.ctrlKey?"copy":"move";};
   cell.ondragleave=()=>cell.classList.remove("drop-day");
