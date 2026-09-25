@@ -184,16 +184,17 @@ async function logDirectTurn(record,role,text,id){
 function moduleActivationIntent(text){
  const n=normalized(text).replace(new RegExp('\\b'+georgeName+'\\b','g'),' ').replace(/\s+/g,' ').replace(/[.!?]+$/,'').trim();
  if(/\bnao\s+(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|mude|mudar)\b/.test(n))return false;
+ if(/\bcronograma\b/.test(n)&&(/\b(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|vamos|mude|mudar|troque|trocar|modulo|contexto)\b/.test(n)||/^cronograma$/.test(n)))return 'cronograma';
  const subject=/\b(?:agenda|atividade) do dia\b/.test(n);
  const navigation=/\b(?:entre|entrar|acesse|acessar|abra|abrir|va|ir|vamos|mude|mudar|troque|trocar|fique|ficar|logado|modulo|contexto)\b/.test(n);
  const readText=n.replace(/\bnao\s+(?:me\s+)?(?:liste|listar|mostre|mostrar|consulte|consultar)\b/g,' ');
  const read=/\b(?:liste|listar|mostre|mostrar|consulta|consultar|quem|qual|quais|quant|relatorio|pdf|horas|alocad|atividade de)\b/.test(readText);
- return subject&&((navigation&&!read)||/^(?:agenda|atividade) do dia$/.test(n));
+ return subject&&((navigation&&!read)||/^(?:agenda|atividade) do dia$/.test(n))?'agenda_dia':false;
 }
 function activateAgendaDay(text,source,id){
- if(!moduleActivationIntent(text))return false;
- message('me',text);state.activeModule='agenda_dia';normalStatus();
- state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const reply='Pronto, estamos na Agenda do Dia. O que você precisa?';try{const j=await request('module_select',{record_id:state.record,module:'agenda_dia',text,event_id:id});state.activeModule=j.module;normalStatus();message('george',reply,'AGENDA DO DIA');if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){state.activeModule='geral';normalStatus();error(e);}});
+ const module=moduleActivationIntent(text);if(!module)return false;
+ message('me',text);state.activeModule=module;normalStatus();
+ state.chatQueue=state.chatQueue.catch(()=>{}).then(async()=>{const label=module==='cronograma'?'Cronograma':'Agenda do Dia';const reply=`Pronto, estamos no ${label}. O que você precisa?`;try{const j=await request('module_select',{record_id:state.record,module,text,event_id:id});state.activeModule=j.module;normalStatus();message('george',reply,label.toUpperCase());if((state.mode==='audio'||source==='audio')&&!state.recording?.stopping)await voice.speak(reply);}catch(e){state.activeModule='geral';normalStatus();error(e);}});
  return true;
 }
 function queueQuestion(text,source='text',id=eventId(),retryRecord=null){
@@ -287,8 +288,10 @@ function interruptionIntent(s){
  if(/\b(?:pode |poderia )?(?:continuar|seguir|prosseguir|retomar)\b|\b(?:continua|continue|segue|prossiga|retoma|retome)\b|\bde onde (?:voce )?parou\b/.test(withoutName))return 'continue';
  if(hasName&&/^(?:(?:so |apenas )?(?:um |uma )?(?:minuto|minutinho|momento|segundo|segundinho)|(?:espera|espere|aguarda|aguarde|segura|segure|calma|para|pare)(?: ai| um pouco| so um pouco)?|(?:presta|preste) atencao|nao e (?:isso|bem isso)|deixa eu (?:falar|terminar|explicar))[.! ]*$/.test(withoutName))return 'pause';
  if(hasName&&/^(?:(?:ei|oi|o|opa|por favor)[, .:;-]*)?$/.test(withoutName))return 'pause';
+ if(hasName&&/^(?:nao[ ,.!-]*)+$/.test(withoutName))return 'pause';
  return null;
 }
+function meaningfulAudioFollowup(s){const n=normalized(s).replace(/[.!?]+$/,'').trim();if(/^(?:yeah|aham|uhum|hum|hmm)$/.test(n))return false;return n.length>=2;}
 const stopSpeechIntent=s=>interruptionIntent(s)==='pause';
 const continueSpeechIntent=s=>interruptionIntent(s)==='continue';
 const called=s=>new RegExp('\\b'+georgeName+'\\b').test(normalized(s));
@@ -380,7 +383,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptCommittedAt:new Map(),tr
     if(explicitlyPaused){handlePauseInterruption(text,'audio',id);return;}
     if(startedDuringSpeech){
       if(state.recording?.mode==='meeting'&&!called(text)){const rid=state.recording.id;message('me',text);state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);return;}
-      if(called(text))queueQuestion(text,'audio',id);return;
+      if(called(text)){const intent=interruptionIntent(text);if(intent==='pause')handlePauseInterruption(text,'audio',id);else queueQuestion(text,'audio',id);}return;
     }
     const duringSpeech=this.speaking;
     if(duringSpeech){if(state.recording?.mode==='meeting'&&!called(text)){const rid=state.recording.id;message('me',text);state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).catch(error);}return;}
@@ -388,7 +391,7 @@ transcriptOrder:[],transcriptFinals:new Map(),transcriptCommittedAt:new Map(),tr
       if(called(text))queueQuestion(text,'audio',id);
       else{message('me',text);const rid=state.recording.id;state.logQueue=state.logQueue.catch(()=>{}).then(()=>request('log',{record_id:rid,text,event_id:id})).then(()=>reviewMeeting()).catch(error);}
     }else if(state.mode==='audio'&&!state.recording){
-      if(called(text)||Date.now()<=this.followupUntil){this.followupUntil=0;queueQuestion(text,'audio',id);}
+      if(called(text)||(Date.now()<=this.followupUntil&&meaningfulAudioFollowup(text))){this.followupUntil=0;queueQuestion(text,'audio',id);}
     }
  },
  send(e){if(this.dc?.readyState!=='open')throw new Error('Áudio ainda não está conectado.');this.dc.send(JSON.stringify(e));},
