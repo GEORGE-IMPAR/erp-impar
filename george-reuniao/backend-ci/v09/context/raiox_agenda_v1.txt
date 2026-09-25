@@ -1,0 +1,547 @@
+ERP ÍMPAR
+RAIO-X TÉCNICO-FUNCIONAL
+AGENDA DO DIA
+
+Dossiê oficial de regras, arquitetura, experiência e capabilities do George
+Status funcional: FECHADO / VALIDADO     •     Implementação: A ADEQUAR     •     Versão 1.0
+05 de setembro de 2026
+PRINCÍPIO CENTRAL
+A Agenda do Dia nasce da Agenda Semanal apenas uma vez. Depois de criada, torna-se independente. A tela, o drag & drop, os botões e o George devem operar o mesmo motor de regras de negócio.
+
+1  OBJETIVO E ESCOPO
+Documento mestre do primeiro módulo fechado no Raio-X do ERP ÍMPAR. Consolida regra oficial, estado atual, divergências, arquitetura alvo, Design System global, modelo de dados e capacidades do George.
+Este documento não é uma reprodução automática do código atual. Ele registra a regra funcional correta, validada pelo responsável do produto, e confronta essa regra com evidências do frontend atual. Quando a implementação não foi comprovada ponta a ponta, o item permanece como A VALIDAR tecnicamente.
+1.1 Fontes técnicas inspecionadas
+Menu oficial do ERP ÍMPAR: menu_novo.html, que roteia Agenda do Dia para cronograma/agenda_do_dia_novo.html.
+Frontend atual: cronograma/agenda_do_dia_novo.html, branch main, incluindo camadas históricas de CSS/JS, estados visuais, colaboradores, drag & drop, relatório e adapters.
+Implementações legadas de Atividade/Agenda do Dia com persistência em KingHost, incluindo draft_save.php, usadas como evidência de arquitetura histórica.
+Regras funcionais validadas durante o Raio-X em 05/09/2026.
+1.2 Classificação usada
+Status
+Significado
+CORRETO
+A implementação observada é compatível com a regra oficial.
+PARCIAL
+Existe a base técnica, mas o comportamento precisa ser completado/padronizado.
+DIVERGENTE
+O código atual faz algo diferente da regra oficial.
+A VALIDAR
+A regra está fechada, mas a implementação não foi comprovada ponta a ponta.
+GLOBAL
+Regra deixa de pertencer somente à Agenda do Dia e passa a ser padrão do ERP ÍMPAR.
+
+2  CICLO DE VIDA DA AGENDA DO DIA
+Fluxo funcional oficial, do nascimento ao histórico.
+Etapa
+Comportamento oficial
+1. Nascimento
+A Agenda Semanal finalizada cria a Agenda do Dia correspondente. Na sexta-feira, a criação da segunda-feira depende da Agenda Semanal da semana seguinte estar finalizada.
+2. Independência
+Após criada, a Agenda do Dia não relê a Agenda Semanal para reconstruir ou atualizar o dia corrente.
+3. Edição
+Enquanto aberta, aceita inclusão, cancelamento, descancelamento, mover, copiar, edição, viagem, veículo e colaboradores conforme regras deste documento.
+4. Salvar
+Persiste exatamente o estado atual da tela e cria um novo checkpoint de Undo. Não finaliza, não fecha, não navega.
+5. Finalizar
+Valida 100% das atividades, congela o estado final, grava histórico e cria o próximo dia a partir da Agenda Semanal.
+6. Histórico
+Agenda finalizada é imutável e somente leitura. Pode ser consultada por data.
+
+3  ESTADOS VISUAIS E ORIGEM DAS ATIVIDADES
+A cor do card é consequência da origem e do estado funcional; não deve ser persistida como regra de negócio.
+Origem
+Cronograma
+Situação
+Cor/efeito
+Agenda Semanal
+Existe
+Ativa
+VERDE
+Agenda Semanal
+Não existe
+Ativa
+LARANJA
+Agenda Semanal
+Qualquer
+Cancelada
+VERMELHA; permanece como evidência histórica
+Manual/Replanejada
+Existe ou não
+Ativa
+ROXA
+Manual/Replanejada
+Qualquer
+Removida
+Desaparece da origem; não gera “fantasma” cancelado
+
+AD-004
+Planejada com cronograma  [REGRA OFICIAL]
+Atividade originada da Agenda Semanal com cronograma oficial existente é apresentada em verde.
+
+AD-005
+Planejada sem cronograma  [REGRA OFICIAL]
+Atividade originada da Agenda Semanal sem cronograma oficial existente é apresentada em laranja.
+
+AD-006/007
+Cancelar e descancelar planejada  [REGRA OFICIAL]
+Cancelar mantém o item em vermelho. Novo acionamento descancela e devolve o estado natural: verde ou laranja.
+
+AD-008/009
+Manual/replanejada  [REGRA OFICIAL]
+Atividade criada no próprio dia é roxa. Se removida/cancelada, desaparece, pois não há origem semanal a preservar.
+
+AD-012
+Precedência do replanejamento  [REGRA OFICIAL]
+Manual/replanejada continua roxa mesmo quando a obra não possui cronograma; o significado “replanejada” tem precedência visual.
+
+4  INCLUSÃO E EDIÇÃO DE ATIVIDADE
+Autocomplete auxilia, mas não restringe obra e atividade.
+A sequência atual Obra → Local → Atividade → Viagem pode ser mantida; a ordem não é regra crítica do negócio.
+Obra e Atividade aceitam texto livre, mesmo que ainda não existam nas listas de sugestão.
+Novo texto válido deve poder alimentar a lista de sugestões futuras sem bloquear o registro corrente.
+Viagem = Sim significa pernoite fora. Bate e volta = Viagem Não.
+Colaborador e Veículo são entidades mestre: não podem existir somente como texto solto dentro da Agenda do Dia.
+AD-010/011
+Texto livre controlado  [REGRA OFICIAL]
+Obra e atividade podem ser digitadas livremente. Sugestões não impedem o registro e novos valores podem enriquecer as listas.
+
+5  DRAG & DROP, SELEÇÃO MÚLTIPLA E RASTREABILIDADE
+A mesma ação deve funcionar por interface visual e por linguagem natural via George.
+Origem
+Operação
+Origem após ação
+Destino
+Planejada (Semanal)
+COPIAR
+Mantém verde ou laranja
+Cria roxa
+Planejada (Semanal)
+MOVER/RECORTAR
+Fica vermelha/cancelada
+Cria roxa
+Manual/Replanejada
+COPIAR
+Mantém roxa
+Cria roxa
+Manual/Replanejada
+MOVER/RECORTAR
+Some da origem
+Permanece roxa no destino
+
+Seleção múltipla: Ctrl/Cmd + clique no desktop; no mobile deve existir modo de seleção por toque longo ou equivalente.
+Após soltar a seleção, o componente deve oferecer Mover, Copiar ou Cancelar; evitar depender de botão direito do mouse.
+Uma operação com vários itens é tratada como uma única transação para Undo.
+Toda movimentação/cópia preserva origem, destino, colaborador/data original e tipo da operação.
+AD-013
+Seleção múltipla  [REGRA OFICIAL]
+Permite selecionar várias atividades e aplicar uma única operação ao conjunto.
+
+AD-014
+Drop com decisão  [REGRA OFICIAL]
+Ao soltar, oferecer Mover | Copiar | Cancelar em componente compacto e multiplataforma.
+
+AD-015
+Copiar planejada  [REGRA OFICIAL]
+Origem permanece inalterada; destino nasce replanejado/roxo.
+
+AD-016
+Mover planejada  [REGRA OFICIAL]
+Origem semanal permanece vermelha como cancelada; destino nasce roxo.
+
+AD-017
+Copiar manual  [REGRA OFICIAL]
+Origem roxa permanece; destino também roxo.
+
+AD-018
+Mover manual  [REGRA OFICIAL]
+Remove da origem e mantém apenas o destino roxo.
+
+AD-019
+Rastreabilidade  [REGRA OFICIAL]
+Registrar origem, destino, tipo de movimento e vínculos para auditoria e explicação pelo George.
+
+6  COLABORADORES
+Cadastro mestre, participação no dia e cadastro rápido contextual são conceitos separados.
+Elemento
+Regra oficial
+Fonte do combo
+Todos os colaboradores cadastrados no ERP ÍMPAR.
+Lista exibida
+Somente colaboradores vinculados à Agenda do Dia atual.
+Adicionar
+Autocomplete → selecionar → Adicionar → cria participação e card vazio.
+Remover
+Remove da Agenda do Dia e suas atividades daquele dia; nunca apaga o cadastro mestre.
+Cargo/Função
+Somente leitura; vem do Cadastro Mestre. Não editar Execução/Coordenação na Agenda do Dia.
+Sem atividades
+Se o colaborador ficar sem qualquer atividade/card, deixa automaticamente de aparecer na Agenda do Dia.
+Não cadastrado
+Oferecer cadastro rápido; após salvar, vincular ao dia. Cadastro fica pendente de complementação na Administração.
+
+AD-020 a AD-025
+Colaborador como entidade mestre  [REGRA OFICIAL]
+A Agenda do Dia usa o cadastro central; participação diária é um vínculo, não um novo cadastro.
+
+AD-026
+Nomenclatura  [REGRA OFICIAL]
+Usar Adicionar e Remover. “Excluir” não deve ser usado para remover participação do dia.
+
+AD-027
+Confirmação de remoção  [REGRA OFICIAL]
+Ao remover colaborador, informar que todas as atividades do dia serão removidas e que o cadastro mestre não será alterado.
+
+AD-028
+Feedback de inclusão  [REGRA OFICIAL]
+Após adicionar: “Colaborador adicionado à Agenda do Dia. O card de programação foi criado.”
+
+AD-031 a AD-034
+Componente global de colaborador  [REGRA OFICIAL]
+Mesmo autocomplete, layout, comportamento, nomenclatura e leitura de cargo/função em Agenda do Dia, Agenda Semanal, Viagens e demais módulos.
+
+6.1 Cadastro rápido
+Cadastro rápido cria um Colaborador, não necessariamente um Usuário de acesso.
+Pode representar funcionário interno, parceiro, terceiro ou colaborador de empresa como Thermo Service.
+Campos mínimos: nome + tipo/origem/empresa necessários para não criar uma identidade solta.
+Administração deve listar “cadastro rápido/incompleto”, origem, data, responsável e campos pendentes.
+Undo local remove o vínculo do dia, mas não apaga um cadastro mestre já criado.
+7  UNDO, SALVAR E EDIÇÃO DO RASCUNHO
+O usuário pode experimentar livremente até criar um novo checkpoint.
+Comando/ação
+Resultado
+Ctrl+Z / “George, desfaz isso”
+Desfaz a última operação ainda não salva.
+“George, desfaz tudo”
+Volta ao último estado salvo, desfazendo todas as alterações posteriores.
+Limpar Agenda do Dia
+Limpa tudo como UMA operação; um Ctrl+Z restaura a agenda inteira se ainda não houve salvamento.
+Salvar
+Persiste o estado visível e redefine o checkpoint; não é possível desfazer para antes desse salvamento.
+
+AD-029/030
+Undo global + checkpoint  [REGRA OFICIAL]
+Undo cobre alterações funcionais do módulo e nunca atravessa o último salvamento.
+
+AD-041/042
+Edição livre  [REGRA OFICIAL]
+Enquanto o dia estiver aberto, ações comuns são executadas imediatamente, sem confirmação prévia; o usuário avalia o resultado e pode desfazer.
+
+AD-043/044
+Salvar rascunho  [REGRA OFICIAL]
+Salvar cria novo checkpoint do estado atual. “Salvar” não significa “Finalizar”.
+
+AD-046/047
+Motor independente da interface  [REGRA OFICIAL]
+Regras de negócio não podem depender da existência/visibilidade de botões HTML. George e tela chamam o mesmo serviço/capability.
+
+8  SELECIONAR DIA E HISTÓRICO DIÁRIO
+Consultar o passado é permitido; avançar pulando um dia aberto é bloqueado.
+Cenário
+Regra
+Dia finalizado anterior
+Pode abrir para consulta; carrega o estado final congelado e é somente leitura.
+Dia atual aberto
+Continua editável até finalizar.
+Tentar abrir próximo dia com anterior aberto
+Bloquear e informar que o dia anterior precisa ser finalizado.
+Consulta retroativa
+Não altera o estado da Agenda do Dia operacional atualmente aberta.
+
+AD-035 a AD-040
+Seleção diária histórica  [REGRA OFICIAL]
+Histórico é imutável; avanço é sequencial; George respeita exatamente as mesmas travas da interface.
+
+9  FINALIZAR DIA
+Fechamento é uma transação de negócio, não um simples botão.
+Tipo de atividade
+Pergunta
+Se SIM
+Se NÃO
+Planejada verde/laranja
+Foi concluída?
+100% automaticamente
+Percentual realizado + motivo da não conclusão
+Replanejada roxa
+Foi concluída?
+100% automaticamente
+Percentual realizado + motivo da não conclusão
+Cancelada vermelha
+Não pergunta conclusão
+-
+Motivo do cancelamento obrigatório
+
+Não existe motivo obrigatório de replanejamento.
+Motivo de não conclusão e motivo de cancelamento são campos distintos.
+Antes de finalizar, todas as pessoas e atividades devem estar completamente respondidas; nada pode ficar em branco.
+Se houver pendência, apontar colaborador e atividade exatos; não finalizar parcialmente.
+Após validação: congelar estado final → gravar histórico → criar próximo dia a partir da Agenda Semanal.
+Na sexta-feira, o fechamento depende da Agenda Semanal da próxima semana estar finalizada.
+A operação de fechamento deve ser atômica: ou conclui o processo inteiro, ou mantém o dia aberto.
+AD-048 a AD-054
+Produtividade e motivos  [REGRA OFICIAL]
+Planejada e replanejada compartilham a mesma regra de conclusão. Cancelada exige motivo próprio. Replanejamento não exige justificativa.
+
+AD-055 a AD-062
+Fechamento integral  [REGRA OFICIAL]
+Validação total, congelamento, histórico e criação do próximo dia formam uma operação segura e indivisível.
+
+10  RELATÓRIO DA AGENDA DO DIA
+Uma fonte visual; múltiplas saídas idênticas.
+O relatório aberto na tela é a fonte visual única. Imprimir, gerar PDF e compartilhar devem usar o mesmo template, retirando apenas controles que não pertencem ao papel/arquivo.
+Ação
+Comportamento padrão
+Consultar horas
+Capability opcional da Agenda do Dia; pode ser reutilizada em outros módulos quando fizer sentido.
+Compartilhar PDF
+No mobile abre share nativo do sistema operacional; em desktop usa capacidade nativa quando disponível e fallback padrão quando necessário.
+Imprimir
+Abre a tela nativa de impressão, usando exatamente o layout do relatório.
+Fechar
+Mesmo botão, posição e comportamento em todo o ERP; retorna ao contexto de origem.
+
+DS-004 a DS-010
+Relatório global  [GLOBAL]
+Visualização, impressão, PDF e compartilhamento usam o mesmo componente, toolbar e template. Ações específicas são habilitadas por módulo.
+
+11  CONSULTA SEMANAL HISTÓRICA
+A Agenda do Dia pode consultar somente semanas que já viraram histórico.
+Agenda Semanal em rascunho não aparece na Consulta Semanal.
+Somente Agenda Semanal finalizada/congelada pode ser consultada.
+Consulta é somente leitura e não precisa de imprimir/PDF/compartilhar.
+Navegação padrão: semana anterior, selecionar semana, próxima semana, fechar.
+A semana consultada (período inicial/final) deve estar sempre explícita na tela.
+DS-011 + AD-063 a AD-067
+Consulta histórica global  [GLOBAL]
+Componente padrão de navegação histórica, exibindo apenas períodos finalizados e sempre em modo somente leitura.
+
+12  FROTA E RECURSOS
+A Agenda do Dia consome a Frota global; não é dona do cadastro de veículos.
+Regra
+Definição
+Frota global
+Veículo existe em cadastro central independente da Agenda do Dia.
+Vínculo persistente
+Ao vincular veículo a colaborador, o vínculo permanece até remoção/alteração explícita; não morre ao final do dia.
+Colaborador fora da agenda
+Pode continuar responsável por veículo mesmo sem estar na Agenda do Dia.
+Veículo não cadastrado
+Não pode ser alocado como texto livre. Oferecer cadastro rápido, depois vincular.
+Empréstimos e recursos
+Solicitação/empréstimo de carros e colaboradores de outras áreas é nova funcionalidade a desenhar fora deste módulo.
+
+FR-001 a FR-005
+Frota consumida pela Agenda do Dia  [REGRA OFICIAL]
+A agenda apresenta a alocação vigente e pode alterar o vínculo, mas o registro oficial pertence à Frota global.
+
+FR-006 a FR-009
+Nova funcionalidade futura  [BLUEPRINT]
+Empréstimo temporário, histórico de movimentação e solicitação de recursos entre áreas serão tratados em domínio próprio.
+
+13  DESIGN SYSTEM GLOBAL DO ERP ÍMPAR
+Padrões que saem da Agenda do Dia e passam a valer para todos os módulos.
+13.1 Toasts e confirmações
+Componente
+Padrão
+Sucesso
+Verde; aparece à direita; ícone/título/texto; barra de progresso até desaparecer.
+Informação
+Azul; mesmo layout e comportamento.
+Alerta
+Amarelo/laranja; mesmo layout e comportamento.
+Erro/cancelamento
+Vermelho; mesmo layout e comportamento.
+Confirmação
+Modal/pop-up único do ERP para Sim/Não/Confirmar, com variantes de risco e linguagem consistente.
+
+DS-002/003
+Mensagens e confirmações globais  [GLOBAL]
+Nenhum módulo deve criar alertas nativos ou componentes próprios quando existir o padrão ERP ÍMPAR.
+
+13.2 Salvar
+DS-012 a DS-014
+Salvar é persistir  [GLOBAL]
+Todo botão Salvar persiste exatamente o estado atual da tela, mantém o usuário no contexto e cria checkpoint. Não finaliza nem navega.
+
+13.3 Cabeçalho Operacional da Funcionalidade - NOVO PADRÃO GLOBAL
+A Agenda do Dia passa a ser referência para um cabeçalho operacional reutilizável. A identidade superior do ERP e o cabeçalho funcional são separados: o primeiro identifica produto/usuário; o segundo organiza título, contexto, ações, filtros e espaço útil do módulo.
+Zona
+Conteúdo obrigatório
+Identidade do módulo
+Nome da funcionalidade + subtítulo/contexto + período/data/status relevantes.
+Ações principais
+Botões da funcionalidade em ordem e tamanho padronizados; mesmas variantes de cor e ícone em todo o ERP.
+Filtros/controles
+Filtros e seletores ficam em faixa própria, com espaçamento e responsividade padrão.
+Expandir/Recolher
+Mesmo botão, mesma posição e mesma animação. Recolhido preserva título/contexto essencial e devolve área vertical para o conteúdo.
+Responsivo
+No mobile, ações podem quebrar/reagrupar sem mudar semântica ou criar outro layout funcional.
+
+DS-017
+Cabeçalho operacional global  [GLOBAL]
+Todos os módulos reutilizam o mesmo componente de cabeçalho funcional. Não criar toolbar/cabeçalho diferente por tela.
+
+DS-018
+Faixa de ações e filtros  [GLOBAL]
+Botões, filtros e controles seguem grid, espaçamento, alturas, ícones e variantes do Design System.
+
+DS-019
+Expandir/Recolher  [GLOBAL]
+O cabeçalho funcional pode ser recolhido para aumentar o espaço útil e expandido para retornar todas as ações/filtros.
+
+DS-020
+Botões globais  [GLOBAL]
+Salvar, Fechar, Adicionar, Remover, Imprimir, Compartilhar, Anterior/Próximo e demais padrões recorrentes devem usar a mesma linguagem visual e funcional.
+
+14  GEORGE - CAPABILITIES DA AGENDA DO DIA
+George interpreta linguagem de negócio e chama o mesmo motor utilizado pela interface.
+Capability
+Exemplos de linguagem natural
+agendaDia.adicionarColaborador
+“George, adiciona o Rafael na Agenda do Dia.”
+agendaDia.removerColaborador
+“George, remove todas as atividades do Valdeci da Agenda do Dia.”
+agendaDia.adicionarAtividade
+“George, coloca o Rafael na Toyota Mercosul, instalação de dutos, sem viagem.”
+agendaDia.moverAtividades
+“George, move as atividades do Leandro para quarta.”
+agendaDia.copiarAtividades
+“George, completa a semana do Leandro com o que ele tem na segunda.”
+agendaDia.copiarPlanejamento
+“George, deixa o planejamento do Henrique igual ao do Leandro.”
+agendaDia.desfazer
+“George, desfaz essa alteração.”
+agendaDia.desfazerTudo
+“George, volta tudo ao último salvamento.”
+agendaDia.salvarRascunho
+“George, salva o rascunho da Agenda do Dia.”
+agendaDia.selecionarDia
+“George, abre a Agenda do Dia de ontem.”
+agendaDia.finalizar
+“George, vamos fechar a Agenda do Dia.”
+report.*
+“George, abre/compartilha/imprime o relatório.”
+
+Regra de segurança/experiência: ações comuns de edição no rascunho são executadas sem confirmação prévia, pois podem ser desfeitas. Ações explicitamente destrutivas com impacto em conjunto - como Remover Colaborador - mantêm confirmação. Finalizar segue validações próprias.
+15  MODELO DE DADOS ALVO
+Estrutura conceitual para a futura migração JSON → banco relacional. Nomes finais serão definidos na fase de modelagem.
+Entidade/Tabela
+Responsabilidade
+colaborador
+Cadastro mestre de pessoas internas/externas, empresa/origem, cargo/função e status cadastral.
+agenda_dia
+Cabeçalho do dia: data, estado ABERTA/FINALIZADA, criado_em, finalizado_em, origem_semanal_id.
+agenda_dia_colaborador
+Vínculo entre colaborador e Agenda do Dia; participação é removível sem apagar colaborador.
+agenda_dia_item
+Atividade: origem_tipo, obra, atividade, viagem, percentual, motivos, cancelada, replanejada, vínculo com item semanal.
+agenda_dia_movimento
+MOVE/COPY com item origem/destino, colaborador/data origem/destino e auditoria.
+agenda_dia_evento
+Trilha de auditoria de ações relevantes, inclusive autoria/George.
+agenda_dia_snapshot
+Snapshot final congelado e/ou referência de versão para histórico/auditoria.
+veiculo / alocacao_veiculo
+Cadastro de Frota e vínculo vigente/histórico; domínio global, não específico da agenda.
+
+15.1 Persistência e Undo
+Estado persistente válido deve ser gravado no backend; não usar localStorage/sessionStorage como fonte de dados operacionais.
+Undo antes do salvamento pode existir em memória no frontend como pilha transacional.
+Salvar envia o estado atual ao backend e redefine a base da pilha de Undo.
+Finalizar é operação transacional no backend, com revalidação antes de confirmar sucesso.
+JSON pode permanecer como transporte, snapshot, cache ou exportação; banco relacional será a fonte operacional futura.
+16  RAIO-X TÉCNICO DO FRONTEND ATUAL
+Evidências observadas no código ativo e classificação em relação à regra oficial.
+Achado atual
+Classificação
+Ação alvo
+Menu oficial aponta para cronograma/agenda_do_dia_novo.html.
+CORRETO
+Manter rota; refatorar internamente por componentes/serviços.
+CSS atual já possui classes/cores para planejada, replanejada, cancelada e sem cronograma.
+PARCIAL
+Consolidar estado em regra central; não depender de CSS isolado.
+“Obra sem cronograma ativo” é inferida por presença em lista local de obras no trecho inspecionado.
+DIVERGENTE
+Consultar existência oficial do cronograma/serviço, não uma lista estática.
+Obra e Atividade aceitam texto digitado no fluxo atual.
+CORRETO
+Manter; adicionar persistência/sugestão futura.
+Seleção múltipla usa Ctrl/Cmd e drag atual declara efeito de cópia.
+PARCIAL
+Adicionar decisão Mover/Copiar e comportamento por origem.
+Remoção atual de card possui trecho que simplesmente tira o item do array.
+DIVERGENTE
+Aplicar regra por origem: semanal cancela; manual remove.
+Modal atual de colaboradores permite alterar Execução/Coordenação e ativo/inativo.
+DIVERGENTE
+Função/status vêm do Cadastro Mestre; tela apenas adiciona/remove participação.
+Fonte atual de colaboradores contém listas/keys derivadas da própria agenda.
+DIVERGENTE
+Usar Cadastro Mestre central.
+Frontend contém adapter que evita persistência local da Agenda e mantém ERPIMPAR_USER no storage nativo.
+PARCIAL
+Boa direção; confirmar toda persistência oficial no backend.
+Há bind direto de funções a IDs de botões como saveMock.
+DIVERGENTE
+Botão e George devem chamar capability/serviço, não depender do DOM.
+Relatório possui view/toolbars e lógica própria dentro do módulo.
+DIVERGENTE GLOBAL
+Extrair para componente global e unificar tela/print/PDF/share.
+Toast e confirmação padronizados existem localmente no arquivo.
+PARCIAL GLOBAL
+Extrair para Design System compartilhado do ERP inteiro.
+
+17  ARQUITETURA ALVO DA FUNCIONALIDADE
+Separação clara entre UI, motor de ações, API e persistência.
+Camada
+Responsabilidade
+UI / Agenda do Dia
+Renderizar estado, receber entrada, drag/drop, seleção, modal, relatório e atalhos.
+AgendaDiaService (frontend)
+Motor único de operações: add/remove/cancel/uncancel/move/copy/save/undo/finalize. Não depende de botão.
+George Adapter
+Converte intenção em capability e argumentos; chama AgendaDiaService/API e valida resultado.
+API KingHost
+Persistência, validação de concorrência, histórico, finalização atômica, consultas e serviços de infraestrutura.
+Banco relacional futuro
+Fonte operacional central; relações, auditoria, concorrência, consultas e histórico.
+Storage
+Arquivos e artefatos: PDF, anexos, snapshots quando aplicável; metadados ficam no banco.
+
+Princípio: George interpreta → serviço oficial executa → backend persiste → serviço revalida → resultado volta ao George. O mesmo serviço também é chamado pelos botões e pelo drag & drop.
+18  CRITÉRIOS DE ACEITE - PACOTE FUTURO DA AGENDA DO DIA
+Checklist mínimo para considerar a implementação alinhada ao dossiê.
+☐  Nascimento do dia a partir da Agenda Semanal e independência posterior comprovados.
+☐  Cores/estados derivados de origem + cronograma + cancelamento/replanejamento.
+☐  Cancelar/descancelar planejada preserva origem; manual removida desaparece.
+☐  Mover/Copiar funciona para seleção múltipla e respeita as quatro combinações oficiais.
+☐  Undo transacional funciona até o último salvamento e Limpar Tudo é reversível como uma ação.
+☐  Salvar persiste somente o estado atual e permanece na tela.
+☐  Colaborador usa cadastro mestre, cadastro rápido e remove apenas participação do dia.
+☐  Veículo depende da Frota mestre e vínculo persiste além do dia.
+☐  Selecionar dia permite histórico congelado e bloqueia avanço se o anterior estiver aberto.
+☐  Finalização exige resposta em todas as atividades e aplica 100% / parcial+motivo / cancelado+motivo.
+☐  Fechamento é atômico, congela histórico e cria próximo dia; sexta respeita regra da semana seguinte.
+☐  Relatório usa o mesmo layout em tela, impressão, PDF e compartilhamento.
+☐  Consulta semanal mostra apenas semanas finalizadas.
+☐  Cabeçalho operacional, botões, toasts, confirmações e relatório usam componentes globais.
+☐  George executa as mesmas capabilities sem procurar/clicar botões HTML.
+19  PRÓXIMOS PASSOS
+Sequência recomendada após o fechamento funcional deste módulo.
+Ordem
+Entrega
+1
+Congelar este dossiê como fonte oficial funcional da Agenda do Dia.
+2
+Completar Raio-X técnico do backend atual e mapear endpoints/storage/arquivos efetivamente usados em produção.
+3
+Desenhar interfaces dos componentes globais: Header Operacional, Toast, Confirm, Report, Consulta Histórica, Colaborador.
+4
+Definir schema relacional piloto da Agenda do Dia e estratégia JSON → dual write → shadow read → banco.
+5
+Implementar AgendaDiaService/capabilities sem alterar produção; entregar pacote versionado para teste.
+6
+Usar este módulo como gabarito para o próximo domínio do Raio-X.
+
+Governança: este dossiê passa a ser a referência funcional oficial da Agenda do Dia no Raio-X do ERP ÍMPAR. Alterações futuras devem ser registradas por versão, preservando regra anterior, decisão e impacto técnico.
